@@ -4,6 +4,7 @@
  * `general`; no instance ever lists it. Its beats, pet rules, strictness, quiz and what persuades it are DRAFTS
  * for the owner (the Mod Bots plan, Task 14); the Boss fields are placeholders so every persona has every field.
  */
+import { STOCK_LINE_KEYS } from '../../../../engine/system/stock.ts';
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
@@ -32,6 +33,7 @@ export const placeholderMonitor: Persona = {
     ],
   },
   voice: 'chat',
+  stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'],
   pronouns: PRONOUN_PRESETS.it,
   persuadedBy: 'Sincere, polite appeals that cite a rule by number; you are unmoved by bravado.',
   // DRAFT for the owner: the Boss fields below are placeholders, there so every persona has every field.

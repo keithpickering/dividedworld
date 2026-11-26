@@ -5,6 +5,7 @@
  * This one is weary and passive-aggressive: a robot that has seen every thread before and tells
  * you so. It inherits nothing (a fresh Boss with no `inheritsMemoryOf`).
  */
+import { STOCK_LINE_KEYS } from '../../../../engine/system/stock.ts';
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
@@ -25,6 +26,7 @@ export const sighbot: Persona = {
   strictness: { visitHours: { least: 4, most: 10 }, bands: ['minor'] },
   weakness: { kind: 'distraction' },
   voice: 'chat',
+  stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'],
   pronouns: PRONOUN_PRESETS.it,
   persuadedBy: 'DRAFT: a sincere argument made in your own style, delivered quietly and without exclamation points.',
   selfPrompt: persona({

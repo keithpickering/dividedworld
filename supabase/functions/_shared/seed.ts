@@ -71,6 +71,8 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       // The handover's title is read from copy (0437, hand_over), beside the season's words.
       copy: { ...instance.copy, handoverThreadTitle: instance.system.handoverThreadTitle },
       systemLines: instance.system.stockLines,
+      // Each roster persona's own stock lines, by persona key, beside the instance's (persona-lines plan).
+      personaLines: Object.fromEntries(instance.system.roster.map((p) => [p.key, p.stockLines])),
       systemMoveWords: Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])),
       // A landed move's thread is titled by its kind (0437, move_thread_title); the kinds with none are titled by their plain words.
       systemThreadTitles: instance.system.threadTitles,

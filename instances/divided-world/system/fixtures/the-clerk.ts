@@ -6,6 +6,7 @@
  * to exercise that path: it starts the season already fussing, with more honeymoon moves a week
  * and a bigger bank than the instance's ordinary honeymoon (still inside the engine's PHASE_CAPS).
  */
+import { STOCK_LINE_KEYS } from '../../../../engine/system/stock.ts';
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
@@ -27,6 +28,7 @@ export const theClerk: Persona = {
   strictness: { visitHours: { least: 6, most: 12 }, bands: ['minor', 'moderate'] },
   weakness: { kind: 'distraction' },
   voice: 'chat',
+  stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'],
   pronouns: PRONOUN_PRESETS.it,
   persuadedBy: 'DRAFT: a citation of the thread\'s own numbers or a form filled in correctly; you are unmoved by volume.',
   selfPrompt: persona({

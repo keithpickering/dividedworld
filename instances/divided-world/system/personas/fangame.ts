@@ -6,6 +6,7 @@
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
+import { stockLines } from '../lines.ts';
 
 const name = 'FanGaME';
 const title = 'Fanatical GML and Mario Expert';
@@ -32,6 +33,8 @@ export const fangame: Persona = {
     ],
   },
   voice: 'chat',
+  // Task 2 of the persona-lines plan replaces this with the persona's own set.
+  stockLines,
   pronouns: PRONOUN_PRESETS.he,
   persuadedBy: 'An argument made in platforming terms: a rule explained as a level, a punishment as a pit you can jump.',
   officeLines: {

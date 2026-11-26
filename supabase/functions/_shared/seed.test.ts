@@ -14,11 +14,13 @@ import { PHASE_CAPS } from '../../../engine/system/phases.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance, conduct);
-  assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords', 'systemThreadTitles', 'conductVersion', 'conductSections'].sort());
+  assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'personaLines', 'systemMoveWords', 'systemThreadTitles', 'conductVersion', 'conductSections'].sort());
   assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0340)');
   assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0340)');
   assert.deepEqual(seed.settings.conduct, instance.settings.conduct, 'the open-report limit and the admin address ride with the instance\'s settings');
   assert.deepEqual(seed.settings.systemLines, instance.system.stockLines, 'the tick (0048) fills these lines in SQL');
+  assert.deepEqual(seed.settings.personaLines, Object.fromEntries(instance.system.roster.map((p) => [p.key, p.stockLines])), 'each roster persona\'s own set, by key');
+  assert.deepEqual(Object.keys(seed.settings.personaLines as object), instance.system.roster.map((p) => p.key));
   assert.deepEqual(seed.settings.systemMoveWords, Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])), '{move}, in plain words, by kind');
   assert.equal('announcementsTitle' in seed.system, false, 'no announcements thread is made from the seed: a move lands in its own staff thread (0437)');
   assert.deepEqual(seed.settings.systemThreadTitles, instance.system.threadTitles, 'the titles of a move\'s thread, by kind, where move_thread_title reads them (0437)');

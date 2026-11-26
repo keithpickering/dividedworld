@@ -581,6 +581,29 @@ function packProblems(instance: Instance): string[] {
   return out;
 }
 
+/** The problems with one set of stock lines (the instance's, or a roster persona's): every standing order has lines, each only the tokens its key is given, and no key is for no standing order. `who` opens each message. */
+function checkStockLines(set: SystemContent['stockLines'] | undefined, who: string): string[] {
+  const out: string[] = [];
+  for (const key of STOCK_LINE_KEYS) {
+    const lines = set?.[key];
+    if (!Array.isArray(lines) || !lines.length || lines.some((l) => typeof l !== 'string' || l.trim() === '')) { out.push(`${who} "${key}" is missing; every standing order needs at least one line`); continue; }
+    for (const line of lines) {
+      for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) {
+        const [name, form, ...extra] = token!.split('.');
+        const given = STOCK_LINE_TOKENS[key];
+        if (form !== undefined && given.includes(name!) && (STAFF_TOKENS as readonly string[]).includes(name!)) {
+          if (extra.length || !(PRONOUN_FORMS as readonly string[]).includes(form)) out.push(`${who} "${key}" uses {${token}}, which is not a pronoun form ({${name}} may take one of: ${PRONOUN_FORMS.join(', ')})`);
+        } else if (!given.includes(token!)) {
+          const staff = form !== undefined && (STAFF_TOKENS as readonly string[]).includes(name!) ? '' : form !== undefined ? ` ({${name}} is a name only; only ${STAFF_TOKENS.map((t) => `{${t}}`).join(' and ')} take a pronoun form)` : '';
+          out.push(`${who} "${key}" uses {${token}}, which that line is never given (it may use ${given.map((t) => `{${t}}`).join(', ')})${staff}`);
+        }
+      }
+    }
+  }
+  for (const key of Object.keys(set ?? {})) if (!(STOCK_LINE_KEYS as readonly string[]).includes(key)) out.push(`${who} "${key}" is for no standing order`);
+  return out;
+}
+
 /** Problems with the gear, the trophy catalog, the event lines and the odds that draw from them, each a sentence naming what is wrong. */
 function cosmeticsProblems(instance: Instance): string[] {
   const out: string[] = [];
@@ -1423,23 +1446,8 @@ function systemProblems(instance: Instance): string[] {
     else if (who !== 'boss' && who !== 'beat' && who !== 'filer' && !rosterKeys.has(who)) out.push(`duty "${d}" is assigned to "${who}", who is not "boss", "beat", "filer" or a staff member in the roster`);
   }
   for (const key of Object.keys(duties)) if (!(DUTIES as readonly string[]).includes(key)) out.push(`the duties name "${key}", which is not a duty`);
-  for (const key of STOCK_LINE_KEYS) {
-    const lines = sys.stockLines?.[key];
-    if (!Array.isArray(lines) || !lines.length || lines.some((l) => typeof l !== 'string' || l.trim() === '')) { out.push(`stock line "${key}" is missing; every standing order needs at least one line`); continue; }
-    for (const line of lines) {
-      for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) {
-        const [name, form, ...extra] = token!.split('.');
-        const given = STOCK_LINE_TOKENS[key];
-        if (form !== undefined && given.includes(name!) && (STAFF_TOKENS as readonly string[]).includes(name!)) {
-          if (extra.length || !(PRONOUN_FORMS as readonly string[]).includes(form)) out.push(`stock line "${key}" uses {${token}}, which is not a pronoun form ({${name}} may take one of: ${PRONOUN_FORMS.join(', ')})`);
-        } else if (!given.includes(token!)) {
-          const staff = form !== undefined && (STAFF_TOKENS as readonly string[]).includes(name!) ? '' : form !== undefined ? ` ({${name}} is a name only; only ${STAFF_TOKENS.map((t) => `{${t}}`).join(' and ')} take a pronoun form)` : '';
-          out.push(`stock line "${key}" uses {${token}}, which that line is never given (it may use ${given.map((t) => `{${t}}`).join(', ')})${staff}`);
-        }
-      }
-    }
-  }
-  for (const key of Object.keys(sys.stockLines ?? {})) if (!(STOCK_LINE_KEYS as readonly string[]).includes(key)) out.push(`stock line "${key}" is for no standing order`);
+  out.push(...checkStockLines(sys.stockLines, 'stock line'));
+  for (const p of roster) out.push(...checkStockLines(p.stockLines, `${p.key}'s stock line`));
   if (typeof sys.nameStyle !== 'function') out.push('system.nameStyle is not a function');
   if (typeof sys.nameStyleBrief !== 'string' || sys.nameStyleBrief.trim() === '') out.push('system.nameStyleBrief is empty; the meeting\'s prompt needs the name style in words');
   out.push(...threadWordProblems(sys));

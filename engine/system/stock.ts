@@ -45,3 +45,20 @@ export const STOCK_LINE_TOKENS: Readonly<Record<StockLineKey, readonly string[]>
   requestRefused: ['boss', 'asker'],
   requestLapsed: ['boss', 'asker'],
 };
+
+/**
+ * The keys whose line is owed: a post due from a speaker for an act that has already happened, so when the staff run's call cannot voice it the speaker's stock line is
+ * posted in its place.
+ */
+export const OWED_KEYS = ['moveMet', 'moveExpired', 'moveUnmet', 'moveSuperseded', 'moveReversed', 'moveOverturned', 'requestLapsed', 'bossArrival'] as const satisfies readonly StockLineKey[];
+
+/** The keys of the line written ahead for a move's landing: `moveLanded`, or `ruleSet` for a `setRule`. */
+export const LANDING_KEYS = ['moveLanded', 'ruleSet'] as const satisfies readonly StockLineKey[];
+
+/**
+ * The lines a speaker says at a standing order: the roster persona's own list, found by its key, else the instance's list. The engine never names a persona; an unknown
+ * speaker (a key no longer in the roster) takes the instance's.
+ */
+export function stockLinesOf(system: { readonly roster: readonly { readonly key: string; readonly stockLines: Readonly<Record<StockLineKey, readonly string[]>> }[]; readonly stockLines: Readonly<Record<StockLineKey, readonly string[]>> }, speaker: string, key: StockLineKey): readonly string[] {
+  return (system.roster.find((p) => p.key === speaker)?.stockLines ?? system.stockLines)[key];
+}

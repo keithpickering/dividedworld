@@ -18,6 +18,8 @@ const H = 3_600_000;
 const DAY = 24 * H;
 const NOW = Date.parse('2026-11-01T12:00:00Z');
 const SLOT = '2026-11-01T09:23:00.000Z';
+import { STOCK_LINE_KEYS, stockLinesOf } from '../../../engine/system/stock.ts';
+import type { Persona } from '../../../engine/rules/types.ts';
 const BOSS = dividedWorld.system.firstBoss;
 const OTHER_BOSS = dividedWorld.system.roster.find((b) => b.key !== BOSS && !dividedWorld.system.firstStaff.includes(b.key))!.key;
 const BOARD = '11111111-1111-4111-8111-111111111111';
@@ -339,11 +341,21 @@ test('a rename with an empty or missing description takes the stock line, with a
     const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
     assert.equal(out.status, 'ok');
     const got = d.state.applied[0]!.payload.moves[0].params.description as string;
-    const stock = dividedWorld.system.stockLines.boardDescription.map((l) => l.replaceAll('{board}', NAMES[0]!));
+    const stock = stockLinesOf(dividedWorld.system, BOSS, 'boardDescription').map((l) => l.replaceAll('{board}', NAMES[0]!));
     assert.ok(stock.includes(got), `${JSON.stringify(description)}: ${got}`);
     assert.ok(out.notes.some((n: string) => /description/i.test(n)), 'the result says the stock line stood in');
     assert.equal(m.completions.length, 0);
   }
+});
+
+test('a rename with no description takes the meeting Boss\'s own description line, not the instance\'s', async () => {
+  const own = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, k === 'boardDescription' ? ['The Boss\'s own take on {board}.'] : ['A line.']])) as unknown as Persona['stockLines'];
+  const owned: Instance = { ...quiet, system: { ...quiet.system, roster: quiet.system.roster.map((b) => (b.key === BOSS ? { ...b, stockLines: own } : b)) } };
+  const d = fakeDb();
+  const m = fakeModels(answer([rename(0, { params: { board: BOARD, name: NAMES[0], premise: 'Pirates.' } })]));
+  const out = await run(d.db, m.models, owned, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok');
+  assert.equal(d.state.applied[0]!.payload.moves[0].params.description, `The Boss's own take on ${NAMES[0]}.`);
 });
 
 test('a model failure closes the meeting failed and writes nothing else', async () => {

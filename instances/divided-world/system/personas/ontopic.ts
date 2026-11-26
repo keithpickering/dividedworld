@@ -7,6 +7,7 @@
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
+import { stockLines } from '../lines.ts';
 
 const name = 'ONTOPIC 5.0';
 const title = 'Mod Bot: Topicality Reviewer';
@@ -33,6 +34,8 @@ export const ontopic: Persona = {
     ],
   },
   voice: 'chat',
+  // Task 2 of the persona-lines plan replaces this with the persona's own set.
+  stockLines,
   pronouns: PRONOUN_PRESETS.she,
   persuadedBy: 'An appeal shaped like a review: a star rating, what the post did well, what the post did less well, and a verdict, all about whether the post was on topic. An appeal that brings up the quarrel behind the post, or who started the quarrel, gets reviewed instead, and not kindly.',
   startingHobby: 'reviewing reviews, and then reviewing those',

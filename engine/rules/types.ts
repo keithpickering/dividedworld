@@ -969,6 +969,8 @@ export interface Persona extends StaffSeed {
   readonly startingHobby: string;
   /** A line of temperament, for an admin reading the roster and for the meeting to be told. */
   readonly temperament: string;
+  /** What this persona says, in its own voice, at each standing order when it is the speaker and a model call is out of budget or fails; the instance's own `stockLines` stand in for a speaker who is not in the roster. */
+  readonly stockLines: StockLines;
   /** For a reinvention: the key of the persona whose memory this one picks up. */
   readonly inheritsMemoryOf?: string;
   /** Its own phase numbers as a Boss, clamped into the engine's caps (`PHASE_CAPS`). */

@@ -28,6 +28,7 @@
  */
 import type { Instance } from '../../../engine/rules/types.ts';
 import { shownBeats, type ArcRead } from '../../../engine/system/beats.ts';
+import { stockLinesOf } from '../../../engine/system/stock.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import { DIGEST_MOST, renderDigest, shownRequests, withPronouns, type RawDigest, type RequestLimits } from '../../../engine/system/digest.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName } from '../../../engine/rules/pronouns.ts';
@@ -458,9 +459,9 @@ export async function runMeeting(
     }
 
     const trims: Trim[] = [...repaired.trims];
-    const moves = repaired.moves.map((m, i) => withDescription(tuned, m, `moves[${i}]`, notes));
+    const moves = repaired.moves.map((m, i) => withDescription(tuned, bossKey, m, `moves[${i}]`, notes));
     // A granted request's rename takes the stock description as a rename among the moves does (the request's move is asked without one).
-    const requests = repaired.requests.map((r, i) => (r.move ? { ...r, move: withDescription(tuned, r.move, `requests[${i}].move`, notes) } : r));
+    const requests = repaired.requests.map((r, i) => (r.move ? { ...r, move: withDescription(tuned, bossKey, r.move, `requests[${i}].move`, notes) } : r));
 
     const record = {
       phase: phase.phase,
@@ -568,12 +569,12 @@ function reportRequestReplies(ruled: readonly RuledRequest[], notes: string[]): 
   });
 }
 
-/** A move with its params complete: a rename keeps the Boss's own description, or takes the instance's stock one when the Boss gave none. `at` names the move in the notes (`moves[2]`). */
-function withDescription<M extends { readonly kind: string; readonly params: Readonly<Record<string, unknown>> }>(instance: Instance, move: M, at: string, notes: string[]): M {
+/** A move with its params complete: a rename keeps the Boss's own description, or takes the stock one (the meeting's Boss's own set, else the instance's) when the Boss gave none. `at` names the move in the notes (`moves[2]`). */
+function withDescription<M extends { readonly kind: string; readonly params: Readonly<Record<string, unknown>> }>(instance: Instance, boss: string, move: M, at: string, notes: string[]): M {
   if (move.kind !== 'renameBoard') return move;
   if (typeof move.params['description'] === 'string' && move.params['description'] !== '') return move;
   const name = String(move.params['name']);
-  const lines = instance.system.stockLines.boardDescription;
+  const lines = stockLinesOf(instance.system, boss, 'boardDescription');
   // The same name always draws the same line, so a retried meeting writes what the first would have.
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;

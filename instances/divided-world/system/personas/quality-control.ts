@@ -10,6 +10,7 @@
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
+import { stockLines } from '../lines.ts';
 
 const name = 'QC-1000';
 const title = 'Mod Bot: Submissions Desk';
@@ -37,6 +38,8 @@ export const qualityControl: Persona = {
     ],
   },
   voice: 'chat',
+  // Task 2 of the persona-lines plan replaces this with the persona's own set.
+  stockLines,
   pronouns: PRONOUN_PRESETS.he,
   persuadedBy: 'A resubmission: the plea admits what was wrong, lists what changed in a short changelog, and gives credit to somebody. Unmoved by "this is just a demo".',
   startingHobby: 'the queue (reading the queue, sorting the queue, describing the queue to people who did not ask)',

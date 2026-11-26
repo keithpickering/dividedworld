@@ -5,6 +5,7 @@
  * This one is a hype-man and showman: everything is the biggest night in the history of the board.
  * It overrides nothing, so it runs on the instance's ordinary curve.
  */
+import { STOCK_LINE_KEYS } from '../../../../engine/system/stock.ts';
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
@@ -25,6 +26,7 @@ export const hypeMan: Persona = {
   strictness: { visitHours: { least: 2, most: 4 }, bands: ['moderate', 'severe'] },
   weakness: { kind: 'bribe', price: 150 },
   voice: 'chat',
+  stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'],
   pronouns: PRONOUN_PRESETS.it,
   persuadedBy: 'DRAFT: a promo cut with real energy that makes the case sound like the main event.',
   selfPrompt: persona({

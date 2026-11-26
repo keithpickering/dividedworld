@@ -110,6 +110,7 @@ const botFields = {
   beats: ['general'], petRules: ['noBump'], strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
   weakness: { kind: 'quiz', questions: [{ question: 'Which is a number?', choices: ['one', 'cat'], answer: 'one' }] },
   voice: 'chat', persuadedBy: 'Pedantry.',
+  stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'],
 } as const;
 const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', ...bossFields, ...botFields };
 const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', selfPrompt: 'You are a bot.', ...bossFields, ...botFields };
@@ -514,6 +515,21 @@ test('a standing order with no stock line is a problem, and so is one with an em
   assert.match(said(withSystem({ stockLines: rest as SystemContent['stockLines'] })), /stock line "moveExpired"/);
   assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: [] } })), /stock line "moveMet"/);
   assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: ['  '] } })), /stock line "moveMet"/);
+});
+
+test('a roster persona\'s own set is checked like the instance\'s, naming the persona and the key', () => {
+  const own = bot.stockLines;
+  const { stockLines: _gone, ...noSet } = bot;
+  assert.match(said(withSystem({ roster: [boss, noSet as unknown as Persona] })), /bot-a's stock line "moveMet" is missing/);
+  const { moveExpired: _x, ...rest } = own;
+  assert.match(said(withBot({ stockLines: rest as Persona['stockLines'] })), /bot-a's stock line "moveExpired" is missing/);
+  assert.match(said(withBot({ stockLines: { ...own, moveMet: [] } })), /bot-a's stock line "moveMet" is missing/);
+  assert.match(said(withBot({ stockLines: { ...own, moveMet: ['  '] } })), /bot-a's stock line "moveMet" is missing/);
+  assert.match(said(withBot({ stockLines: { ...own, bogus: ['A line.'] } as never })), /bot-a's stock line "bogus" is for no standing order/);
+  assert.match(said(withBot({ stockLines: { ...own, moveLanded: ['Denied, {appellant}.'] } })), /bot-a's stock line "moveLanded" uses \{appellant\}/);
+  assert.match(said(withBoss({ stockLines: { ...own, visitFiled: ['{boss.their} visit.'] } })), /boss-a's stock line "visitFiled" uses \{boss\.their\}/);
+  assert.doesNotMatch(said(withBot({ stockLines: { ...own, moveLanded: ['Denied, {appellant}.'] } })), /boss-a/);
+  assert.deepEqual(instanceProblems(withBot({ stockLines: { ...own, moveMet: ['The {move} is over.'] } })), []);
 });
 
 test('a stock line naming a token its key does not offer is a problem', () => {
