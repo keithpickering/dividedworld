@@ -17,6 +17,7 @@
 --                         never posted and never kept. It takes the visit's open row for update, so a talk-down racing it either ends first (and the write finds the visit over) or waits for the write and posts it.
 -- pending_concessions(most)   service only. The open non-quiz visits with no row, started less than `modBots.concessionWriteMinutes` ago (15 where the setting is missing), oldest first, in the columns pending_quizzes answers.
 --                         There is no bank requirement: a stock line (or none) always stands behind a missing concession.
+-- visit_concession_post(visit)   anon, authenticated and service: the post's Act of a visit's concession post, else null (a refused post, no row); never `error` or `source`. A public fact about a public post.
 -- concession_calls_today()    service only. Today's (UTC) ledger calls for the duty `concession`, as quiz_calls_today counts quizzes.
 -- backfill_visit_concessions()   service only, and run once below: a `none` row (why `before`) for every visit that has none, open or ended, so no staff run calls for an old visit and an open one talked down posts its stock. Idempotent.
 -- post_concession(visit, interceptor)   internal: security definer, with no grant to any role; only intercept and distract_visits call it. Posts the concession in a block of its own, so a refusal (a lockout, a benched or waiting
@@ -224,6 +225,15 @@ revoke execute on function concession_line_index(uuid, integer), write_visit_con
 grant execute on function concession_line_index(uuid, integer), write_visit_concession(uuid, text, text, text), pending_concessions(integer), concession_calls_today(), backfill_visit_concessions() to service_role;
 -- post_concession is the one function here no role calls: intercept and distract_visits (security definer, the owner's) are its only callers.
 revoke execute on function post_concession(uuid, uuid) from public, anon, authenticated, service_role;
+
+-- The concession post's id, for the thread page's visit (the web client's read, an allowed RPC). Only the post's Act is answered, never `source` or `error`, and null where the post was refused or none was tried. The post is a
+-- public post by a Mod in the visit's thread (anyone reading the thread sees it), and whether it exists is the same for every caller, so this proves no private fact: it names no owner, class or reaction.
+create function visit_concession_post(visit uuid) returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select p.post_act from visit_concession_posts p where p.visit_act = visit_concession_post.visit
+$$;
+revoke execute on function visit_concession_post(uuid) from public;
+grant execute on function visit_concession_post(uuid) to anon, authenticated, service_role;
 
 -- Visits already held: every visit, open or ended, is given a `none` row (none becomes pending, no staff run calls for an old visit, and an open one talked down posts its stock).
 select backfill_visit_concessions();

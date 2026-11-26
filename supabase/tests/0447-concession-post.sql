@@ -834,3 +834,43 @@ begin
   -- The concession post itself waits for no one: a Mod's post to a post is not a reply to the Mod.
   if exists (select 1 from pool_waiting_in_thread(t, array['cp-m3'], since) w where w.act = conc) then raise exception 'the concession post counted as waiting'; end if;
 end $$;
+
+-- ---- 13. visit_concession_post: the concession post's id, for anyone, and nothing else ----
+do $$
+declare
+  author uuid := pg_temp.chr('Cp Bob A');
+  ann uuid := pg_temp.chr('Cp Ann A');
+  t uuid := tests.thread('Cp public read');
+  v_done uuid := pg_temp.visit(tests.post(author, t, 'Talked down, and posted.'), 'cp-m2');
+  v_open uuid := pg_temp.visit(tests.post(author, t, 'Not talked down.'), 'cp-m2');
+  v_refused uuid := pg_temp.visit(tests.post(author, t, 'Talked down, post refused.'), 'cp-m4');
+  posted uuid;
+  got uuid;
+  why text;
+begin
+  perform pg_temp.try(ann, v_done);
+  execute format($f$create function pg_temp.plant_refusal() returns trigger language plpgsql as $b$ begin raise exception 'planted refusal' using errcode = 'P0001'; end $b$ $f$);
+  execute format('create trigger cp_plant_refusal after insert on acts for each row when (new.kind = %L and new.character = %L) execute function pg_temp.plant_refusal()', 'post', pg_temp.modchar('cp-m4'));
+  perform pg_temp.try(ann, v_refused);
+  drop trigger cp_plant_refusal on acts;
+  select r.post_act into posted from visit_concession_posts r where r.visit_act = v_done;
+  if posted is null then raise exception 'the world posted no concession'; end if;
+  if (select r.error from visit_concession_posts r where r.visit_act = v_refused) is null then raise exception 'the refused visit has no error recorded'; end if;
+  -- Signed in and anonymous callers alike are answered the post's id, and nothing from a refused or missing row.
+  perform tests.become(pg_temp.ann());
+  got := visit_concession_post(v_done);
+  perform tests.unbecome();
+  if got is distinct from posted then raise exception 'a player was answered % (want %)', got, posted; end if;
+  perform tests.become_anon();
+  got := visit_concession_post(v_done);
+  if got is distinct from posted then raise exception 'an anonymous caller was answered % (want %)', got, posted; end if;
+  if visit_concession_post(v_open) is not null then raise exception 'a visit not talked down answered a post'; end if;
+  if visit_concession_post(v_refused) is not null then raise exception 'a refused post answered an id'; end if;
+  if visit_concession_post(gen_random_uuid()) is not null then raise exception 'an unknown visit answered a post'; end if;
+  why := pg_temp.refusal('select * from visit_concession_posts');
+  perform tests.unbecome();
+  if why is null or why !~ '^42501' then raise exception 'an anonymous caller read the table: %', why; end if;
+  if has_function_privilege('public', 'visit_concession_post(uuid)', 'execute') is not true and not has_function_privilege('anon', 'visit_concession_post(uuid)', 'execute') then raise exception 'anon cannot call it'; end if;
+  if not has_function_privilege('authenticated', 'visit_concession_post(uuid)', 'execute') or not has_function_privilege('service_role', 'visit_concession_post(uuid)', 'execute') then raise exception 'a signed-in caller or the service cannot call it'; end if;
+  if pg_get_function_result('visit_concession_post(uuid)'::regprocedure) is distinct from 'uuid' then raise exception 'it answers more than an id'; end if;
+end $$;
