@@ -49,7 +49,7 @@ declare
   said text[];
   row visit_quizzes%rowtype;
 begin
-  if v is null or (select count(*) from visit_quizzes) <> 0 or (select quiz_at from visits_open where visit_act = v) is null then raise exception 'the race world has no pending quiz visit'; end if;
+  if v is null or (select count(*) from visit_quizzes) is distinct from 0::bigint or (select quiz_at from visits_open where visit_act = v) is null then raise exception 'the race world has no pending quiz visit'; end if;
   said := tests.race_service(
     format($s$ insert into public.wr_answers select 'run', (w ->> 'written')::boolean, w ->> 'question', w ->> 'source' from (select write_visit_quiz(%L, 'model', 'Written by the run?', '["Yes", "No"]'::jsonb, 'Yes') as w) x $s$, v),
     format($s$ insert into public.wr_answers select 'tick', (w ->> 'written')::boolean, w ->> 'question', w ->> 'source' from (select write_visit_quiz(%L, 'bank', 'Written by the tick?', '["Maybe", "Perhaps"]'::jsonb, 'Maybe') as w) x $s$, v));

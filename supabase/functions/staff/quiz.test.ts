@@ -199,9 +199,25 @@ test('no bank question leaves the visit pending and says so on the record; a dat
   assert.equal(d.count('write_visit_quiz'), 0);
   assert.equal(out.quizzes[0]!.status, 'left');
   assert.match(d.records[0]!.record.why, /no bank question/);
-  const e = fakeDb({ pending: [pend(V1, P1), pend(V2, P2)], failOn: { pool_read: 'always' } });
+  const e = fakeDb({ pending: [pend(V1, P1), pend(V2, P2)], failOn: { bank_quiz_for: 'always' } });
   const bad = await run(e, fakeModels());
   assert.deepEqual(bad.quizzes.map((q) => q.status), ['left', 'left']);
+});
+
+test('a failed read banks with the reason on the record; a post absent from the read banks too; no call is made for either', async () => {
+  const d = fakeDb({ pending: [pend(V1, P1), pend(V2, P2)], failOn: { pool_read: 'always' } });
+  const m = fakeModels();
+  const out = await run(d, m);
+  assert.equal(m.chats.length, 0);
+  assert.deepEqual(d.of('write_visit_quiz').map((a) => a.source), ['bank', 'bank']);
+  assert.deepEqual(out.quizzes.map((q) => q.status), ['written', 'written']);
+  assert.match(d.records[0]!.record.why, /^the read failed: /);
+  const gone = fakeDb({ extras: { act: 'someone-elses' } });
+  const n = fakeModels();
+  await run(gone, n);
+  assert.equal(n.chats.length, 0);
+  assert.equal(gone.of('write_visit_quiz')[0]!.source, 'bank');
+  assert.match(gone.records[0]!.record.why, /the post inspected cannot be read/);
 });
 
 test('nothing pending reads nothing else', async () => {

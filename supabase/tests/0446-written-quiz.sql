@@ -496,7 +496,7 @@ begin
   if setting_modbots(old) is null then raise exception 'the planted row already passes the check'; end if;
   n := migrate_modbots_quiz_fields();
   select value into got from settings where key = 'modBots';
-  if n <> 1 or got -> 'quizWriteMinutes' is distinct from '15'::jsonb or got -> 'quizQuestionsPerDay' is distinct from '0'::jsonb or setting_modbots(got) is not null then raise exception 'the row was not migrated: % / %', n, got; end if;
+  if n is distinct from 1 or got -> 'quizWriteMinutes' is distinct from '15'::jsonb or got -> 'quizQuestionsPerDay' is distinct from '0'::jsonb or setting_modbots(got) is not null then raise exception 'the row was not migrated: % / %', n, got; end if;
   -- One missing: only that one is added, the other keeps its value.
   alter table settings disable trigger settings_held;
   update settings set value = old || '{"quizQuestionsPerDay": 7}' where key = 'modBots';
@@ -506,6 +506,6 @@ begin
   if got -> 'quizQuestionsPerDay' is distinct from '7'::jsonb or got -> 'quizWriteMinutes' is distinct from '15'::jsonb then raise exception 'a field the row held was changed, or the missing one not added: %', got; end if;
   -- A row that has both is left as it was.
   update settings set value = was where key = 'modBots';
-  if migrate_modbots_quiz_fields() <> 0 or (select value from settings where key = 'modBots') is distinct from was then raise exception 'a complete row was touched'; end if;
+  if migrate_modbots_quiz_fields() is distinct from 0 or (select value from settings where key = 'modBots') is distinct from was then raise exception 'a complete row was touched'; end if;
   perform set_config('kayfabb.seeding', 'off', true);
 end $$;
