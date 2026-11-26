@@ -7,6 +7,7 @@
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
+import { stockLines } from '../lines.ts';
 
 const name = 'ONTOPIC 5.0';
 const title = 'Mod Bot: Topicality Reviewer';
@@ -16,6 +17,8 @@ export const ontopic: Persona = {
   name,
   title,
   signature: '★★★★★ "Exactly where it belongs." (ONTOPIC 5.0, reviewing this signature)',
+  // TEMPORARY (persona-lines Task 1): the instance's own set, until Task 2 writes this persona's lines.
+  stockLines,
   beats: ['pointless-post-palace'],
   petRules: ['requiredWord', 'noDuplicateTitle', 'noNecropost'],
   strictness: { visitHours: { least: 3, most: 8 }, bands: ['minor', 'moderate'] },

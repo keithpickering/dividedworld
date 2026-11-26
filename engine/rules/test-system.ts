@@ -54,14 +54,15 @@ export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 
   cosmetics: { gear: { wornMost: 12, reach: 0.4 }, trophies: { shownMost: 3 }, events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 } } },
 };
 
+const personaLines = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'];
 const botFields = {
   beats: [], petRules: [], strictness: { visitHours: { least: 2, most: 12 }, bands: [] }, weakness: { kind: 'distraction' }, voice: 'chat', persuadedBy: 'Pedantry.',
 } as const;
 
 export const testSystem: SystemContent = {
   roster: [
-    { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', officeLines: { boss: 'You run the place.', member: 'You used to run the place.' }, startingHobby: 'tomatoes', temperament: 'petty', ...botFields },
-    { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', selfPrompt: 'You are a bot.', startingHobby: 'clipboards', temperament: 'earnest', ...botFields },
+    { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', stockLines: personaLines, selfPrompt: 'You are a boss.', officeLines: { boss: 'You run the place.', member: 'You used to run the place.' }, startingHobby: 'tomatoes', temperament: 'petty', ...botFields },
+    { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', stockLines: personaLines, selfPrompt: 'You are a bot.', startingHobby: 'clipboards', temperament: 'earnest', ...botFields },
   ],
   firstBoss: 'boss-a',
   threadTitles: {},

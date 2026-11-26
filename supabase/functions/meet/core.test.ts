@@ -1,3 +1,4 @@
+import { stockLinesOf } from '../../../engine/system/stock.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runMeeting } from './core.ts';
@@ -339,7 +340,7 @@ test('a rename with an empty or missing description takes the stock line, with a
     const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
     assert.equal(out.status, 'ok');
     const got = d.state.applied[0]!.payload.moves[0].params.description as string;
-    const stock = dividedWorld.system.stockLines.boardDescription.map((l) => l.replaceAll('{board}', NAMES[0]!));
+    const stock = stockLinesOf(dividedWorld.system, BOSS, 'boardDescription').map((l) => l.replaceAll('{board}', NAMES[0]!));
     assert.ok(stock.includes(got), `${JSON.stringify(description)}: ${got}`);
     assert.ok(out.notes.some((n: string) => /description/i.test(n)), 'the result says the stock line stood in');
     assert.equal(m.completions.length, 0);

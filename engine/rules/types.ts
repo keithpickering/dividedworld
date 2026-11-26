@@ -995,6 +995,8 @@ export interface Persona extends StaffSeed {
   readonly voice: 'chat' | 'oldVoice';
   /** What persuades it on appeal, a line for its appeal prompt. */
   readonly persuadedBy: string;
+  /** What it says at each standing order when a model call is out of budget or fails, in its own voice; the instance's `stockLines` stand in only for a speaker the roster does not hold. */
+  readonly stockLines: StockLines;
 }
 
 /** Who does a duty: the season's Boss, the bot on the board's beat, the bot that filed, or a staff member by key. */

@@ -111,8 +111,9 @@ const botFields = {
   weakness: { kind: 'quiz', questions: [{ question: 'Which is a number?', choices: ['one', 'cat'], answer: 'one' }] },
   voice: 'chat', persuadedBy: 'Pedantry.',
 } as const;
-const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', ...bossFields, ...botFields };
-const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', selfPrompt: 'You are a bot.', ...bossFields, ...botFields };
+const personaLines = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'];
+const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', stockLines: personaLines, ...bossFields, ...botFields };
+const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', selfPrompt: 'You are a bot.', stockLines: personaLines, ...bossFields, ...botFields };
 
 const system: SystemContent = {
   roster: [boss, bot],
@@ -519,6 +520,18 @@ test('a standing order with no stock line is a problem, and so is one with an em
 test('a stock line naming a token its key does not offer is a problem', () => {
   assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: ['Well done, {boss}.'] } })), /stock line "moveMet".*\{boss\}/);
   assert.deepEqual(instanceProblems(withSystem({ stockLines: { ...system.stockLines, moveMet: ['The {move} is over.'] } })), []);
+});
+
+test('a persona\'s own stock lines are checked as the instance\'s are, each problem naming the persona and the key', () => {
+  assert.match(said(withBot({ stockLines: undefined as never })), /bot-a has no stock lines/);
+  const { moveExpired: _x, ...rest } = personaLines;
+  assert.match(said(withBot({ stockLines: rest as Persona['stockLines'] })), /bot-a's stock line "moveExpired"/);
+  assert.match(said(withBoss({ stockLines: { ...personaLines, moveMet: [] } })), /boss-a's stock line "moveMet"/);
+  assert.match(said(withBot({ stockLines: { ...personaLines, moveMet: ['  '] } })), /bot-a's stock line "moveMet"/);
+  assert.match(said(withBot({ stockLines: { ...personaLines, bogus: ['A line.'] } as never })), /bot-a's stock line "bogus" is for no standing order/);
+  assert.match(said(withBot({ stockLines: { ...personaLines, moveLanded: ['Hi {appellant}.'] } })), /bot-a's stock line "moveLanded" uses \{appellant\}/);
+  assert.match(said(withBot({ stockLines: { ...personaLines, visitFiled: ['Note from {boss.their} desk.'] } })), /bot-a's stock line "visitFiled" uses \{boss\.their\}/);
+  assert.deepEqual(instanceProblems(withBot({ stockLines: { ...personaLines, moveMet: ['The {move} is over.'] } })), []);
 });
 
 test('firstBoss must be in the roster, and an empty roster is flagged', () => {

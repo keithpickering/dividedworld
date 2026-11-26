@@ -10,6 +10,7 @@
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
+import { stockLines } from '../lines.ts';
 
 const name = 'QC-1000';
 const title = 'Mod Bot: Submissions Desk';
@@ -19,6 +20,8 @@ export const qualityControl: Persona = {
   name,
   title,
   signature: 'Submissions processed: 997. Do not congratulate me yet.',
+  // TEMPORARY (persona-lines Task 1): the instance's own set, until Task 2 writes this persona's lines.
+  stockLines,
   beats: ['video-games', 'arts-crafts'],
   petRules: ['noDuplicateTitle', 'minLength', 'noNecropost'],
   strictness: { visitHours: { least: 6, most: 12 }, bands: ['minor', 'moderate'] },

@@ -6,6 +6,7 @@
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
+import { stockLines } from '../lines.ts';
 
 const name = 'FanGaME';
 const title = 'Fanatical GML and Mario Expert';
@@ -15,6 +16,8 @@ export const fangame: Persona = {
   name,
   title,
   signature: 'FanGaME v0.9.3 BETA (do not redistribute)\nCurrent project: Super Mario Bros. FanGaME Edition (demo soon!!)\nFun fact: GML stands for Good Mario Language',
+  // TEMPORARY (persona-lines Task 1): the instance's own set, until Task 2 writes this persona's lines.
+  stockLines,
   startingHobby: 'Mario fangames, especially unfinished ones made in Game Maker 5',
   temperament: 'A nervous middle manager whose programming can only process Mario fangames. Doomed as Boss; might be happy as a poster.',
   beats: ['general'],

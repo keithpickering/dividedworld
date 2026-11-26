@@ -6,6 +6,7 @@
  * Each key's lines are a list, one chosen at random, so a stock line wears thin more slowly.
  */
 import { PRONOUN_FORMS } from '../rules/pronouns.ts';
+import type { SystemContent } from '../rules/types.ts';
 
 export { PRONOUN_FORMS };
 
@@ -45,3 +46,14 @@ export const STOCK_LINE_TOKENS: Readonly<Record<StockLineKey, readonly string[]>
   requestRefused: ['boss', 'asker'],
   requestLapsed: ['boss', 'asker'],
 };
+
+/** The keys of a line owed for an act that has already happened: posted by its speaker's call, else from the speaker's stock lines, else not at all. */
+export const OWED_KEYS = ['moveMet', 'moveExpired', 'moveUnmet', 'moveSuperseded', 'moveReversed', 'moveOverturned', 'requestLapsed', 'bossArrival'] as const satisfies readonly StockLineKey[];
+
+/** The keys of a line written ahead for a move's landing: `moveLanded`, or `ruleSet` for a `setRule`. */
+export const LANDING_KEYS = ['moveLanded', 'ruleSet'] as const satisfies readonly StockLineKey[];
+
+/** The lines a speaker says at a standing order: the roster persona's own list for the key, else the instance's. */
+export function stockLinesOf(system: Pick<SystemContent, 'roster' | 'stockLines'>, speaker: string, key: StockLineKey): readonly string[] {
+  return system.roster.find((p) => p.key === speaker)?.stockLines[key] ?? system.stockLines[key];
+}
