@@ -15,7 +15,8 @@
 import { parse, type QuoteSpan } from '../bbcode/parse.ts';
 import { quoteNorm, quoteSource, quoteWords } from '../bbcode/quoted.ts';
 import { taggedName, type PronounSet } from '../rules/pronouns.ts';
-import type { SeenPlay } from '../rules/cards.ts';
+import type { Cover, CoverPlay, SeenPlay } from '../rules/cards.ts';
+import { coveredBody } from './cover.ts';
 import { originLine, playLine, pollLines, reactionLine, rewoundLine, type Extras, type ReadOrigin, type ReadOriginPost, type ReadPlay, type ReadPoll, type Reactions } from './extras.ts';
 import { amountWords, ago } from './when.ts';
 
@@ -52,6 +53,8 @@ export interface ReadOptions {
   readonly readMost: number;
   readonly now: number;
   readonly seen: (card: string | null, p: SeenPlay) => string | null;
+  /** The stretches a play of a card covers in a post's visible text (`CardRules.covers`; null for a card with none, or a back with no card); absent means none. Read bodies are covered before they are marked or sized. */
+  readonly covers?: (card: string | null, p: CoverPlay) => readonly Cover[] | null;
   readonly origin: ReadOrigin | null;
   readonly cardName?: (key: string) => string | undefined;
   readonly groupName?: (key: string) => string | undefined;
@@ -169,8 +172,11 @@ export function originBlock(origin: ReadOrigin, o: ReadOptions): string[] {
   const who = post.pronouns === null || post.pronouns === undefined ? name : taggedName(name, post.pronouns);
   const where = post.seq === null || post.seq === undefined ? `the Updates post "${post.title}"` : `post #${post.seq} in "${post.title}"`;
   const x = extraLines(post, o);
-  return [...out, `${who} [origin, ${where}]`, ...x.before, post.body, ...x.after];
+  return [...out, `${who} [origin, ${where}]`, ...x.before, coverRead(post.body, post.plays, o), ...x.after];
 }
+
+/** A body as the board shows it: covered by its plays (`o.covers`). Reading only: the quote comparison (`sourceOf`) and every rule check keep the post's own words. */
+const coverRead = (body: string, plays: readonly ReadPlay[], o: Pick<ReadOptions, 'covers'>): string => (o.covers === undefined ? body : coveredBody(body, plays, o.covers));
 
 const length = (lines: readonly string[]): number => lines.reduce((n, l) => n + l.length, 0);
 
@@ -185,8 +191,10 @@ export function readThread(all: readonly ReadCandidate[], focus: ReadFocus, o: R
   for (const c of all) if (!byAct.has(c.act)) byAct.set(c.act, c); // the first of an act wins
   const cands = [...byAct.values()];
   const lower = lowerActs(byAct);
-  const bodies = new Map<string, string>(cands.map((c) => [c.act, markWith(c.body, lower, focus.self)]));
-  const thirds = new Map<string, string>(cands.map((c) => [c.act, focus.self === null ? bodies.get(c.act)! : markWith(c.body, lower, null)]));
+  // Each body is covered first (what the board shows), then its quotes are marked; a quote is still compared with the quoted post's own words (`sourceOf` reads `c.body`, never the covered one).
+  const read = new Map<string, string>(cands.map((c) => [c.act, coverRead(c.body, c.plays, o)]));
+  const bodies = new Map<string, string>(cands.map((c) => [c.act, markWith(read.get(c.act)!, lower, focus.self)]));
+  const thirds = new Map<string, string>(cands.map((c) => [c.act, focus.self === null ? bodies.get(c.act)! : markWith(read.get(c.act)!, lower, null)]));
   const extras = new Map<string, { before: string[]; after: string[] }>(cands.map((c) => [c.act, extraLines(c, o)]));
   const opener = cands.reduce<ReadCandidate | undefined>((m, c) => (m === undefined || c.seq < m.seq ? c : m), undefined);
   const originLines = o.origin === null || opener === undefined ? [] : originBlock(o.origin, o);

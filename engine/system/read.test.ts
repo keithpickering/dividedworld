@@ -398,3 +398,53 @@ test('a play\'s public text and covered share reach the instance\'s seen sentenc
   one(cand(1, 'a', 'Hi', { plays: [play] }), { seen: (_c, p) => { got.push([p.text, p.covered]); return null; } });
   assert.deepEqual(got, [['and another thing', 0.5]]);
 });
+
+// ---- covers (docs/plans/2026-11-26-autocorrect-reads-plan.md, Task 3) ----
+// A test card: its play covers `config.from` to `config.to` of the visible text with `config.words`.
+const tapeCovers: NonNullable<ReadOptions['covers']> = (card, p) => {
+  if (card !== 'tape') return null;
+  const c = p.config as { from: number; to: number; words: string };
+  return [{ from: c.from, to: c.to, words: c.words }];
+};
+const tapeSeen = (card: string | null) => (card === 'tape' ? 'Tape was put over some words.' : null);
+const taped = (from: number, to: number, words: string) => ({ play: 'pl1', card: 'tape', at: '2026-11-24T12:00:00Z', by: 'Wario', config: { from, to, words }, state: null, text: null, covered: null });
+const coverOpts = { covers: tapeCovers, seen: tapeSeen };
+
+test('a covered post reads its covered words, with its play line under them', () => {
+  const a = cand(1, 'wario', 'Hello world', { plays: [taped(0, 5, 'MEEP')] });
+  const lines = readLines(rt([a], { self: null, must: [] }, 10_000, coverOpts));
+  const at = lines.indexOf('MEEP world');
+  assert.ok(at >= 0, lines.join('\n'));
+  assert.equal(lines[at + 1], '[Tape was put over some words.]');
+  assert.ok(!lines.some((l) => l.includes('Hello')), 'the words under the cover are not read');
+  // No `covers` option: the words as written.
+  assert.ok(readLines(rt([a], { self: null, must: [] }, 10_000, { seen: tapeSeen })).includes('Hello world'));
+});
+
+test('a quote of a covered post is marked where it matches the quoted post\'s own words, and not where it matches the covered words', () => {
+  const a = cand(1, 'wario', 'Hello world', { plays: [taped(0, 5, 'MEEP')] });
+  const real = cand(2, 'luigi', q(a.act, 'Hello world') + ' agreed', { quotes: [a.act] });
+  const seen = cand(3, 'peach', q(a.act, 'MEEP world') + ' agreed', { quotes: [a.act] });
+  const r = rt([a, real, seen], { self: null, must: [] }, 10_000, coverOpts);
+  assert.equal(r.posts[0]!.body, 'MEEP world');
+  assert.equal(r.posts[1]!.body, '[quoting wario, post #1] agreed', 'a quote holds the words as they were written');
+  assert.equal(r.posts[2]!.body, q(a.act, 'MEEP world') + ' agreed', 'the covered words are not the post\'s words');
+  assert.equal(r.posts[1]!.thirdPerson, '[quoting wario, post #1] agreed');
+});
+
+test('a post is read, sized and cut by its covered body', () => {
+  const words = 'X'.repeat(300);
+  const a = cand(1, 'wario', 'Hello world', { plays: [taped(0, 5, words)] });
+  assert.equal(rt([a], { self: null, must: [] }, 200, { seen: tapeSeen }).posts.length, 1);
+  assert.equal(rt([a], { self: null, must: [] }, 200, coverOpts).posts.length, 0, 'the covered body is longer than the ceiling');
+  assert.equal(rt([a], { self: null, must: [] }, 1000, coverOpts).posts.length, 1);
+});
+
+test('the origin post is covered by its own plays', () => {
+  const opener = cand(1, 'wario', 'Start', { name: 'Wario' });
+  const o = origin();
+  const withPlay: ReadOrigin = { ...o, post: { ...o.post!, body: 'Original words', plays: [taped(0, 8, 'Taped')] } };
+  const lines = readLines(rt([opener], { self: null, must: [] }, 10_000, { ...coverOpts, origin: withPlay }));
+  assert.ok(lines.includes('Taped words'), lines.join('\n'));
+  assert.ok(!lines.includes('Original words'));
+});

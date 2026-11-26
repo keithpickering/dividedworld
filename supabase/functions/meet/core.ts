@@ -348,6 +348,7 @@ export async function runMeeting(
       renderDigest(digest, memory, titles, requestLimits, {
         now: slotAt,
         seen: (card, p) => (card === null ? null : cardsByKey.get(card)?.seen?.(p) ?? null),
+        covers: (card, p) => (card === null ? null : cardsByKey.get(card)?.covers?.(p) ?? null),
         cardName: (key) => cardsByKey.get(key)?.name,
       }),
       ...(due.length ? ['', ...inheritedText(due, settings.inheritanceGraceDays)] : []),

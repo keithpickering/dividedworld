@@ -493,3 +493,25 @@ test('a tied poll in short form keeps its closing tail and its counts match the 
   const row = renderDigest(d, null, [], undefined, seeOpts).split('\n').find((l) => l.startsWith('Luigi (they/them), 7 reactions'))!;
   assert.ok(/, closes in 2 hours\]$/.test(row), row.slice(-120));
 });
+
+// ---- covers (docs/plans/2026-11-26-autocorrect-reads-plan.md, Task 3) ----
+test('an excerpt with a covering play is read covered; a request\'s body is not', () => {
+  const tape = { ...play(1, 'tape'), config: { from: 0, to: 2, words: 'Not' } };
+  const covers = (card: string | null, p: { config: unknown }) => (card === 'tape' ? [p.config as { from: number; to: number; words: string }] : null);
+  const words = { ...seeOpts, covers };
+  const d: Digest = {
+    ...small,
+    bossReactions: [{ act: id(9), thread: id(1), total: 5, tally: { fire: 4 }, text: 'my own hot take', extras: { ...withExtras, plays: [tape] } }],
+    excerpts: [{ ...small.excerpts[0]!, extras: { ...withExtras, plays: [tape] } }],
+    conversations: [{ thread: id(1), title: 'T', persona: { staff: 's', character: id(2) }, with: [], turns: 1, reactions: 2,
+      exchange: { text: 'persona line', extras: { ...withExtras, poll: null, plays: [] }, reply: { character: id(3), text: 'asker line', extras: { ...withExtras, plays: [tape] } } } }],
+    requests: [request(1, 'It was me all along')],
+  };
+  const text = renderDigest(d, memory, [], undefined, words);
+  assert.ok(text.includes('Luigi (they/them), 7 reactions: Not was me all along'), text);
+  assert.ok(text.includes('The post: Not own hot take'), 'a standout\'s post');
+  assert.ok(text.includes('wrote "Notker line"'), 'an exchange');
+  assert.ok(text.includes('persona line'), 'a post with no plays is as written');
+  assert.ok(text.includes('It was me all along'), 'a request\'s body is whole');
+  assert.ok(renderDigest(d, memory, [], undefined, seeOpts).includes('7 reactions: It was me all along'), 'with no covers, as written');
+});

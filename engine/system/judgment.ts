@@ -43,6 +43,7 @@ import { noteMost, type Memory } from './memory.ts';
 import { BANDS, MOVE_KINDS, moveKind, moveParamsProblems, readBlankOptionals } from './moves.ts';
 import type { Rule, Trim } from './validate.ts';
 import { extraLines, originBlock, READ_WORDS, readLines, type ReadOptions, type ReadPost, type ThreadReadResult } from './read.ts';
+import { coveredBody } from './cover.ts';
 import type { PostExtras, ReadOrigin } from './extras.ts';
 
 /** The most a filing line may say. */
@@ -1043,7 +1044,7 @@ const extrasOf = (p: PatrolSamplePost) => ({ poll: p.poll ?? null, plays: p.play
 function patrolPostLines(p: PatrolSamplePost, reading: Omit<ReadOptions, 'origin'>): string[] {
   const o: ReadOptions = { ...reading, origin: null };
   const x = extraLines(extrasOf(p), o);
-  return [...(p.origin ? originBlock(p.origin, o) : []), ...x.before, `"${p.body}"`, ...x.after];
+  return [...(p.origin ? originBlock(p.origin, o) : []), ...x.before, `"${reading.covers === undefined ? p.body : coveredBody(p.body, p.plays ?? [], reading.covers)}"`, ...x.after];
 }
 
 /**

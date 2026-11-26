@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PRONOUN_PRESETS, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { readLines } from '../../../engine/system/read.ts';
-import { readContext, readOf, type PoolRead } from './pool-read.ts';
+import { readContext, readOf, readingOf, type PoolRead } from './pool-read.ts';
 
 const NOW = Date.parse('2026-11-25T12:00:00Z');
 const DAY = 24 * 3_600_000;
@@ -60,4 +60,16 @@ test('pronouns: a null set takes the fallback, a given set is kept, for posts an
   const originTag = (l: string[]): string | undefined => l.find((x) => x.includes('[origin,'));
   assert.equal(originTag(lines({ title: 'T', self: null, posts: [post(1)], origin: o(null) })), 'Wario (it/its) [origin, post #4 in "T"]', 'null origin pronouns take the fallback');
   assert.equal(originTag(readLines(readOf({ title: 'T', self: null, posts: [post(1)], origin: o(HE) }, IT, [], 100_000, ctx))), 'Wario (he/him) [origin, post #4 in "T"]', 'a given set is kept');
+});
+
+test('readingOf reaches a card\'s covers by key, and gives null for an unknown card or a back with no card', () => {
+  const cctx = readContext({ cards: [{ key: 'tape', name: 'Tape', covers: () => [{ from: 0, to: 2, words: 'Not' }] }, { key: 'plain', name: 'Plain' }], reactions: [] }, NOW);
+  const reading = readingOf(1000, cctx);
+  const p = { config: null, state: null, text: 'It was' };
+  assert.deepEqual(reading.covers!('tape', p), [{ from: 0, to: 2, words: 'Not' }]);
+  assert.equal(reading.covers!('plain', p), null);
+  assert.equal(reading.covers!('gone', p), null);
+  assert.equal(reading.covers!(null, p), null);
+  const l = readLines(readOf({ title: 'T', self: null, posts: [post(1, { body: 'It was me', plays: [{ play: 'p', card: 'tape', at: ago(DAY), by: 'Wario', config: null, state: null, text: null, covered: null }] })] }, IT, [], 100_000, cctx));
+  assert.ok(l.includes('Not me') || l.includes('Not was me'), l.join('\n'));
 });

@@ -1026,3 +1026,16 @@ test('the Mod move schema offers an optional line, and the prompt says what it i
   assert.ok(!move.required.includes('line'), 'optional: a blank never costs the move');
   assert.ok(f.system.includes('the post your move lands with, in your voice; the screens say what it does plainly'), f.system);
 });
+
+test('a patrol sample post is read covered, and the size it counts is the covered body\'s', () => {
+  const covers = (card: string | null) => (card === 'tape' ? [{ from: 0, to: 7, words: 'Taped' }] : null);
+  const tape = { play: 'pl1', card: 'tape', at: '2026-11-24T12:00:00Z', by: 'Wario', config: null, state: null, text: null, covered: null };
+  const post = { ...sample[0]!, plays: [tape] };
+  const p = patrolPrompt(patrol({ sample: [post], reading: { readMost: 6000, now: NOW, seen: () => null, covers } }));
+  assert.ok(p.message.includes('"Taped. Odyssey."'), p.message);
+  assert.ok(!p.message.includes('"Odyssey. Odyssey."'));
+  const long = { ...post, plays: [{ ...tape, config: 1 }] };
+  const wide = (words: string) => patrolShown([long, long], { readMost: 250, now: NOW, seen: () => null, covers: () => [{ from: 0, to: 7, words }] }).length;
+  assert.equal(wide('a'), 2);
+  assert.equal(wide('a'.repeat(400)), 1, 'the covered body is longer than the ceiling');
+});

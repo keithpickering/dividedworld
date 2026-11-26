@@ -27,7 +27,7 @@ export interface PoolRead {
  */
 export interface ReadContext {
   readonly now: number;
-  readonly cards: readonly Pick<CardRules, 'key' | 'name' | 'seen'>[];
+  readonly cards: readonly Pick<CardRules, 'key' | 'name' | 'seen' | 'covers'>[];
   readonly reactions: readonly { readonly key: string; readonly emoji: string }[];
   readonly groupName?: (key: string) => string | undefined;
 }
@@ -57,6 +57,7 @@ export function readingOf(readMost: number, ctx: ReadContext): Omit<ReadOptions,
     readMost, now: ctx.now,
     // A card with no `seen`, a card the instance lacks and a back with no card are all null: the reader says what is known of them.
     seen: (card, p) => (card === null ? null : byKey.get(card)?.seen?.(p) ?? null),
+    covers: (card, p) => (card === null ? null : byKey.get(card)?.covers?.(p) ?? null),
     cardName: (key) => byKey.get(key)?.name,
     groupName: ctx.groupName,
     reactionName: (kind) => emoji.get(kind) ?? kind,
