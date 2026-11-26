@@ -2,7 +2,7 @@
 // a Mailer that records and never sends (no network, no Resend) and an Auth admin that records the bans it is asked for and
 // answers every account a stand-in address. The real mail handler (supabase/functions/mail/handler.ts) runs against them, so
 // the same jobs-key check, the same SQL (mail_due, record_mail_attempt), the same render and the same reply-to run as deployed.
-// What they recorded is in `recorded`, for the tests and the report.
+// What they recorded is in `recorded`, for the tests (the report reads the dispatcher's answers, never these).
 import type { AuthAdmin } from "../../supabase/functions/mail/core.ts";
 import type { JobDeps } from "../../supabase/functions/_shared/handler.ts";
 import type { MailMessage } from "../../engine/system/mail.ts";
