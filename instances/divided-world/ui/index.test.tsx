@@ -23,6 +23,7 @@ import { instanceUi, REASON_KEYS, settingsRead, wordsRead } from './index.ts';
 import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearOf, gearUi } from './cosmetics.ts';
+import { webpInfo } from '../../../tools/art-files.mjs';
 import { gainOf } from './sounds.ts';
 import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
@@ -1161,20 +1162,30 @@ describe('the cosmetics art files', () => {
     expect(() => gearOf({ default: 'front', views: { front: shape } }, { front: 'a.svg', back: 'b.svg' })).toThrow(/back/u);
   });
 
-  test('each SVG view\'s views.json size is its viewBox', () => {
-    let seen = 0;
+  test('each view\'s views.json size is its picture\'s own size: a WebP\'s header, an SVG\'s viewBox', () => {
+    let webps = 0;
+    let svgs = 0;
     for (const key of Object.keys(gearUi)) {
       const shipped = JSON.parse(fs.readFileSync(path.join(dir, 'gear', key, 'views.json'), 'utf8')) as { views: Record<string, { width: number; height: number }> };
       for (const [view, size] of Object.entries(shipped.views)) {
-        const file = path.join(dir, 'gear', key, `${view}.svg`);
-        expect(fs.existsSync(file), `${key}/${view}.svg is missing`).toBe(true);
-        const box = /viewBox="\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/u.exec(fs.readFileSync(file, 'utf8'));
-        expect(box, `${key}/${view}`).not.toBeNull();
-        expect([size.width, size.height], `${key}/${view}`).toEqual([Number(box![1]), Number(box![2])]);
-        seen++;
+        const webp = path.join(dir, 'gear', key, `${view}.webp`);
+        const svg = path.join(dir, 'gear', key, `${view}.svg`);
+        expect(fs.existsSync(webp) || fs.existsSync(svg), `${key}/${view} has no picture`).toBe(true);
+        if (fs.existsSync(webp)) {
+          const info = webpInfo(fs.readFileSync(webp));
+          expect('fault' in info ? info.fault : null, `${key}/${view}.webp`).toBeNull();
+          expect([size.width, size.height], `${key}/${view}.webp`).toEqual('fault' in info ? [] : [info.width, info.height]);
+          webps++;
+        } else {
+          const box = /viewBox="\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/u.exec(fs.readFileSync(svg, 'utf8'));
+          expect(box, `${key}/${view}`).not.toBeNull();
+          expect([size.width, size.height], `${key}/${view}`).toEqual([Number(box![1]), Number(box![2])]);
+          svgs++;
+        }
       }
     }
-    expect(seen).toBeGreaterThan(0);
+    expect(webps, 'the ten caps ship five WebP views each').toBe(50);
+    expect(svgs, 'the four placeholders ship one SVG each').toBe(4);
     expect(fs.readdirSync(path.join(dir, 'gear')).filter((f) => f.endsWith('.svg')), 'no flat file of the old layout is left').toEqual([]);
   });
 
