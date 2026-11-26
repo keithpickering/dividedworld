@@ -61,6 +61,9 @@
  * and no other secret through `env:`, never traced. It runs on `schedule` (cron `7 * * * *`) and `workflow_dispatch` and on nothing
  * else: a `pull_request`, `pull_request_target` or `push` trigger would let a run that is not the owner's read the database URL.
  * Its steps are a checkout, Node, `npm ci`, `psql --version` and the one command `node tools/check-job-health.mjs --db "$SUPABASE_DB_URL"`.
+ * Keys are whitelisted: the workflow's are `name`, `on`, `permissions` (exactly `{ contents: read }`), `concurrency` and `jobs`; the job's
+ * are `runs-on` (exactly `ubuntu-latest`), `environment`, `timeout-minutes` (a number) and `steps`; a step's are `name`, `uses`, `with`,
+ * `run` and `env`. So no `shell`, `defaults`, `working-directory`, `container`, `services` or other key can send the secret elsewhere.
  * R8 only reads workflows that declare a Postgres service, and this one declares none.
  *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
@@ -508,8 +511,20 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
     if (Object.keys(jobs).length !== 1 || !isObj(jobs[JH_JOB])) bad17.push(`it must have exactly one job, named ${JH_JOB} (it has ${Object.keys(jobs).join(', ') || 'none'})`);
     if (JSON.stringify(doc).includes('"continue-on-error"')) bad17.push('continue-on-error appears; a failed step must stay failed');
     if ('env' in doc) bad17.push('the workflow has an env; only the check step has one');
+    // Keys are whitelisted, as R16 holds sql.yml: a key this check never read (shell, defaults, container, a self-hosted runner, a
+    // widened permission) could carry the secret to code nobody reviewed while every other rule stays green.
+    const only = (what, obj, allowed) => {
+      for (const k of Object.keys(isObj(obj) ? obj : {})) if (!allowed.includes(k)) bad17.push(`${what} has the key ${k}; only ${allowed.join(', ')}`);
+    };
+    only('the workflow', doc, ['name', 'on', 'permissions', 'concurrency', 'jobs']);
+    if (!(isObj(doc.permissions) && JSON.stringify(doc.permissions) === '{"contents":"read"}')) bad17.push(`permissions must be exactly { contents: read } (it is ${JSON.stringify(doc.permissions ?? null)})`);
+    if ('concurrency' in doc && JSON.stringify(doc.concurrency) !== '{"group":"job-health","cancel-in-progress":false}') bad17.push(`concurrency must be exactly { group: job-health, cancel-in-progress: false } (it is ${JSON.stringify(doc.concurrency)})`);
     const job = jobs[JH_JOB];
     if (isObj(job)) {
+      only('the job', job, ['runs-on', 'environment', 'timeout-minutes', 'steps']);
+      if (job['runs-on'] !== 'ubuntu-latest') bad17.push(`runs-on must be exactly ubuntu-latest, a GitHub-hosted runner (it is ${JSON.stringify(job['runs-on'] ?? null)})`);
+      if (typeof job['timeout-minutes'] !== 'number') bad17.push(`timeout-minutes must be a plain number (it is ${JSON.stringify(job['timeout-minutes'] ?? null)})`);
+      for (const step of list(job.steps)) only(`a step (${JSON.stringify(step?.run ?? step?.uses ?? '')})`, step, ['name', 'uses', 'with', 'run', 'env']);
       if ('if' in job) bad17.push('the job has an if, which could skip the check and leave it green');
       let commands = 0;
       for (const step of list(job.steps)) {

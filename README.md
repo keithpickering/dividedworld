@@ -301,7 +301,8 @@ a module is not found, stop there and file what it printed.
    read runs every hour in the **Job health** workflow (`.github/workflows/job-health.yml`, in the `production`
    environment, reading `SUPABASE_DB_URL`): it goes red, and GitHub emails you, when a job has stopped or is missing from
    `cron.job`. It is apart from the Release workflow on purpose, so a stopped job never holds a release; run it once by
-   hand under **Actions > Job health > Run workflow** to see it green after a deploy. In the SQL editor,
+   hand under **Actions > Job health > Run workflow** to see it green after a deploy. A `workflow_dispatch` run uses the branch it is dispatched from, so set the `production`
+   Environment's deployment-branch rule to allow `main` only (a setting in GitHub that the check cannot see). In the SQL editor,
    `select * from job_status();` is the same read the page and the workflow make, and
    `select jobname, schedule, active from cron.job order by jobname;` lists what is scheduled, with the times in
    `instances/divided-world/settings.ts` (`settlementCron` and the rest).
