@@ -24,8 +24,13 @@ import employeeOfTheMonth from './trophies/employee-of-the-month.svg?url';
 import metTheBosssDemand from './trophies/met-the-bosss-demand.svg?url';
 import hardcoreBelt from './trophies/hardcore-belt.svg?url';
 
-/** One item's entry: its `views.json` and the URL of each view's picture, which must be the views it lists. */
-function gearOf(shipped: { readonly default: string; readonly views: Readonly<Record<string, { readonly width: number; readonly height: number; readonly pivot: { readonly x: number; readonly y: number } }>> }, art: Readonly<Record<string, string>>): InstanceUi['gear'][string] {
+/**
+ * One item's entry: its `views.json` and the URL of each view's picture, which must be the views it lists, and its default must be one of them.
+ * A disagreement throws: a deliberate build-time failure, caught by index.test.tsx, which imports this file.
+ */
+export function gearOf(shipped: { readonly default: string; readonly views: Readonly<Record<string, { readonly width: number; readonly height: number; readonly pivot: { readonly x: number; readonly y: number } }>> }, art: Readonly<Record<string, string>>): InstanceUi['gear'][string] {
+  if (!Object.hasOwn(shipped.views, shipped.default)) throw new Error(`views.json's default view ${shipped.default} is not a view it lists`);
+  for (const view of Object.keys(art)) if (!Object.hasOwn(shipped.views, view)) throw new Error(`a picture is imported for the view ${view} but views.json does not list it`);
   const views: Partial<Record<GearView, GearViewArt>> = {};
   for (const [view, shape] of Object.entries(shipped.views)) {
     const url = art[view];

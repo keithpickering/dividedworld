@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { pieceProblem, type Piece } from '../../rules/cosmetics.ts';
-import { dragged, dragSized, dragTurned, fit, hit, layered, nudge, renumber, resized, turned } from './moves.ts';
+import { dragged, dragSized, HANDLE_SIZE, dragTurned, fit, hit, layered, nudge, renumber, resized, turned } from './moves.ts';
 
 const piece = (over: Partial<Piece> = {}): Piece => ({ gear: 'band', x: 0.5, y: 0.5, w: 0.4, turn: 0, layer: 0, view: null, ...over });
 const rules = { gear: { wornMost: 12, reach: 0.4 }, trophies: { shownMost: 3 } } as Parameters<typeof pieceProblem>[1];
@@ -15,7 +15,12 @@ describe('the pointer\'s moves, in the portrait\'s fractions', () => {
     expect(dragSized(piece(), 100, 150).w).toBe(0.6);
     expect(dragSized(piece(), 100, 1).w).toBe(0.05);
     expect(dragSized(piece(), 100, 10000).w).toBe(1.5);
-    expect(dragSized(piece(), 0, 50).w).toBe(0.4);
+  });
+
+  test('a corner drag begun at the pivot does not jump to the most: the start distance is floored at the handle\'s size', () => {
+    expect(dragSized(piece(), 0.5, 10).w).toBe(0.4 * (10 / HANDLE_SIZE));
+    expect(dragSized(piece(), 0.5, 10).w).toBeLessThan(1.5);
+    expect(dragSized(piece(), 100, 150).w).toBe(0.6);
   });
 
   test('the round handle turns the piece by the angle the pointer swept, wrapped and held to 180 either way', () => {

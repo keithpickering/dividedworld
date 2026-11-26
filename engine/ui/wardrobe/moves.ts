@@ -31,8 +31,11 @@ export const turned = (p: Piece, by: number): Piece => fit({ ...p, turn: p.turn 
 /** A drag of the piece by `dx` and `dy` pixels on a stage `width` by `height` pixels. */
 export const dragged = (start: Piece, dx: number, dy: number, width: number, height: number): Piece => fit({ ...start, x: start.x + dx / width, y: start.y + dy / height });
 
+/** The corner handle's size in pixels (wardrobe.css): the least a drag's start distance counts as, so a handle on the pivot cannot make the size jump. */
+export const HANDLE_SIZE = 16;
+
 /** A corner's drag: the piece's width scales by the pointer's distance from the piece's pivot (`x`, `y`) now (`d`) over its distance when the drag began (`d0`). */
-export const dragSized = (start: Piece, d0: number, d: number): Piece => (d0 > 0 ? fit({ ...start, w: start.w * (d / d0) }) : start);
+export const dragSized = (start: Piece, d0: number, d: number): Piece => fit({ ...start, w: start.w * (d / Math.max(d0, HANDLE_SIZE)) });
 
 /** The round handle's drag, measured from the pivot the piece turns about: the piece turns by the angle the pointer swept (degrees, `a0` to `a`), wrapped into half a turn either way. */
 export function dragTurned(start: Piece, a0: number, a: number): Piece {

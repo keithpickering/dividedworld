@@ -22,7 +22,7 @@ import { GEAR_VIEWS, pieceShape, shownView, type GearView, type Piece } from '..
 import { gemOf, rarityName } from '../cards/faces.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, Id, ShownTrophy, TrophyItem, WardrobeItem } from '../data/api.ts';
-import { Outfit, slotShape } from '../gear/Outfit.tsx';
+import { Outfit, placement, slotShape } from '../gear/Outfit.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { Carousel } from '../glass/Carousel.tsx';
@@ -441,12 +441,11 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
             {current && ui.gear[current.gear] && (() => {
               /* The box is drawn as `Outfit` draws the piece (pivot, transform-origin, the shown view's width and aspect), so its handles hug the picture. */
               const shape = pieceShape(current, ui.gear[current.gear]!);
-              const pct = (n: number) => `${Math.round(n * 1e6) / 1e4}%`;
               return (
               <div
                 ref={sel} className="kb-wardrobe-sel" tabIndex={0} role="group" onKeyDown={keys}
                 aria-label={`${gearName(current)}, selected`} aria-describedby={help}
-                style={{ left: pct(current.x), top: pct(current.y), width: pct(shape.w), aspectRatio: `1 / ${shape.aspect}`, transformOrigin: `${pct(shape.px)} ${pct(shape.py)}`, transform: `translate(${pct(-shape.px)}, ${pct(-shape.py)}) rotate(${current.turn}deg)` }}
+                style={placement(current, shape)}
               >
                 <span id={help} className="kb-visually-hidden">Arrow keys move it, plus and minus size it, left and right brackets turn it, Delete takes it off.</span>
                 {['nw', 'ne', 'sw', 'se'].map((c) => <span key={c} className="kb-wardrobe-handle" data-kb-handle="size" data-kb-corner={c} aria-hidden="true" />)}

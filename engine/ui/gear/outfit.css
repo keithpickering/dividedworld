@@ -1,6 +1,6 @@
 /*
  * The layer of gear over a portrait or a square (Outfit.tsx). It fills the box its picture fills, so a piece's percentages are the
- * portrait's. Pieces are placed by their center; their size is their width and the art's own shape.
+ * portrait's. Pieces are placed by their pivot (the point of the art views.json names); their size is their width and the art's own shape.
  *
  * The portrait's layer is cut at the reach, a fraction of the portrait's width, past each edge on every side: `cqw` is the portrait's
  * width because the slot is an inline-size container (postbit.css, profile.css), so the cap may stand above the slot and the same
@@ -28,5 +28,4 @@
   height: auto;
   max-width: none;
   object-fit: fill;
-  transform-origin: center;
 }

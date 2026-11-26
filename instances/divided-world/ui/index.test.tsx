@@ -22,7 +22,7 @@ import type { ClassInput } from '../../../engine/rules/types.ts';
 import { instanceUi, REASON_KEYS, settingsRead, wordsRead } from './index.ts';
 import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
-import { gearUi } from './cosmetics.ts';
+import { gearOf, gearUi } from './cosmetics.ts';
 import { gainOf } from './sounds.ts';
 import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
@@ -1153,13 +1153,21 @@ describe('the cosmetics art files', () => {
     ? fs.readdirSync(path.join(dir, kind)).filter((f) => f.endsWith('.svg')).map((f) => [`${kind}/${f}`, fs.readFileSync(path.join(dir, kind, f), 'utf8')] as const)
     : fs.readdirSync(path.join(dir, kind), { withFileTypes: true }).filter((e) => e.isDirectory()).flatMap((e) => fs.readdirSync(path.join(dir, kind, e.name)).filter((f) => f.endsWith('.svg')).map((f) => [`${kind}/${e.name}/${f}`, fs.readFileSync(path.join(dir, kind, e.name, f), 'utf8')] as const)));
 
+  test('gearOf throws at build time when views.json and the imported pictures disagree', () => {
+    const shape = { width: 10, height: 10, pivot: { x: 5, y: 5 } };
+    expect(gearOf({ default: 'front', views: { front: shape } }, { front: 'a.svg' }).views.front?.art).toBe('a.svg');
+    expect(() => gearOf({ default: 'front', views: { front: shape } }, {})).toThrow(/no picture/u);
+    expect(() => gearOf({ default: 'back', views: { front: shape } }, { front: 'a.svg' })).toThrow(/default/u);
+    expect(() => gearOf({ default: 'front', views: { front: shape } }, { front: 'a.svg', back: 'b.svg' })).toThrow(/back/u);
+  });
+
   test('each SVG view\'s views.json size is its viewBox', () => {
     let seen = 0;
     for (const key of Object.keys(gearUi)) {
       const shipped = JSON.parse(fs.readFileSync(path.join(dir, 'gear', key, 'views.json'), 'utf8')) as { views: Record<string, { width: number; height: number }> };
       for (const [view, size] of Object.entries(shipped.views)) {
         const file = path.join(dir, 'gear', key, `${view}.svg`);
-        if (!fs.existsSync(file)) continue;
+        expect(fs.existsSync(file), `${key}/${view}.svg is missing`).toBe(true);
         const box = /viewBox="\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/u.exec(fs.readFileSync(file, 'utf8'));
         expect(box, `${key}/${view}`).not.toBeNull();
         expect([size.width, size.height], `${key}/${view}`).toEqual([Number(box![1]), Number(box![2])]);

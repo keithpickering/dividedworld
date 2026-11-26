@@ -23,6 +23,11 @@ export function slotShape(tallness: number | null): CSSProperties | undefined {
 /** A fraction as a percentage, without the noise of float arithmetic. */
 const pct = (n: number) => `${Math.round(n * 1e6) / 1e4}%`;
 
+/** Where a piece stands in the box its picture fills: the pivot at (`x`, `y`), the shown view's width and aspect, turned about the pivot. Outfit and the dress-up page's selection box both use it. */
+export function placement(piece: Piece, shape: ReturnType<typeof pieceShape>): CSSProperties {
+  return { left: pct(piece.x), top: pct(piece.y), width: pct(shape.w), aspectRatio: `1 / ${shape.aspect}`, transformOrigin: `${pct(shape.px)} ${pct(shape.py)}`, transform: `translate(${pct(-shape.px)}, ${pct(-shape.py)}) rotate(${piece.turn}deg)` };
+}
+
 export function Outfit({ pieces, on, frame = null }: {
   readonly pieces: readonly Piece[];
   readonly on: 'portrait' | 'square';
@@ -55,7 +60,7 @@ export function Outfit({ pieces, on, frame = null }: {
       {drawn.map(({ piece, art, shape }, i) => (
         <img
           key={`${piece.layer}-${i}`} src={art} alt="" loading="lazy" decoding="async" draggable={false}
-          style={{ left: pct(piece.x), top: pct(piece.y), width: pct(shape.w), aspectRatio: `1 / ${shape.aspect}`, transformOrigin: `${pct(shape.px)} ${pct(shape.py)}`, transform: `translate(${pct(-shape.px)}, ${pct(-shape.py)}) rotate(${piece.turn}deg)`, zIndex: i }}
+          style={{ ...placement(piece, shape), zIndex: i }}
         />
       ))}
     </span>
