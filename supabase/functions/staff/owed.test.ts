@@ -6,7 +6,7 @@ import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
-import type { ChatRequest, ModelResult, Models } from '../../../engine/system/model.ts';
+import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
 const BOSS = dividedWorld.system.firstBoss;
@@ -38,13 +38,20 @@ function fakeDb(rows: ReturnType<typeof row>[], opts: { enabled?: boolean; today
   return { db, calls };
 }
 const result = <T,>(value: T): ModelResult<T> => ({ value, usage: {}, provider: 'fake', model: 'fake', trims: [], retries: 0, costMicrodollars: 0 });
-function fakeModels(reply: (r: ChatRequest, n: number) => unknown) {
+function fakeModels(reply: (r: ChatRequest, n: number) => unknown, completeReply?: (r: CompletionRequest) => unknown) {
   const chats: ChatRequest[] = [];
+  const completes: CompletionRequest[] = [];
   const models: Models = {
     async chat(r) { chats.push(r); const out = reply(r, chats.length); if (out instanceof Error) throw out; return result(out); },
-    async complete() { throw new Error('structure only'); },
+    async complete(r) {
+      completes.push(r);
+      if (!completeReply) throw new Error('structure only');
+      const out = completeReply(r);
+      if (out instanceof Error) throw out;
+      return result(out as string);
+    },
   };
-  return { models, chats };
+  return { models, chats, completes };
 }
 const paid = (d: ReturnType<typeof fakeDb>) => d.calls.filter((c) => c.fn === 'pay_owed_line').map((c) => c.args);
 
@@ -118,4 +125,36 @@ test('the facts the call sees carry the maker as a name, and never the speaker a
   const bossName = dividedWorld.system.roster.find((r) => r.key === BOSS)!.name;
   assert.ok((m.chats[0]!.messages[0]!.content as string).includes(`made by ${bossName}.`));
   assert.doesNotMatch(m.chats[1]!.messages[0]!.content as string, /made by/);
+});
+
+/** The dividedWorld roster with the monitor on the old voice. */
+const oldVoiceWorld: WorldInstance = {
+  ...dividedWorld,
+  system: { ...dividedWorld.system, roster: dividedWorld.system.roster.map((r) => (r.key === MON ? { ...r, voice: 'oldVoice' as const } : r)) },
+};
+
+test('a speaker on the old voice is asked by raw completion, once, and the repaired line is paid', async () => {
+  const d = fakeDb([row(5)]);
+  const m = fakeModels(() => { throw new Error('chat must not be called'); }, () => '  It is   met.  ');
+  const out = await runOwedLines(d.db, m.models, oldVoiceWorld);
+  assert.equal(m.completes.length, 1);
+  assert.equal(m.chats.length, 0);
+  const c = m.completes[0]!;
+  assert.equal(c.duty, 'standingOrderLine');
+  assert.equal(c.staff, MON);
+  assert.deepEqual(c.stop, ['\n']);
+  assert.equal(c.maxTokens, 120);
+  assert.equal(c.maxChars, 280);
+  assert.deepEqual(paid(d), [{ owed: 5, body: 'It is met.' }]);
+  assert.equal(out.status === 'ok' && out.lines[0]!.status, 'voiced');
+});
+
+test('an old voice whose completion is rejected is paid from stock', async () => {
+  const d = fakeDb([row(6)]);
+  const m = fakeModels(() => ({ line: 'x' }), () => new AnswerRejected('line', 'isString'));
+  const out = await runOwedLines(d.db, m.models, oldVoiceWorld);
+  assert.equal(m.completes.length, 1);
+  assert.equal(m.chats.length, 0);
+  assert.deepEqual(paid(d), [{ owed: 6, body: null }]);
+  assert.equal(out.status === 'ok' && out.lines[0]!.status, 'stock');
 });

@@ -116,6 +116,7 @@ export async function runOwedLines(db: Db, models: Models, instance: Instance): 
     }
     if (!failed && line === null) failed = 'the line was blank';
     // The call was billed, so it has its record before anything that could fail after it (when the debt names an act to hang it on).
+    // A billed call whose record fails leaves the line open, and the next run may bill it again, bounded by perDay and the grace (as apology accepts).
     if (d.cause_act) {
       await db.rpc('record_staff_call', { cause_act: d.cause_act, duty: 'standingOrderLine', staff: d.staff, record: { ...(failed ? { why: failed } : {}), key: d.line_key, trims, calls: 1 } });
     }
