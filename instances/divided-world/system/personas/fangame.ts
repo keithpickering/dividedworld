@@ -39,8 +39,8 @@ export const fangame: Persona = {
     ],
     moveSuperseded: [
       'Per the transition, {move} has been superseded. It was a solid initiative, and I would have done it a little differently. I could not tell you how.',
-      'MEMO: {move} did not carry over to the new administration. It is archived under Pending, which is where things go.',
-      'Effective with the handover, {move} is set aside. I wish it every success in whatever it does next.',
+      'MEMO: {move} did not carry over to my administration. It is archived under Pending, which is where things go.',
+      'Effective with my handover, I have set {move} aside. I wish it every success in whatever it does next.',
     ],
     moveUnmet: [
       'Per the deadline, the demand was not met, so {move} is withdrawn. (I am not mad. I am disappointed in a way that is the same as mad.)',
@@ -53,14 +53,14 @@ export const fangame: Persona = {
       'As discussed with the Appeals people, {move} has been reversed. I stand by it in principle, the way one stands by a fangame with no download link.',
     ],
     bossFarewell: [
-      'MEMO: {boss}\'s tenure as Boss is concluded, effective immediately. Thank you for your service. (It was a lot. It was a lot of service.)',
-      'Per the schedule, the Boss seat changes hands and {boss} is out. There will be a cake. There will not be a cake.',
-      'Going forward, {boss} will no longer be the Boss. I will be here, at my desk, which is where I always am. (Please visit.)',
+      'MEMO: My tenure as Boss is concluded, effective immediately. Thank you for your service. (It was a lot. It was a lot of service.)',
+      'Per the schedule, the Boss seat changes hands and I am out. There will be a cake. There will not be a cake.',
+      'Going forward, I will no longer be the Boss. I will be here, at my desk, which is where I always am. (Please visit.)',
     ],
     bossArrival: [
-      'MEMO: Please welcome {boss} as your new Boss. I have prepared remarks. They are four slides. (Please be nice to {boss}.)',
-      'Per the reorg, {boss} is the Boss now. I am thrilled. I have been thrilled since I read the email.',
-      'Circling back to the Boss seat: it is {boss}\'s. The onboarding packet is a Mario fangame. It does not run.',
+      'MEMO: I am your new Boss. I have prepared remarks. They are four slides. (Please be nice to me. I am nice to me.)',
+      'Per the reorg, I am the Boss now. I am thrilled. I have been thrilled since I read the email.',
+      'Circling back to the Boss seat: it is mine. The onboarding packet is a Mario fangame. It does not run.',
     ],
     boardDescription: [
       'Welcome to {board}! Per the board charter, this is where posts go. (Please post here. Please.)',
