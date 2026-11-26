@@ -20,7 +20,7 @@ import { models } from '../../functions/_shared/models/index.ts';
 import { systemOf, firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
 import { MEETING_PARTS } from '../../../engine/system/meeting.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
-import { leadInMoods } from '../../../engine/system/beats.ts';
+import { withMoods } from '../../functions/chatter/core.ts';
 import { plotSections, type PublicRecord } from '../../../engine/system/chatter.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 
@@ -118,10 +118,12 @@ test('the handover after a held Everything is World -1: the new Boss is shown un
   /** An admin, to take a pin down. */
   const admin = sql(`with u as (insert into auth.users (email) values ('e2e-fangame-season-admin@test.invalid') returning id), a as (insert into accounts (id) select id from u returning id), m as (insert into admins (account) select id from a returning account) select account from m`);
   /** The story a staff persona's pool call is given: `pool_record` as the chatter reads it (the Boss's lead-ins mapped to their mood lines through its file), then the record's sections as `chatterPrompt` writes them. */
-  const poolStory = async (staff: string, boss: boolean, in_thread: string) => {
+  const poolStory = async (staff: string, in_thread: string) => {
     const record = await db.rpc<PublicRecord & { push?: string[]; leadIns?: string[] }>('pool_record', { in_thread, staff_key: staff });
     const persona = world.system.roster.find((p) => p.key === staff)!;
-    const given = Array.isArray(record.leadIns) ? { ...record, leadIns: leadInMoods(persona, record.leadIns, world.system.roster) } : record;
+    const given = withMoods(record, persona, world.system.roster);
+    // The office is the database's, as the chatter reads it: the sitting Boss is `seasons.boss`.
+    const boss = sql(`select coalesce(boss = '${staff}', false) from seasons where ends_at is null`) === 't';
     return { record, given, text: plotSections(given, { key: staff, boss }, world.settings.titleMaxLength).join('\n\n') };
   };
   /** The announcement of a beat the Boss played in the open season. */
@@ -133,9 +135,9 @@ test('the handover after a held Everything is World -1: the new Boss is shown un
   const poolThread = thread(boardId('General'), 'The pool reads this thread', 1, Date.now() - 40 * DAY);
 
   const adminDb = psqlDb(admin);
-  const BEATS = world.system.roster.find((p) => p.key === BOSS)!;
-  const unfinishedBrief = BEATS.aftermath!.find((b) => b.key === 'unfinished')!.brief;
-  const restoreBrief = BEATS.aftermath!.find((b) => b.key === 'restore')!.brief;
+  const BOSS_PERSONA = world.system.roster.find((p) => p.key === BOSS)!;
+  const unfinishedBrief = BOSS_PERSONA.aftermath!.find((b) => b.key === 'unfinished')!.brief;
+  const restoreBrief = BOSS_PERSONA.aftermath!.find((b) => b.key === 'restore')!.brief;
 
   // ---- The Split is played and lands. ----
   dayOfSeason(22);
@@ -192,13 +194,13 @@ test('the handover after a held Everything is World -1: the new Boss is shown un
   assert.ok(ann, 'playing it announced it under its own key');
   assert.equal(sql(`select a.payload ->> 'body' from acts a where a.thread = '${ann.thread}' and a.seq = 1`), unfinishedAnnounce.body);
   assert.deepEqual((await stickiesOf(ann.thread)).filter((i) => [everythingAnn.thread, ann.thread].includes(i)), [ann.thread], 'the new thread is the only pin');
-  assert.equal((await poolStory(BOSS, false, poolThread)).text.includes(`Last season you were the Boss. This is how you summed it up: ${lastRecap}`), true, 'FanGaME reads it in the second person');
+  assert.equal((await poolStory(BOSS, poolThread)).text.includes(`Last season you were the Boss. This is how you summed it up: ${lastRecap}`), true, 'FanGaME reads it in the second person');
   assert.equal(sql(`select count(*) from arc_beat_events where staff = '${NEXT}' and beat = 'after:${BOSS}:restore'`), '0');
   noDrift('the next Boss\'s first meeting');
 
   // ---- After the honeymoon's days: the recap leaves the plot so far, and the initiative stays. ----
   sql(`update season_handovers set at = at - interval '60 days' where season = (select id from seasons where ends_at is null)`);
-  const later = await poolStory(NEXT, true, poolThread);
+  const later = await poolStory(NEXT, poolThread);
   assert.ok(!later.text.includes(lastRecap) && later.text.includes(unfinishedAnnounce.pitch));
   noDrift('after the honeymoon');
 });

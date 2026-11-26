@@ -26,7 +26,7 @@ import { models } from '../../functions/_shared/models/index.ts';
 import { systemOf, firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
 import { MEETING_PARTS } from '../../../engine/system/meeting.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
-import { leadInMoods } from '../../../engine/system/beats.ts';
+import { withMoods } from '../../functions/chatter/core.ts';
 import { plotSections, type PublicRecord } from '../../../engine/system/chatter.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 
@@ -124,10 +124,12 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   /** An admin, to take a pin down. */
   const admin = sql(`with u as (insert into auth.users (email) values ('e2e-fangame-season-admin@test.invalid') returning id), a as (insert into accounts (id) select id from u returning id), m as (insert into admins (account) select id from a returning account) select account from m`);
   /** The story a staff persona's pool call is given: `pool_record` as the chatter reads it (the Boss's lead-ins mapped to their mood lines through its file), then the record's sections as `chatterPrompt` writes them. */
-  const poolStory = async (staff: string, boss: boolean, in_thread: string) => {
+  const poolStory = async (staff: string, in_thread: string) => {
     const record = await db.rpc<PublicRecord & { push?: string[]; leadIns?: string[] }>('pool_record', { in_thread, staff_key: staff });
     const persona = world.system.roster.find((p) => p.key === staff)!;
-    const given = Array.isArray(record.leadIns) ? { ...record, leadIns: leadInMoods(persona, record.leadIns, world.system.roster) } : record;
+    const given = withMoods(record, persona, world.system.roster);
+    // The office is the database's, as the chatter reads it: the sitting Boss is `seasons.boss`.
+    const boss = sql(`select coalesce(boss = '${staff}', false) from seasons where ends_at is null`) === 't';
     return { record, given, text: plotSections(given, { key: staff, boss }, world.settings.titleMaxLength).join('\n\n') };
   };
   /** The announcement of a beat the Boss played in the open season. */
@@ -146,7 +148,7 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
 
   // ---- The honeymoon's first week: the Boss's meeting and its pool call carry neither the lead-in nor its mood. ----
   await meet(-2, {});
-  const week1 = await poolStory(BOSS, true, poolThread);
+  const week1 = await poolStory(BOSS, poolThread);
   assert.deepEqual(week1.record.leadIns, [], 'no lead-in is live in the first week');
   assert.ok(!seen[0]!.system.includes('How you have been feeling lately'), 'the first week\'s meeting prompt has no lead-in section');
   assert.ok(!week1.text.includes('Lately the off-topic threads'), 'and its pool call no mood');
@@ -161,11 +163,11 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   assert.ok(seen[1]!.system.includes('How you have been feeling lately'), 'the second week\'s meeting prompt has the lead-in section');
   assert.ok(seen[1]!.system.includes(leadIn.brief), 'with the lead-in\'s brief');
   assert.ok(!seen[1]!.system.includes('World -1'), 'which never names the plan it leads to');
-  const week2 = await poolStory(BOSS, true, poolThread);
+  const week2 = await poolStory(BOSS, poolThread);
   assert.deepEqual([week2.record.leadIns, week2.given.leadIns], [['split'], [leadIn.mood]], 'the database lists the lead-in and the file maps it to the mood line');
   assert.ok(week2.text.includes(leadIn.mood) && week2.text.includes('How you have been feeling lately'), 'the Boss\'s pool call shows the mood');
   assert.ok(!week2.text.includes(leadIn.brief) && !week2.text.includes('World -1'), 'and never the brief or the plan');
-  assert.ok(!(await poolStory(NEXT, false, poolThread)).text.includes(leadIn.mood), 'a staff member who is not the Boss is given no mood');
+  assert.ok(!(await poolStory(NEXT, poolThread)).text.includes(leadIn.mood), 'a staff member who is not the Boss is given no mood');
   // What the early meetings were shown is kept; the season's own meetings below are counted from the first of them.
   seen.splice(0);
   noDrift('the lead-in');
@@ -202,10 +204,10 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   const adminDb = psqlDb(admin);
   assert.deepEqual((await adminDb.rpc<{ thread: string }[]>('admin_staff_pins', {})).filter((x) => x.thread === splitAnn.thread).length, 1, 'and the Machine screen lists the pin');
   // A staff member's pool call shows the pitch, in the plot so far, with the thread; the Boss's own shows its push.
-  const modCall = await poolStory(NEXT, false, poolThread);
+  const modCall = await poolStory(NEXT, poolThread);
   assert.ok(modCall.text.includes(splitAnnounce.pitch) && modCall.text.includes(splitAnnounce.title) && modCall.text.includes(splitAnn.thread), 'a Mod\'s pool call shows the pitch');
   assert.equal(modCall.record.push, undefined, 'and nothing of the Boss\'s push');
-  const bossCall = await poolStory(BOSS, true, poolThread);
+  const bossCall = await poolStory(BOSS, poolThread);
   assert.ok(bossCall.text.includes(splitAnn.push) && bossCall.text.includes('What you are pushing') , 'the Boss\'s pool call shows its push');
   assert.deepEqual(bossCall.record.leadIns, [], 'and, the Split announced, the lead-in is over');
   await tick();
@@ -353,11 +355,11 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   await tick();
   assert.ok(arcRead().beats.some((b: any) => b.key === 'restore'), 'the aftermath beat is offered to the new Boss: everything landed, and the honeymoon');
   assert.ok(!arcRead().beats.some((b: any) => b.key === 'unfinished'), 'and the one for a Boss who left it unfinished is not');
-  const member = await poolStory(BOSS, false, poolThread);
+  const member = await poolStory(BOSS, poolThread);
   assert.ok(member.text.includes(`Last season you were the Boss. This is how you summed it up: ${lastRecap}`), 'FanGaME reads last season in the second person');
-  assert.ok(member.text.includes('Initiatives announced this season') === false, 'the new season has announced nothing yet');
+  assert.ok(!member.text.includes('Initiatives announced this season'), 'the new season has announced nothing yet');
   assert.equal(member.record.push, undefined, 'and a member is given no push');
-  const stranger = await poolStory(NEXT, true, poolThread);
+  const stranger = await poolStory(NEXT, poolThread);
   assert.ok(stranger.text.includes(`Last season ${world.system.roster.find((p) => p.key === BOSS)!.name} was the Boss. This is how they summed it up: ${lastRecap}`), 'the new Boss reads it in the third person');
   const restoreAnnounce = { title: 'Restoration (E2E)', body: 'E2E-RESTORE-BODY: boards, back where they were.', pitch: 'E2E-RESTORE-PITCH: out of World -1.' };
   const fifth = await meet(5, { beats: [{ beat: 'restore', why: 'He wants to be liked.', announce: restoreAnnounce }] }, 3, NEXT);
@@ -382,14 +384,14 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   const stickies = await stickiesOf(restoreAnn.thread);
   assert.deepEqual(stickies.filter((i) => [splitAnn.thread, everythingAnn.thread, restoreAnn.thread].includes(i)), [restoreAnn.thread], 'only the new pin shows');
   assert.deepEqual((await adminDb.rpc<{ thread: string }[]>('admin_staff_pins', {})).map((x) => x.thread), [restoreAnn.thread]);
-  assert.ok((await poolStory(NEXT, true, poolThread)).text.includes(restoreAnnounce.pitch), 'the new initiative is in the plot so far');
+  assert.ok((await poolStory(NEXT, poolThread)).text.includes(restoreAnnounce.pitch), 'the new initiative is in the plot so far');
 
   // After the honeymoon's days the recap leaves the plot so far, and the initiative stays.
   sql(`update season_handovers set at = at - interval '60 days' where season = (select id from seasons where ends_at is null)`);
-  const later = await poolStory(NEXT, true, poolThread);
+  const later = await poolStory(NEXT, poolThread);
   assert.equal(later.record.plot!.last, null, 'last season is no longer the plot');
   assert.ok(!later.text.includes(lastRecap) && later.text.includes(restoreAnnounce.pitch), 'the recap left the plot so far; the initiative stayed');
-  assert.ok(!(await poolStory(BOSS, false, poolThread)).text.includes(lastRecap), 'and FanGaME no longer reads it');
+  assert.ok(!(await poolStory(BOSS, poolThread)).text.includes(lastRecap), 'and FanGaME no longer reads it');
   const sixth = await meet(6, {}, 3, NEXT);
   assert.equal(sixth.boss, NEXT);
   assert.ok(!seen[5]!.system.includes(lastRecap) && seen[5]!.system.includes(restoreAnnounce.pitch), 'the next meeting shows the initiative and no recap');
