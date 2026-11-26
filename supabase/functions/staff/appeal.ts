@@ -149,7 +149,7 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
     names: (id) => hearer.names[id] ?? 'a character',
     board: opened.board, title: heard?.title ?? null, read: heard?.read ?? null,
     appellant: { name: opened.appellant.name, pronouns: await pronounsOfCharacter(db, opened.appellant.id, fallback) }, plea: opened.plea, punishment, filedByHearer: opened.details.filed_by === opened.staff,
-    limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
+    limits: { titleMaxLength: settings.titleMaxLength },
   });
 
   // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.

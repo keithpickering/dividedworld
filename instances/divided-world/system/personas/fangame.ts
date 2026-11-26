@@ -20,6 +20,8 @@ export const fangame: Persona = {
   beats: ['general'],
   petRules: ['requiredWord'],
   strictness: { visitHours: { least: 2, most: 12 }, bands: ['minor'] },
+  // The habits plan (docs/plans/2026-11-22-divided-world-habits-plan.md): a nervous hobbyist who peeks in at lunch and vanishes into late-night Game Maker sessions; hours are UTC (17 is lunch Eastern, 0 to 4 is 7pm to midnight).
+  habits: { perDay: 4, minutes: { least: 15, most: 40 }, hours: [17, 0, 1, 2, 3, 4] },
   weakness: {
     kind: 'quiz',
     // His answer key is his, and it is wrong; the way past him is his answer (the design, section 4).

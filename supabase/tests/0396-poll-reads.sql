@@ -271,12 +271,15 @@ declare
   ann uuid := tests.account('prd-ann'); bob uuid := tests.account('prd-bob');
   a1 uuid := tests.character(ann, 'Prd Author'); v1 uuid := tests.character(bob, 'Prd Voter One'); v2 uuid := tests.character(bob, 'Prd Voter Two'); v3 uuid := tests.character(bob, 'Prd Voter Three');
   t uuid := tests.thread('Prd digest');
-  p1 uuid := tests.post(a1, t, 'A post with a public poll.', base); p2 uuid := tests.post(a1, t, 'A post with a secret poll.', base); p3 uuid := tests.post(a1, t, 'No poll here.', base);
-  q1 uuid; q2 uuid; d jsonb; x jsonb; bad text;
+  p1 uuid := tests.post(a1, t, 'A post with a public poll.', base); p2 uuid := tests.post(a1, t, 'A post with a secret poll.', base); p3 uuid := tests.post(a1, t, 'No poll here.', base); p4 uuid := tests.post(a1, t, 'A post with another secret poll.', base);
+  q1 uuid; q2 uuid; q3 uuid; d jsonb; x jsonb; bad text;
 begin
   insert into settings (key, value) values ('digestThreads', '3'), ('digestExcerpts', '5'), ('digestExcerptChars', '40') on conflict (key) do update set value = excluded.value;
   q1 := tests.act(a1, 'poll', t, jsonb_build_object('question', 'Best kart?', 'options', '["Pipe Frame", "Badwagon"]'::jsonb, 'pick', 1, 'secret', false, 'closes_at', base + interval '30 days'), p1, base);
   q2 := tests.act(a1, 'poll', t, jsonb_build_object('question', 'Whose idea?', 'options', '["Mine", "Yours", "Theirs"]'::jsonb, 'pick', 1, 'secret', true, 'closes_at', '2026-01-01T00:00:00Z'::timestamptz), p2, base);
+  -- an open secret poll in the window: v3 votes on it alone, and v2 on it as well as on the public poll, within the standouts' span
+  q3 := tests.act(a1, 'poll', t, jsonb_build_object('question', 'Secretly?', 'options', '["Yes", "No"]'::jsonb, 'pick', 1, 'secret', true, 'closes_at', base + interval '30 days'), p4, base);
+  perform tests.act(v3, 'ballot', t, '{"picks": [0]}', q3, base + interval '4 minutes'); perform tests.act(v2, 'ballot', t, '{"picks": [1]}', q3, base + interval '5 minutes');
   perform tests.act(v1, 'ballot', t, '{"picks": [0]}', q1, base + interval '1 minute'); perform tests.act(v2, 'ballot', t, '{"picks": [1]}', q1, base + interval '2 minutes'); perform tests.act(v1, 'ballot', t, '{"picks": [1]}', q1, base + interval '3 minutes');
   perform tests.act(v3, 'ballot', t, '{"picks": [2]}', q2, '2025-12-31T10:00:00Z'); perform tests.act(v2, 'ballot', t, '{"picks": [2]}', q2, '2025-12-31T09:00:00Z');
   perform tests.become_service();
@@ -288,8 +291,13 @@ begin
   if x -> 'poll' is distinct from '{"question": "Whose idea?", "options": [{"text": "Mine", "count": 0}, {"text": "Yours", "count": 0}, {"text": "Theirs", "count": 2}], "closed": true}'::jsonb then raise exception '5 the digest''s excerpt of a secret poll: %', x; end if;
   select e into x from jsonb_array_elements(d -> 'excerpts') e where (e ->> 'act')::uuid = p3;
   if x is null or x ? 'poll' then raise exception '5 an excerpt of a post with no poll carries one: %', x; end if;
-  -- It names no voter, public or secret: no id and no name of any of the three, anywhere in the digest.
-  if d::text like '%' || v1::text || '%' or d::text like '%' || v2::text || '%' or d::text like '%' || v3::text || '%' or d::text like '%Prd Voter%' then raise exception '5 the digest names a voter: %', d; end if;
+  -- It names no voter, public or secret: no id and no name of any of the three, anywhere in the digest but the standouts (0433: the characters who voted most on public polls are named there, with a count only they know; a voter on a secret poll alone,
+  -- v3, is named nowhere, v2 having voted on the public poll as well).
+  if (d - 'standouts')::text like '%' || v1::text || '%' or (d - 'standouts')::text like '%' || v2::text || '%' or (d - 'standouts')::text like '%' || v3::text || '%' or (d - 'standouts')::text like '%Prd Voter%' then raise exception '5 the digest names a voter: %', d; end if;
+  if d::text like '%' || v3::text || '%' or d::text like '%Prd Voter Three%' then raise exception '5 the digest names a voter of a secret poll alone: %', d; end if;
+  -- The standouts name only the public poll's voters (v1 and v2, once each however often they changed their ballot) and never v3, who voted on secret polls alone (the open one in the window as well); v2's ballot on the open secret poll is no count either.
+  select string_agg(e ->> 'name' || ':' || (e ->> 'count'), ',' order by o) into bad from jsonb_array_elements(d -> 'standouts' -> 'ballots') with ordinality z(e, o);
+  if bad is distinct from 'Prd Voter One:1,Prd Voter Two:1' then raise exception '5 the ballots standouts are not the public poll''s voters alone: %', bad; end if;
   -- The digest's role reads the counts (a public view of characters counted) and no one's own ballots.
   if not has_table_privilege('kayfabb_digest', 'poll_counts', 'select') or has_table_privilege('kayfabb_digest', 'my_ballots', 'select') or has_table_privilege('kayfabb_digest', 'my_poll_closes', 'select') then raise exception '5 the digest role''s reach of the poll views'; end if;
 end $$;

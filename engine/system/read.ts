@@ -144,7 +144,7 @@ function markWith(body: string, lower: Map<string, ReadCandidate>, self: string 
 }
 
 /** A post's extras as lines: the rewound line (before the body), and the poll, plays and reactions (after it). */
-function extraLines(c: Extras, o: ReadOptions): { before: string[]; after: string[] } {
+export function extraLines(c: Extras, o: ReadOptions): { before: string[]; after: string[] } {
   const rewound = rewoundLine(c.rewoundTo, o.now);
   const reactions = reactionLine(c.reactions, o.reactionName ?? ((k) => k));
   const cardName = o.cardName ?? (() => undefined);
@@ -161,7 +161,7 @@ function extraLines(c: Extras, o: ReadOptions): { before: string[]; after: strin
 const seenOf = (p: ReadPlay, o: ReadOptions): SeenPlay => ({ config: p.config, state: p.state, text: p.text ?? null, covered: p.covered ?? null, by: p.by, ago: ago(p.at, o.now), amountWords });
 
 /** The origin's lines: its one line, then its post, headed `<name> [origin, post #<seq> in "<title>"]` (`[origin, the Updates post "<title>"]` with no seq), with its words, poll, plays and reactions. */
-function originBlock(origin: ReadOrigin, o: ReadOptions): string[] {
+export function originBlock(origin: ReadOrigin, o: ReadOptions): string[] {
   const out = [originLine(origin, o.now, o)];
   const post: ReadOriginPost | null = origin.post;
   if (post === null) return out;
