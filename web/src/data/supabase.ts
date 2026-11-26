@@ -2268,7 +2268,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           const start = at(x['last_start']);
           return { ...toJobRow(x), lastRun: at(x['last_status']) === null && start === null ? null : { status: String(x['last_status'] ?? ''), message: at(x['last_message']), at: start ?? '' } };
         }),
-        vault: { functionsUrl: rows[0]?.['vault_functions_url'] === true, jobsKey: rows[0]?.['vault_jobs_key'] === true },
+        vault: { functionsUrl: rows[0]?.['url_set'] === true, jobsKey: rows[0]?.['key_set'] === true },
       };
     },
     async reportsPage(): Promise<ReportsPage | null> {

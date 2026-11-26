@@ -2845,7 +2845,7 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/is_admin')) return json(true);
       if (r.url.pathname.endsWith('/rpc/job_status')) return json([row, { job: 'kayfabb-meet', schedule: null, active: false, first_seen: null, last_ok_at: null, grace: null }]);
-      if (r.url.pathname.endsWith('/rpc/admin_jobs')) return json([{ ...row, last_status: 'succeeded', last_message: '1 row', last_start: '2026-11-02T10:00:00+00:00', vault_functions_url: true, vault_jobs_key: false }, { ...row, job: 'kayfabb-meet', last_status: null, last_message: null, last_start: null, vault_functions_url: true, vault_jobs_key: false }]);
+      if (r.url.pathname.endsWith('/rpc/admin_jobs')) return json([{ ...row, last_status: 'succeeded', last_message: '1 row', last_start: '2026-11-02T10:00:00+00:00', url_set: true, key_set: false }, { ...row, job: 'kayfabb-meet', last_status: null, last_message: null, last_start: null, url_set: true, key_set: false }]);
       return json({}, 404);
     });
     expect(await h.api.jobStatus()).toEqual([
