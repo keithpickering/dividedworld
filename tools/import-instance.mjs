@@ -159,6 +159,7 @@ async function load(db, dir, manifest) {
   select schedule_card_writes();
   select schedule_mail();
   select schedule_conceal();
+  select schedule_search_rebuild();
   commit;\n`);
   if (!exited) child.stdin.end();
   const code = await done;

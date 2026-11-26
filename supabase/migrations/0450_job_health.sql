@@ -45,7 +45,7 @@ revoke execute on function note_job_scheduled(text) from public, anon, authentic
 -- The jobs an instance already runs begin their row now: a job that has never run is measured from here. Only where the instance has settings: a database just
 -- migrated holds no rows in any table of its own (an import into it is refused as not empty, tools/import-instance.mjs; supabase/tests/e2e/0003-export.ts holds the list), and the
 -- search rebuild is scheduled by 0117 even then. A seeded or imported instance's rows begin as each job is scheduled: every schedule_* function calls note_job_scheduled.
-insert into job_runs (job) select jobname from cron.job where jobname like 'kayfabb-%' and exists (select 1 from settings) on conflict do nothing;
+insert into job_runs (job) select jobname from cron.job where jobname ~ '^kayfabb-[a-z-]+$' and exists (select 1 from settings) on conflict do nothing;
 
 -- The jobs scheduled before any settings exist (the search rebuild, the card writes, mail and conceal: scheduled at migration) begin their rows when the settings arrive, which is a seed: the first
 -- statement that writes settings finds them scheduled and notes each. Every settings insert asks and a job that has a row keeps it, so an import (whose rows arrive first, on a replica role that skips this)
@@ -93,9 +93,12 @@ begin
   select s.job, s.schedule, s.active, s.first_seen, s.last_ok_at, s.grace, l.status, l.return_message, l.start_time, url_ok, key_ok
   from job_status() s
   left join cron.job c on c.jobname = s.job
-  left join lateral (
-    select d.status, d.return_message, d.start_time from cron.job_run_details d where d.jobid = c.jobid order by d.start_time desc nulls last, d.runid desc limit 1
-  ) l on true
+  left join (
+    -- The history is pg_cron's own, which this engine does not prune (a follow-up issue covers pruning); one pass over it, the latest run of each job.
+    select distinct on (d.jobid) d.jobid, d.status, d.return_message, d.start_time
+    from cron.job_run_details d where d.jobid in (select k.jobid from cron.job k where k.jobname like 'kayfabb-%')
+    order by d.jobid, d.start_time desc nulls last, d.runid desc
+  ) l on l.jobid = c.jobid
   order by s.job;
 end $$;
 revoke execute on function admin_jobs() from public, anon;

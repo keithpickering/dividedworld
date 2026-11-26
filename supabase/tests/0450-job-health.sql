@@ -7,6 +7,9 @@
 -- 5. record_job_run is the service role's alone; job_runs is no client's.
 -- 6. A job's row begins when it is scheduled (note_job_scheduled, called by each of the ten schedule functions): a fresh seed gives every job a row with a first_seen and no last_ok_at, a
 --    reschedule keeps first_seen, a database with no settings gets none, and the helper is no client's.
+--
+-- -- 7. A SQL job's command is atomic: with its work failing, the record is not written (the command run as pg_cron runs one: a whole string, one transaction; here one execute of the string in an exception block, which rolls the whole string back).
+-- -- 8. A stray kayfabb-x1 in cron.job is skipped by the migration's bulk insert and by the settings trigger's; job_status() with a non-object jobGraceMinutes row; admin_jobs() for a job in job_runs and not in cron.job has no last run.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -126,6 +129,62 @@ begin
   if pg_temp.in_order('select public.system_tick(); select public.record_job_run(''kayfabb-meet'');', 'system_tick()', 'kayfabb-system-tick') then raise exception 'the order reading passed another job''s name'; end if;
   if (select schedule from cron.job where jobname = 'kayfabb-view-counts') is distinct from setting('viewCountCron') #>> '{}' then raise exception 'view counts lost its schedule'; end if;
   if (select schedule from cron.job where jobname = 'kayfabb-system-tick') is distinct from '* * * * *' or (select schedule from cron.job where jobname = 'kayfabb-search-rebuild') is distinct from '* * * * *' then raise exception 'a schedule changed'; end if;
+
+  -- 7. Atomic: the exact command text of each SQL job, its work swapped for a scratch function that raises, run as one string. pg_cron runs a command as one SPI call in one transaction, so
+  -- either every statement of it lands or none does; an exception block (a subtransaction) around one execute of the whole string is that same all-or-nothing.
+  create function pg_temp.boom() returns void language plpgsql as 'begin raise exception ''the work failed''; end';
+  create function pg_temp.fine() returns void language plpgsql as 'begin null; end';
+  for r in select * from (values ('kayfabb-system-tick', 'public.system_tick()'), ('kayfabb-search-rebuild', 'public.search_rebuild_step()'), ('kayfabb-view-counts', 'public.count_thread_views()')) v(job, work) loop
+    select command into cmd from cron.job where jobname = r.job;
+    if position(r.work in cmd) = 0 then raise exception '% command does not hold %: %', r.job, r.work, cmd; end if;
+    delete from job_runs where job = r.job;
+    -- Control: with the work fine, the whole string runs and the record lands.
+    execute replace(cmd, r.work, 'pg_temp.fine()');
+    if not exists (select 1 from job_runs where job = r.job and last_ok_at is not null) then raise exception '% control: the swapped command recorded nothing', r.job; end if;
+    delete from job_runs where job = r.job;
+    begin
+      execute replace(cmd, r.work, 'pg_temp.boom()');
+      raise exception '% the failing command did not raise', r.job;
+    exception when others then
+      if sqlerrm <> 'the work failed' then raise; end if;
+    end;
+    if exists (select 1 from job_runs where job = r.job) then raise exception '% recorded a run though its work failed', r.job; end if;
+  end loop;
+  -- The poison: a record placed first would land before the work fails, and it is the one thing this reading must see.
+  begin
+    execute 'select public.record_job_run(''kayfabb-system-tick''); select pg_temp.boom();';
+  exception when others then null;
+  end;
+  if exists (select 1 from job_runs where job = 'kayfabb-system-tick') then raise exception 'the atomic reading kept a record whose command failed'; end if;
+
+  -- 8. A stray name is skipped by the migration's bulk insert (its statement, as written in 0450) and by the settings trigger's.
+  insert into cron.job (jobname, schedule, command) values ('kayfabb-x1', '* * * * *', 'select 1');
+  delete from job_runs;
+  insert into job_runs (job) select jobname from cron.job where jobname ~ '^kayfabb-[a-z-]+$' and exists (select 1 from settings) on conflict do nothing;
+  if exists (select 1 from job_runs where job = 'kayfabb-x1') then raise exception 'the bulk insert made a row for a stray name'; end if;
+  if (select count(*) from job_runs) is distinct from 10 then raise exception 'the bulk insert made % rows, not 10', (select count(*) from job_runs); end if;
+  delete from job_runs;
+  insert into settings (key, value) values ('jhProbe', '1');
+  if exists (select 1 from job_runs where job = 'kayfabb-x1') then raise exception 'the settings trigger made a row for a stray name'; end if;
+  delete from settings where key = 'jhProbe';
+  delete from cron.job where jobname = 'kayfabb-x1';
+
+  -- job_status() with a jobGraceMinutes row that is not an object.
+  delete from settings where key = 'jobGraceMinutes';
+  if pg_temp.refusal('insert into settings (key, value) values (''jobGraceMinutes'', ''5'')') is null then
+    perform tests.become_anon();
+    if (select count(*) from job_status() where grace = '5'::jsonb) is distinct from 10 then raise exception 'job_status did not carry a non-object grace as it is'; end if;
+    perform tests.unbecome();
+    delete from settings where key = 'jobGraceMinutes';
+  end if;
+
+  -- admin_jobs() for a job with a row and no schedule: its last run is null, never another job's.
+  insert into job_runs (job) values ('kayfabb-gone');
+  perform tests.become(boss);
+  select * into r from admin_jobs() where job = 'kayfabb-gone';
+  if r.job is null or r.last_status is not null or r.last_message is not null or r.last_start is not null then raise exception 'a job absent from cron.job has a last run: %', r; end if;
+  perform tests.unbecome();
+  delete from job_runs where job = 'kayfabb-gone';
 
   -- 5. Who may call what
   foreach j in array array['anon', 'authenticated'] loop
