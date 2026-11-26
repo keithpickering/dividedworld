@@ -66,6 +66,8 @@ create table arc_announcements (
   repeatable boolean not null default false,
   at timestamptz not null default now()
 );
+-- system_tick lands a part in its bundle's announcement thread by the event that played the bundle (arc_beat_events.bundle): a probe by bundle (EXPLAIN on 5,000 events: a seq scan, cost 119.5, without it).
+create index arc_beat_events_bundle on arc_beat_events (bundle) where bundle is not null;
 create unique index arc_announcements_play on arc_announcements (play);
 create unique index arc_announcements_beat on arc_announcements (season, staff, beat) where not repeatable;
 alter table arc_announcements enable row level security;

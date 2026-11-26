@@ -758,20 +758,38 @@ create function pg_temp.leaks(proc regprocedure, words text default '(owner|acco
   select string_agg(distinct m[1], ',') from regexp_matches(lower(pg_get_functiondef(proc)), words, 'g') m
 $$;
 create function pg_temp.poisoned() returns integer language sql as $$ select count(distinct c.owner)::integer from characters c $$;
+-- apply_meeting and system_tick predate this check and read other things (a meeting's moves, the bank, requests, a move's own alerts), so only the hunks this migration added are held to the words: the announcement
+-- sub-block of apply_meeting, and the routing hunk of system_tick. `hunk` finds one by its first and last words in the definition; a hunk it cannot find is a failure, so a rewording cannot let it escape.
+create function pg_temp.leaks_hunk(proc regprocedure, pat text) returns text language sql as $$
+  select coalesce((select string_agg(distinct m[1], ',') from regexp_matches(substring(lower(pg_get_functiondef(proc)) from pat), '(owner|account|reaction)', 'g') m), case when substring(lower(pg_get_functiondef(proc)) from pat) is null then 'hunk missing' end)
+$$;
+create function pg_temp.poisoned_hunk() returns integer language plpgsql as $$
+begin
+  -- hunk begins
+  perform count(distinct c.owner) from characters c;
+  -- hunk ends
+  return 1;
+end $$;
 do $$
 declare
   p regprocedure;
 begin
   perform pg_temp.expect(pg_temp.leaks('pg_temp.poisoned()'::regprocedure) = 'owner', 'the masks check did not find an owner read');
-  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins') loop
+  perform pg_temp.expect(pg_temp.leaks_hunk('pg_temp.poisoned_hunk()'::regprocedure, '-- hunk begins.*?-- hunk ends') = 'owner', 'the hunk check did not find an owner read in a planted hunk');
+  perform pg_temp.expect(pg_temp.leaks_hunk('pg_temp.poisoned_hunk()'::regprocedure, '-- no such hunk.*?-- hunk ends') = 'hunk missing', 'the hunk check passed a hunk it could not find');
+  perform pg_temp.expect(pg_temp.leaks_hunk('apply_meeting(bigint,jsonb)'::regprocedure, 'for ann in select.*?\n  if spent > floor') is null, 'apply_meeting''s announcement sub-block reads a private fact or was not found: ' || pg_temp.leaks_hunk('apply_meeting(bigint,jsonb)'::regprocedure, 'for ann in select.*?\n  if spent > floor'));
+  perform pg_temp.expect(pg_temp.leaks_hunk('system_tick()'::regprocedure, 'ann_mt := null;.*?landed_act = written where id = due.id;') is null, 'system_tick''s routing hunk reads a private fact or was not found: ' || pg_temp.leaks_hunk('system_tick()'::regprocedure, 'ann_mt := null;.*?landed_act = written where id = due.id;'));
+  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard') loop
     perform pg_temp.expect(pg_temp.leaks(p) is null, p::text || ' reads a private fact: ' || pg_temp.leaks(p));
   end loop;
-  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins')) = 4, 'a function the masks check reads is missing');
+  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard')) = 7, 'a function the masks check reads is missing');
   for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('pool_record', 'meeting_context', 'board_page') loop
     perform pg_temp.expect(pg_temp.leaks(p, '(owner)') is null, p::text || ' reads a character''s owner: ' || pg_temp.leaks(p, '(owner)'));
   end loop;
   -- board_page joins staff_stickies against thread_list on its hottest read: the planner is told it returns a handful of rows, not the default thousand.
   perform pg_temp.expect((select prorows from pg_proc where proname = 'staff_stickies') = 5, 'staff_stickies has no row estimate: ' || (select prorows from pg_proc where proname = 'staff_stickies'));
+  -- system_tick finds a bundle's announcement through the event that played the bundle: one probe by bundle, not a read of every event.
+  perform pg_temp.expect(exists (select 1 from pg_indexes where tablename = 'arc_beat_events' and indexdef like '%(bundle)%WHERE%bundle IS NOT NULL%'), 'arc_beat_events has no index by bundle');
   perform pg_temp.expect(not has_function_privilege('anon', 'arc_plot(text)', 'execute') and not has_function_privilege('authenticated', 'arc_plot(text)', 'execute'), 'a client can call arc_plot');
 end $$;
 
