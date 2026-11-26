@@ -12,9 +12,12 @@
  * The last case asserts the untouched real files pass, so a `problems()` that has gone quiet fails
  * here rather than reading as green.
  */
-import { problems, readFiles } from './check-edge-functions.mjs';
+import { problems as check, readContext, readFiles } from './check-edge-functions.mjs';
 
 const REAL = readFiles();
+const REAL_CONTEXT = await readContext();
+/** `problems` for a case: the real job list and grace, unless the case plants another. */
+const problems = (files, context = REAL_CONTEXT) => check(files, context);
 const CONFIG = 'supabase/config.toml';
 /** The real files with conceal's table present, so a case's own complaint is the only one. */
 const BASE = /^\s*\[functions\.conceal\]/m.test(REAL[CONFIG] ?? '')
@@ -47,12 +50,24 @@ begin
   $job$);
 end $$;
 `;
+/** A SQL job's schedule function, as 0450 writes them: the work, then the record, then the row noted. */
+const sqlJob = (job, command = `select public.work(); select public.record_job_run(''${job}'');`, note = true) => `
+create function schedule_${job.replace(/\W/g, '_')}() returns bigint language plpgsql as $$
+declare id bigint;
+begin
+  id := cron.schedule('${job}', '* * * * *', '${command}');
+  ${note ? `perform note_job_scheduled('${job}');` : ''}
+  return id;
+end $$;
+`;
+/** The real job list and grace with one more job in both. */
+const withJob = (job) => ({ jobs: [...REAL_CONTEXT.jobs, job], grace: { ...REAL_CONTEXT.grace, [job]: 10 } });
 const LATER = 'supabase/migrations/9998_later.sql';
 const LATEST = 'supabase/migrations/9999_latest.sql';
 
 /** @param {string} name @param {Record<string,string>} files @param {RegExp} expected */
-function red(name, files, expected) {
-  const found = problems(files);
+function red(name, files, expected, context) {
+  const found = problems(files, context);
   if (found.some((p) => expected.test(p))) {
     console.log(`ok    ${name}`);
     return;
@@ -64,8 +79,8 @@ function red(name, files, expected) {
 }
 
 /** @param {string} name @param {Record<string,string>} files */
-function quiet(name, files) {
-  const found = problems(files);
+function quiet(name, files, context) {
+  const found = problems(files, context);
   if (found.length === 0) {
     console.log(`ok    ${name}`);
     return;
@@ -161,7 +176,39 @@ quiet('a job scheduled and then unscheduled is no job', {
 quiet('a job named only in a -- comment is no job', { ...BASE, [LATER]: `-- ${schedule('kayfabb-ghost', 'ghost').trim().replaceAll('\n', ' ')}\n` });
 quiet('a job named only in a block comment is no job', { ...BASE, [LATER]: `/*${schedule('kayfabb-ghost', 'ghost')}*/\n` });
 quiet('a job scheduled and then unscheduled in one file is no job', { ...BASE, [LATER]: `${schedule('kayfabb-ghost', 'ghost')}\nselect cron.unschedule('kayfabb-ghost');\n` });
-quiet('a job whose command names no function is not held to anything', { ...BASE, [LATER]: `select cron.schedule('kayfabb-nothing', '* * * * *', 'select 1');\n` });
+quiet('a SQL job whose command names no function is not held to E3 to E5', { ...BASE, [LATER]: sqlJob('kayfabb-nothing') }, withJob('kayfabb-nothing'));
+
+/* ---- E6: a job records that it ran ---- */
+const CONCEAL = 'supabase/functions/conceal/handler.ts';
+red('conceal\'s handler is not wrapped in asJob', change(CONCEAL, (t) => t.replace('asJob(', 'unwrapped(')), /E6.*conceal.*asJob\(/);
+red('conceal\'s handler records as mail', change(CONCEAL, (t) => t.replace("asJob('kayfabb-conceal'", "asJob('kayfabb-mail'")), /E6.*kayfabb-conceal/);
+red('conceal names asJob only in a comment', change(CONCEAL, (t) => `${t.replace('asJob(', 'unwrapped(')}\n// asJob('kayfabb-conceal', handle)\n`), /E6.*kayfabb-conceal/);
+red('conceal names asJob only in a string', change(CONCEAL, (t) => `${t.replace('asJob(', 'unwrapped(')}\nconst a = "asJob('kayfabb-conceal'";\n`), /E6.*kayfabb-conceal/);
+const SQL_JOBS = 'supabase/migrations/0450_job_health.sql';
+const TICK = "'select public.system_tick(); select public.record_job_run(''kayfabb-system-tick'');'";
+red('system-tick records as another job', change(SQL_JOBS, (t) => t.replace("record_job_run(''kayfabb-system-tick'')", "record_job_run(''kayfabb-view-counts'')")), /E6.*kayfabb-system-tick.*another job/);
+red('system-tick records before its work', change(SQL_JOBS, (t) => t.replace(TICK, "'select public.record_job_run(''kayfabb-system-tick''); select public.system_tick();'")), /E6.*kayfabb-system-tick.*after/);
+red('system-tick never records', change(SQL_JOBS, (t) => t.replace(TICK, "'select public.system_tick();'")), /E6.*kayfabb-system-tick.*record_job_run/);
+
+/* ---- E7: the job list, the grace and the heartbeat's row ---- */
+{
+  // The ghost: scheduled, in no JOBS, in no grace, and its row never noted. Three complaints, one each.
+  const ghost = problems({ ...BASE, [LATER]: sqlJob('kayfabb-ghost', undefined, false) }).filter((p) => /kayfabb-ghost/.test(p));
+  const want = [/E7.*kayfabb-ghost.*JOBS/, /E7.*kayfabb-ghost.*jobGraceMinutes/, /E7.*kayfabb-ghost.*note_job_scheduled/];
+  if (ghost.length === 3 && want.every((re) => ghost.some((p) => re.test(p)))) console.log('ok    a ghost job draws three complaints');
+  else {
+    failures += 1;
+    console.error('FAIL  a ghost job draws three complaints');
+    console.error(`      got:${ghost.length ? ghost.map((f) => `\n        - ${f}`).join('') : ' none'}`);
+  }
+}
+red('a scheduled job the engine does not list', { ...BASE, [LATER]: sqlJob('kayfabb-ghost') }, /E7.*kayfabb-ghost.*JOBS/);
+red('a scheduled job with no grace', { ...BASE, [LATER]: sqlJob('kayfabb-ghost') }, /E7.*kayfabb-ghost.*jobGraceMinutes/, { jobs: [...REAL_CONTEXT.jobs, 'kayfabb-ghost'], grace: REAL_CONTEXT.grace });
+red('a job whose schedule does not note its row', { ...BASE, [LATER]: sqlJob('kayfabb-ghost', undefined, false) }, /E7.*kayfabb-ghost.*note_job_scheduled/, withJob('kayfabb-ghost'));
+red('mail\'s schedule function stops noting its row', change(SQL_JOBS, (t) => t.replaceAll("perform note_job_scheduled('kayfabb-mail');", '')), /E7.*kayfabb-mail.*note_job_scheduled/);
+quiet('a job named by an insert into job_runs needs no note', { ...change(SQL_JOBS, (t) => t.replaceAll("perform note_job_scheduled('kayfabb-mail');", '')), [LATER]: `insert into job_runs (job) values ('kayfabb-mail');\n` });
+red('an engine job that no migration schedules', BASE, /E7.*kayfabb-phantom.*schedule/, withJob('kayfabb-phantom'));
+red('an engine job whose schedule was removed', { ...BASE, [LATER]: `select cron.unschedule('kayfabb-conceal');\n` }, /E7.*kayfabb-conceal.*schedule/);
 
 /* ---- the real files hold the shape ---- */
 const real = problems(REAL);
