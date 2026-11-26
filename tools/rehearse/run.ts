@@ -16,7 +16,7 @@ import { simulateClock } from "./clock.ts";
 import { connect, type Connection } from "./db.ts";
 import { rehearsalFetch, rehearsalModels, type KeptCall, type Mode } from "./models.ts";
 import { runMinute, type JobRun, type ScheduleCtx } from "./schedule.ts";
-import { STALL_MS, Stalled, within, type Dispatched } from "./dispatch.ts";
+import { STALL_MS, Stalled, within, type Dispatched, type Handler } from "./dispatch.ts";
 import { collect } from "./collect.ts";
 import { rehearsalApiKey } from "./key.ts";
 import { reportHtml } from "../../engine/rehearsal/report.ts";
@@ -73,6 +73,10 @@ export interface RehearseOptions {
   readonly stallMs?: number;
   /** Replaces `runAction` for the filler (tests). */
   readonly act?: typeof runAction;
+  /** Replaces the real handlers (tests): every function a job calls must be given, the dispatcher stops on one it does not know. */
+  readonly handlers?: Record<string, Handler>;
+  /** Called after each minute's jobs and filler have run, with the database and the minute (tests read the system as it goes). */
+  readonly onMinute?: (conn: Connection, minute: number, instance: Instance) => Promise<void>;
   /** A line a day, as it goes. */
   readonly onDay?: (line: string) => void;
   /** Called with the finished run before the cluster stops: the collector's place (Task 9), and where a test reads the database. */
@@ -223,7 +227,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
       authAdmin: mail.authAdmin,
     };
     const sched: ScheduleCtx = {
-      connection: conn, deps, cap: models.cap, ...(o.stallMs === undefined ? {} : { stallMs: o.stallMs }), lastDrained: 0, dispatched: [], cluster, clock, jobs: [],
+      connection: conn, deps, cap: models.cap, ...(o.stallMs === undefined ? {} : { stallMs: o.stallMs }), ...(o.handlers ? { handlers: o.handlers } : {}), lastDrained: 0, dispatched: [], cluster, clock, jobs: [],
     };
     const filler: FillerResult[] = [];
     let systemOnAt: number | null = null;
@@ -275,6 +279,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
           throw new Error(`filler: ${action} by ${a.player} answered ${answer.status}: ${JSON.stringify(answer.body)}`);
         }
       }
+      await o.onMinute?.(conn, minute, instance);
     }
     o.onDay?.(`${dayName(lastMinute)}: ${dayPosts} filler actions through, ${filler.filter((f) => !f.ok && f.at >= lastMinute + MINUTE - DAY_MS).length} refused, ${sched.dispatched.length} requests dispatched in all`);
 
