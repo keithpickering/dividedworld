@@ -158,6 +158,8 @@ export const qualityControl: Persona = {
       'REQUEST EXPIRED, {asker}. Status: unprocessed. I opened it. I read the first line. Then there was a shift change. There is no shift change.',
       '{asker}, your request fell off the end of the queue. The queue has an end, now. I did not know. Recounting.',
     ],
+    // DRAFT placeholder, Task 5 writes these (outcome posts plan): this persona's line under a ban's entry in the Banlist.
+    banEntry: ['DRAFT placeholder for quality-control, {banned}.'],
   },
   beats: ['video-games', 'arts-crafts'],
   petRules: ['noDuplicateTitle', 'minLength', 'noNecropost'],

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LANDING_KEYS, OWED_KEYS, STOCK_LINE_KEYS, repairLandingLine, stockLinesOf } from './stock.ts';
+import { LANDING_KEYS, OWED_KEYS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS, repairLandingLine, stockLinesOf } from './stock.ts';
 import { testSystem } from '../rules/test-system.ts';
 import type { SystemContent } from '../rules/types.ts';
 
@@ -47,4 +47,11 @@ test('repairLandingLine: a nested brace leaves no token the key is not given, ev
   const move = repairLandingLine('{{move}} lands.', 'moveLanded');
   assert.equal(move.line, '{move} lands.');
   assert.deepEqual(move.trims, [{ path: 'line', predicate: 'tokens(moveLanded)', before: 1, after: 0 }]);
+});
+
+test('banEntry is a stock line key, given {mod} and {banned}, and is not an owed key: a ban entry is paid through bans_owed, not lines_owed', () => {
+  assert.ok(STOCK_LINE_KEYS.includes('banEntry'));
+  assert.deepEqual([...STOCK_LINE_TOKENS.banEntry], ['mod', 'banned']);
+  assert.ok(!(OWED_KEYS as readonly string[]).includes('banEntry') && !(LANDING_KEYS as readonly string[]).includes('banEntry'));
+  assert.deepEqual(stockLinesOf(system, 'bot-a', 'banEntry'), ['Own banEntry.']);
 });

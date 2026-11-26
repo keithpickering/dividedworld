@@ -123,7 +123,7 @@ const system: SystemContent = {
   roster: [boss, bot],
   firstBoss: 'boss-a',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer', concession: 'filer' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer', concession: 'filer', banEntry: 'filer' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
@@ -474,6 +474,23 @@ test('an instance says the copy the Roster Report and the Staff Meetings are tit
   assert.deepEqual(instanceProblems(good), []);
 });
 
+test('an instance says the Banlist\'s words as a pair: a title naming its season and an entry naming its post once inside a link, with the four tokens only', () => {
+  const title = 'Season {season}: Banlist';
+  const entry = '{character} is banned for {days} days under {rule}. [url={post}]The post[/url]';
+  const withBan = (c: Record<string, unknown>) => instanceProblems({ ...good, copy: { ...good.copy, ...c } } as unknown as Instance).join('\n');
+  assert.equal(withBan({ banlistThreadTitle: title, banlistEntry: entry }), '', 'a whole pair');
+  assert.match(withBan({ banlistThreadTitle: title }), /banlistThreadTitle and banlistEntry come as a pair/);
+  assert.match(withBan({ banlistEntry: entry }), /banlistThreadTitle and banlistEntry come as a pair/);
+  assert.match(withBan({ banlistThreadTitle: 'Banlist', banlistEntry: entry }), /banlistThreadTitle does not say which season/);
+  assert.match(withBan({ banlistThreadTitle: 'Season {season} {boss}', banlistEntry: entry }), /copy for banlistThreadTitle uses \{boss\}/);
+  assert.match(withBan({ banlistThreadTitle: ' ', banlistEntry: entry }), /no copy for banlistThreadTitle/);
+  assert.match(withBan({ banlistThreadTitle: title, banlistEntry: ' ' }), /no copy for banlistEntry/);
+  assert.match(withBan({ banlistThreadTitle: title, banlistEntry: '{character} is banned for {days} days under {rule}.' }), /banlistEntry does not link the post \(\{post\} once, inside a \[url=/);
+  assert.match(withBan({ banlistThreadTitle: title, banlistEntry: '{character} {days} {rule} {post}' }), /banlistEntry does not link the post/, 'a {post} outside a link');
+  assert.match(withBan({ banlistThreadTitle: title, banlistEntry: `${entry} [url={post}]again[/url]` }), /banlistEntry does not link the post/, 'twice');
+  assert.match(withBan({ banlistThreadTitle: title, banlistEntry: `${entry} {season} {boss}` }), /banlistEntry uses \{season\}.*\n.*banlistEntry uses \{boss\}|banlistEntry uses \{season\}/s);
+});
+
 test('each thread title is a move kind the engine has, and fills only the tokens that move carries', () => {
   const titled = (threadTitles: Record<string, string>) => said(withSystem({ threadTitles }));
   assert.deepEqual(instanceProblems(withSystem({ threadTitles: { renameBoard: '{board} is now {name}', createBoard: 'New board: {name}', awardTrophy: '{trophyName} goes to {characterName}', conferGroup: 'Welcome to {groupName}', nameSuccessor: 'On the matter of succession' } })), []);
@@ -527,7 +544,7 @@ test('a duty assigned to a staff key that does not exist is a problem; a key tha
 test('a duty left unassigned is a problem, one for each', () => {
   const { appeal: _a, ...rest } = system.duties;
   assert.match(said(withSystem({ duties: rest as SystemContent['duties'] })), /duty "appeal" is assigned to no one/);
-  assert.equal(DUTIES.length, 14);
+  assert.equal(DUTIES.length, 15);
 });
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {

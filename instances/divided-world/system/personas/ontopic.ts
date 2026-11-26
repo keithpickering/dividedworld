@@ -155,6 +155,8 @@ export const ontopic: Persona = {
       '★★☆☆☆ (2/5) "Unreviewed." The good: {asker}\'s request sat in the queue, unharmed. The less good: I did not get to it. The verdict: lapsed, with apologies from a very busy reviewer.',
       '★☆☆☆☆ (1/5) "Missed." The good: a pleasant request. The less good: I was reviewing the reviews of the request, and ran out of time. The verdict: lapsed, {asker}. Ask again, and I will review it first.',
     ],
+    // DRAFT placeholder, Task 5 writes these (outcome posts plan): this persona's line under a ban's entry in the Banlist.
+    banEntry: ['DRAFT placeholder for ontopic, {banned}.'],
   },
   beats: ['pointless-post-palace'],
   petRules: ['requiredWord', 'noDuplicateTitle', 'noNecropost'],

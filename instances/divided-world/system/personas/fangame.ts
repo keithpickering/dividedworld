@@ -154,6 +154,8 @@ export const fangame: Persona = {
       'Circling back, {asker}: your request expired while I was reading it for the ninth time. I will do better. I will not do better.',
       'Per the timeline, your request lapsed. I was going to respond. I had a draft. The draft was four pages and none of them were an answer.',
     ],
+    // DRAFT placeholder, Task 5 writes these (outcome posts plan): this persona's line under a ban's entry in the Banlist.
+    banEntry: ['DRAFT placeholder for fangame, {banned}.'],
   },
   startingHobby: 'Mario fangames, especially unfinished ones made in Game Maker 5',
   temperament: 'A nervous middle manager whose programming can only process Mario fangames. Doomed as Boss; might be happy as a poster.',
