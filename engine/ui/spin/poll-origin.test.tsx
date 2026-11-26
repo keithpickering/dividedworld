@@ -48,6 +48,16 @@ describe('a thread spun from a poll', () => {
     expect(within(head).getByRole('link')).toHaveAttribute('href', `/t/${w.thread}?page=1#post-1`);
   });
 
+  test('its head names the poll\'s board when the thread was spun onto another board', async () => {
+    const w = world();
+    const over = await w.fake.spin(w.poll, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    if (!over.ok) throw new Error(over.error);
+    open(w, over.value.thread.id);
+    const head = (await box()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from the poll “Best kart in the series\?” on #1 in A short thread on General$/u));
+    expect(within(head).getAllByRole('link')).toHaveLength(1);
+  });
+
   test('the box draws the poll in its content area, with its counts and who chose each option', async () => {
     const w = world();
     open(w, await spinFrom(w, w.poll));

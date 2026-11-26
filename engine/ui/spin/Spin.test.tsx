@@ -226,6 +226,51 @@ describe('the ORIGIN box', () => {
     expect(within(head).getByRole('link', { name: 'the update “Traps bite”' })).toHaveAttribute('href', `/updates?update=${encodeURIComponent(update)}`);
   });
 
+  test('the head names the board of an origin on another board, in the same sentence; on the same board it names none', async () => {
+    const w = threadWorld(3);
+    const over = await w.fake.spin(w.ids[1]!, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    if (!over.ok) throw new Error(over.error);
+    openSpun(w, over.value.thread.id);
+    const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from #2 in A short thread on General$/u));
+    expect(within(head).getByRole('link', { name: '#2 in A short thread' })).toBeInTheDocument();
+    cleanup();
+    const same = await spinFrom(w, w.ids[1]!);
+    openSpun(w, same);
+    const sameHead = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(sameHead).toHaveTextContent(/^ORIGIN · Spun from #2 in A short thread$/u));
+  });
+
+  test('the head of a thread spun from a post on The System\'s board names that board', async () => {
+    const w = threadWorld(3);
+    const said = w.fake.seed.thread('announcements', null, 'The tally', 'Settled.');
+    const spun = await spinFrom(w, said.act);
+    openSpun(w, spun);
+    const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from #1 in The tally on Staff Announcements$/u));
+  });
+
+  test('the head of an update-spun box names no board', async () => {
+    const w = threadWorld(3);
+    const update = w.fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
+    openSpun(w, await spinFrom(w, update, 'About the update'));
+    const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from the update “Traps bite”/u));
+    expect(head).not.toHaveTextContent(/ on (General|Off Topic|Staff Announcements)/u);
+  });
+
+  test('an origin\'s board the boards list does not hold reads as it does now', async () => {
+    const w = threadWorld(3);
+    const over = await w.fake.spin(w.ids[1]!, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    if (!over.ok) throw new Error(over.error);
+    const realBoot = w.fake.boot.bind(w.fake);
+    const boards = vi.spyOn(w.fake, 'boot').mockImplementation(async () => ({ ...(await realBoot()), boards: [] }));
+    openSpun(w, over.value.thread.id);
+    const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(boards).toHaveBeenCalled());
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from #2 in A short thread$/u));
+  });
+
   test('with no place, the head reads "an Act" and the box says nothing about the rest of the cards', async () => {
     const w = threadWorld(3);
     for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });
@@ -1243,6 +1288,30 @@ describe('Spun into', () => {
     expect(many).not.toHaveBeenCalled();
     expect(one).not.toHaveBeenCalled();
     expect(within(await screen.findByRole('article', { name: /^Post 3 /u })).queryByText(/Spun into/u)).toBeNull();
+  });
+
+  test('a thread on another board names it: "(on Off Topic, 0 replies)"; one on this board reads as before', async () => {
+    const w = threadWorld(3);
+    const made = await w.fake.spin(w.ids[1]!, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    expect(made.ok).toBe(true);
+    await spinFrom(w, w.ids[1]!, 'Right here');
+    openThread(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 /u });
+    const line = await within(article).findByText(/Spun into:/u);
+    await waitFor(() => expect(line.closest('p')).toHaveTextContent('↳ Spun into: Over there (on Off Topic, 0 replies) · Right here (0 replies)'));
+    expect(within(article).getByRole('link', { name: 'Over there' })).toBeInTheDocument();
+  });
+
+  test('a thread whose board the boards list does not hold reads as before', async () => {
+    const w = threadWorld(3);
+    await w.fake.spin(w.ids[1]!, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    const realBoot = w.fake.boot.bind(w.fake);
+    const boards = vi.spyOn(w.fake, 'boot').mockImplementation(async () => ({ ...(await realBoot()), boards: [] }));
+    openThread(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 /u });
+    const line = await within(article).findByText(/Spun into:/u);
+    await waitFor(() => expect(boards).toHaveBeenCalled());
+    await waitFor(() => expect(line.closest('p')).toHaveTextContent('↳ Spun into: Over there (0 replies)'));
   });
 
   test('lists the first five and says "and N more"; the button reads that Act\'s whole list', async () => {

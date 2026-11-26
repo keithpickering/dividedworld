@@ -264,7 +264,7 @@ function PollBody({ view, store, board }: { readonly view: PollView; readonly st
             <button type="button" className="kb-link-button" aria-expanded={spinning} onClick={() => setSpinning((s) => !s)}>Spin</button>
             {canClose && <button type="button" className="kb-link-button" aria-disabled={busy} onClick={() => void close()}>Close poll</button>}
           </span>
-          <SpunInto act={id} />
+          <SpunInto act={id} here={board !== undefined ? board : thread?.summary.board ?? null} />
           <span className="kb-visually-hidden" role="status" aria-live="polite">{said || (reading ? 'Reading the rest of the voters' : listed === 'reading' ? 'Reading the ballots' : '')}</span>
           {refusal !== null && <p className="kb-poll-refusal" role="alert">{refusal}</p>}
         </div>
