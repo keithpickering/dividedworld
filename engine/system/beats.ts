@@ -56,6 +56,14 @@ export const DUE_WHY = 'This beat was due and the meeting left it out, so it was
 /** Why a beat's parts carry when the Boss named the beat and gave no reason. */
 export const BEAT_WHY = 'The Boss played this beat.';
 
+/** The bounds on a beat's announcement and lead-in, in characters (the arc announcements design, sections 2, 3, 6 and 8): authored text is checked against them, and the meeting trims what a model writes to them. */
+export const ANNOUNCE_MOST = 2000;
+export const PITCH_MOST = 200;
+export const RECAP_MOST = 300;
+export const PUSH_MOST = 300;
+export const MOOD_MOST = 300;
+export const LEAD_IN_BRIEF_MOST = 1000;
+
 /** The params of the moves that build the board where a role may stand for a board's uuid, as the guard reads them. */
 const BOARD_PARAMS = ['board', 'into', 'fallback'] as const;
 

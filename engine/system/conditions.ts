@@ -27,8 +27,8 @@ export interface ConditionKind {
 }
 
 export const CONDITIONS: readonly ConditionKind[] = [
-  { key: 'phase', plain: 'a phase of the season has begun, or the season is within some days of its end' },
-  { key: 'beatLanded', plain: 'an earlier beat\'s bundle has landed' },
+  { key: 'phase', plain: 'a phase of the season has begun (or some days into it have passed), or the season is within some days of its end' },
+  { key: 'beatLanded', plain: 'an earlier beat\'s bundle has landed (or, for a beat handed down, the predecessor\'s beat landed), or with not, that it has not' },
   { key: 'boardActivity', plain: 'a board\'s posts over the last days are above or below a number, or above or below another board\'s' },
   { key: 'moveReversed', plain: 'an admin reversed one of this Boss\'s moves' },
   { key: 'demandResolved', plain: 'a demand on one of this Boss\'s moves was met, or failed' },
@@ -42,6 +42,9 @@ export const ACTIVITY_DAYS = { least: 1, most: 90 } as const;
 export const ACTIVITY_COUNT_MOST = 100_000;
 /** The most days before the season's end a phase condition or a due point may name. */
 export const DAYS_BEFORE_END_MOST = 365;
+
+/** What `of` may be: the Boss that handed over to the current one, in the season it served. */
+export const PREDECESSOR = 'predecessor';
 
 /** What a beat or a role may be called: the same style as a bundle role, so a key can name one in SQL. */
 export const BEAT_KEY = /^[a-z][a-z0-9_-]{0,39}$/;
@@ -72,13 +75,15 @@ function stray(c: Record<string, unknown>, allowed: readonly string[]): Conditio
 
 /**
  * A board named in a condition: a board's uuid, or a role a beat's bundle made, `{role, beat}` (the board that beat's part of that role made, read from the Acts that landed). A bare
- * `{role}` names a part of the bundle being queued, which no condition has.
+ * `{role}` names a part of the bundle being queued, which no condition has. `{role, beat, of: 'predecessor'}` names a board the outgoing Boss's beat made (only a persona's `aftermath` may).
  */
 export function isBoardTarget(v: unknown): boolean {
   if (typeof v === 'string') return UUID.test(v);
   if (!isObject(v)) return false;
   const keys = Object.keys(v);
-  return keys.length === 2 && keys.includes('role') && keys.includes('beat') && typeof v['role'] === 'string' && typeof v['beat'] === 'string' && BEAT_KEY.test(v['role']) && BEAT_KEY.test(v['beat']);
+  const of = keys.includes('of');
+  if (keys.length !== (of ? 3 : 2) || of && v['of'] !== PREDECESSOR) return false;
+  return keys.includes('role') && keys.includes('beat') && typeof v['role'] === 'string' && typeof v['beat'] === 'string' && BEAT_KEY.test(v['role']) && BEAT_KEY.test(v['beat']);
 }
 
 const phaseProblem = (v: unknown, path: string): ConditionProblem | null =>
@@ -92,22 +97,30 @@ export function conditionProblem(c: unknown): ConditionProblem | null {
   const key = c['kind'];
   switch (key) {
     case 'phase': {
-      const extra = stray(c, ['phase', 'daysBeforeEnd']);
+      const extra = stray(c, ['phase', 'daysBeforeEnd', 'daysIntoPhase']);
       if (extra) return extra;
       const has = (k: string) => c[k] !== undefined;
-      if (!has('phase') && !has('daysBeforeEnd')) return problem('phase', 'atLeastOneOf(phase, daysBeforeEnd)', 'a phase condition names a phase, or days before the end, or both');
+      if (!has('phase') && !has('daysBeforeEnd') && !has('daysIntoPhase')) return problem('phase', 'atLeastOneOf(phase, daysBeforeEnd)', 'a phase condition names a phase, or days before the end, or both');
       if (has('phase')) { const bad = phaseProblem(c['phase'], 'phase'); if (bad) return bad; }
       if (has('daysBeforeEnd')) {
         const bad = whole(c['daysBeforeEnd'], 1, DAYS_BEFORE_END_MOST);
         if (bad) return problem('daysBeforeEnd', bad, `daysBeforeEnd must be a whole number of days from 1 to ${DAYS_BEFORE_END_MOST} (${bad})`);
       }
+      if (has('daysIntoPhase')) {
+        if (!has('phase')) return problem('daysIntoPhase', 'requires(phase)', 'days into a phase need the phase they are into');
+        if (has('daysBeforeEnd')) return problem('daysIntoPhase', 'notWith(daysBeforeEnd)', 'a phase condition counts days into a phase or days before the end, not both');
+        const bad = whole(c['daysIntoPhase'], 0, DAYS_BEFORE_END_MOST);
+        if (bad) return problem('daysIntoPhase', bad, `daysIntoPhase is a whole number of days from 0 to ${DAYS_BEFORE_END_MOST} (${bad})`);
+      }
       return null;
     }
     case 'beatLanded': {
-      const extra = stray(c, ['beat']);
+      const extra = stray(c, ['beat', 'of', 'not']);
       if (extra) return extra;
       if (c['beat'] === undefined) return problem('beat', 'required', 'beatLanded names the beat that must have landed');
       if (typeof c['beat'] !== 'string') return problem('beat', 'isString', 'beatLanded\'s beat is a key, a string');
+      if (c['of'] !== undefined && c['of'] !== PREDECESSOR) return problem('of', `oneOf(${PREDECESSOR})`, `beatLanded's of can only be "${PREDECESSOR}", the Boss that handed over to this one`);
+      if (c['not'] !== undefined && c['not'] !== true) return problem('not', 'isTrue', 'beatLanded\'s not is true, or left out');
       return BEAT_KEY.test(c['beat']) ? null : problem('beat', 'isKey', `"${c['beat']}" is not a beat key (lowercase letters, digits, hyphens and underscores, from a letter)`);
     }
     case 'boardActivity': {

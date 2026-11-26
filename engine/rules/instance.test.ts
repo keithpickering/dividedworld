@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ANONYMOUS_STAFF_KEY, BRIBE_BOUNDS, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER, deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
 import type { Instance, Persona, Settings, SystemContent } from './types.ts';
 import { PHASE_CAPS } from '../system/phases.ts';
+import { ANNOUNCE_MOST, LEAD_IN_BRIEF_MOST, MOOD_MOST, PITCH_MOST, PUSH_MOST } from '../system/beats.ts';
 import { DUTIES } from '../system/duties.ts';
 import { STOCK_LINE_KEYS } from '../system/stock.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
@@ -1495,6 +1496,103 @@ test('an authored bundle over bundleAuthoredMostParts is a problem, and a person
   assert.deepEqual(instanceProblems(withBoss({ ...arcFields, arc: [eight], miniArcs: [], holdsBack: [] } as Partial<Persona>)), []);
   const many = Array.from({ length: 25 }, (_, i) => ({ ...picking, key: `b${i}`, unlock: [{ kind: 'phase', phase: 'reign' }] }));
   assert.match(arcWith(many, { miniArcs: [], holdsBack: [] }), /persona "boss-a".*25 beats.*\(atMost\(24\)\)/);
+});
+
+/* ------------------------------------------------------------------------ announcements, lead-ins and aftermath ---- */
+
+const announce = { titleHint: 'a memo title', defaultTitle: 'A big change', defaultBody: 'Here is what I am doing.', defaultPitch: 'I split the forum.', push: 'Ask how everyone likes it.' };
+const leadIn = { unlock: [{ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 7 }], brief: 'The threads pile up.', mood: 'Overwhelmed by threads.' };
+const restore = {
+  key: 'restore',
+  unlock: [{ kind: 'beatLanded', beat: 'split', of: 'predecessor' }, { kind: 'beatLanded', beat: 'everything', of: 'predecessor' }],
+  brief: 'Put it back.',
+  announce,
+  leadIn,
+  bundle: { name: 'Restoration', parts: [{ role: 'home', kind: 'createBoard', params: {} }, { role: 'back', kind: 'moveThread', params: { from: { role: 'minus', beat: 'split', of: 'predecessor' }, into: { role: 'home' } } }] },
+} as const;
+const unfinished = { key: 'unfinished', unlock: [{ kind: 'beatLanded', beat: 'split', of: 'predecessor' }, { kind: 'beatLanded', beat: 'everything', of: 'predecessor', not: true }], brief: 'Finish it.' } as const;
+const announcedFields = { ...arcFields, arc: [{ ...split, announce, leadIn }, picking, everything], aftermath: [restore, unfinished] } as unknown as Partial<Persona>;
+const announcedOf = (change: Record<string, unknown>) => said(withBoss({ ...announcedFields, ...change } as Partial<Persona>));
+const afterWith = (...aftermath: unknown[]) => announcedOf({ aftermath });
+
+test('a persona with announced beats, a lead-in and an aftermath passes', () => {
+  assert.deepEqual(instanceProblems(withBoss(announcedFields)), []);
+});
+
+test('an announce block with a blank field, or one over its bound, names the predicate', () => {
+  const arcWithAnnounce = (a: Record<string, unknown>) => announcedOf({ arc: [{ ...split, announce: { ...announce, ...a } }, picking, everything] });
+  for (const field of ['titleHint', 'defaultTitle', 'defaultBody', 'defaultPitch', 'push']) {
+    assert.match(arcWithAnnounce({ [field]: ' ' }), new RegExp(`persona "boss-a".*beat "split".*announce.*${field}.*\\(required\\)`), field);
+  }
+  assert.match(arcWithAnnounce({ defaultTitle: 'x'.repeat(121) }), /beat "split".*announce.*defaultTitle.*\(atMost\(120\)\)/);
+  assert.match(arcWithAnnounce({ defaultBody: 'x'.repeat(ANNOUNCE_MOST + 1) }), new RegExp(`beat "split".*announce.*defaultBody.*\\(atMost\\(${ANNOUNCE_MOST}\\)\\)`));
+  assert.match(arcWithAnnounce({ defaultPitch: 'x'.repeat(PITCH_MOST + 1) }), new RegExp(`beat "split".*announce.*defaultPitch.*\\(atMost\\(${PITCH_MOST}\\)\\)`));
+  assert.match(arcWithAnnounce({ push: 'x'.repeat(PUSH_MOST + 1) }), new RegExp(`beat "split".*announce.*push.*\\(atMost\\(${PUSH_MOST}\\)\\)`));
+  assert.deepEqual(instanceProblems(withBoss({ ...announcedFields, arc: [{ ...split, announce: { ...announce, defaultTitle: 'x'.repeat(120), defaultBody: 'x'.repeat(ANNOUNCE_MOST), defaultPitch: 'x'.repeat(PITCH_MOST), push: 'x'.repeat(PUSH_MOST) } }, picking, everything] } as Partial<Persona>)), []);
+});
+
+test('a lead-in needs a condition, a brief and a mood within their bounds, and conditions the catalog accepts', () => {
+  const withLeadIn = (l: Record<string, unknown>) => announcedOf({ arc: [{ ...split, leadIn: { ...leadIn, ...l } }, picking, everything] });
+  assert.match(withLeadIn({ unlock: [] }), /persona "boss-a".*beat "split".*leadIn.*\(nonEmpty\)/);
+  assert.match(withLeadIn({ brief: ' ' }), /beat "split".*leadIn.*brief.*\(required\)/);
+  assert.match(withLeadIn({ mood: ' ' }), /beat "split".*leadIn.*mood.*\(required\)/);
+  assert.match(withLeadIn({ brief: 'x'.repeat(LEAD_IN_BRIEF_MOST + 1) }), new RegExp(`beat "split".*leadIn.*brief.*\\(atMost\\(${LEAD_IN_BRIEF_MOST}\\)\\)`));
+  assert.match(withLeadIn({ mood: 'x'.repeat(MOOD_MOST + 1) }), new RegExp(`beat "split".*leadIn.*mood.*\\(atMost\\(${MOOD_MOST}\\)\\)`));
+  assert.match(withLeadIn({ unlock: [{ kind: 'phase', daysIntoPhase: 7 }] }), /beat "split".*leadIn unlock 1.*\(requires\(phase\)\)/);
+});
+
+test('of: predecessor outside the aftermath is a problem, in a condition and in a bundle ref', () => {
+  assert.match(arcWith([split, { ...picking, unlock: [{ kind: 'beatLanded', beat: 'split', of: 'predecessor' }] }]), /beat "picking-apart".*\(aftermathOnly\)/);
+  assert.match(arcOf({ miniArcs: [{ ...lap, unlock: [{ kind: 'boardActivity', board: { role: 'fangames', beat: 'split', of: 'predecessor' }, days: 7, above: 1 }] }] }), /beat "victory-lap".*\(aftermathOnly\)/);
+  const reach = { ...everything, bundle: { name: 'E', parts: [{ role: 'final', kind: 'mergeBoard', params: { board: { role: 'fangames', beat: 'split', of: 'predecessor' }, into: { role: 'minus', beat: 'split' } } }] } };
+  assert.match(arcWith([split, picking, reach]), /beat "everything".*part "final".*\(aftermathOnly\)/);
+  assert.match(announcedOf({ arc: [{ ...split, leadIn: { ...leadIn, unlock: [{ kind: 'beatLanded', beat: 'split', of: 'predecessor' }] } }, picking, everything] }), /beat "split".*leadIn unlock 1.*\(aftermathOnly\)/);
+});
+
+test('in the aftermath, a predecessor reference names a beat of the persona\'s own arc, and a role that beat\'s bundle makes', () => {
+  assert.match(afterWith({ ...restore, unlock: [{ kind: 'beatLanded', beat: 'ghost', of: 'predecessor' }] }), /persona "boss-a".*beat "restore".*"ghost".*\(beatOfPersona\)/);
+  assert.match(afterWith({ ...restore, unlock: [{ kind: 'boardActivity', board: { role: 'minus', beat: 'ghost', of: 'predecessor' }, days: 7, above: 1 }] }), /beat "restore".*"ghost".*\(beatOfPersona\)/);
+  assert.match(afterWith({ ...restore, unlock: [{ kind: 'boardActivity', board: { role: 'void', beat: 'split', of: 'predecessor' }, days: 7, above: 1 }] }), /beat "restore".*role "void".*beat "split".*\(roleOfBeat\)/);
+  const badRef = { ...restore, bundle: { name: 'R', parts: [{ role: 'back', kind: 'moveThread', params: { from: { role: 'void', beat: 'split', of: 'predecessor' }, into: { role: 'home' } } }] } };
+  assert.match(afterWith(badRef), /beat "restore".*part "back".*role "void".*\(roleOfBeat\)/);
+  const noBundle = { ...restore, unlock: [{ kind: 'boardActivity', board: { role: 'x', beat: 'picking-apart', of: 'predecessor' }, days: 7, above: 1 }] };
+  assert.match(afterWith(noBundle), /beat "restore".*role "x".*beat "picking-apart".*\(roleOfBeat\)/);
+});
+
+test('an aftermath beat is never due or repeatable', () => {
+  assert.match(afterWith({ ...restore, due: { daysBeforeEnd: 2 } }), /persona "boss-a".*beat "restore".*due.*\(noDueOnAftermath\)/);
+  assert.match(afterWith({ ...restore, repeatable: true }), /beat "restore".*repeatable.*\(miniArcOnly\)/);
+});
+
+test('an aftermath beat is checked as a beat is: key, brief, unlock, bundle, announce and lead-in', () => {
+  assert.match(afterWith({ ...restore, brief: ' ' }), /beat "restore".*brief.*\(required\)/);
+  assert.match(afterWith({ ...restore, unlock: [] }), /beat "restore".*unlock.*\(atLeast\(1\)\)/);
+  assert.match(afterWith({ ...restore, key: 'Restore It' }), /beat "Restore It".*\(isKey\)/);
+  assert.match(afterWith(restore, { ...unfinished, key: 'restore' }), /beat "restore" is used twice.*\(isUnique\)/);
+  assert.match(afterWith({ ...restore, bundle: { ...restore.bundle, parts: [{ role: 'home', kind: 'burnBoard', params: {} }] } }), /beat "restore".*part "home".*"burnBoard".*\(oneOf\(/);
+  assert.match(afterWith({ ...restore, announce: { ...announce, push: ' ' } }), /beat "restore".*announce.*push.*\(required\)/);
+  assert.match(afterWith({ ...restore, leadIn: { ...leadIn, unlock: [] } }), /beat "restore".*leadIn.*\(nonEmpty\)/);
+  assert.match(announcedOf({ aftermath: 'no' }), /aftermath that is no list \(isArray\)/);
+});
+
+test('a beat or lead-in whose every condition is a negated beatLanded would hold from the first day', () => {
+  const allNot = [{ kind: 'beatLanded', beat: 'split', not: true }];
+  assert.match(arcWith([split, { ...picking, unlock: allNot }]), /beat "picking-apart".*unlock.*\(notAllNegated\)/);
+  assert.match(announcedOf({ arc: [{ ...split, leadIn: { ...leadIn, unlock: [{ kind: 'beatLanded', beat: 'everything', not: true }] } }, picking, everything] }), /beat "split".*leadIn.*\(notAllNegated\)/);
+  assert.match(afterWith({ ...unfinished, unlock: [{ kind: 'beatLanded', beat: 'everything', of: 'predecessor', not: true }] }), /beat "unfinished".*\(notAllNegated\)/);
+  assert.deepEqual(instanceProblems(withBoss({ ...arcFields, arc: [split, { ...picking, unlock: [...allNot, { kind: 'phase', phase: 'reign' }] }, everything] } as Partial<Persona>)), []);
+});
+
+test('not with any value but true names isTrue', () => {
+  assert.match(arcWith([split, { ...picking, unlock: [{ kind: 'beatLanded', beat: 'split', not: false }] }]), /beat "picking-apart".*unlock 1.*\(isTrue\)/);
+  assert.match(afterWith({ ...unfinished, unlock: [{ kind: 'beatLanded', beat: 'split', of: 'predecessor', not: 1 }] }), /beat "unfinished".*\(isTrue\)/);
+});
+
+test('the beat bound counts aftermath beats with the rest', () => {
+  const some = (n: number, key: string) => Array.from({ length: n }, (_, i) => ({ ...unfinished, key: `${key}${i}` }));
+  assert.match(announcedOf({ arc: [], miniArcs: [], holdsBack: [], aftermath: some(25, 'a') }), /25 beats.*\(atMost\(24\)\)/);
+  assert.match(announcedOf({ arc: [split, picking, everything], miniArcs: [lap], holdsBack: [], aftermath: some(21, 'a') }), /25 beats.*\(atMost\(24\)\)/);
+  assert.deepEqual(instanceProblems(withBoss({ ...arcFields, arc: [split, picking, everything], miniArcs: [lap], holdsBack: [], aftermath: some(20, 'a') } as Partial<Persona>)), []);
 });
 
 // Cosmetics: gear, trophies and Random Events (docs/plans/2026-11-04-cosmetics-plan.md, Task 1).
