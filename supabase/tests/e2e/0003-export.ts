@@ -533,7 +533,7 @@ test('an instance exported and imported into a fresh database is the same instan
       perform start_visit(pass_post, 'exp-bot', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol',
         'about_act', pass_post, 'predicate', 'noAllCaps', 'rule', 'Rule 1: no all-caps posts'));
       -- The Mod Bots' settings (so the filing run's job exists, 0106) and one judged call's record.
-      insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "patrolPool": 20, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10}')
+      insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "patrolPool": 20, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10, "quizQuestionsPerDay": 60, "quizWriteMinutes": 15}')
         on conflict (key) do update set value = excluded.value;
       -- A patrol the Mod made (0110): its meeting, the posts it was shown, a finding dropped at the cap and what came of it, and the record of its call (keyed by the patrol,
       -- which has no Act), carried across with the rows that name them.

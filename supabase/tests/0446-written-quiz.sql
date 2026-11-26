@@ -48,13 +48,13 @@ begin
   return why;
 end $$;
 
--- Makes a visit older by some minutes: its Act's time and the pending mark that copies it (a test stands the append-only trigger down for the one update, which a rollback gives back).
+-- Makes a visit older by some minutes (and five seconds, since an Act's time is the clock's and a little after the transaction's now()): its Act's time and the pending mark that copies it (a test stands the append-only trigger down for the one update, which a rollback gives back).
 create function pg_temp.age(visit uuid, minutes integer) returns void language plpgsql as $$
 begin
   alter table acts disable trigger acts_no_update;
-  update acts set created_at = created_at - make_interval(mins => minutes) where id = visit;
+  update acts set created_at = created_at - make_interval(mins => minutes, secs => 5) where id = visit;
   alter table acts enable always trigger acts_no_update;
-  update visits_open set quiz_at = quiz_at - make_interval(mins => minutes) where visit_act = visit and quiz_at is not null;
+  update visits_open set quiz_at = quiz_at - make_interval(mins => minutes, secs => 5) where visit_act = visit and quiz_at is not null;
 end $$;
 
 create function pg_temp.modbots(extra jsonb default '{}', minus text[] default '{}') returns jsonb language sql as $$
@@ -264,7 +264,7 @@ begin
   select * into row from visit_quizzes where visit_act = v_on;
   bank := bank_quiz_for(v_on);
   if row.visit_act is null or row.source is distinct from 'bank' or row.question is distinct from bank ->> 'question' or row.choices is distinct from bank -> 'choices' or row.answer is distinct from bank ->> 'answer' then
-    raise exception 'the tick did not write the bank question at 15 minutes (switch on): % / % / % / %', to_jsonb(row), bank, tick, (select to_jsonb(o) || jsonb_build_object('now', now()) from visits_open o where visit_act = v_on);
+    raise exception 'the tick did not write the bank question at 15 minutes (switch on): % / %', to_jsonb(row), bank;
   end if;
   if (tick ->> 'quizzesBanked')::integer is distinct from 1 then raise exception 'the tick did not count the banked question: %', tick; end if;
   if exists (select 1 from visit_quizzes where visit_act in (v_off, v_young)) then raise exception 'the tick wrote a question for a visit that was not due'; end if;
