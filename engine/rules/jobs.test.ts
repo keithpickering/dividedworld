@@ -90,3 +90,45 @@ test("the row's grace beats the argument's, which beats the default", () => {
   const rowWide = rows({ 'kayfabb-conceal': { grace: { 'kayfabb-conceal': 60 } } }, { lastOkAt: '2027-03-01T14:02:00Z' });
   assert.equal(of(jobHealth(rowWide, { 'kayfabb-conceal': 1 }, now), 'kayfabb-conceal').stopped, false);
 });
+
+test('a schedule the engine cannot read reads scheduled and stopped with no missed run, and says unreadable', () => {
+  for (const schedule of ['30 seconds', '0 0 $ * *']) {
+    const rs = rows({ 'kayfabb-mail': { schedule } });
+    const h = of(jobHealth(rs, {}, at('2027-03-01T14:02:30')), 'kayfabb-mail');
+    assert.deepEqual([h.scheduled, h.stopped, h.missed, h.missedRuns, h.unreadable], [true, true, null, 0, true], schedule);
+  }
+  const fine = of(jobHealth(rows(), {}, at('2027-03-01T14:02:30')), 'kayfabb-mail');
+  assert.equal(fine.unreadable, false);
+  const off = of(jobHealth(rows({ 'kayfabb-mail': { schedule: null } }), {}, at('2027-03-01T14:02:30')), 'kayfabb-mail');
+  assert.equal(off.unreadable, false);
+});
+
+test('an unparseable since reads like no reference: scheduled and stopped, not unreadable', () => {
+  for (const over of [{ lastOkAt: 'not a time' }, { lastOkAt: null, firstSeen: 'yesterday-ish' }]) {
+    const h = of(jobHealth(rows({ 'kayfabb-mail': over }), {}, at('2027-03-01T14:02:30')), 'kayfabb-mail');
+    assert.deepEqual([h.scheduled, h.stopped, h.missed, h.missedRuns, h.unreadable], [true, true, null, 0, false]);
+  }
+});
+
+test('at may carry seconds: the bound is not rounded to the minute', () => {
+  const rs = rows({}, { lastOkAt: '2027-03-01T14:02:00Z' });
+  // Due each minute, grace 10: at 14:12:59.999 the bound is 14:02:59, latest due 14:02, running; at 14:13:00 stopped.
+  assert.equal(of(jobHealth(rs, {}, new Date('2027-03-01T14:12:59.999Z')), 'kayfabb-conceal').stopped, false);
+  assert.equal(of(jobHealth(rs, {}, new Date('2027-03-01T14:13:30Z')), 'kayfabb-conceal').stopped, true);
+  assert.equal(of(jobHealth(rs, {}, new Date('2027-03-01T14:13:30Z')), 'kayfabb-conceal').missedRuns, 1);
+});
+
+test('a missed count below the cap is exact', () => {
+  const rs = rows({}, { lastOkAt: '2027-03-01T14:00:00Z' });
+  // Latest due at 14:15 - 10 = 14:05; due 14:01..14:05 is five.
+  const h = of(jobHealth(rs, {}, at('2027-03-01T14:15:00')), 'kayfabb-conceal');
+  assert.equal(h.missedRuns, 5);
+  const three = of(jobHealth(rs, {}, at('2027-03-01T14:13:00')), 'kayfabb-conceal');
+  assert.equal(three.missedRuns, 3);
+});
+
+test('a schedule firing less often than once in 366 days is never read as stopped', () => {
+  const rs = rows({ 'kayfabb-meet': { schedule: '0 0 29 2 *', lastOkAt: '2027-01-01T00:00:00Z' } });
+  const h = of(jobHealth(rs, {}, at('2029-06-01T00:00:00')), 'kayfabb-meet');
+  assert.deepEqual([h.stopped, h.unreadable], [false, false]);
+});

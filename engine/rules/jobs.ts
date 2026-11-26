@@ -2,7 +2,7 @@
 // A job is a pg_cron job named `kayfabb-*`. A function job posts to an Edge Function and a SQL job runs a SQL function. A job
 // is stopped when a time it was due is more than its grace in the past and no good run has been recorded since then; the
 // health is pure, computed from the rows SQL's `job_status()` returns, so the cron grammar is read here and never twice.
-import { lastDue, nextDue } from './cron.ts';
+import { lastDue, nextDue, parseCron, type CronSchedule } from './cron.ts';
 
 export interface JobSpec {
   readonly name: string;
@@ -52,28 +52,46 @@ export interface JobHealth {
   readonly since: string | null;
   /** The first due time after the reference, for a stopped job that is scheduled. */
   readonly missed: string | null;
-  /** How many due times fell between the reference and `at` less the grace, at most MISSED_MOST. */
+  /**
+   * How many due times fell between the reference and `at` less the grace. A floor: MISSED_MOST (99) means 99 or more.
+   */
   readonly missedRuns: number;
+  /** True only when the row's schedule is outside the grammar the engine reads; the job then reads stopped, never thrown. */
+  readonly unreadable: boolean;
 }
 
 export const MISSED_MOST = 99;
 const MINUTE = 60_000;
 
+/**
+ * The health of every job, from `job_status()` rows, the settings' grace and the time `at` (seconds and all).
+ * A schedule the engine cannot read (an admin hand-edited the job; pg_cron accepts `30 seconds` and `$`) reads
+ * scheduled and stopped with `unreadable` set, and never throws. A reference (`lastOkAt`, else `firstSeen`) that is not a
+ * timestamp reads like none: stopped. A schedule firing less often than once in 366 days has no due time in reach
+ * (`lastDue` returns null), so it is never read as stopped.
+ */
 export function jobHealth(rows: readonly JobRow[], grace: Readonly<Record<string, number>>, at: Date): JobHealth[] {
   return JOBS.map((spec): JobHealth => {
     const row = rows.find((r) => r.job === spec.name);
     const since = row ? (row.lastOkAt ?? row.firstSeen) : null;
-    if (!row || row.schedule === null || !row.active) return { job: spec.name, scheduled: false, stopped: true, since, missed: null, missedRuns: 0 };
-    if (since === null) return { job: spec.name, scheduled: true, stopped: true, since, missed: null, missedRuns: 0 };
+    const base = { job: spec.name, since, missed: null, missedRuns: 0, unreadable: false };
+    if (!row || row.schedule === null || !row.active) return { ...base, scheduled: false, stopped: true };
+    let schedule: CronSchedule;
+    try {
+      schedule = parseCron(row.schedule);
+    } catch {
+      return { ...base, scheduled: true, stopped: true, unreadable: true };
+    }
+    const reference = since === null ? null : new Date(since);
+    if (reference === null || Number.isNaN(reference.getTime())) return { ...base, scheduled: true, stopped: true };
     const minutes = row.grace?.[spec.name] ?? grace[spec.name] ?? spec.defaultGraceMinutes;
     const bound = new Date(at.getTime() - minutes * MINUTE);
-    const reference = new Date(since);
-    const latest = lastDue(row.schedule, bound);
-    if (latest === null || latest.getTime() <= reference.getTime()) return { job: spec.name, scheduled: true, stopped: false, since, missed: null, missedRuns: 0 };
-    const first = nextDue(row.schedule, reference);
+    const latest = lastDue(schedule, bound);
+    if (latest === null || latest.getTime() <= reference.getTime()) return { ...base, scheduled: true, stopped: false };
+    const first = nextDue(schedule, reference);
     let runs = 0;
-    for (let d = first; d !== null && d.getTime() <= latest.getTime() && runs < MISSED_MOST; d = nextDue(row.schedule, d)) runs++;
-    return { job: spec.name, scheduled: true, stopped: true, since, missed: first === null ? null : first.toISOString(), missedRuns: runs };
+    for (let d = first; d !== null && d.getTime() <= latest.getTime() && runs < MISSED_MOST; d = nextDue(schedule, d)) runs++;
+    return { ...base, scheduled: true, stopped: true, missed: first === null ? null : first.toISOString(), missedRuns: runs };
   });
 }
 
