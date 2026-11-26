@@ -241,14 +241,7 @@
 
 :where(:root[data-kb-layout='phone']) .kb-machine-table td.kb-machine-code { padding: 0; }
 
-/* The live staff pins under the slots (the arc announcements design, section 4): a heading, then one line per pin, its title, when it was pinned and its Unpin. */
-.kb-machine-pins-title {
-  margin: 0 0 12px;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 700;
-  color: var(--kb-glass-text);
-}
-
+/* The live staff pins under the slots (the arc announcements design, section 4): the admin pages' section heading (kb-queue-group-head), then one line per pin, its title, when it was pinned and its Unpin. */
 .kb-machine-pin-list {
   margin: 0;
   padding: 0;
@@ -265,6 +258,7 @@
 }
 
 .kb-machine-pin-title {
+  font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   color: var(--kb-glass-text);

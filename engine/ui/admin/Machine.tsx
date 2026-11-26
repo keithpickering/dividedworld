@@ -304,7 +304,7 @@ function StaffPins({ pins, failed, onChange }: { readonly pins: readonly StaffPi
   };
   return (
     <CalmRegion as="section" aria-labelledby={`${id}-pins`} className="kb-machine-calm kb-machine-pins">
-      <h2 id={`${id}-pins`} ref={heading} tabIndex={-1} className="kb-machine-pins-title">{ui.copy.adminStaffPins}</h2>
+      <h2 id={`${id}-pins`} ref={heading} tabIndex={-1} className="kb-queue-group-head kb-glass-display">{ui.copy.adminStaffPins}</h2>
       {failed ? <p role="alert" className="kb-machine-problem">The pinned staff threads could not be read. Reload the page to try again.</p> : pins.length === 0 ? <p className="kb-machine-note">No staff thread is pinned.</p> : (
         <ul className="kb-machine-pin-list">
           {pins.map((p) => (
