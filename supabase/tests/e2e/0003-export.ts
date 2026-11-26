@@ -543,7 +543,7 @@ test('an instance exported and imported into a fresh database is the same instan
       perform start_visit(pass_post, 'exp-bot', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol',
         'about_act', pass_post, 'predicate', 'noAllCaps', 'rule', 'Rule 1: no all-caps posts'));
       -- The Mod Bots' settings (so the filing run's job exists, 0106) and one judged call's record.
-      insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "patrolPool": 20, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10}')
+      insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "patrolPool": 20, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10, "quizQuestionsPerDay": 60, "quizWriteMinutes": 15}')
         on conflict (key) do update set value = excluded.value;
       -- A patrol the Mod made (0110): its meeting, the posts it was shown, a finding dropped at the cap and what came of it, and the record of its call (keyed by the patrol,
       -- which has no Act), carried across with the rows that name them.
@@ -572,6 +572,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into tails (character, staff, intercept_act, until) select b, 'exp-bot', i.id, now() + interval '1 day' from acts i where i.kind = 'intercept' and i.character = b;
       insert into tail_visits (tail, visit_act) select k.id, v.id from tails k, acts v where k.character = b and v.kind = 'visit' and v.target_act_id = p;
       insert into staff_quiz_questions (staff, idx, question, choices, answer) values ('exp-bot', 0, 'Which carries across?', '["The quiz", "Nothing"]', 'The quiz');
+      insert into visit_quizzes (visit_act, source, question, choices, answer) select v.id, 'model', 'Which carries across?', '["The quiz", "Nothing"]', 'The quiz' from acts v where v.kind = 'visit' and v.target_act_id = p;
       -- An infraction against Ann's mask for her post, her appeal of it, the Mod's ruling, the price paid and returned, and the refund's own table (0109): carried across with the
       -- Acts that name them. (The bar's setting is planted where a database made from the migrations alone has none.)
       insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;

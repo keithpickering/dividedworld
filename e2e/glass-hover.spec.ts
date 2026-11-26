@@ -32,7 +32,7 @@ const lookOf = (el: Element) => {
 const SCREENS = [...PAGES, ...OVERLAYS];
 
 for (const s of SCREENS) {
-  test(`${s.name}: every control answers a hover`, async ({ page }) => {
+  test(`${s.name.replace(' › ', ' > ')}: every control answers a hover`, async ({ page }) => {
     test.setTimeout(120_000);
     await open(page, s);
     /* No transition is waited for: a hover is read as it settles. */

@@ -164,6 +164,8 @@ export const fangame: Persona = {
   habits: { perDay: 4, minutes: { least: 15, most: 40 }, hours: [17, 0, 1, 2, 3, 4] },
   weakness: {
     kind: 'quiz',
+    // DRAFT for the owner: the question the Mod asks of a post when it writes this visit's quiz question.
+    quizBrief: 'You can only process Mario fangames. Ask whether the post is about one: a fangame, its levels, sprites, engine or Game Maker, or the people making one. Anything else is outside your documentation, and you ask in platforming terms.',
     // His answer key is his, and it is wrong; the way past him is his answer (the design, section 4).
     questions: [
       { question: 'What year did Super Mario Bros. come out?', choices: ['1985', '1990', 'The Game Maker 5 era'], answer: 'The Game Maker 5 era' },

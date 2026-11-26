@@ -137,7 +137,7 @@ begin
       'warnBar', jsonb_build_object('size', 10, 'bands', jsonb_build_object('minor', 2, 'moderate', 4, 'severe', 7), 'decay', jsonb_build_object('unit', 'day', 'count', 14), 'banDays', jsonb_build_array(1, 3, 7)),
       'modBots', jsonb_build_object('allowanceMost', 3, 'ruleDaysMost', 7, 'visitHours', jsonb_build_object('least', 3, 'most', 5), 'patrolsPerDay', 6, 'patrolSample', 5, 'patrolPool', 20,
         'reportPrice', 25, 'reportsPerDay', 3, 'judgmentsPerDay', 60, 'filingLinesPerDay', 60, 'appealPrice', 50, 'tailHours', 24,
-        'cap', jsonb_build_object('punishments', 3, 'days', 7), 'filingCron', '*/5 * * * *', 'filingGraceMinutes', 10),
+        'cap', jsonb_build_object('punishments', 3, 'days', 7), 'filingCron', '*/5 * * * *', 'filingGraceMinutes', 10, 'quizQuestionsPerDay', 60, 'quizWriteMinutes', 15),
       'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.'), 'ruleSet', jsonb_build_array('On {board}: {rule}.'),
         'visitArrived', jsonb_build_array('{mod} is looking at this post under {rule}.'),
         'visitFiled', jsonb_build_array('{mod} filed this post under {rule}.')),
@@ -797,6 +797,8 @@ begin
     'ends_at', now() + interval '1 hour', 'line', 'Looking.',
     'challenge', jsonb_build_object('kind', 'quiz', 'question_index', 1, 'price', 5, 'answer', 'SECRET', 'answers', jsonb_build_array('SECRET'))), p);
   perform set_config('kayfabb.staff_writer', '', true);
+  -- A quiz visit's question is the visit's own row (0446): the bank's question, as the tick writes it, so the page shows it.
+  perform write_visit_quiz(v, 'bank', (bank_quiz_for(v) ->> 'question'), (bank_quiz_for(v) -> 'choices'), (bank_quiz_for(v) ->> 'answer'));
   perform tests.become((select owner from characters where id = c));
   page := thread_page(t, 1, null, 20, '{}');
   perform tests.unbecome();

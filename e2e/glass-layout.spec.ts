@@ -58,7 +58,7 @@ for (const [label, viewport] of VIEWPORTS) {
     test.describe(`at ${label}, text ${size}%`, () => {
       test.use({ viewport });
       for (const s of SCREENS) {
-        test(`${s.name}: the layout holds`, async ({ page }) => {
+        test(`${s.name.replace(' › ', ' > ')}: the layout holds`, async ({ page }) => {
           await setTextSize(page, size);
           await open(page, s);
           expect(await judgeScreen(page, `${s.name} (${viewport.width}px, text ${size}%)`)).toEqual([]);
@@ -76,7 +76,7 @@ for (const [label, viewport] of VIEWPORTS) {
 test.describe('on a phone at 200% text', () => {
   test.use({ viewport: { width: 390, height: 844 } });
   for (const s of PAGES) {
-    test(`${s.name}: no page title breaks inside a word`, async ({ page }) => {
+    test(`${s.name.replace(' › ', ' > ')}: no page title breaks inside a word`, async ({ page }) => {
       await setTextSize(page, 200);
       await open(page, s);
       const broken = await page.evaluate(() => {

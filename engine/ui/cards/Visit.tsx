@@ -207,7 +207,10 @@ function Challenge({ visit, mod, mask, spent: tried, picked, onTry, busy }: {
   return (
     <div className="kb-lens-section kb-visit-talk">
       <h3 className="kb-visit-heading">Talk it down</h3>
-      {c.kind === 'quiz' && (
+      {c.kind === 'quiz' && 'pending' in c && (
+        <p className="kb-visit-ask"><span className="kb-lens-who kb-glass-display">{mod}</span> is writing a question. Check back in a few minutes.</p>
+      )}
+      {c.kind === 'quiz' && !('pending' in c) && (
         <>
           <p className="kb-visit-ask"><span className="kb-lens-who kb-glass-display">{mod}</span> asks: <span className="kb-visit-said">“{c.question}”</span></p>
           <div role="group" aria-label={`Answers to ${mod}'s question`} className="kb-visit-choices">
@@ -231,7 +234,7 @@ function Challenge({ visit, mod, mask, spent: tried, picked, onTry, busy }: {
       {c.kind === 'distraction' && (
         <p className="kb-visit-terms">{mod} is not moved by an answer or a price. Any card cast on this thread talks it down.</p>
       )}
-      {mask === null && c.kind !== 'distraction' && <p className="kb-visit-terms">Pick a mask in the HUD to try.</p>}
+      {mask === null && c.kind !== 'distraction' && !('pending' in c) && <p className="kb-visit-terms">Pick a mask in the HUD to try.</p>}
     </div>
   );
 }

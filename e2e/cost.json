@@ -1,0 +1,851 @@
+{
+  "measured": {
+    "run": "45850575464",
+    "date": "2026-11-26"
+  },
+  "specs": {
+    "a11y.spec.ts": {
+      "count": 3441,
+      "mean": 1.66
+    },
+    "account.spec.ts": {
+      "count": 6,
+      "mean": 2.39
+    },
+    "autocorrect.spec.ts": {
+      "count": 21,
+      "mean": 2.74
+    },
+    "avatar.spec.ts": {
+      "count": 7,
+      "mean": 3.2
+    },
+    "banner-height.spec.ts": {
+      "count": 1,
+      "mean": 2.9
+    },
+    "board-last-targets.spec.ts": {
+      "count": 2,
+      "mean": 1.24
+    },
+    "board-snapshot.spec.ts": {
+      "count": 21,
+      "mean": 0.21
+    },
+    "board-width.spec.ts": {
+      "count": 30,
+      "mean": 1.73
+    },
+    "boards-wrap.spec.ts": {
+      "count": 38,
+      "mean": 4.68
+    },
+    "boards.spec.ts": {
+      "count": 67,
+      "mean": 4.46
+    },
+    "callout.spec.ts": {
+      "count": 6,
+      "mean": 1.48
+    },
+    "captions-routes.spec.ts": {
+      "count": 3,
+      "mean": 0.9
+    },
+    "captions.spec.ts": {
+      "count": 8,
+      "mean": 1.53
+    },
+    "card-frames.spec.ts": {
+      "count": 4,
+      "mean": 1.37
+    },
+    "chamfer-borders.spec.ts": {
+      "count": 11,
+      "mean": 2.21
+    },
+    "characters.spec.ts": {
+      "count": 26,
+      "mean": 2.5
+    },
+    "chrome-button.spec.ts": {
+      "count": 3,
+      "mean": 1.61
+    },
+    "compose.spec.ts": {
+      "count": 3,
+      "mean": 1.56
+    },
+    "csp.spec.ts": {
+      "count": 2,
+      "mean": 1.59
+    },
+    "dent-bend.spec.ts": {
+      "count": 1,
+      "mean": 67.72
+    },
+    "effect-tiles.spec.ts": {
+      "count": 19,
+      "mean": 8.01
+    },
+    "fab.spec.ts": {
+      "count": 16,
+      "mean": 1.95
+    },
+    "focus.spec.ts": {
+      "count": 31,
+      "mean": 1.81
+    },
+    "fold.spec.ts": {
+      "count": 9,
+      "mean": 1.89
+    },
+    "footer.spec.ts": {
+      "count": 9,
+      "mean": 1.84
+    },
+    "front-door-banner.spec.ts": {
+      "count": 6,
+      "mean": 0.95
+    },
+    "glass-dialogs.spec.ts": {
+      "count": 70,
+      "mean": 2.22
+    },
+    "glass-fonts.spec.ts": {
+      "count": 1,
+      "mean": 0.93
+    },
+    "glass-hover.spec.ts": {
+      "count": 31,
+      "mean": 3.87
+    },
+    "glass-layout-page.spec.ts": {
+      "count": 3,
+      "mean": 0.1
+    },
+    "glass-layout.spec.ts": {
+      "count": 567,
+      "mean": 1.69
+    },
+    "glass-load.spec.ts": {
+      "count": 12,
+      "mean": 3.19
+    },
+    "glass-menu-count.spec.ts": {
+      "count": 6,
+      "mean": 1.02
+    },
+    "glass-preferences.spec.ts": {
+      "count": 24,
+      "mean": 1.26
+    },
+    "glass-tables.spec.ts": {
+      "count": 5,
+      "mean": 0.87
+    },
+    "glass-text.spec.ts": {
+      "count": 346,
+      "mean": 3.07
+    },
+    "glitter.spec.ts": {
+      "count": 11,
+      "mean": 8.4
+    },
+    "graffiti.spec.ts": {
+      "count": 26,
+      "mean": 2.64
+    },
+    "hand-arc.spec.ts": {
+      "count": 10,
+      "mean": 2.57
+    },
+    "hand-exit.spec.ts": {
+      "count": 2,
+      "mean": 4.13
+    },
+    "hand-hover.spec.ts": {
+      "count": 1,
+      "mean": 3.79
+    },
+    "hold.spec.ts": {
+      "count": 14,
+      "mean": 9.63
+    },
+    "hot-box.spec.ts": {
+      "count": 37,
+      "mean": 9.26
+    },
+    "icons.spec.ts": {
+      "count": 3,
+      "mean": 0.25
+    },
+    "its-curtains.spec.ts": {
+      "count": 8,
+      "mean": 3.21
+    },
+    "kept-layers.spec.ts": {
+      "count": 6,
+      "mean": 3.11
+    },
+    "keyboard.spec.ts": {
+      "count": 5,
+      "mean": 2.44
+    },
+    "laugh-track.spec.ts": {
+      "count": 15,
+      "mean": 3.16
+    },
+    "lens-frame.spec.ts": {
+      "count": 21,
+      "mean": 2.05
+    },
+    "lens-room.spec.ts": {
+      "count": 8,
+      "mean": 1.69
+    },
+    "list-rows.spec.ts": {
+      "count": 65,
+      "mean": 1.11
+    },
+    "load.spec.ts": {
+      "count": 7,
+      "mean": 3.39
+    },
+    "mail.spec.ts": {
+      "count": 12,
+      "mean": 0.22
+    },
+    "meta-tiles.spec.ts": {
+      "count": 16,
+      "mean": 1.39
+    },
+    "mini-who.spec.ts": {
+      "count": 2,
+      "mean": 1.52
+    },
+    "moment.spec.ts": {
+      "count": 12,
+      "mean": 1.48
+    },
+    "onboarding-polish.spec.ts": {
+      "count": 8,
+      "mean": 1.64
+    },
+    "onboarding.spec.ts": {
+      "count": 14,
+      "mean": 2.66
+    },
+    "origin-band.spec.ts": {
+      "count": 7,
+      "mean": 1.52
+    },
+    "origin-effects.spec.ts": {
+      "count": 44,
+      "mean": 4.24
+    },
+    "overreaction.spec.ts": {
+      "count": 4,
+      "mean": 2.4
+    },
+    "pack-reveal.spec.ts": {
+      "count": 10,
+      "mean": 4.26
+    },
+    "payouts.spec.ts": {
+      "count": 7,
+      "mean": 2.14
+    },
+    "phone-board.spec.ts": {
+      "count": 15,
+      "mean": 0.91
+    },
+    "phone-hand.spec.ts": {
+      "count": 11,
+      "mean": 1.77
+    },
+    "phone-postbit.spec.ts": {
+      "count": 3,
+      "mean": 1.11
+    },
+    "pixel-icons.spec.ts": {
+      "count": 4,
+      "mean": 1.34
+    },
+    "plays.spec.ts": {
+      "count": 21,
+      "mean": 2.02
+    },
+    "poll-phone.spec.ts": {
+      "count": 2,
+      "mean": 0.75
+    },
+    "post-layers.spec.ts": {
+      "count": 5,
+      "mean": 1.16
+    },
+    "post-room.spec.ts": {
+      "count": 4,
+      "mean": 1.19
+    },
+    "profile.spec.ts": {
+      "count": 3,
+      "mean": 0.89
+    },
+    "rankings-pager.spec.ts": {
+      "count": 2,
+      "mean": 0.92
+    },
+    "reactions.spec.ts": {
+      "count": 5,
+      "mean": 1.62
+    },
+    "scroll-driven.spec.ts": {
+      "count": 2,
+      "mean": 0.24
+    },
+    "search.spec.ts": {
+      "count": 5,
+      "mean": 1.78
+    },
+    "settled.spec.ts": {
+      "count": 2,
+      "mean": 0.83
+    },
+    "shine.spec.ts": {
+      "count": 16,
+      "mean": 4.97
+    },
+    "smoke.spec.ts": {
+      "count": 1,
+      "mean": 1.16
+    },
+    "sound-settings.spec.ts": {
+      "count": 5,
+      "mean": 1.48
+    },
+    "spin-answers.spec.ts": {
+      "count": 2,
+      "mean": 2.87
+    },
+    "spin-at-post.spec.ts": {
+      "count": 2,
+      "mean": 1.84
+    },
+    "spun-thread-cards.spec.ts": {
+      "count": 5,
+      "mean": 13.03
+    },
+    "starter-pack.spec.ts": {
+      "count": 1,
+      "mean": 2.32
+    },
+    "steel-chair.spec.ts": {
+      "count": 37,
+      "mean": 8.12
+    },
+    "story-route.spec.ts": {
+      "count": 3,
+      "mean": 0.87
+    },
+    "table-defaults.spec.ts": {
+      "count": 8,
+      "mean": 0.1
+    },
+    "this.spec.ts": {
+      "count": 25,
+      "mean": 1.61
+    },
+    "thread-catch-up.spec.ts": {
+      "count": 2,
+      "mean": 1.37
+    },
+    "thread.spec.ts": {
+      "count": 9,
+      "mean": 1.35
+    },
+    "threads.spec.ts": {
+      "count": 6,
+      "mean": 0.77
+    },
+    "turn-dialog.spec.ts": {
+      "count": 2,
+      "mean": 2.61
+    },
+    "under.spec.ts": {
+      "count": 8,
+      "mean": 0.88
+    },
+    "veils.spec.ts": {
+      "count": 22,
+      "mean": 1.84
+    },
+    "whoops.spec.ts": {
+      "count": 18,
+      "mean": 5
+    },
+    "write-update-phone.spec.ts": {
+      "count": 1,
+      "mean": 0.89
+    },
+    "you-were-saying.spec.ts": {
+      "count": 14,
+      "mean": 3.1
+    }
+  },
+  "tests": {
+    "a11y.spec.ts › between the boards' widths › at 1144px the HUD is the Phone board's, at the phone's sizes": 0.8,
+    "a11y.spec.ts › between the boards' widths › at 1440px a glass page's menu bar is drawn as the boards draw it": 0.7,
+    "a11y.spec.ts › between the boards' widths › at 1440px the HUD is the Main board's, its three groups drawn at 1440/1440 of their size": 0.8,
+    "a11y.spec.ts › between the boards' widths › on a phone 390 wide, the restyled My characters page does not scroll sideways": 0.6,
+    "a11y.spec.ts › between the boards' widths › on a phone 390 wide, the restyled New character page does not scroll sideways": 0.6,
+    "a11y.spec.ts › between the boards' widths › on a phone 390 wide, the restyled Settings > Account page does not scroll sideways": 0.4,
+    "a11y.spec.ts › between the boards' widths › on a phone 390 wide, the restyled Settings page does not scroll sideways": 0.4,
+    "a11y.spec.ts › between the boards' widths › the switch is worked out from the size tokens: 1440 × 16 / 20 = 1152px": 0.1,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › alerts does not scroll sideways": 0.8,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › board does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › contact does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › guide does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › index's Game HUD holds all it shows inside its glass and the window": 0.7,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › invites does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › season news does not scroll sideways": 0.6,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › settings board does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › the Turn and Reveal dialogs have none": 3.5,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › the board story boards-08-hold--long-post-scrolled has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › the board story boards-28-polls--own has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › the board story boards-booster-packs--fixed-six-no-hit has no axe violation, color contrast included": 3.5,
+    "a11y.spec.ts › dark, Main board layout, just above the switch › updates does not scroll sideways": 0.6,
+    "a11y.spec.ts › dark, phone layout, narrow › alerts does not scroll sideways": 0.6,
+    "a11y.spec.ts › dark, phone layout, narrow › board does not scroll sideways": 0.8,
+    "a11y.spec.ts › dark, phone layout, narrow › board's Game HUD holds all it shows inside its glass and the window": 0.7,
+    "a11y.spec.ts › dark, phone layout, narrow › characters does not scroll sideways": 0.8,
+    "a11y.spec.ts › dark, phone layout, narrow › contact does not scroll sideways": 0.5,
+    "a11y.spec.ts › dark, phone layout, narrow › index does not scroll sideways": 0.6,
+    "a11y.spec.ts › dark, phone layout, narrow › index's Game HUD holds all it shows inside its glass and the window": 0.5,
+    "a11y.spec.ts › dark, phone layout, narrow › invites does not scroll sideways": 0.5,
+    "a11y.spec.ts › dark, phone layout, narrow › season news does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, phone layout, narrow › season rankings does not scroll sideways": 0.6,
+    "a11y.spec.ts › dark, phone layout, narrow › settings board does not scroll sideways": 0.5,
+    "a11y.spec.ts › dark, phone layout, narrow › settings does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, phone layout, narrow › the Game HUD holds a wallet past its cap inside its glass and the window": 4.8,
+    "a11y.spec.ts › dark, phone layout, narrow › the board story boards-01-postbit-gear--gear-and-trophies has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › dark, phone layout, narrow › the board story boards-02-card-settings-pieces--smoke has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › dark, phone layout, narrow › the board story boards-03-react--board has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › dark, phone layout, narrow › the board story boards-booster-packs--fixed-six-no-hit has no axe violation, color contrast included": 3.6,
+    "a11y.spec.ts › dark, phone layout, narrow › the new-character page has none": 0.7,
+    "a11y.spec.ts › dark, phone layout, narrow › updates does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, phone layout, narrow › vending does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, phone layout, wide › alerts does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, phone layout, wide › board's Game HUD holds all it shows inside its glass and the window": 0.8,
+    "a11y.spec.ts › dark, phone layout, wide › contact does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, phone layout, wide › index does not scroll sideways": 0.6,
+    "a11y.spec.ts › dark, phone layout, wide › index's Game HUD holds all it shows inside its glass and the window": 0.8,
+    "a11y.spec.ts › dark, phone layout, wide › invites does not scroll sideways": 0.6,
+    "a11y.spec.ts › dark, phone layout, wide › season rankings does not scroll sideways": 0.7,
+    "a11y.spec.ts › dark, phone layout, wide › settings does not scroll sideways": 0.8,
+    "a11y.spec.ts › dark, phone layout, wide › the Game HUD holds a wallet past its cap inside its glass and the window": 4.9,
+    "a11y.spec.ts › dark, phone layout, wide › the board story boards-08-hold--phone has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › dark, phone layout, wide › the board story boards-28-polls--origin-box has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › dark, phone layout, wide › the board story boards-booster-packs--withdrawn-and-unknown has no axe violation, color contrast included": 3.4,
+    "a11y.spec.ts › dark, phone layout, wide › vending does not scroll sideways": 0.8,
+    "a11y.spec.ts › hudCut names what runs past the glass › a calm pushed past the glass's foot": 0.8,
+    "a11y.spec.ts › light, Main board layout, just above the switch › characters does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, Main board layout, just above the switch › index does not scroll sideways": 0.8,
+    "a11y.spec.ts › light, Main board layout, just above the switch › season news does not scroll sideways": 0.8,
+    "a11y.spec.ts › light, Main board layout, just above the switch › season rankings does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, Main board layout, just above the switch › settings does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, Main board layout, just above the switch › signed out: sign-in and register have none": 3.7,
+    "a11y.spec.ts › light, Main board layout, just above the switch › the board story boards-booster-packs--withdrawn-and-unknown has no axe violation, color contrast included": 3.7,
+    "a11y.spec.ts › light, phone layout, narrow › admin queue does not scroll sideways": 0.4,
+    "a11y.spec.ts › light, phone layout, narrow › alerts does not scroll sideways": 0.6,
+    "a11y.spec.ts › light, phone layout, narrow › board does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, phone layout, narrow › characters does not scroll sideways": 0.4,
+    "a11y.spec.ts › light, phone layout, narrow › contact does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, phone layout, narrow › guide does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, phone layout, narrow › index does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, phone layout, narrow › index has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › light, phone layout, narrow › index's Game HUD holds all it shows inside its glass and the window": 0.7,
+    "a11y.spec.ts › light, phone layout, narrow › invites does not scroll sideways": 0.6,
+    "a11y.spec.ts › light, phone layout, narrow › season news does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, phone layout, narrow › season rankings does not scroll sideways": 0.8,
+    "a11y.spec.ts › light, phone layout, narrow › settings board does not scroll sideways": 0.5,
+    "a11y.spec.ts › light, phone layout, narrow › settings does not scroll sideways": 0.5,
+    "a11y.spec.ts › light, phone layout, narrow › the Game HUD holds a wallet past its cap inside its glass and the window": 5.2,
+    "a11y.spec.ts › light, phone layout, narrow › the board story boards-02-card-settings-pieces--form has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › light, phone layout, narrow › the board story boards-28-polls--no-mask has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › light, phone layout, narrow › the board story boards-28-polls--origin-box-closed has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › light, phone layout, narrow › updates does not scroll sideways": 0.6,
+    "a11y.spec.ts › light, phone layout, wide › admin queue does not scroll sideways": 0.8,
+    "a11y.spec.ts › light, phone layout, wide › board does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, phone layout, wide › characters does not scroll sideways": 0.8,
+    "a11y.spec.ts › light, phone layout, wide › guide does not scroll sideways": 0.8,
+    "a11y.spec.ts › light, phone layout, wide › season news does not scroll sideways": 0.7,
+    "a11y.spec.ts › light, phone layout, wide › settings board does not scroll sideways": 0.8,
+    "a11y.spec.ts › light, phone layout, wide › the Game HUD holds a wallet past its cap inside its glass and the window": 5.4,
+    "a11y.spec.ts › light, phone layout, wide › the board story boards-01-lens--lens-author-whoops-who-phone has no axe violation, color contrast included": 3.4,
+    "a11y.spec.ts › light, phone layout, wide › the board story boards-01-lens--lens-whoops-who has no axe violation, color contrast included": 3.3,
+    "a11y.spec.ts › light, phone layout, wide › the board story boards-01-lens--washed-clean-as-it-landed-phone has no axe violation, color contrast included": 3.4,
+    "a11y.spec.ts › light, phone layout, wide › the board story boards-01-lens-a-visit--filed-author has no axe violation, color contrast included": 3.4,
+    "a11y.spec.ts › light, phone layout, wide › the board story boards-28-polls--no-mask has no axe violation, color contrast included": 0.8,
+    "a11y.spec.ts › light, phone layout, wide › the board story boards-booster-packs--fixed-six-no-hit has no axe violation, color contrast included": 3.5,
+    "a11y.spec.ts › light, phone layout, wide › updates does not scroll sideways": 0.7,
+    "autocorrect.spec.ts › the author on a play inside its hold lifts the tape under a held key and nothing is peeled": 6.3,
+    "board-snapshot.spec.ts › a missing landmark is reported as not found, with no box": 0.1,
+    "board-snapshot.spec.ts › a name is matched whole and without case, and an aria-hidden glyph is not part of it": 0.1,
+    "board-snapshot.spec.ts › a page that renders after it loads is read once every landmark is found and still": 0.5,
+    "board-snapshot.spec.ts › a page whose face is still loading is read once the face has loaded, not in the fallback": 1,
+    "board-snapshot.spec.ts › a page whose landmark never comes is read when the wait runs out, with the landmark not found": 0.5,
+    "board-snapshot.spec.ts › a press of scroll top returns the page to its top, as a reader arrives, after a fill scrolled it down": 0.1,
+    "board-snapshot.spec.ts › the browser sets text at its outlines' own widths, never hinted to whole pixels": 0.1,
+    "board-snapshot.spec.ts › the build is pressed in order before it is read, and a control that is not there fails by name": 0.5,
+    "board-snapshot.spec.ts › the build side picks buildNth among its matches where it is given, nth otherwise": 0.1,
+    "board-snapshot.spec.ts › the first text skips an aria-hidden subtree and hidden spans ahead of the visible label": 0.1,
+    "board-width.spec.ts › a wide window › the index is a column at most 1200px wide, centered": 0.8,
+    "board-width.spec.ts › at the column's own width and either side of it › no sideways scroll at 1200px, and the thread is never past 1200px": 0.7,
+    "board-width.spec.ts › at the column's own width and either side of it › no sideways scroll at 320px, and the thread is never past 1200px": 0.7,
+    "board-width.spec.ts › at the column's own width and either side of it › no sideways scroll at 390px, and the thread is never past 1200px": 0.7,
+    "board-width.spec.ts › the vignette is the board's: a glass page draws none": 0.6,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/16-contact keeps its places with its words set narrower": 1.7,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/16-contact keeps its places with its words set wider": 2.2,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/17-front-door keeps its places with its words set wider": 2,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/19-welcome keeps its places with its words set wider": 10.1,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/21-spotlight keeps its places with its words set narrower": 2,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/21-spotlight keeps its places with its words set wider": 2.1,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/28-lens keeps its places with its words set narrower": 9.7,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/30-log-empty keeps its places with its words set wider": 1.8,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/35-hud-cap keeps its places with its words set narrower": 1,
+    "boards-wrap.spec.ts › 2026-11-05-backfill/35-hud-cap keeps its places with its words set wider": 1.3,
+    "boards.spec.ts › 03-react matches its board": 2.1,
+    "boards.spec.ts › 2026-11-04-cosmetics/01-postbit matches its board": 1.7,
+    "boards.spec.ts › 2026-11-04-cosmetics/04-event matches its board": 2.1,
+    "boards.spec.ts › 2026-11-05-backfill/14-sign-in matches its board": 11.9,
+    "boards.spec.ts › 2026-11-05-backfill/19-welcome matches its board": 14.7,
+    "boards.spec.ts › 2026-11-05-backfill/20-guide matches its board": 12.6,
+    "boards.spec.ts › 2026-11-05-backfill/21-spotlight matches its board": 2,
+    "boards.spec.ts › 2026-11-05-backfill/23-new-character matches its board": 11.6,
+    "boards.spec.ts › 2026-11-05-backfill/33-settings-account matches its board": 9,
+    "boards.spec.ts › 2026-11-05-backfill/35-hud-cap matches its board": 1.4,
+    "boards.spec.ts › 2026-11-06-board-look/06-new-thread matches its board": 2.2,
+    "boards.spec.ts › 2026-11-06-board-look/09-record matches its board": 2,
+    "boards.spec.ts › 2026-11-06-board-look/14-staff matches its board": 2.1,
+    "boards.spec.ts › 2026-11-07-booster-packs/01-machine matches its board": 12.4,
+    "boards.spec.ts › every board has a manifest or is pending, and the pending map is not stale, and a colors-only board has none": 0.1,
+    "boards.spec.ts › every glass screen names the board it is held to, or says why it has none": 0.1,
+    "chamfer-borders.spec.ts › forced colors › a dialog scrolled to its foot › a desktop overlay: Canvas below the first screen, CanvasText at the rim and on both diagonals": 7.8,
+    "chamfer-borders.spec.ts › forced colors › the welcome letter keeps an edge that is not the panel's color": 0.9,
+    "chamfer-borders.spec.ts › the orbs board state draws its border on the cut": 0.9,
+    "characters.spec.ts › a phone shows My characters without scrolling sideways": 1,
+    "characters.spec.ts › at 1280 the roster is three across with New character in the next slot and the panel beside it": 1,
+    "characters.spec.ts › at 1440 the roster is three across with New character in the next slot and the panel beside it": 1.1,
+    "characters.spec.ts › on a phone at 100% text, a roster card is 280px tall with its Turn line 10px off its foot": 0.9,
+    "characters.spec.ts › on a phone, choosing the Tweener on New character counts 5–5 of 6 and fades none of it": 1.2,
+    "characters.spec.ts › on the Phone board's layout at 1024 the roster is still a carousel with its panel under it": 0.9,
+    "characters.spec.ts › the fade covers only a peeking card, at its start and its end, and never a card snapped whole on a phone": 5.4,
+    "csp.spec.ts › the response carries the security headers and the asset cache rule": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › a band in the window with no tile and no color is named, and a held one with a canvas, a far one with fog and one outside the window are not": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › a canvas drawn denser than the cap per CSS px is named, whatever the screen, and a layer that never draws at the cap on a dense screen is named": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › a canvas sized to 0 by 0 holds nothing, wherever it lies": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › a jump sample names its jump and frame, and a held band with a canvas in the window is what the live scroll must have seen": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › a run with too few loop frames, or an own time at the budget, is a miss; a run of enough frames under the budget is not": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › a sheet is declared, so a second canvas at a place is named for a one-sheet effect and is room for a two-sheet one": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › an effect that asks for a density is held to it: a canvas at the ask passes, one at the cap or none with pixels is named, and no ask is the cap as before": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › the tags give a story its density: one tag with a positive number up to the cap, and none, two, zero, over the cap or not a number give none": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › the tags give a story its sheets: one tag with a positive whole number, and none or two give none": 0.1,
+    "effect-tiles.spec.ts › the planted samples, red where they should be › the tiles of a layer near the window are within the pixels, and one over the figure, one far away or one too many are each named": 0.1,
+    "effect-tiles.spec.ts › the tile layer's frames and pixels › desktop (1200 by 900 CSS px at a device scale factor of 2) › poisoned: a painter that takes 25 ms turns the own-time check red in every run": 53.9,
+    "effect-tiles.spec.ts › the tile layer's frames and pixels › phone (390 by 844 CSS px at a device scale factor of 3, a touch phone) › poisoned: a painter that takes 25 ms turns the own-time check red in every run": 47.7,
+    "effect-tiles.spec.ts › the tile layer's frames and pixels › the budget stories are the ones the story files tag, each declares its sheets, and the poisons are there": 0.1,
+    "focus.spec.ts › /: every control Tab reaches shows a focus indicator": 0.7,
+    "focus.spec.ts › Tab cycles back to the start on a page, and the check throws when it cannot": 0.8,
+    "focus.spec.ts › a link out of the glass forgets the thread, and Back lands on the one the glass was last entered from": 5.9,
+    "focus.spec.ts › on a phone, 390 wide, every HUD control Tab reaches has its whole focus outline inside the HUD's clip": 0.5,
+    "focus.spec.ts › the Vending Machine's Buy, a chamfered button, shows its focus ring inside its cut": 0.8,
+    "focus.spec.ts › the emailed link's panel: its button is reached and pressed by keyboard, and focus lands on the signed-in sentence": 4.8,
+    "fold.spec.ts › with reduced motion › a press shows the row by the next frame, with nothing left on the grid": 0.9,
+    "glass-dialogs.spec.ts › at a desktop, 1440×900 › every dialog wears the same frame: chamfer, 1.5px border, color and Close": 17.9,
+    "glass-dialogs.spec.ts › at a phone, 390×664 › every dialog wears the same frame: chamfer, 1.5px border, color and Close": 9.6,
+    "glass-dialogs.spec.ts › sticky menu bar at a desktop, 1440×900, text 100% › /characters: the menu stays at the top of the window, Back and the tabs clickable": 1,
+    "glass-dialogs.spec.ts › sticky menu bar at a desktop, 1440×900, text 200% › /characters: the menu stays at the top of the window, Back and the tabs clickable": 1,
+    "glass-dialogs.spec.ts › sticky menu bar at a desktop, 1440×900, text 200% › /guide: the menu stays at the top of the window, Back and the tabs clickable": 0.9,
+    "glass-dialogs.spec.ts › sticky menu bar at a phone, 390×664, text 100% › /characters: the menu stays at the top of the window, Back and the tabs clickable": 1.1,
+    "glass-dialogs.spec.ts › sticky menu bar at a phone, 390×664, text 100% › /guide: the menu stays at the top of the window, Back and the tabs clickable": 0.8,
+    "glass-dialogs.spec.ts › sticky menu bar at a phone, 390×664, text 100% › /settings: the menu stays at the top of the window, Back and the tabs clickable": 0.9,
+    "glass-dialogs.spec.ts › sticky menu bar at a phone, 390×664, text 200% › /characters: the menu stays at the top of the window, Back and the tabs clickable": 0.9,
+    "glass-dialogs.spec.ts › sticky menu bar at a phone, 390×664, text 200% › /guide: the menu stays at the top of the window, Back and the tabs clickable": 0.6,
+    "glass-dialogs.spec.ts › sticky menu bar at a phone, 390×664, text 200% › /settings: the menu stays at the top of the window, Back and the tabs clickable": 0.6,
+    "glass-dialogs.spec.ts › the dimmed menu bar at a phone, 390×664 › what scrolls under it never reads through": 1.1,
+    "glass-dialogs.spec.ts › the menu's current tab at a desktop, 1440×900, text 100% › /guide: the current tab is in the window": 0.9,
+    "glass-dialogs.spec.ts › the menu's current tab at a desktop, 1440×900, text 100% › /season: the current tab is in the window": 1,
+    "glass-dialogs.spec.ts › the menu's current tab at a desktop, 1440×900, text 200% › /season: the current tab is in the window": 0.8,
+    "glass-dialogs.spec.ts › the menu's current tab at a phone, 390×664, text 100% › /guide: the current tab is in the window": 0.9,
+    "glass-dialogs.spec.ts › the menu's current tab at a phone, 390×664, text 100% › /season: the current tab is in the window": 0.6,
+    "glass-dialogs.spec.ts › the menu's current tab at a phone, 390×664, text 100% › /settings: the current tab is in the window": 0.5,
+    "glass-dialogs.spec.ts › the menu's current tab at a phone, 390×664, text 200% › /guide: the current tab is in the window": 1,
+    "glass-dialogs.spec.ts › the menu's current tab at a phone, 390×664, text 200% › /season: the current tab is in the window": 1.1,
+    "glass-dialogs.spec.ts › the menu's current tab at a phone, 390×664, text 200% › /settings: the current tab is in the window": 0.6,
+    "glass-dialogs.spec.ts › the stuck title row's corner at a desktop, 1440×900 › The play form, on the Cards board's moment: no body shows through the corner": 5.3,
+    "glass-hover.spec.ts › Register: every control answers a hover": 1.5,
+    "glass-hover.spec.ts › The machine's admin page: every control answers a hover": 19.1,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 100% › The Lens on Stick Around, Who unfolded, in its story: the layout holds": 4.4,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 100% › The machine's admin page: the layout holds": 5.5,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 125% › The Lens on Stick Around, Who unfolded, in its story: the layout holds": 4,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 125% › The machine's admin page: the layout holds": 4.3,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 150% › The Lens on Stick Around, Who unfolded, in its story: the layout holds": 3.7,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 150% › The Lens on Whoops!, Who unfolded, in its story: the layout holds": 3.7,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 150% › The machine with a Booster picked, in its story: the layout holds": 4.2,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 150% › The machine's admin page: the layout holds": 3.5,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 200% › The HUD, signed out: the layout holds": 3.4,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 200% › The Lens on Whoops!, Who unfolded, in its story: the layout holds": 3.8,
+    "glass-layout.spec.ts › at a desktop, 1440×900, text 200% › The machine with a Booster picked, in its story: the layout holds": 4.1,
+    "glass-layout.spec.ts › at a phone, 390×844, text 100% › Alerts: the layout holds": 0.8,
+    "glass-layout.spec.ts › at a phone, 390×844, text 100% › New character: the layout holds": 0.8,
+    "glass-layout.spec.ts › at a phone, 390×844, text 100% › Season news: the layout holds": 0.8,
+    "glass-layout.spec.ts › at a phone, 390×844, text 100% › Settings: the layout holds": 0.8,
+    "glass-layout.spec.ts › at a phone, 390×844, text 100% › The machine's admin page: the layout holds": 3.6,
+    "glass-layout.spec.ts › at a phone, 390×844, text 100% › The wardrobe: the layout holds": 0.7,
+    "glass-layout.spec.ts › at a phone, 390×844, text 125% › Season news: the layout holds": 0.7,
+    "glass-layout.spec.ts › at a phone, 390×844, text 125% › The Reveal modal, from My characters: the layout holds": 0.8,
+    "glass-layout.spec.ts › at a phone, 390×844, text 125% › The settlement's summary, on the Settlement board's moment: the layout holds": 0.7,
+    "glass-layout.spec.ts › at a phone, 390×844, text 150% › Alerts: the layout holds": 0.8,
+    "glass-layout.spec.ts › at a phone, 390×844, text 150% › Edit profile: the layout holds": 0.7,
+    "glass-layout.spec.ts › at a phone, 390×844, text 150% › Rankings: the layout holds": 0.7,
+    "glass-layout.spec.ts › at a phone, 390×844, text 150% › The admin queue: the layout holds": 0.8,
+    "glass-layout.spec.ts › at a phone, 390×844, text 150% › Updates: the layout holds": 0.7,
+    "glass-layout.spec.ts › at a phone, 390×844, text 200% › Updates: the layout holds": 0.8,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 100% › The Lens on Stick Around, Who unfolded, in its story: the layout holds": 3.6,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 100% › The machine's admin page: the layout holds": 4.8,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 125% › The Lens on Stick Around, Who unfolded, in its story: the layout holds": 3.4,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 125% › The Lens on Whoops!, Who unfolded, in its story: the layout holds": 3.4,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 125% › The machine's admin page: the layout holds": 4.3,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 150% › The Lens on Whoops!, Who unfolded, in its story: the layout holds": 3.8,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 200% › The Lens on Whoops!, Who unfolded, in its story: the layout holds": 3.6,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 200% › The Lens with five kinds, its tabs one row that scrolls, in its story: the layout holds": 3.8,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 200% › The author's Lens on Whoops!, in its story: the layout holds": 3.4,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 200% › The machine's admin page: the layout holds": 3.8,
+    "glass-layout.spec.ts › at a tablet, 834×1112, text 200% › The wardrobe: the layout holds": 0.8,
+    "glass-layout.spec.ts › on a phone at 200% text › Alerts: no page title breaks inside a word": 0.8,
+    "glass-layout.spec.ts › on a phone at 200% text › Edit profile: no page title breaks inside a word": 0.8,
+    "glass-layout.spec.ts › on a phone at 200% text › My log, before anything has settled: no page title breaks inside a word": 0.7,
+    "glass-layout.spec.ts › on a phone at 200% text › Season news: no page title breaks inside a word": 0.7,
+    "glass-layout.spec.ts › on a phone at 200% text › Settings: no page title breaks inside a word": 0.8,
+    "glass-load.spec.ts › the reveal overlay opens with its boards, with no wait": 1.6,
+    "glass-menu-count.spec.ts › at 1440 an admin's nine tabs stand on the one row a player's eight do": 2.2,
+    "glass-text.spec.ts › a calm region adds no padding, and its rect is blurred by the feather and drawn out past the box by two blurs, at 1440 wide": 0.8,
+    "glass-text.spec.ts › a calm region adds no padding, and its rect is blurred by the feather and drawn out past the box by two blurs, at the phone, 390 wide": 0.8,
+    "glass-text.spec.ts › at 125% text › at 1280×1080, the Main board's layout scaled › Strategy Guide: every line of glass text is legible on its smoke": 10.7,
+    "glass-text.spec.ts › at 125% text › at 1920×1080 › Strategy Guide: every line of glass text is legible on its smoke": 24.7,
+    "glass-text.spec.ts › at 125% text › at 1920×1080 › The machine's admin page: every line of glass text is legible on its smoke": 6.7,
+    "glass-text.spec.ts › at 150% text › at 1280×1080, the Main board's layout scaled › Strategy Guide: every line of glass text is legible on its smoke": 10,
+    "glass-text.spec.ts › at 150% text › at 1280×1080, the Main board's layout scaled › The machine's admin page: every line of glass text is legible on its smoke": 6.9,
+    "glass-text.spec.ts › at 150% text › at 1920×1080 › Strategy Guide: every line of glass text is legible on its smoke": 14,
+    "glass-text.spec.ts › at 1920×1080 › Alerts: every line of glass text is legible on its smoke": 1.5,
+    "glass-text.spec.ts › at 1920×1080 › Strategy Guide: every line of glass text is legible on its smoke": 19.3,
+    "glass-text.spec.ts › at 200% text › at 1920×1080 › Strategy Guide: every line of glass text is legible on its smoke": 24.5,
+    "glass-text.spec.ts › at 200% text › at 1920×1080 › The machine's admin page: every line of glass text is legible on its smoke": 10.1,
+    "glass-text.spec.ts › at 200% text › at a phone, 390×844 › My log, before anything has settled: every line of glass text is legible on its smoke": 1.4,
+    "glass-text.spec.ts › at 200% text › at a phone, 390×844 › Rankings: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at 200% text › at a phone, 390×844 › Season news: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at 200% text › at a phone, 390×844 › Strategy Guide: every line of glass text is legible on its smoke": 19.7,
+    "glass-text.spec.ts › at 200% text › at a phone, 390×844 › The HUD, with a wallet past its cap: every line of glass text is legible on its smoke": 1.4,
+    "glass-text.spec.ts › at 200% text › at a phone, 390×844 › The hand, open: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at 200% text › at a phone, 390×844 › The machine's admin page: every line of glass text is legible on its smoke": 11.6,
+    "glass-text.spec.ts › at 200% text › at a phone, 390×844 › The wardrobe: every line of glass text is legible on its smoke": 1.2,
+    "glass-text.spec.ts › at 200% text › at a phone, 390×844 › Updates: every line of glass text is legible on its smoke": 1.4,
+    "glass-text.spec.ts › at a phone, 390×844 › Alerts: every line of glass text is legible on its smoke": 0.7,
+    "glass-text.spec.ts › at a phone, 390×844 › My characters: every line of glass text is legible on its smoke": 1.4,
+    "glass-text.spec.ts › at a phone, 390×844 › My log before anything has settled, in its story: every line of glass text is legible on its smoke": 0.8,
+    "glass-text.spec.ts › at a phone, 390×844 › My log with a settlement's posts open, in its story: every line of glass text is legible on its smoke": 1.5,
+    "glass-text.spec.ts › at a phone, 390×844 › My log, before anything has settled: every line of glass text is legible on its smoke": 1,
+    "glass-text.spec.ts › at a phone, 390×844 › My log, on the Log board's moment: every line of glass text is legible on its smoke": 1.2,
+    "glass-text.spec.ts › at a phone, 390×844 › New character: every line of glass text is legible on its smoke": 1.2,
+    "glass-text.spec.ts › at a phone, 390×844 › Rankings: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at a phone, 390×844 › Reach a person: every line of glass text is legible on its smoke": 1.4,
+    "glass-text.spec.ts › at a phone, 390×844 › Register: every line of glass text is legible on its smoke": 1.1,
+    "glass-text.spec.ts › at a phone, 390×844 › Season news: every line of glass text is legible on its smoke": 0.9,
+    "glass-text.spec.ts › at a phone, 390×844 › Settings > Account, with the invites: every line of glass text is legible on its smoke": 1.2,
+    "glass-text.spec.ts › at a phone, 390×844 › Settings > The board: every line of glass text is legible on its smoke": 1,
+    "glass-text.spec.ts › at a phone, 390×844 › Settings: every line of glass text is legible on its smoke": 1.4,
+    "glass-text.spec.ts › at a phone, 390×844 › Stick Around's view, taking the reader over on the Hold board's moment: every line of glass text is legible on its smoke": 1.4,
+    "glass-text.spec.ts › at a phone, 390×844 › Strategy Guide: every line of glass text is legible on its smoke": 7,
+    "glass-text.spec.ts › at a phone, 390×844 › The HUD, on the Main board's moment: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at a phone, 390×844 › The HUD, with a wallet past its cap: every line of glass text is legible on its smoke": 1.2,
+    "glass-text.spec.ts › at a phone, 390×844 › The Lens on Whoops!, Who unfolded, in its story: every line of glass text is legible on its smoke": 6.2,
+    "glass-text.spec.ts › at a phone, 390×844 › The React picker, from a post: every line of glass text is legible on its smoke": 0.9,
+    "glass-text.spec.ts › at a phone, 390×844 › The Reveal modal, from My characters: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at a phone, 390×844 › The Vending Machine's card info, from a slot: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at a phone, 390×844 › The Vending Machine: every line of glass text is legible on its smoke": 1.2,
+    "glass-text.spec.ts › at a phone, 390×844 › The hand, open: every line of glass text is legible on its smoke": 0.9,
+    "glass-text.spec.ts › at a phone, 390×844 › The hand, with a card armed: every line of glass text is legible on its smoke": 1.1,
+    "glass-text.spec.ts › at a phone, 390×844 › The link panel, ready, in its story: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at a phone, 390×844 › The link panel, signed in, in its story: every line of glass text is legible on its smoke": 0.9,
+    "glass-text.spec.ts › at a phone, 390×844 › The link panel, with this browser already signed in, in its story: every line of glass text is legible on its smoke": 0.9,
+    "glass-text.spec.ts › at a phone, 390×844 › The play form, on the Cards board's moment: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at a phone, 390×844 › The settlement's summary, on the Settlement board's moment: every line of glass text is legible on its smoke": 1.1,
+    "glass-text.spec.ts › at a phone, 390×844 › The wardrobe: every line of glass text is legible on its smoke": 0.8,
+    "glass-text.spec.ts › at a phone, 390×844 › Updates, with Write an update open: every line of glass text is legible on its smoke": 1.3,
+    "glass-text.spec.ts › at a phone, 390×844 › Updates: every line of glass text is legible on its smoke": 1.1,
+    "glass-text.spec.ts › the HUD keeps its geometry › at 1440": 0.7,
+    "glass-text.spec.ts › the HUD keeps its geometry › at 390": 0.6,
+    "glass-text.spec.ts › the HUD keeps its geometry › no box takes the taps of the Menu control, the Hand or the picker's kinds, at a phone, 390×844": 1.1,
+    "glass-text.spec.ts › the phone HUD's avatar sits whole beside the name, clear of it, at 390x664, a short window": 0.7,
+    "glass-text.spec.ts › the phone HUD's avatar sits whole beside the name, clear of it, at 390x844": 0.8,
+    "glass-text.spec.ts › the phone HUD's avatar sits whole beside the name, clear of it, at 390x844 at 125% text": 0.9,
+    "glass-text.spec.ts › the picked slot and the armed card in forced colors › are ringed in Highlight, and a slot that is not picked is not": 1.5,
+    "glass-text.spec.ts › the poisons, planted in a real page › a feather that reaches into the text": 1.5,
+    "glass-text.spec.ts › the poisons, planted in a real page › on the phone, a 15px label is under the phone's floor": 1.1,
+    "glass-text.spec.ts › the poisons, planted in a real page › with no overlay open, text a page marks inert is still read": 1.4,
+    "glass-text.spec.ts › the spotlight's first step › as the phone's sheet at 390×844 over the dark board › every line of the panel is legible on the sheet": 1.3,
+    "glass-text.spec.ts › under high contrast › at 1920×1080 › Strategy Guide: every line of glass text stands on solid ground": 18.6,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › Alerts: every line of glass text stands on solid ground": 1.1,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › My log, before anything has settled: every line of glass text stands on solid ground": 1.1,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › Season news: every line of glass text stands on solid ground": 1,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › Settings > Account, with the invites: every line of glass text stands on solid ground": 1.4,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › Strategy Guide: every line of glass text stands on solid ground": 10.5,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › The HUD, on a board page: every line of glass text stands on solid ground": 1.1,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › The React picker, from a post: every line of glass text stands on solid ground": 1.4,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › The Reveal modal, from My characters: every line of glass text stands on solid ground": 1.4,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › The Vending Machine: every line of glass text stands on solid ground": 1.4,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › The hand, with a card armed: every line of glass text stands on solid ground": 1.3,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › Updates, with Write an update open: every line of glass text stands on solid ground": 1.4,
+    "glass-text.spec.ts › under high contrast › at a phone, 390×844 › Updates: every line of glass text stands on solid ground": 1.3,
+    "glass-text.spec.ts › under high contrast › the poison: one line left on the smoke is named, with the smoke's rasters made late": 6.3,
+    "glitter.spec.ts › the dark story shows glitter, painted under the words, and reports its draws": 1.6,
+    "glitter.spec.ts › the glitter's canvases fill the post's body": 2,
+    "glitter.spec.ts › the light story shows glitter, painted under the words, and reports its draws": 1.9,
+    "glitter.spec.ts › the still story shows glitter, painted under the words, and reports its draws": 1.5,
+    "glitter.spec.ts › what landed shows, a scroll over it draws no tile, and the ground is not painted over": 20.7,
+    "glitter.spec.ts › with glitter landed on its cells, a post's marks, callout and dialogs are not covered or clipped": 21.1,
+    "graffiti.spec.ts › on a wide screen › a reader who neither tagged nor wrote the post scrubs on their own screen only, and the wall is back on coming to the page again": 6.4,
+    "graffiti.spec.ts › on a wide screen › a second character draws through the Draw tile, the author washes, and the meter falls for both masks": 8.9,
+    "graffiti.spec.ts › the post is brought clear of the dock, on a phone › the Draw tile": 1.2,
+    "hand-arc.spec.ts › armed and closed, the peek takes no press": 1.1,
+    "hand-arc.spec.ts › under reduced motion a hovered card is in its lifted pose at once, with no transition": 1.1,
+    "hold.spec.ts › a click on \"Hold to scrub\" scrubs for about a second and stops; twelve of them do no more than twelve seconds of holding": 37.5,
+    "hold.spec.ts › a mark in the hold opens the Lens unclipped, beside the dialog's box": 2.9,
+    "hold.spec.ts › a tap of Space on \"Hold to scrub\" scrubs for about a second and stops; twelve of them do no more than twelve seconds of holding": 37.8,
+    "hold.spec.ts › a wheel over the post's text, pushed past its end, fills the bar and frees the reader": 3.6,
+    "hold.spec.ts › on a phone the held mark's callout takes its own room, over neither the held post's words nor Break free": 2.2,
+    "hold.spec.ts › the app at the Hold board's moment › an Esc that arrives in the task the view is drawn in is the view's too: it is a press of Break free, and the thread behind is not left": 2.3,
+    "hold.spec.ts › the app at the Hold board's moment › the poison: a transparent layer over Break free is named by the press, and the reader is not freed": 3,
+    "hold.spec.ts › the app at the Hold board's moment › the reader is held by #44 on arriving, and reaches the checkbox at the end of the post by the keyboard": 4,
+    "hold.spec.ts › the app at the Hold board's moment › with reduced motion › the pull still happens, and the view is up": 1.1,
+    "hot-box.spec.ts › Tab reaches the mark, Enter opens the Lens, Tab reaches \"Wave the smoke\", a held Enter clears the post, its link can be focused, and the smoke is back 20 seconds later with focus on the mark": 50,
+    "hot-box.spec.ts › a mouse in the area's padding, outside the words, opens a clearing there": 2.4,
+    "hot-box.spec.ts › a mouse over a line clears it there, softly, and it closes again after the pointer leaves": 3.4,
+    "hot-box.spec.ts › a post scrolled out of view holds no tile and repaints nothing": 4,
+    "hot-box.spec.ts › at a phone's width › a horizontal drag across a line leaves a wake behind the finger, and it closes again": 3.9,
+    "hot-box.spec.ts › at a phone's width › a tap in the left padding, outside the words, opens a clearing there": 1.7,
+    "hot-box.spec.ts › at a phone's width › a tap opens a clearing where it lands, which holds and then closes": 4.4,
+    "hot-box.spec.ts › at a phone's width › a vertical swipe that starts on the smoked words scrolls the page and leaves no long wake": 2.3,
+    "hot-box.spec.ts › at a phone's width › the smoke fills the content area border to border at a phone's width, beyond the words": 1.5,
+    "hot-box.spec.ts › axe finds nothing on fresh-dark": 2.3,
+    "hot-box.spec.ts › axe finds nothing on fresh-light": 2,
+    "hot-box.spec.ts › axe finds nothing on reduced": 2.9,
+    "hot-box.spec.ts › axe finds nothing on the smoked post with the Lens open": 3.4,
+    "hot-box.spec.ts › one click on the Lens's hold holds for a second and does not finish a post": 2.9,
+    "hot-box.spec.ts › the Lens opens from the card's mark and shows the state, the way out and the hold control": 1.9,
+    "hot-box.spec.ts › the fog is shaded: many colors in the smoked area, and not the flat color alone": 2,
+    "hot-box.spec.ts › the fog moves with the pointer: the clear space is a streak along the path, longer than it is across": 2.5,
+    "hot-box.spec.ts › the post holds no control of its own, and nothing else of it is hit or under the fog": 2.3,
+    "hot-box.spec.ts › the smoke fills the post's content area border to border, beyond the words' box": 2.3,
+    "hot-box.spec.ts › the wake closes: a point the pointer left is clearer than rest at 300 ms and at rest by 2.5 s": 3.7,
+    "hot-box.spec.ts › the words under the smoke are covered in the caster's color, and inert": 1.6,
+    "hot-box.spec.ts › twelve clicks on the Lens's hold, 900 ms apart, finish the short post's sweep": 4,
+    "hot-box.spec.ts › under forced colors › axe finds nothing on the smoked post": 2.2,
+    "hot-box.spec.ts › under forced colors › fresh-light: the words are masked and a hard circle clears them, with a ring and a sign": 3.7,
+    "hot-box.spec.ts › under forced colors › long-post: the hold takes as long as without forced colors, and leaves the link focusable": 133.1,
+    "hot-box.spec.ts › under forced colors › long-post: the words are masked and a hard circle clears them, with a ring and a sign": 2.9,
+    "hot-box.spec.ts › under forced colors › the trail: a word behind the pointer is unmasked at 500 ms and masked at 1 s": 2.3,
+    "hot-box.spec.ts › under forced colors › with forced colors off there is no mask, no ring and no sign, and the canvas keeps its soft clearing": 2.6,
+    "hot-box.spec.ts › what the fog costs › LongPost at 4x CPU for 12 s: where the ladder settles": 21.4,
+    "icons.spec.ts › /apple-touch-icon.png is a PNG, not the page": 0.1,
+    "icons.spec.ts › /favicon.ico is an ICO, not the page": 0.1,
+    "icons.spec.ts › the page names both icons": 0.5,
+    "keyboard.spec.ts › reads a thread: from the index to a board, to a thread, and on to the next page, with keys only": 5,
+    "keyboard.spec.ts › spins: opens the form from a post, types a title, sends with Enter, and lands on ORIGIN": 1.2,
+    "laugh-track.spec.ts › a caption said on the sound settings page is visible and not covered": 0.7,
+    "laugh-track.spec.ts › a reader › a cue phrase in a bare address and in plain words: the link holds no cue, and the keyboard reaches every place there is (#602)": 1.6,
+    "laugh-track.spec.ts › a reader › pointing plays the reaction: the mouse onto a cue marks it heard, and onto a second marks that one too": 1.4,
+    "laugh-track.spec.ts › a reader › reading fires nothing": 11.7,
+    "laugh-track.spec.ts › a reader › the room stirs: a cue at the line is near, a far one is not, and the murmur is captioned": 1.2,
+    "laugh-track.spec.ts › at a phone's width the caption fits inside the gutters": 1,
+    "laugh-track.spec.ts › axe finds nothing on a board with a cue near and on one with a cue heard": 9.2,
+    "load.spec.ts › an address with a thread that does not exist shows \"The thread you requested does not exist.\"": 1.3,
+    "mail.spec.ts › the poison: a space inside the code selects as more than the six digits": 0.1,
+    "mail.spec.ts › the poison: a wide element makes the document scroll sideways, and is named": 0.1,
+    "mail.spec.ts › the poison: the code split across two spans does not select as one run": 0.1,
+    "meta-tiles.spec.ts › the date bar holds the strip (desktop) › each mark hangs over its bar by 1 to 4px each side, and clear of the first line of words": 0.6,
+    "meta-tiles.spec.ts › the strips beyond a post add no height › the board banner is as tall with a play as with none, and reserves a tile": 3.3,
+    "meta-tiles.spec.ts › the strips beyond a post add no height › the thread head is as tall with a play as with none, and reserves a tile": 3.2,
+    "onboarding-polish.spec.ts › 390 › the HUD's mask name is never cut, for every mask the demo has": 0.6,
+    "onboarding.spec.ts › the spotlight fade, as the marker reads it › reduced motion › data-kb-fade is none and the overlay is fully opaque on the first read": 1,
+    "origin-effects.spec.ts › 1. the area is the box under its band and byline, out to the box's other three borders": 2.1,
+    "origin-effects.spec.ts › 11. under a glittered opening post the box is painted over the glitter, and a pointer in the box picks none of it up": 9.3,
+    "origin-effects.spec.ts › 14. with the opening post's foil and the box's both on the page, two hosts are registered and each is held to its own allowance": 9,
+    "origin-effects.spec.ts › 2. Whoops! fills the box's area and is solid in its bottom-left corner, and the byline stands outside it (whoops-phone)": 1.3,
+    "origin-effects.spec.ts › 21. the can's lid leaves the box's area and is seen outside it": 22.8,
+    "origin-effects.spec.ts › 3b. with a Whoops! moment in the box, the ink is solid in the area's bottom-left corner, and the list stands outside the area": 1.6,
+    "origin-effects.spec.ts › 5. under Brighter effects the box's words and quote wear the bright ink; the byline and History keep the board's, and the band is the column head's": 1.5,
+    "origin-effects.spec.ts › 6. Hot Box fills the area and not the byline, History stands over it, and a clearing opens on the words and not on History": 2.1,
+    "origin-effects.spec.ts › 9. the phone › a character-spun box with two strips does not overflow, and its head text, the marks of both strips and Reset do not overlap": 1.3,
+    "origin-effects.spec.ts › 9. the phone › the page does not scroll sideways, and Whoops! still fills the area": 1.2,
+    "pack-reveal.spec.ts › on a phone, full motion: each tap or swipe on the pile turns exactly one card, through all five": 8.7,
+    "pack-reveal.spec.ts › phone: when the top tears, every card's back stands inside the pack": 2,
+    "pack-reveal.spec.ts › snappy: buying a pack and pressing Esc at once returns focus to the slot, with the reveal inert while its picture plays": 2.1,
+    "pack-reveal.spec.ts › with motion reduced › the light does not follow the pointer: the canvas holds the same pixels before and after a move": 2,
+    "pixel-icons.spec.ts › the icons keep their size at a larger text size and on a phone": 0.6,
+    "settled.spec.ts › an animation on a scroll's view timeline does not hold the wait": 0.1,
+    "shine.spec.ts › a busy thread › poisoned: a Glitter Bomb draw that takes 25 ms on the page turns the loop-time check red": 1,
+    "shine.spec.ts › a busy thread › poisoned: a foil worker that takes 25 ms a batch turns the worker-time check red": 16.1,
+    "shine.spec.ts › a busy thread › scrolled top to bottom with a moving mouse, the loop is cheap, the frames hold, nothing out of view is drawn, and its buffers are freed": 23.9,
+    "shine.spec.ts › a busy thread › scrolled with a moving mouse, the page rasters only what the light changes: a small share of the shiny posts in view a frame": 17.1,
+    "shine.spec.ts › a busy thread › under reduced motion the loop runs no frame after the first draw": 2.2,
+    "shine.spec.ts › a busy thread › with every shiny post scrolled away, the loop stops within three of its frames": 2.2,
+    "shine.spec.ts › a shiny post's canvases hold no more pixels than its words' box did at the page's density, or the body at half of it": 2.3,
+    "shine.spec.ts › the planted samples, red where they should be › a draw after exactly LAG samples out of view is the loop's lag; one more sample out and it is named": 0.1,
+    "shine.spec.ts › the planted samples, red where they should be › a line of words in a tall body is allowed a quarter of the body: drawn on every fourth frame it is within the bound, on every frame or every second far over it": 0.1,
+    "shine.spec.ts › the planted samples, red where they should be › a post drawn while fully out of view is named": 0.1,
+    "shine.spec.ts › the planted samples, red where they should be › a post out of view that still holds a buffer is named, and one in view or near the edge is not": 0.1,
+    "shine.spec.ts › the planted samples, red where they should be › a post whose body is twice its words, drawn on every frame, changes twice the screen they would: over the bound": 0.1,
+    "shine.spec.ts › the planted samples, red where they should be › only the part of a post on screen counts, and a post out of view counts for neither": 0.1,
+    "shine.spec.ts › the planted samples, red where they should be › the frames of the loop's lag, and a post in view, are not named": 0.1,
+    "spun-thread-cards.spec.ts › 1. Whoops! on the opening post: armed, marked, played, its ink fills the content area and the box stands above it; the wash clears it": 53.4,
+    "spun-thread-cards.spec.ts › 2. Good Vibes is played from the thread's head by the spinner, and its mark is beside the title": 3.4,
+    "spun-thread-cards.spec.ts › 3. Glitter Bomb is cast on the spinner from the opening post's postbit": 3.3,
+    "spun-thread-cards.spec.ts › 4. with reduced motion, the opening post's play mark is reachable by keyboard and named, and opens the form": 2.6,
+    "spun-thread-cards.spec.ts › 5. at phone width the page has no horizontal scroll with the opening post's strip and the band's marks both drawn": 2.5,
+    "steel-chair.spec.ts › axe finds nothing on reduced": 2.1,
+    "steel-chair.spec.ts › can in a thread post: the lid leaves the content area and is seen outside it, clipped by nothing": 32.4,
+    "steel-chair.spec.ts › can-in-flight: every object rests inside the content area on its floor, under the room of can, and covers no words": 20.7,
+    "steel-chair.spec.ts › extinguisher-in-flight: every object rests inside the content area on its floor, under the room of extinguisher, and covers no words": 25.8,
+    "steel-chair.spec.ts › extinguisher: no puff tile or fog in the air; the first one is drawn with the extinguisher on the floor, fills the content area, and is gone within its life and 500 ms": 21.6,
+    "steel-chair.spec.ts › fab-after: the foil and the bend › nothing is trapped: the signature's letters are the same with the foil shown and hidden": 3.5,
+    "steel-chair.spec.ts › fab-after: the foil and the bend › the foil is whole: five points of the content area outside the words' box are the same before the dent lands and after": 2.7,
+    "steel-chair.spec.ts › mixed-three-at-rest: every object rests inside the content area on its floor, under the room of chair, can, extinguisher, and covers no words": 1.5,
+    "steel-chair.spec.ts › mixed-three-at-rest: the Lens says Dented by a chair, a trash can and a fire extinguisher": 1.9,
+    "steel-chair.spec.ts › mixed-three: the live chair, can and extinguisher all rest inside the content area on its floor, under the room of the tallest, and cover no words": 19.7,
+    "steel-chair.spec.ts › reduced: the dent and the resting chair are there on first paint and nothing moves": 2.5,
+    "steel-chair.spec.ts › short-three, spread: dents land beside and below the line, and the line can still be read": 17,
+    "steel-chair.spec.ts › short-three, tight: the one line can be read: no crease element, shading capped at one dent's, glyphs keep 4.5:1, ink stays near its line": 17.2,
+    "steel-chair.spec.ts › with-fab: no block: the four corners of each dent's box are the same with the shading shown and hidden": 2.6,
+    "steel-chair.spec.ts › with-fab: the foil and the bend › nothing is trapped: the signature's letters are the same with the foil shown and hidden": 2.4,
+    "steel-chair.spec.ts › with-fab: the foil and the bend › the foil is whole: five points of the content area outside the words' box are the same before the dent lands and after": 2.2,
+    "thread.spec.ts › a card mark on a narrow post › stands in the date row clear of the permalink, stays inside the post's width, and has no words on it": 0.6,
+    "veils.spec.ts › axe, on the Main board › the Lens of a veil, and the picker with the kind a card added: none": 4.4,
+    "whoops.spec.ts › \"Hold to scrub\" clears a splat, and goes over some line more than once": 44.2,
+    "whoops.spec.ts › a press on ink beside the reactions row starts a stroke, and the row is as wide as its tiles": 1.9,
+    "whoops.spec.ts › at the board's max the splat covers the post body edge to edge, and its words are as wide as an unsplatted post's": 1.1,
+    "whoops.spec.ts › in forced colors › the scrub button, the author's tools and the chosen swatch are marked in system colors": 0.9,
+    "whoops.spec.ts › on a phone › the ink canvas covers the body's padding box": 1.1,
+    "whoops.spec.ts › on a phone › the splat's words are as wide as an unsplatted post's and at the board's 15px": 0.9,
+    "whoops.spec.ts › the ink reaches the post body's padding box edges, the reactions are in front of it, clickable, and the action links stand on the footer bar clear of it": 1.1,
+    "whoops.spec.ts › with a finger on a phone › a hold, then a vertical drag washes and does not scroll": 2.4,
+    "whoops.spec.ts › with a finger on a phone › a quick vertical swipe scrolls the page and washes nothing": 1.5,
+    "whoops.spec.ts › with a finger on a phone › a sideways drag washes and does not scroll": 1.6,
+    "whoops.spec.ts › with a held Stick Around around the ink, the ink still reaches the post body's padding box": 1.7,
+    "whoops.spec.ts › with a held Stick Around around the ink, the marks, the reactions and the actions are in front of the ink": 1.5,
+    "whoops.spec.ts › with a mouse over ink the sponge is drawn and the body's cursor is none; over the React button the sponge is hidden": 1.7,
+    "you-were-saying.spec.ts › the post holds its height and its lines while the tail types, at 1440px": 8.6,
+    "you-were-saying.spec.ts › the post holds its height and its lines while the tail types, at 390px": 8.4
+  }
+}

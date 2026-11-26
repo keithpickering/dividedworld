@@ -168,7 +168,7 @@ export const defaults: Settings = deepFreeze<Settings>({
    * lines a day; a tail lasts a day; no more than three public punishments of one character in a week; the filing run looks every five minutes and files
    * a visit left ten minutes past due as it stands.
    */
-  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
+  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10, quizQuestionsPerDay: 60, quizWriteMinutes: 15 },
   /**
    * The warn bar (the Mod Bots design, section 5): ten points; a minor breach adds 2, a moderate one 4, a severe one 7; each drops off 14 days after it
    * lands; a full bar brings a ban of 1 day, then 3, then 7, and every later ban in the season is 7 days.

@@ -21,10 +21,11 @@ test('staff: a body without a valid slot is a 400 and reads nothing', async () =
   }
 });
 
-test('staff: a good request runs the filings, then the patrols, then the apologies, then the owed lines, on deps.db with the WRITES set and models built with the database tiers', async () => {
+test('staff: a good request runs the quizzes, then the filings, then the patrols, then the apologies, then the owed lines, on deps.db with the WRITES set and models built with the database tiers', async () => {
   const d = fakeDeps((fn) => {
     switch (fn) {
       case 'refund_stale_reports': case 'refund_stale_appeals': return 0;
+      case 'pending_quizzes': return [];
       case 'filings_due': return [];
       case 'judgment_load_today': return 1_000_000; // the patrols' day is spent: they claim nothing
       case 'pending_apologies': return [];
@@ -36,11 +37,12 @@ test('staff: a good request runs the filings, then the patrols, then the apologi
   assert.equal(res.status, 200);
   const body = (await res.json()) as any;
   assert.equal(body.status, 'ok');
+  assert.equal(body.quizzes.status, 'ok');
   assert.equal(body.patrols.status, 'ok');
   assert.equal(body.apologies.status, 'ok');
   assert.equal(body.owed.status, 'ok');
   const order = d.calls.map((c) => c.fn).filter((fn) => fn !== 'instance_settings');
-  assert.deepEqual(order, ['refund_stale_reports', 'refund_stale_appeals', 'filings_due', 'judgment_load_today', 'pending_apologies', 'owed_lines_due']);
+  assert.deepEqual(order, ['pending_quizzes', 'refund_stale_reports', 'refund_stale_appeals', 'filings_due', 'judgment_load_today', 'pending_apologies', 'owed_lines_due']);
   assert.equal(d.dbs.length, 1);
   assert.equal(d.dbs[0]!.env.secret, KEY);
   const safe = d.dbs[0]!.safeToRepeat!;

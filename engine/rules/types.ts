@@ -133,6 +133,10 @@ export interface ModBotSettings {
   readonly filingCron: string;
   /** How long past its due time a visit may wait before the filing run files it as it stands, in minutes. */
   readonly filingGraceMinutes: number;
+  /** The most quiz questions the instance pays a model to write in a day; 0 means every quiz visit asks from its persona's bank. Counted from the ledger. */
+  readonly quizQuestionsPerDay: number;
+  /** How long a quiz visit may wait for its written question before the bank's question is used, in minutes. */
+  readonly quizWriteMinutes: number;
 }
 
 /**
@@ -934,7 +938,12 @@ export interface QuizQuestion {
 
 /** How a Mod Bot's visit can be intercepted: a quiz, a bribe (in hundredths of an orb), or a distraction. */
 export type Weakness =
-  | { readonly kind: 'quiz'; readonly questions: readonly QuizQuestion[] }
+  | {
+    readonly kind: 'quiz';
+    readonly questions: readonly QuizQuestion[];
+    /** The instance's own steer for the question the Mod writes about a post (at most 300 characters); left out, its tastes steer. */
+    readonly quizBrief?: string;
+  }
   | { readonly kind: 'bribe'; readonly price: Hundredths }
   | { readonly kind: 'distraction' };
 

@@ -83,7 +83,7 @@ const settings: Settings = {
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
   pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } }, turns: { waitHours: 48, perThread: 2, perSession: 4 }, charsPerDay: 800_000, readMost: 40_000, chatterCron: '37 17 * * *' },
-  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
+  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10, quizQuestionsPerDay: 60, quizWriteMinutes: 15 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   owedLines: { graceMinutes: 15, perDay: 60, perRun: 20 },
@@ -121,7 +121,7 @@ const system: SystemContent = {
   roster: [boss, bot],
   firstBoss: 'boss-a',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
@@ -525,7 +525,7 @@ test('a duty assigned to a staff key that does not exist is a problem; a key tha
 test('a duty left unassigned is a problem, one for each', () => {
   const { appeal: _a, ...rest } = system.duties;
   assert.match(said(withSystem({ duties: rest as SystemContent['duties'] })), /duty "appeal" is assigned to no one/);
-  assert.equal(DUTIES.length, 12);
+  assert.equal(DUTIES.length, 13);
 });
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
@@ -1995,4 +1995,21 @@ test('a rewind is a cast card on a post alone, with a time up, and none of what 
   for (const [name, value] of [['gimmick', { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 }], ['veil', 'author'], ['reaction', true], ['writes', {}], ['replies', true], ['draws', ['a']], ['drive', {}], ['surface', {}]] as const) {
     assert.match(bad({ [name]: value }), new RegExp(`card "splat" has a rewind, and a card with a rewind has no ${name}`), name);
   }
+});
+
+test('the modBots check holds the quiz settings, naming the field', () => {
+  const mod = (over: Record<string, unknown>) => settingsProblems({ ...settings, modBots: { ...settings.modBots, ...over } }).join('\n');
+  assert.match(mod({ quizQuestionsPerDay: -1 }), /"quizQuestionsPerDay" is not/);
+  assert.match(mod({ quizQuestionsPerDay: undefined }), /"quizQuestionsPerDay" is not/);
+  assert.match(mod({ quizWriteMinutes: 0 }), /"quizWriteMinutes" is not/);
+  assert.match(mod({ quizWriteMinutes: 1.5 }), /"quizWriteMinutes" is not/);
+  assert.deepEqual(settingsProblems({ ...settings, modBots: { ...settings.modBots, quizQuestionsPerDay: 0 } }), [], '0 means the bank always');
+});
+
+test('a quiz persona\'s quizBrief is at most 300 characters, and the problem names the persona', () => {
+  const quiz = (quizBrief: unknown) => withBot({ weakness: { kind: 'quiz', questions: [{ question: 'Q?', choices: ['a', 'b'], answer: 'a' }], quizBrief } as never });
+  assert.match(said(quiz('x'.repeat(301))), /"bot-a".*quizBrief.*300 characters/);
+  assert.match(said(quiz(7)), /"bot-a".*quizBrief/);
+  assert.deepEqual(instanceProblems(quiz('x'.repeat(300))), []);
+  assert.deepEqual(instanceProblems(quiz('Ask whether it is on topic.')), []);
 });
