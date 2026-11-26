@@ -62,7 +62,9 @@ function diagnose(spec: JobSpec, h: JobHealth, job: AdminJob | undefined, vault:
   const nothingSent = functionJob && run !== null && run.status === 'succeeded' && !sent;
   if (run === null) parts.push('pg_cron has no run of it on record');
   else if (run.status === 'failed') parts.push(`pg_cron ${at(run.at)}: failed${run.message ? `: ${run.message}` : ''}`);
-  else if (functionJob) parts.push(`pg_cron ${at(run.at)}: ${run.status}, ${sent ? 'a request was sent' : 'no request was sent'}`);
+  /* Only a finished run says whether a request went out: a run still going (running, starting, sending) has said nothing yet. */
+  else if (functionJob && run.status === 'succeeded') parts.push(`pg_cron ${at(run.at)}: succeeded, ${sent ? 'a request was sent' : 'no request was sent'}`);
+  else if (functionJob) parts.push(`pg_cron ${at(run.at)}: ${run.status}`);
   else parts.push(`pg_cron ${at(run.at)}: ${run.status}${run.message ? `, ${run.message}` : ''}`);
   if (functionJob) parts.push(`Vault: kayfabb_functions_url ${vault.functionsUrl ? 'present' : 'missing'}, kayfabb_jobs_key ${vault.jobsKey ? 'present' : 'missing'}`);
   const inCron = job !== undefined && job.schedule !== null;
@@ -78,6 +80,7 @@ function diagnose(spec: JobSpec, h: JobHealth, job: AdminJob | undefined, vault:
   else if (run !== null && run.status === 'failed') next = 'pg_cron could not run it: the message above is why.';
   else if (h.unreadable) next = 'Change its schedule in Supabase to one with five fields, such as * * * * *.';
   else if (run === null) next = 'pg_cron has not run it: check pg_cron is running in Supabase.';
+  else if (run.status !== 'succeeded') next = "pg_cron's last run of it has not finished: check pg_cron in Supabase.";
   else if (functionJob) next = `The request is sent and the function never answers well. Look at ${short(spec.name)}'s log in Supabase.`;
   else next = 'The command runs and fails or never finishes: the message above is why.';
   return { line: parts.join(' · '), next };

@@ -126,6 +126,16 @@ describe('the jobs page', () => {
     expect(note).toHaveTextContent("The job's command sent nothing: check both Vault entries have values.");
   });
 
+  test('a run pg_cron has not finished is named as it stands, with nothing said about a request', async () => {
+    const fake = healthy();
+    stopConceal(fake, { status: 'running', message: null });
+    open(fake);
+    const note = (await rowOf('conceal')).nextElementSibling as HTMLElement;
+    expect(note).toHaveTextContent(`pg_cron ${shortTime(new Date(fake.clock.now() - MINUTE).toISOString(), fake.clock.now())}: running ·`);
+    expect(note).not.toHaveTextContent('request was sent');
+    expect(note).toHaveTextContent("pg_cron's last run of it has not finished: check pg_cron in Supabase.");
+  });
+
   test('a run pg_cron failed shows its message and says the message is why', async () => {
     const fake = healthy();
     stopConceal(fake, { status: 'failed', message: 'permission denied for table job_runs' });
