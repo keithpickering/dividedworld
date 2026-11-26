@@ -193,7 +193,7 @@ test('a lost race records the standing row\'s source and writes nothing of its o
   assert.equal(d.written.get(V1).question, BANK.question, 'the standing row is untouched');
 });
 
-test('no bank question leaves the visit pending and says so on the record; a database error leaves it too, a ledger one stops', async () => {
+test('no bank question leaves the visit pending and says so on the record; a database error leaves it too', async () => {
   const d = fakeDb({ enabled: false, bank: false });
   const out = await run(d, fakeModels());
   assert.equal(d.count('write_visit_quiz'), 0);
