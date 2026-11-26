@@ -345,7 +345,6 @@ create table lines_owed (
 );
 create index lines_owed_request on lines_owed (request) where request is not null;
 create index lines_owed_arrival on lines_owed ((facts ->> 'handover')) where line_key = 'bossArrival';
-create index lines_owed_cause on lines_owed (cause_act) where cause_act is not null;
 
 create table lines_owed_open (
   owed bigint primary key references lines_owed (id),
@@ -427,8 +426,8 @@ revoke execute on function pay_owed_unsaid(bigint, text) from public, anon, auth
 
 -- pay_owed_line: posts the line as its speaker and pays it. With a body (the staff run's voiced line, trimmed and cut to postMaxLength) it pays `voiced`; with none (null or blank) it posts the speaker's stock line and pays
 -- `stock`: a move's key through system_line with the move's kind and params read back from its Act and the move's maker as {boss}, requestLapsed through boss_request_reply (quoting the request), bossArrival through system_line.
--- A request that is no longer public by the time its lapse is paid (staff_request_post_public, as the lapse itself asked) is paid `unsaid` ('the request is no longer public') and posts nothing. A speaker that has no stock line to post, or a post that raises (the speaker locked out of the thread, benched, a thread gone), pays `unsaid` with the reason; a lock timeout, deadlock, serialization failure or cancelled
--- statement is not a fact about the line and is raised, so the line is tried again. It takes the queue row's lock, so the staff run and the tick paying one line at once post it once: the second finds it paid, and returns the
+-- A request that is no longer public by the time its lapse is paid (staff_request_post_public, as the lapse itself asked) is paid `unsaid` ('the request is no longer public') and posts nothing. A speaker that has no stock line to post, or a post that raises (the speaker locked out of the thread, benched, a thread gone), pays `unsaid` with the reason; a lock timeout, deadlock, serialization failure, cancelled
+-- statement, insufficient resources (class 53) or lost connection (class 08) is not a fact about the line and is raised, so the line is tried again. It takes the queue row's lock, so the staff run and the tick paying one line at once post it once: the second finds it paid, and returns the
 -- payment and writes nothing.
 create function pay_owed_line(owed bigint, body text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -478,7 +477,7 @@ begin
       end if;
     end if;
   exception when others then
-    if sqlstate in ('55P03', '40P01', '40001', '57014', '57P01') then raise; end if;
+    if sqlstate in ('55P03', '40P01', '40001', '57014', '57P01') or sqlstate like '53%' or sqlstate like '08%' then raise; end if;
     posted := null;
     how := null;
     why := left(sqlerrm || ' (' || sqlstate || ')', 480);
@@ -494,13 +493,13 @@ revoke execute on function pay_owed_line(bigint, text) from public, anon, authen
 grant execute on function pay_owed_line(bigint, text) to service_role;
 
 -- owed_lines_due: the lines the staff run voices next, at most `most`, as one jsonb array in the queue's order (failures last, then the oldest first): each line's id, speaker, key, thread, facts, the Act it is about
--- (the move, or the request post; null for an arrival) and the speaker's office now. Each row's debt and office are read by key, so the read walks the queue's index to the `most`th row and never the lines paid.
+-- (the move, or the request post; null for an arrival) and the speaker's office now. A lapse whose request is no longer public (staff_request_post_public) is read with its asker and body left out of the facts, so the run never voices a hidden request's words; the row stays, and pay_owed_line pays it `unsaid`, its way out. Each row's debt and office are read by key, so the read walks the queue's index to the `most`th row and never the lines paid.
 create function owed_lines_due(most integer) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(jsonb_agg(x.j order by x.failed_at nulls first, x.at, x.owed), '[]'::jsonb)
   from (
     select o.failed_at, o.at, o.owed,
-           jsonb_build_object('id', w.id, 'staff', w.staff, 'line_key', w.line_key, 'thread', w.thread, 'facts', w.facts, 'cause_act', w.cause_act,
+           jsonb_build_object('id', w.id, 'staff', w.staff, 'line_key', w.line_key, 'thread', w.thread, 'facts', case when w.line_key = 'requestLapsed' and not staff_request_post_public(w.target) then w.facts - 'asker' - 'body' else w.facts end, 'cause_act', w.cause_act,
                               'office', (select f.office from staff_office_now f where f.staff = w.staff)) as j
     from lines_owed_open o cross join lateral (select y.* from lines_owed y where y.id = o.owed) w
     order by o.failed_at nulls first, o.at, o.owed
@@ -1462,7 +1461,7 @@ begin
         if kind_row.structural then live := greatest(live, now() + hold); end if;
         insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, bundle, bundle_name, role, line)
         values (apply_meeting.meeting, boss, kind_row.key, bpart -> 'params', bpart -> 'demand', bpart ->> 'why', live,
-          live + coalesce((bpart ->> 'expires_in_hours')::numeric, 0) * interval '1 hour', kind_row.structural, bundle_id, left(bnd ->> 'name', 120), nullif(bpart ->> 'role', ''), nullif(btrim(bpart ->> 'line', E' \t\n\r\f\v'), ''));
+          live + coalesce((bpart ->> 'expires_in_hours')::numeric, 0) * interval '1 hour', kind_row.structural, bundle_id, left(bnd ->> 'name', 120), nullif(bpart ->> 'role', ''), left(nullif(btrim(bpart ->> 'line', E' \t\n\r\f\v'), ''), 280));
       end loop;
       if authored then
         insert into arc_beat_events (season, staff, beat, event, bundle) values (season_id, boss, bnd ->> 'beat', 'played', bundle_id);
@@ -1530,7 +1529,7 @@ begin
     end if;
     insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, line)
     values (apply_meeting.meeting, boss, kind_row.key, mv -> 'params', mv -> 'demand', mv ->> 'why', live,
-      live + ((mv ->> 'expires_in_hours')::numeric * interval '1 hour'), kind_row.structural, nullif(btrim(mv ->> 'line', E' \t\n\r\f\v'), ''));
+      live + ((mv ->> 'expires_in_hours')::numeric * interval '1 hour'), kind_row.structural, left(nullif(btrim(mv ->> 'line', E' \t\n\r\f\v'), ''), 280));
   end loop;
 
   -- The successor: queued beside the moves, not among them, and not charged to the bank.
@@ -1753,7 +1752,7 @@ begin
     -- The guard decides: the office, the beat, the allowance, the cap and the rule itself. It stamps the order the move spends against.
     insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, cause_act, line)
     values (ord.meeting, apply_mod_move.staff, kind, params, demand, why, lives, case when lasting then null else lives + make_interval(hours => hours::integer) end,
-            coalesce((select k.structural from move_kinds k where k.key = kind), false), apply_mod_move.cause_act, nullif(btrim(move ->> 'line', E' \t\n\r\f\v'), ''))
+            coalesce((select k.structural from move_kinds k where k.key = kind), false), apply_mod_move.cause_act, left(nullif(btrim(move ->> 'line', E' \t\n\r\f\v'), ''), 280))
     returning id into made;
   exception
     when unique_violation then

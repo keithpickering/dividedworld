@@ -449,3 +449,39 @@ begin
   end if;
   if pg_temp.posts_in(th) is distinct from before_n then raise exception 'a lapse line was posted for a hidden request'; end if;
 end $$;
+
+-- ---- 12. The staff run is not handed a hidden request's words: owed_lines_due leaves the asker and the body off a lapse whose request is no longer public, and keeps the row, so pay_owed_line pays it unsaid ----
+do $$
+declare
+  th uuid := tests.thread('Owed lapse due hidden');
+  asker uuid := tests.character(tests.account('tl-p-duehid'), 'Tl Duehid');
+  req uuid := tests.post(asker, th, 'A secret request body?');
+  admin_a uuid := (select u.id from auth.users u where u.email = 'tl-p-admin@test.invalid');
+  turn uuid;
+  rid bigint;
+  oid bigint;
+  row_ jsonb;
+begin
+  perform pg_temp.sets('{"requestLapsed": ["{boss} says to {asker}: lapsed."]}', null);
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  turn := tests.post((select id from characters where staff = 'tl-a'), th, 'I will ask the Boss.');
+  perform set_config('kayfabb.staff_writer', '', true);
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values (req, th, asker, 'tl-a', turn, 'confer', 'mod') returning id into rid;
+  update staff_requests_open set at = now() - interval '4 days' where request = rid;
+  perform system_tick();
+  oid := (select o.id from lines_owed o where o.request = rid and o.line_key = 'requestLapsed');
+  if oid is null then raise exception 'the lapse owed nothing'; end if;
+  select r into row_ from jsonb_array_elements(owed_lines_due(100)) r where (r ->> 'id')::bigint = oid;
+  if row_ -> 'facts' ->> 'body' is distinct from 'A secret request body?' or row_ -> 'facts' ->> 'asker' is distinct from 'Tl Duehid' then
+    raise exception 'a public request''s facts are not handed over: %', row_;
+  end if;
+  insert into admins (account) values (admin_a) on conflict do nothing;
+  perform tests.become(admin_a);
+  perform decide(null, req, 'hide', null, 'hidden');
+  perform tests.unbecome();
+  select r into row_ from jsonb_array_elements(owed_lines_due(100)) r where (r ->> 'id')::bigint = oid;
+  if row_ is null then raise exception 'the row of a hidden request left the queue read'; end if;
+  if row_ -> 'facts' ? 'body' or row_ -> 'facts' ? 'asker' or row_::text like '%secret request%' or row_::text like '%Duehid%' then
+    raise exception 'owed_lines_due handed the staff run a hidden request''s words: %', row_;
+  end if;
+end $$;

@@ -3,6 +3,7 @@
 -- 1. apply_meeting (a Boss's move) and apply_mod_move (a Mod's) store the move's `line` on its queued row; a move with none, or a blank one, stores null.
 -- 2. A line over 280 characters is refused by the column's check (the engine trims before it): a direct insert, and a Mod's move, which is refused with the reason.
 -- 3. system_tick lands a queued move with its own line, its tokens filled as a stock line's are ({move}, {board}, {rule}, {boss}).
+-- 5. A line is cut to 280 characters where it is stored (a meeting's plain move, a bundle part, a Mod's move), never refusing the paid answer; 280 multibyte characters are kept; a token the key is not given lands literal.
 -- 4. A queued move with no line lands with the speaker's stock line (a rule's is ruleSet): the persona's own set, else the instance's, else the move's plain words.
 
 create function pg_temp.expect(label text, got text, want text) returns void language plpgsql as $$
@@ -81,7 +82,14 @@ begin
         jsonb_build_object('key', 'noLong', 'param', 'none', 'least', null, 'most', null, 'plain', 'no long posts'),
         jsonb_build_object('key', 'noShort', 'param', 'none', 'least', null, 'most', null, 'plain', 'no short posts'),
         jsonb_build_object('key', 'noEmpty', 'param', 'none', 'least', null, 'most', null, 'plain', 'no empty posts'),
-        jsonb_build_object('key', 'noTall', 'param', 'none', 'least', null, 'most', null, 'plain', 'no tall posts'))));
+        jsonb_build_object('key', 'noTall', 'param', 'none', 'least', null, 'most', null, 'plain', 'no tall posts'),
+        jsonb_build_object('key', 'noP0', 'param', 'none', 'least', null, 'most', null, 'plain', 'no p0'),
+        jsonb_build_object('key', 'noP1', 'param', 'none', 'least', null, 'most', null, 'plain', 'no p1'),
+        jsonb_build_object('key', 'noP2', 'param', 'none', 'least', null, 'most', null, 'plain', 'no p2'),
+        jsonb_build_object('key', 'noP3', 'param', 'none', 'least', null, 'most', null, 'plain', 'no p3'),
+        jsonb_build_object('key', 'noP4', 'param', 'none', 'least', null, 'most', null, 'plain', 'no p4'),
+        jsonb_build_object('key', 'noP5', 'param', 'none', 'least', null, 'most', null, 'plain', 'no p5'),
+        jsonb_build_object('key', 'noP6', 'param', 'none', 'least', null, 'most', null, 'plain', 'no p6'))));
   perform seed_instance(seed);
   insert into boards (slug, name, description) values ('ll-games', 'Games', 'Talk about games.');
   insert into move_bank (staff, balance, as_of) values ('ll-boss', 20, now());
@@ -137,8 +145,9 @@ begin
   update queued_moves set line = null where id = (select q from pg_temp.made where label = 'boss-none');
   r := pg_temp.refusal(format('update queued_moves set line = %L where id = %s', repeat('x', 281), (select q from pg_temp.made where label = 'boss-none')));
   if r is null or r not like '23514:%' then raise exception 'a 281-character line was not refused by the check: %', r; end if;
-  got := apply_mod_move('ll-m1', pg_temp.mv(games, 'noAllCaps', to_jsonb(repeat('y', 281))), pg_temp.cause('mod long'));
-  if (got ->> 'queued')::boolean is distinct from false then raise exception 'a Mod''s 281-character line was queued: %', got; end if;
+  -- A Mod's 281-character line is cut to 280 where apply_mod_move stores it (0443 fix), not refused.
+  got := apply_mod_move('ll-m1', pg_temp.mv(games, 'noP0', to_jsonb(repeat('y', 281))), pg_temp.cause('mod long'));
+  if (got ->> 'queued')::boolean is distinct from true or (select char_length(q.line) from queued_moves q where q.id = (got ->> 'move')::bigint) is distinct from 280 then raise exception 'a Mod''s 281-character line was not queued cut to 280: %', got; end if;
   if exists (select 1 from queued_moves where char_length(line) > 280) then raise exception 'a line over 280 is stored'; end if;
 end $$;
 
@@ -148,7 +157,7 @@ declare
   ran jsonb;
 begin
   ran := system_tick();
-  if (ran ->> 'landed')::integer is distinct from 5 or (ran ->> 'failed')::integer is distinct from 0 then raise exception 'the tick did not land the five moves: % %', ran, (select jsonb_agg(jsonb_build_object('s', q.staff, 'l', q.line, 'f', q.failure, 'h', q.held_at, 'g', q.go_live_at, 'la', q.landed_act)) from queued_moves q); end if;
+  if (ran ->> 'landed')::integer is distinct from 6 or (ran ->> 'failed')::integer is distinct from 0 then raise exception 'the tick did not land the six moves (the cut Mod line is the sixth): % %', ran, (select jsonb_agg(jsonb_build_object('s', q.staff, 'l', q.line, 'f', q.failure, 'h', q.held_at, 'g', q.go_live_at, 'la', q.landed_act)) from queued_moves q); end if;
   perform pg_temp.expect('the Boss''s line lands, filled', pg_temp.landed_body((select q from pg_temp.made where label = 'boss-line')), 'The Boss says a rule on Games, Line Boss.');
   perform pg_temp.expect('the Mod''s line lands, filled', pg_temp.landed_body((select q from pg_temp.made where label = 'mod-line')), 'Mod a rule: Line Mod has nothing to do with it.');
   perform pg_temp.expect('no line: the Boss''s stock line', pg_temp.landed_body((select q from pg_temp.made where label = 'boss-none')), 'Boss own: a rule.');
@@ -174,4 +183,39 @@ begin
   if q is null then raise exception 'the Mod''s plain move was not queued: %', got; end if;
   perform system_tick();
   perform pg_temp.expect('no line and neither set: the move''s words', pg_temp.landed_body(q), 'a rule');
+end $$;
+
+-- ---- 6. A line is cut where it is stored: a bundle part's line, a plain move's 300-character line, 280 emoji, a token the key is not given ----
+do $$
+declare
+  games uuid := pg_temp.board('ll-games');
+  m bigint;
+  got jsonb;
+  qid bigint;
+begin
+  perform pg_temp.sets(null, null);
+  update move_bank set balance = 20, as_of = now() where staff = 'll-boss';
+  m := (begin_meeting('2031-03-01T09:00:00Z'::timestamptz) ->> 'meeting')::bigint;
+  perform apply_meeting(m, jsonb_build_object('boss', 'll-boss', 'weekly_moves', 0, 'bank_cap', 20, 'memory', pg_temp.memory('wrestling'),
+    'profile', jsonb_build_object('interests', jsonb_build_array('pie'), 'favorites', '[]'::jsonb, 'mood', 'smug', 'signature', 'It is decided.'),
+    'moves', jsonb_build_array(
+      pg_temp.mv(games, 'noP1', to_jsonb(repeat('a', 300))),
+      pg_temp.mv(games, 'noP2', to_jsonb(repeat(E'\U0001F600', 280))),
+      pg_temp.mv(games, 'noP3', to_jsonb('Hello {mod}.'::text))),
+    'bundles', jsonb_build_array(jsonb_build_object('name', 'Pair', 'beat', null, 'parts', jsonb_build_array(
+      pg_temp.mv(games, 'noP4', to_jsonb('Part {move}.'::text)), pg_temp.mv(games, 'noP5', to_jsonb(repeat('b', 300)))))),
+    'orders', jsonb_build_array(jsonb_build_object('mod', 'll-m1', 'boards', jsonb_build_array(games), 'order', 'Watch.', 'allowance', 3, 'memory', pg_temp.memory('h'))),
+    'record', '{}'::jsonb));
+  if (select count(*) from queued_moves where meeting = m) is distinct from 5 then raise exception 'the meeting did not queue five moves: %', (select jsonb_agg(to_jsonb(q)) from queued_moves q where meeting = m); end if;
+  perform pg_temp.expect('a 300-character plain line is cut to 280', (select char_length(q.line)::text from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP1'), '280');
+  perform pg_temp.expect('280 emoji are kept whole', (select char_length(q.line)::text from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP2'), '280');
+  perform pg_temp.expect('a bundle part''s line is stored', (select q.line from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP4'), 'Part {move}.');
+  if (select q.bundle from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP4') is null then raise exception 'the part is not in a bundle'; end if;
+  perform pg_temp.expect('a bundle part''s 300-character line is cut to 280', (select char_length(q.line)::text from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP5'), '280');
+  got := apply_mod_move('ll-m1', pg_temp.mv(games, 'noP6', to_jsonb(repeat('c', 300))), pg_temp.cause('mod cut'));
+  if (got ->> 'queued')::boolean is distinct from true then raise exception 'a Mod''s 300-character line was not queued: %', got; end if;
+  perform pg_temp.expect('a Mod''s 300-character line is cut to 280', (select char_length(q.line)::text from queued_moves q where q.id = (got ->> 'move')::bigint), '280');
+  qid := (select q.id from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP3');
+  perform system_tick();
+  perform pg_temp.expect('a token the key is not given lands literal', pg_temp.landed_body(qid), 'Hello {mod}.');
 end $$;
