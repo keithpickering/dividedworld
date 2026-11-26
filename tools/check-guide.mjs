@@ -89,6 +89,19 @@ const RETYPED_WORD = new RegExp(`(?<![\\w-])(double|triple|quadruple|twice|thric
  */
 const KEPT_SENTENCES = ['This place has two halves.'];
 
+/**
+ * Words that promise more privacy than the game gives (the owner, 2026-11-26, #1145). The game hides a thing from every other player, and an
+ * admin can still see it, so the copy says "no other player" (instances/divided-world/voice/gabe.md, section 5). "Nobody", "no one" or "only
+ * you" with a seeing, learning, knowing or reading verb at most three words after it ("Only you see it", "nobody learns", "only you can see")
+ * is refused, and so is "yours alone". "Nobody" with another verb ("so nobody is told", "nobody starts ahead") is a different claim and left alone.
+ */
+const OVERCLAIM = /\b(?:nobody|no one|only you)(?:\s+[\w'’]+){0,2}?\s+(?:sees?|seen|learns?|knows?|reads?)\b|\byours alone\b/giu;
+
+/** Each phrase in `text` that claims more privacy than the game gives, as written; empty when there is none. Also read by the instance's own tests for copy outside the guide. */
+export function privacyOverclaims(text) {
+  return [...String(text).matchAll(OVERCLAIM)].map((m) => m[0]);
+}
+
 /** The words of a block, a setting marker said as a placeholder that is neither a digit nor a word, so a marker beside a unit is clean. */
 function words(block) {
   const say = () => '§';
@@ -205,6 +218,11 @@ export function guideFaults({ file, markdown, hints, hintsFile = file.replace(/s
   /* What the guide says of the staff is true whichever way the switch is: only a system-off passage may say they are not on. */
   for (const { text, system } of spoken(blocks)) {
     if (system !== 'off' && /not switched on/iu.test(text)) fault(file, lineOf(markdown, text.slice(0, 40)) || lineOf(markdown, text.match(/not switched on/iu)[0]), `"${text.slice(0, 60)}" says the staff are not switched on outside a system-off passage, so it would be untrue the day they are switched on`);
+  }
+
+  /* No more privacy than the game gives: "no other player", never "nobody can see". */
+  for (const { text } of spoken(blocks)) {
+    for (const said of privacyOverclaims(text)) fault(file, lineOf(markdown, said) || lineOf(markdown, said.split(/\s+/u)[0]), `"${said}" claims more privacy than the game gives: an admin can see what is hidden from players, so say "no other player"`);
   }
 
   /* A link to a fragment names a section, by the anchor the page gives it (`sectionsOf`, the page's own reading). */

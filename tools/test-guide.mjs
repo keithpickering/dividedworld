@@ -9,7 +9,7 @@
  * to 8.00). So each is planted here and must fire, the real tree is poisoned the same ways, and the real tree runs clean last, so a guard
  * gone quiet over nothing fails here.
  */
-import { guideFaults, instanceNames, readInstance, screenSettingsOf } from './check-guide.mjs';
+import { guideFaults, instanceNames, privacyOverclaims, readInstance, screenSettingsOf } from './check-guide.mjs';
 
 let pass = 0;
 const failures = [];
@@ -128,6 +128,24 @@ const fires = (markdown, pattern, o = {}) => {
     const r = faultsOf(markdown);
     check(`a fraction outside the owner's kept sentence still fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
   }
+  /* No more privacy than the game gives (the owner, 2026-11-26, #1145): "no other player", never "nobody", "no one", "only you" or "yours alone". */
+  for (const [name, markdown] of [
+    ['"Only you see it."', '## A\n\nOnly you see it.\n'],
+    ['"nobody learns"', '## A\n\nSo nobody learns who you spared.\n'],
+    ['"no one can read"', '## A\n\nNo one can read them.\n'],
+    ['"only you can see", in a list', '## A\n\n- A secret class only you can see.\n'],
+    ['"yours alone"', '## A\n\nYour conditions are yours alone.\n'],
+    ['inside a passage', '## A\n\n<!-- kayfabb:if system-on -->\n\nNobody knows.\n\n<!-- kayfabb:end -->\n'],
+  ]) {
+    const r = faultsOf(markdown);
+    check(`a claim of more privacy than the game gives fires: ${name}`, r.length === 1 && /claims more privacy than the game gives/.test(r[0].why), JSON.stringify(r));
+  }
+  for (const [name, markdown] of [
+    ['"no other player sees it"', '## A\n\nNo other player sees it.\n'],
+    ['"nobody" with no seeing or knowing after it', '## A\n\nA silent Turn, so nobody is told. Nobody starts ahead.\n'],
+    ['"you alone" that is not "yours alone"', '## A\n\nIt is yours, and no other player can read it.\n'],
+  ]) check(`no claim of privacy fires: ${name}`, faultsOf(markdown).length === 0, JSON.stringify(faultsOf(markdown)));
+  check('privacyOverclaims names what it found', JSON.stringify(privacyOverclaims('Only you see it, and nobody knows. It is yours alone.')) === JSON.stringify(['Only you see', 'nobody knows', 'yours alone']), JSON.stringify(privacyOverclaims('Only you see it, and nobody knows. It is yours alone.')));
   for (const [name, markdown] of retyped) {
     const r = faultsOf(markdown);
     check(`a retyped number fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
@@ -222,6 +240,7 @@ const fires = (markdown, pattern, o = {}) => {
     check(`${name}: the real guide offers no debut`, !/\bdebut/i.test(real.markdown));
     check(`${name}: the real guide does not say "The System posts"`, !real.markdown.includes('The System posts'));
     const r = guideFaults(real);
+    check(`${name}: the real guide with "Only you see it." appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\nOnly you see it.\n` }).length === 1);
     check(`${name}: the real guide is clean`, r.length === 0, JSON.stringify(r));
   }
 }

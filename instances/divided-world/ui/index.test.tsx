@@ -6,7 +6,7 @@ import { ratio } from '../../../engine/ui/contrast.ts';
 import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
-import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
+import { guideFaults, privacyOverclaims, readInstance } from '../../../tools/check-guide.mjs';
 import { parse, sectionsOf } from '../../../engine/ui/guide/markdown.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { economyOf, faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
@@ -116,6 +116,14 @@ describe('Divided World\'s onboarding words', () => {
       ...instanceUi.frontDoor.note.split('\n'),
     ];
     for (const line of lines) expect(line, line).not.toMatch(/The System|Administrator/u);
+  });
+  test('no tip and no line of the front door\'s note claims more privacy than the game gives (#1145): "no other player", never "only you"', () => {
+    const lines = [
+      ...Object.values(instanceUi.onboarding.tips).flatMap((t) => [t.title, t.line]),
+      ...instanceUi.frontDoor.note.split('\n'),
+      instanceUi.onboarding.letter,
+    ];
+    for (const line of lines) expect(privacyOverclaims(line), line).toEqual([]);
   });
 });
 
