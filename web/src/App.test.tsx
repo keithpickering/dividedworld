@@ -551,7 +551,7 @@ describe('the welcome', () => {
     await fake.openAccount(code);
     expect(await screen.findByRole('heading', { level: 1, name: 'Welcome' })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/welcome');
-    expect(screen.getByRole('heading', { level: 2, name: 'After nine years of development' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Hi. I\'m Gabe.' })).toBeInTheDocument();
     await waitFor(async () => expect((await fake.preferences()).welcomedAt).not.toBeNull());
   });
 
