@@ -4,6 +4,12 @@
  * names the keys and the tokens a line may carry; the instance writes the lines, in its own voice.
  *
  * Each key's lines are a list, one chosen at random, so a stock line wears thin more slowly.
+ *
+ * Whose set is read (the persona-lines design, section 1.2): the speaker's own (`Persona.stockLines`, seeded as the setting
+ * `personaLines`) comes first, and the instance's (`SystemContent.stockLines`, the setting `systemLines`) is the last resort, for a
+ * speaker with no set. `stockLinesOf` picks here and `stock_lines` in SQL. A move's landing line is written ahead by the call that
+ * queues it (`repairLandingLine`), and the endings, lapses and arrivals (`OWED_KEYS`) are owed by their speaker and then voiced by
+ * the staff run (engine/system/owed.ts); a stock line stands in only where that line was not written or cannot be.
  */
 import { PRONOUN_FORMS } from '../rules/pronouns.ts';
 import type { SystemContent } from '../rules/types.ts';
