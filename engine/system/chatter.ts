@@ -629,8 +629,8 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
   return { system, message };
 }
 
-/** The most characters of the plot so far an old voice's frame carries. */
-const COMPLETION_PLOT_MOST = 700;
+/** The most characters of the plot so far the old voice's frame carries (one line). */
+export const COMPLETION_PLOT_MOST = 700;
 
 /**
  * The old voice's document (design, section 4: a persona on the old voice writes its words in raw completion). A base model continues a
