@@ -453,3 +453,27 @@ begin
   insert into seasons (number, starts_at) select max(number) + 1, now() + interval '1 day' from seasons;
   perform pg_temp.expect(not exists (select 1 from arc_predecessor('al-cc', (select max(id) from seasons)) p where p.seated = (select max(id) from seasons)), 'a Boss seated before the season is read as seated in it');
 end $$;
+
+-- ---- 9. A Boss kept on past the season it was seated in: its predecessor's aftermath is not its own in the next season ----
+-- al-cc was seated in season 2 and is still Boss in season 3 (the seat was kept at the roll-over). The handover row still names al-cb, but the aftermath is for the season of the handover only.
+do $$
+declare
+  s3 bigint := (select max(id) from seasons);
+  said text;
+begin
+  update persona_arcs set aftermath = jsonb_set(aftermath, '{0,leadIn}', '{"unlock": [{"kind": "phase", "phase": "honeymoon"}]}'::jsonb) where staff = 'al-cb';
+  perform pg_temp.expect((select p.staff from arc_predecessor('al-cc', s3) p) = 'al-cb' and not exists (select 1 from arc_predecessor('al-cc', s3) p where p.seated = s3), 'the fixture is not a Boss kept on');
+  -- Every condition of from-b holds (B's side beat landed) and its lead-in holds, so only the seat check keeps them out.
+  -- Run as a replica, where the guard lets any row through, so that the pass's own check is what is read and the guard cannot hide its absence.
+  perform set_config('session_replication_role', 'replica', true);
+  perform pg_temp.pass('al-cc', s3);
+  perform set_config('session_replication_role', 'origin', true);
+  perform pg_temp.expect(not exists (select 1 from arc_beat_events where season = s3 and staff = 'al-cc'), 'a kept-on Boss unlocked an aftermath beat in a later season');
+  perform pg_temp.expect(arc_lead_ins('al-cc', s3) = '{}'::text[], 'a kept-on Boss showed an aftermath lead-in in a later season: ' || arc_lead_ins('al-cc', s3)::text);
+  perform pg_temp.expect(pg_temp.refusal(format('insert into arc_beat_events (season, staff, beat, event) values (%s, %L, %L, %L)', s3, 'al-cc', 'after:al-cb:from-b', 'unlocked')) like '%no beat%', 'an aftermath event was written for a Boss kept on');
+  -- An event that is there anyway (an import writes as a replica) is not offered to the meeting.
+  perform set_config('session_replication_role', 'replica', true);
+  insert into arc_beat_events (season, staff, beat, event) values (s3, 'al-cc', 'after:al-cb:from-b', 'unlocked');
+  perform set_config('session_replication_role', 'origin', true);
+  perform pg_temp.expect(arc_for_meeting('al-cc', s3) -> 'beats' = '[]'::jsonb, 'the meeting was offered an aftermath beat in a later season: ' || (arc_for_meeting('al-cc', s3) -> 'beats')::text);
+end $$;
