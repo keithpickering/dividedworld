@@ -19,6 +19,8 @@ export const ontopic: Persona = {
   beats: ['pointless-post-palace'],
   petRules: ['requiredWord', 'noDuplicateTitle', 'noNecropost'],
   strictness: { visitHours: { least: 3, most: 8 }, bands: ['minor', 'moderate'] },
+  // The habits plan (docs/plans/2026-11-22-divided-world-habits-plan.md): always helping, the most frequent visitor, brief drive-by reviews all day; hours are UTC (14 to 23 is 9am to 7pm Eastern, 1 to 3 is 8 to 11pm).
+  habits: { perDay: 5, minutes: { least: 15, most: 30 }, hours: [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 1, 2, 3] },
   // DRAFT for the owner: what a regular could work out from how she reviews.
   weakness: {
     kind: 'quiz',
