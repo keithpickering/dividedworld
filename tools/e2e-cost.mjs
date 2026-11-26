@@ -5,8 +5,8 @@
  * `--shard=k/n` cuts by count, and a few specs cost most of the time, so a shard of the heavy
  * ones ran far past the rest. `--cost-shard=k/n` lists the suite, prices every test from the
  * manifest `e2e/cost.json`, packs the whole list into n shards longest first, and runs shard k
- * as a `--test-list`. Every function here is pure; the CLI that reads files arrives with the
- * refresh, and this module's self-test is tools/test-e2e-cost.mjs.
+ * as a `--test-list`. Every function here is pure; the only file access is `refreshCli` (`--refresh`, see
+ * its comment), and this module's self-test is tools/test-e2e-cost.mjs.
  *
  * A KEY is a test's `file › describe › ... › title`: the file relative to e2e/, then each
  * describe title, then the test title, joined by ' › '. It is the line `--test-list` reads.
@@ -29,6 +29,9 @@
  * always written with `=`. The flags in REFUSED are refused too, n is at most 1000, and
  * `compareRun` is the backstop for anything else that changes which tests run.
  */
+
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /** Workers per runner (playwright.config.ts) and the minutes a shard should take. */
 export const WORKERS = 2;
@@ -210,4 +213,170 @@ export function compareRun(assigned, reportJson) {
 /** The `--test-list` file text: one key a line, ending with a newline. @param {string[]} keys */
 export function testList(keys) {
   return keys.map((k) => `${k}\n`).join('');
+}
+
+/** The least price a measured test may be recorded at: a 0 ms pass would break "a price above 0". */
+export const FLOOR_SECONDS = 0.1;
+const round = (x, places) => Math.round(x * 10 ** places) / 10 ** places;
+
+/**
+ * Each key of a json report with its outcome and results. Playwright's test-level `status` is its
+ * outcome: "expected" (passed, or failed as `test.fail` said), "flaky" (failed, then passed on a
+ * retry), "unexpected" (failed), or "skipped", which is also what a test whose only result was
+ * "interrupted" reads as. A key listed twice keeps its first.
+ * @param {any} report @returns {Map<string, { status: string, results: any[] }>}
+ */
+function outcomesOf(report) {
+  const out = new Map();
+  const keys = keysOf(report);
+  const tests = [];
+  const visit = (suite) => {
+    for (const spec of suite.specs ?? []) tests.push(spec.tests?.[0] ?? { status: 'skipped', results: [] });
+    for (const child of suite.suites ?? []) visit(child);
+  };
+  for (const top of report.suites ?? []) visit(top);
+  keys.forEach((key, i) => { if (!out.has(key)) out.set(key, { status: tests[i].status, results: tests[i].results ?? [] }); });
+  return out;
+}
+
+/**
+ * Seconds a test cost in this run, or null when its final outcome is not a pass (failed, skipped,
+ * interrupted by globalTimeout, or absent from the report). A flaky test did pass in the end, and
+ * the shard spent every attempt's time on it, so the price is the sum of all its results'
+ * durations, as for any passed test.
+ */
+function measured(outcome) {
+  if (!outcome || (outcome.status !== 'expected' && outcome.status !== 'flaky')) return null;
+  if (outcome.results.length === 0 || outcome.results.some((r) => r.status === 'interrupted' || r.status === 'skipped')) return null;
+  const ms = outcome.results.reduce((t, r) => t + (Number.isFinite(r.duration) ? r.duration : 0), 0);
+  return Math.max(FLOOR_SECONDS, ms / 1000);
+}
+
+/**
+ * The manifest a CI run's shards give. `shards` is one `{ assigned: { k, n, commit, keys }, report }`
+ * per downloaded folder. Refuses (one error naming every fault) unless the n values agree, k covers
+ * 1 to n once each, every commit is the same and no key is assigned twice. A test's price is the
+ * seconds it took when it passed (see `measured`), else `price(key, old)`, so a failed or
+ * cancelled shard is never read as fast. Each spec's count is its assigned tests and its mean (to
+ * 0.01 s) their mean price; a test keeps its own entry (to 0.1 s, at least 0.1 s) only where its
+ * price is above twice or below half that mean. Anything the run did not assign is dropped.
+ * `date` is YYYY-MM-DD. Pure: `old` is not changed.
+ * @param {any} old @param {{ assigned: any, report: any }[]} shards @param {string} date @param {string} run
+ */
+export function refresh(old, shards, date, run) {
+  const faults = [];
+  if (shards.length === 0) throw new Error('refresh: no shards were given');
+  const ns = [...new Set(shards.map((s) => s.assigned.n))];
+  if (ns.length > 1) faults.push(`the shards disagree on n: ${ns.join(', ')}`);
+  const n = ns[0];
+  const seen = new Map();
+  for (const { assigned: a } of shards) seen.set(a.k, (seen.get(a.k) ?? 0) + 1);
+  if (Number.isInteger(n) && ns.length === 1) {
+    for (let k = 1; k <= n; k += 1) if (!seen.has(k)) faults.push(`shard ${k} of ${n} is missing`);
+  }
+  for (const [k, c] of seen) {
+    if (c > 1) faults.push(`k=${k} appears in ${c} folders`);
+    else if (Number.isInteger(n) && ns.length === 1 && !(Number.isInteger(k) && k >= 1 && k <= n)) faults.push(`k=${k} is outside 1 to ${n}`);
+  }
+  const commits = [...new Set(shards.map((s) => s.assigned.commit))];
+  if (commits.length > 1) faults.push(`the shards were run at different commits: ${commits.join(', ')}`);
+  const owner = new Map();
+  for (const { assigned: a } of shards) {
+    for (const key of a.keys) {
+      if (owner.has(key) && owner.get(key) !== a.k) faults.push(`"${key}" is assigned to two shards (${owner.get(key)} and ${a.k})`);
+      owner.set(key, a.k);
+    }
+  }
+  if (faults.length > 0) throw new Error(`refresh refused: ${faults.join('; ')}`);
+
+  const mean = suiteMean(old);
+  /** @type {Map<string, number[]>} */
+  const byFile = new Map();
+  /** @type {Map<string, number>} */
+  const prices = new Map();
+  for (const { assigned, report } of shards) {
+    const outcomes = outcomesOf(report);
+    for (const key of assigned.keys) {
+      const p = measured(outcomes.get(key)) ?? price(key, old, mean);
+      prices.set(key, p);
+      const file = key.split(SEP)[0];
+      byFile.set(file, [...(byFile.get(file) ?? []), p]);
+    }
+  }
+  const specs = {};
+  const tests = {};
+  for (const file of [...byFile.keys()].sort()) {
+    const ps = byFile.get(file);
+    specs[file] = { count: ps.length, mean: round(ps.reduce((t, p) => t + p, 0) / ps.length, 2) };
+  }
+  for (const key of [...prices.keys()].sort()) {
+    const p = prices.get(key);
+    const m = specs[key.split(SEP)[0]].mean;
+    if (p > 2 * m || p < m / 2) tests[key] = Math.max(FLOOR_SECONDS, round(p, 1));
+  }
+  return { measured: { run, date }, specs, tests };
+}
+
+/** The file text: two-space indent and a final newline. The keys are sorted by `refresh`. */
+export function manifestText(manifest) {
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+/**
+ * `--refresh <dir> --run <id> [--out <path>]`: reads each `<dir>/e2e-timings-*` folder's
+ * assigned.json and results.json, takes the date (UTC, YYYY-MM-DD) from the newest report's
+ * stats.startTime, writes the manifest (default e2e/cost.json) and prints each shard's estimate.
+ * @param {string[]} argv
+ */
+export function refreshCli(argv) {
+  const arg = (name) => {
+    const hit = argv.find((a) => a.startsWith(`${name}=`));
+    if (hit) return hit.slice(name.length + 1);
+    const i = argv.indexOf(name);
+    return i >= 0 ? argv[i + 1] : undefined;
+  };
+  const dir = arg('--refresh');
+  const run = arg('--run');
+  const out = arg('--out') ?? 'e2e/cost.json';
+  if (!dir || !run) throw new Error('usage: node tools/e2e-cost.mjs --refresh <dir> --run <id> [--out <path>]');
+  const folders = fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith('e2e-timings-')).map((d) => d.name).sort();
+  if (folders.length === 0) throw new Error(`no e2e-timings-* folder in ${dir}`);
+  const faults = [];
+  const shards = [];
+  for (const name of folders) {
+    const read = (file) => {
+      const path = `${dir}/${name}/${file}`;
+      if (!fs.existsSync(path)) { faults.push(`${name} has no ${file}`); return null; }
+      return JSON.parse(fs.readFileSync(path, 'utf8'));
+    };
+    const assigned = read('assigned.json');
+    const report = read('results.json');
+    if (assigned && report) shards.push({ assigned, report });
+  }
+  if (faults.length > 0) throw new Error(`refresh refused: ${faults.join('; ')}`);
+  const times = shards.map((s) => Date.parse(s.report.stats?.startTime));
+  if (times.some((t) => Number.isNaN(t))) throw new Error('refresh refused: a report has no stats.startTime');
+  const date = new Date(Math.max(...times)).toISOString().slice(0, 10);
+  const manifest = refresh(readManifest(out), shards, date, run);
+  fs.writeFileSync(out, manifestText(manifest));
+  const n = shards[0].assigned.n;
+  const keys = shards.flatMap((s) => s.assigned.keys);
+  const { totals } = pack(keys, manifest, n);
+  const lines = [`wrote ${out} from run ${run} (${date}): ${Object.keys(manifest.specs).length} specs, ${Object.keys(manifest.tests).length} test entries`];
+  totals.forEach((t, i) => lines.push(`shard ${i + 1}/${n}: ${(t / WORKERS / 60).toFixed(1)} min over ${WORKERS} workers (budget ${BUDGET_MINUTES})`));
+  return lines.join('\n');
+}
+
+function readManifest(path) {
+  return fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { measured: null, specs: {}, tests: {} };
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
+  try {
+    if (!process.argv.includes('--refresh') && !process.argv.some((a) => a.startsWith('--refresh='))) throw new Error('usage: node tools/e2e-cost.mjs --refresh <dir> --run <id> [--out <path>]');
+    console.log(refreshCli(process.argv.slice(2)));
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
 }

@@ -9,7 +9,7 @@
  * refuse both, so an assertion that has gone quiet fails here rather than reading as green.
  */
 import {
-  keysOf, keyProblems, listProblems, price, pack, parseCostShard, compareRun, testList, WORKERS, BUDGET_MINUTES,
+  keysOf, keyProblems, listProblems, price, pack, parseCostShard, compareRun, testList, WORKERS, BUDGET_MINUTES, refresh, manifestText,
 } from './e2e-cost.mjs';
 import { problems } from './check-e2e-cost.mjs';
 
@@ -266,6 +266,71 @@ mustFault('problems: a test entry whose file is named constructor has no spec en
 eq('report: a key under constructor counts as unpriced', problems({ ...CLEAN, keys: ['constructor › t'] }).report.unpricedShare, 1);
 
 eq('report: over the budget is not a problem', problems(ALL(1200)).problems, []);
+
+/* ---- refresh (Task 5) ---- */
+/** A json report from [key, outcome, [[resultStatus, ms], ...]] rows; keys are `file › title`. */
+const reportOf = (rows, startTime = '2026-11-26T10:00:00.000Z') => {
+  const byFile = new Map();
+  for (const [key, status, results] of rows) {
+    const [file, title] = key.split(' › ');
+    byFile.set(file, [...(byFile.get(file) ?? []), { title, tests: [{ status, results: results.map(([s, d]) => ({ status: s, duration: d })) }] }]);
+  }
+  return { stats: { startTime }, suites: [...byFile].map(([file, specs]) => ({ title: file, file, specs })) };
+};
+const OLD = {
+  measured: { run: '99', date: '2026-01-01' },
+  specs: { 'a.spec.ts': { count: 3, mean: 10 }, 'gone.spec.ts': { count: 1, mean: 3 } },
+  tests: { 'a.spec.ts › t3': 7, 'b.spec.ts › u3': 20, 'c.spec.ts › v1': 10, 'gone.spec.ts › x': 50 },
+};
+const shard = (k, n, commit, rows, keys = rows.map((r) => r[0])) => ({ assigned: { k, n, commit, keys }, report: reportOf(rows) });
+const FIX = () => [
+  shard(1, 3, 'abc', [
+    ['a.spec.ts › t1', 'expected', [['passed', 10000]]],
+    ['a.spec.ts › t2', 'expected', [['passed', 12000]]],
+    ['a.spec.ts › t3', 'unexpected', [['failed', 900], ['failed', 900]]],
+  ]),
+  shard(2, 3, 'abc', [
+    ['b.spec.ts › u1', 'expected', [['passed', 4000]]],
+    ['b.spec.ts › u2', 'flaky', [['failed', 3000], ['passed', 5000]]],
+    ['b.spec.ts › u3', 'skipped', [['interrupted', 600]]],
+  ]),
+  shard(3, 3, 'abc', [
+    ['c.spec.ts › v1', 'expected', [['passed', 10000]]],
+    ['c.spec.ts › v2', 'expected', [['passed', 10000]]],
+    ['c.spec.ts › v3', 'expected', [['passed', 10000]]],
+    ['c.spec.ts › v4', 'expected', [['passed', 10000]]],
+    ['c.spec.ts › v5', 'expected', [['passed', 30000]]],
+  ]),
+];
+const WANT = {
+  measured: { run: '123', date: '2026-11-26' },
+  specs: { 'a.spec.ts': { count: 3, mean: 9.67 }, 'b.spec.ts': { count: 3, mean: 10.67 }, 'c.spec.ts': { count: 5, mean: 14 } },
+  tests: { 'b.spec.ts › u1': 4, 'c.spec.ts › v5': 30 },
+};
+const got = refresh(OLD, FIX(), '2026-11-26', '123');
+eq('refresh: three fixture shards give the expected manifest', got, WANT);
+eq('refresh: a failed test keeps its old price (7 s into a.spec.ts mean)', got.specs['a.spec.ts']?.mean, 9.67);
+eq('refresh: an interrupted test keeps its old price (20 s into b.spec.ts mean), not its 0.6 s', got.specs['b.spec.ts']?.mean, 10.67);
+eq('refresh: a flaky test that passed in the end counts every attempt (3 + 5 s)', Math.round(((got.specs['b.spec.ts']?.mean * 3) - 4 - 20) * 10) / 10, 8);
+eq('refresh: an outlier keeps its entry and a test near its mean loses it', [Object.hasOwn(got.tests, 'c.spec.ts › v5'), Object.hasOwn(got.tests, 'c.spec.ts › v1')], [true, false]);
+eq('refresh: a removed test and spec are dropped', [Object.hasOwn(got.tests, 'gone.spec.ts › x'), Object.hasOwn(got.specs, 'gone.spec.ts')], [false, false]);
+eq('refresh: the input manifest is not changed', OLD.specs['a.spec.ts'], { count: 3, mean: 10 });
+{
+  const zero = shard(1, 1, 'abc', [['z.spec.ts › a', 'expected', [['passed', 0]]], ['z.spec.ts › b', 'expected', [['passed', 3000]]]]);
+  const m = refresh({ measured: null, specs: {}, tests: {} }, [zero], '2026-11-26', '1');
+  eq('refresh: a 0 ms pass is floored to 0.1 s so the manifest stays valid', m.tests['z.spec.ts › a'], 0.1);
+  eq('refresh: the refreshed manifest passes the build check', problems({ manifest: got, keys: Object.keys(WANT.tests).concat(['a.spec.ts › t1']), shards: 3 }).problems, []);
+  eq('refresh: the floored manifest passes the build check', problems({ manifest: m, keys: ['z.spec.ts › a', 'z.spec.ts › b'], shards: 1 }).problems, []);
+}
+eq('refresh: shard order does not matter', refresh(OLD, FIX().reverse(), '2026-11-26', '123'), WANT);
+eq('manifestText: two-space indent, final newline', manifestText({ a: 1 }), '{\n  "a": 1\n}\n');
+const sh = (f) => { const s = FIX(); f(s); return s; };
+throws('refresh: shard 2 of 3 missing is refused, naming 2', () => refresh(OLD, FIX().filter((s) => s.assigned.k !== 2), 'd', 'r'), /missing.*\b2\b|\b2\b.*missing/i);
+throws('refresh: two folders claiming k=1 are refused', () => refresh(OLD, sh((s) => { s[1].assigned.k = 1; }), 'd', 'r'), /k=1|duplicate/i);
+throws('refresh: differing commits are refused', () => refresh(OLD, sh((s) => { s[2].assigned.commit = 'zzz'; }), 'd', 'r'), /commit/i);
+throws('refresh: differing n are refused', () => refresh(OLD, sh((s) => { s[2].assigned.n = 4; }), 'd', 'r'), /\bn\b/);
+throws('refresh: no shards at all is refused', () => refresh(OLD, [], 'd', 'r'), /no shards/i);
+throws('refresh: a key assigned to two shards is refused', () => refresh(OLD, sh((s) => { s[1].assigned.keys.push('a.spec.ts › t1'); }), 'd', 'r'), /two shards|more than one/i);
 
 if (failures) {
   console.error(`\n${failures} case${failures === 1 ? '' : 's'} failed`);
