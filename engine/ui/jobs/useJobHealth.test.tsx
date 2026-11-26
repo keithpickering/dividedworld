@@ -63,6 +63,27 @@ describe('useJobHealth', () => {
     expect(screen.getByTestId('note')).toHaveTextContent('on time');
   });
 
+  test('a read that failed is read again a minute later, and its answer shows', async () => {
+    const fake = runningWorld();
+    fake.seed.job('kayfabb-mail', { lastOkAt: new Date(fake.clock.now() - 3 * 60 * MINUTE).toISOString() });
+    fake.seed.failNextRead('offline');
+    page(fake);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByTestId('strip')).toHaveTextContent('unknown');
+    fake.clock.advance(MINUTE);
+    await act(async () => { await vi.advanceTimersByTimeAsync(MINUTE); });
+    expect(screen.getByTestId('strip')).toHaveTextContent('kayfabb-mail');
+  });
+
+  test('the minute timer stops when the last part reading the jobs is gone', async () => {
+    const fake = runningWorld();
+    const view = page(fake);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   test('a stopped job is returned by useJobLate, and the others are not', async () => {
     const fake = runningWorld();
     const old = new Date(fake.clock.now() - 3 * 60 * MINUTE).toISOString();

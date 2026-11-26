@@ -156,13 +156,13 @@ export interface Seed {
   update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
   /** An account's decision recorded before the screen opens (the admin screen's past decisions), dated `at` (else now). */
   conductDecision(decision: { account: Id; outcome: string; until?: number; note?: string; at?: number; /** The version an admin's decision was about (a hide, an unhide, an approve): it is in the author's `conductLog`. */ version?: Id }): void;
-  /** An open report (`report_post`, 0340) on a post's version, dated `at` (else now), by `reporter` (an account) when the open-report limit is under test: the screen shows the version's words, the section and the note. */
   /** A job's `job_status` row, in the world from now: a job with no row reads "not scheduled". The first call for a job fills what it leaves out (a schedule of `* * * * *`, active, first seen at the clock). */
   job(job: string, row?: { schedule?: string | null; active?: boolean; firstSeen?: string | null; lastOkAt?: string | null; grace?: Record<string, number> | null }): void;
   /** The job's last pg_cron run (`admin_jobs`'s `lastRun`), `at` else the clock; null clears it. */
   jobRun(job: string, run: { status: string; message?: string | null; at?: number } | null): void;
   /** Whether the two Vault entries are present (both, by default). */
   jobVault(vault: { functionsUrl?: boolean; jobsKey?: boolean }): void;
+  /** An open report (`report_post`, 0340) on a post's version, dated `at` (else now), by `reporter` (an account) when the open-report limit is under test: the screen shows the version's words, the section and the note. */
   conductReport(report: { version: Id; section: string; note?: string; at?: number; reporter?: Id }): number;
   /** A post hidden until its author edited it and edited since, awaiting an admin's second look (`reviews_due`): `words` are the edit's. */
   conductReview(review: { post: Id; version?: Id; words: string; at?: number }): void;
