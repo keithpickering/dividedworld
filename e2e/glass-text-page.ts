@@ -324,8 +324,10 @@ function nameOf(text: string, el: Element): string {
  * Every line of glass text in the page now, with where each stands. With `panel` (a selector), the text read is the one overlay panel's
  * and nothing else's: the spotlight's panel (engine/ui/tips/tips.css) stands on a sheet over a scrim and not on smoke, so it has no
  * `.kb-smoke` to find, and its surface is named `tips` (an overlay sheet in the ceilings file, not one of the smoke surfaces).
+ * With `near`, a text node none of whose client rects meets the viewport is passed over before any of its styles are read: every node
+ * a window can hold, wholly or in part, is still returned, and the spec asserts that the windows together reach every node a full read finds.
  */
-export async function gather(panel?: string): Promise<Gathered[]> {
+export async function gather(panel?: string, near = false): Promise<Gathered[]> {
   await document.fonts.ready;
   const panelEl = panel ? document.querySelector(panel) : null;
   if (panel && !panelEl) throw new Error(`There is no ${panel} on the page to read`);
@@ -344,7 +346,13 @@ export async function gather(panel?: string): Promise<Gathered[]> {
   for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
     if (!/\S/.test(n.data) || PICTURE.test(n.data)) continue;
     const el = n.parentElement;
-    if (!el || isSkipped(el)) continue;
+    if (!el) continue;
+    if (near) {
+      const probe = document.createRange();
+      probe.selectNodeContents(n);
+      if (![...probe.getClientRects()].some((r) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth)) continue;
+    }
+    if (isSkipped(el)) continue;
     if (overlay && !overlay.contains(el)) continue;
     if (handModal) { const dim = el.closest('[inert]'); if (dim && hudEl!.contains(dim) && dim !== hudEl) continue; }
     const s = getComputedStyle(el);

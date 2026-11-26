@@ -82,10 +82,20 @@ async function measure(page: Page, panel?: string): Promise<string[]> {
   const palette = paletteOf(glass, key);
   const facts = new Map<string, TextFact>();
   const seen = new Map<string, string>();
+  /* Every line a full read of the page finds (the first window's), and every line the windows reached: after the first window each read is `near`, which passes over nodes outside the window, so the two must come out the same set. */
+  const full = new Map<string, string>();
+  const reached = new Set<string>();
+  const width = page.viewportSize()?.width ?? 0;
   /* A dialog that scrolls itself (an anchored popover has only the room above its post) is read a window at a time as well. */
   const readWindow = async () => {
-    const lines = await page.evaluate((only) => (globalThis as Bundled).kbGlassText.gather(only), panel);
-    for (const l of lines) seen.set(l.key, l.name);
+    /* The first window is read in full, so `seen` lists every line and a line that never lies wholly in a window is still found; later windows read only the nodes the window shows. */
+    const first = seen.size === 0;
+    const lines = await page.evaluate(([only, near]) => (globalThis as Bundled).kbGlassText.gather(only, near), [panel, !first] as const);
+    for (const l of lines) {
+      seen.set(l.key, l.name);
+      if (first) full.set(l.key, l.name);
+      if (!first || (l.box.y + l.box.height > 0 && l.box.y < height && l.box.x + l.box.width > 0 && l.box.x < width)) reached.add(l.key);
+    }
     const fresh = lines.filter((l) => l.inView && !facts.has(l.key));
     if (fresh.length) {
       const shoot = async (smoke: boolean) => {
@@ -124,8 +134,9 @@ async function measure(page: Page, panel?: string): Promise<string[]> {
   }
   const faults = [...facts.values()].flatMap((f) => judge(f, { ceilings: f.surface === 'tips' ? TIPS_SURFACE : CEILINGS[f.surface], palette, phone, high: key === 'high' }));
   const never = [...seen].filter(([k]) => !facts.has(k)).map(([, name]) => `${name}: never lies wholly in the window, so it is cut off`);
+  const unreached = [...full].filter(([k]) => !reached.has(k)).map(([, name]) => `${name}: no window read it, so the near read missed a line a full read finds`);
   if (facts.size === 0) faults.push('no glass text was found on the page');
-  return [...faults, ...never];
+  return [...faults, ...never, ...unreached];
 }
 
 /** Puts a style into the page: a poison's plant. */
@@ -315,8 +326,8 @@ for (const [size, widths] of TEXT_SIZES) {
         test.use({ viewport });
         for (const s of [...PAGES, ...OVERLAYS].filter((x) => !x.signedOut).map(onTheAccount)) {
           test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
-            /* Every line's pixels are read, against its smoke and under each preference: the Strategy Guide at 200% takes about 20s
-               alone, and with tests spread fully parallel (playwright.config.ts) several of these share a machine. 90s still ends a hang. */
+            /* Every line's pixels are read, against its smoke and under each preference: the Strategy Guide at 200% is read in
+               many windows, and with tests spread fully parallel (playwright.config.ts) several of these share a machine. 90s still ends a hang. */
             test.setTimeout(90_000);
             await chooseTextSize(page, size);
             await open(page, s);
