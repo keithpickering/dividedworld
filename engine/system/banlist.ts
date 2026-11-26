@@ -94,6 +94,7 @@ export function repairBanLine(raw: unknown): { readonly line: string | null; rea
     });
   }
   text = text.replace(/ {2,}/g, ' ').trim();
+  if (text === '') return { line: null, trims: [] };
   if (stripped) trims.push({ path: 'line', predicate: 'tokens(banEntry)', before: stripped, after: 0 });
   if (text.length > BAN_LINE_MOST) {
     let cut = cutAtSentence(text, BAN_LINE_MOST);

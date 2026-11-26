@@ -108,3 +108,7 @@ test('a cut never lands inside {banned}, and stripping a token leaves no double 
   assert.equal(kept('a {} b').line, 'a b');
   assert.equal(kept('a {x} b').line, 'a x b');
 });
+
+test('a ban line that is blank once its stray tokens are stripped is none, so the stock line follows', () => {
+  for (const raw of ['{{}}', '{ }', ' {} {} ']) assert.equal(repairBanLine(raw).line, null, raw);
+});
