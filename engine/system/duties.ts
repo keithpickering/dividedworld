@@ -14,10 +14,11 @@ export interface DutySpec {
   readonly tier: Tier;
 }
 
-/** The meeting runs on the stronger tier; micro-events, the rename judge, appeals and the pool's chatter on the light one; a standing order's line is the old voice. */
+/** The meeting runs on the stronger tier; micro-events, the rename judge, appeals and the pool's chatter on the light one; an owed line is a chat call too (the old voice is asked in raw completion). */
 export const DUTY_SPECS: Readonly<Record<Duty, DutySpec>> = {
   meeting: { mode: 'chat', tier: 'strong' },
-  standingOrderLine: { mode: 'completion', tier: 'light' },
+  // An owed line (the persona-lines plan): a chat call, light tier. A persona on the old voice is asked in raw completion, as a filing is (`owedLineCompletion`).
+  standingOrderLine: { mode: 'chat', tier: 'light' },
   microEvent: { mode: 'chat', tier: 'light' },
   renameJudge: { mode: 'chat', tier: 'light' },
   appeal: { mode: 'chat', tier: 'light' },
