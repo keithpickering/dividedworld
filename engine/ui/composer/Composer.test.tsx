@@ -744,13 +744,17 @@ describe('the line about a quote that is not in the post it names', () => {
   const WAIT = 600;
   afterEach(() => { vi.useRealTimers(); });
 
-  const open = async (w: ReturnType<typeof threadWorld>) => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+  /* A clock that also follows wall time (shouldAdvanceTime) lets findBy and waitFor poll, but it adds whatever time a
+     loaded runner spends between two lines, so a test that measures a boundary to the millisecond opens with `exact`:
+     the thread on real timers, then a clock only `wait` moves (issue #1161). */
+  const open = async (w: ReturnType<typeof threadWorld>, { exact = false } = {}) => {
+    if (!exact) vi.useFakeTimers({ shouldAdvanceTime: true });
     openThread(w);
     const box = await replyBox();
     const type = (v: string) => { fireEvent.change(box, { target: { value: v } }); };
     const wait = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    if (exact) vi.useFakeTimers();
     return { type, wait };
   };
   const shaky = () => document.querySelector('.kb-editor-preview blockquote[data-kb-counterfeit]');
@@ -833,7 +837,7 @@ describe('the line about a quote that is not in the post it names', () => {
     const answers: ((v: readonly string[]) => void)[] = [];
     const asked: string[] = [];
     vi.spyOn(w.fake, 'quoteCheck').mockImplementation((body: string) => { asked.push(body); return new Promise<readonly string[]>((resolve) => { answers.push(resolve); }) as never; });
-    const { type, wait } = await open(w);
+    const { type, wait } = await open(w, { exact: true });
     const draft = (n: string) => `[quote=${w.ids[0]}]${n}[/quote]`;
     type(draft('one'));
     await wait(WAIT);
