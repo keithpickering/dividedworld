@@ -347,7 +347,6 @@ function cosmeticsRule(v: unknown): string | null {
   return weights(e.gearRarity, RARITIES, 'events.gearRarity') ?? weights(e.cardRarity, RARITIES, 'events.cardRarity');
 }
 
-/** Every setting the engine reads, each with what it must be. */
 /** The `jobGraceMinutes` setting: some of the scheduled jobs (engine/rules/jobs.ts), each a grace of whole minutes from 1 to 1440; a job left out keeps its default. */
 function jobGraceRule(v: unknown): string | null {
   const shape = 'an object giving some of the jobs (the names engine/rules/jobs.ts lists), each a grace of a whole number of minutes from 1 to 1440';
@@ -359,6 +358,8 @@ function jobGraceRule(v: unknown): string | null {
   }
   return null;
 }
+
+/** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
   vote: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
