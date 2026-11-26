@@ -447,9 +447,11 @@ and step 5 releases the site while it still points at the test project.
 
    3. Do step 6 of the first deploy against the new project: seed it, add its two Vault secrets, and check the
       schedules. Season 1 opens at the seed. The Jobs page should list all ten jobs, `kayfabb-meet` at `0 11 * * *` and
-      `kayfabb-settle` at `0 10 * * *` among them. A new project's job-health check reads every job "never run" and is
-      red until both Vault entries exist and each job has run once, so the hourly **Job health** workflow, now reading
-      the new project, stays red until then; dispatch it once and read it green before counting the relaunch done.
+      `kayfabb-settle` at `0 10 * * *` among them. The seed's schedule calls begin each job's row, so the check prints
+      "stopped, since <seed time>" (never "never run") for any job whose due time has passed its grace without a good
+      run. The hourly **Job health** workflow, now reading the new project, goes red then. The three SQL jobs
+      (`system-tick`, `search-rebuild`, `view-counts`) need no Vault entries; the other seven stay red until both exist.
+      Dispatch it once and read it green before counting the relaunch done.
 5. **Point the site at it.** In Netlify, set the **production** context's `VITE_SUPABASE_URL` and
    `VITE_SUPABASE_PUBLISHABLE_KEY` to the new project's, then redeploy production under **Deploys > Trigger deploy**
    (the variables are read at build time). Then remove the branch-deploy overrides from step 3.

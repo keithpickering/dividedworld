@@ -335,6 +335,20 @@ red('release.yml may not take job-health\'s allowance: a job named check there',
 red('job-health\'s job has an if that skips it', edit(JOB_HEALTH, (d) => { jhJob(d).if = 'false'; }), /job-health\.yml.*R17.*if/);
 red('job-health\'s check step has an if that skips it', edit(JOB_HEALTH, (d) => { jhStep(d).if = 'false'; }), /job-health\.yml.*R17.*if/);
 red('job-health uses an action the shape does not list', edit(JOB_HEALTH, (d) => { jhJob(d).steps.push({ uses: 'some/action@v1' }); }), /job-health\.yml.*R17.*uses/);
+// R11: every `secrets` in job-health.yml is exactly secrets.SUPABASE_DB_URL, however it is spelled.
+red('job-health reads toJSON(secrets)', edit(JOB_HEALTH, (d) => { jhStep(d).env.ALL = '${{ toJSON(secrets) }}'; }), /job-health\.yml.*R11.*secrets/);
+red('job-health reads secrets by index', edit(JOB_HEALTH, (d) => { jhStep(d).env.X = "${{ secrets['KAYFABB_JOBS_KEY'] }}"; }), /job-health\.yml.*R11.*secrets/);
+red('job-health reads secrets by a built name', edit(JOB_HEALTH, (d) => { jhStep(d).env.X = "${{ secrets[format('KAYFABB_{0}', 'JOBS_KEY')] }}"; }), /job-health\.yml.*R11.*secrets/);
+red('job-health names secrets in a workflow-level env', edit(JOB_HEALTH, (d) => { d.env = { ALL: '${{ toJSON(secrets) }}' }; }), /job-health\.yml.*R11.*secrets/);
+// R17: only the check step has env, and it is exactly the one secret; uses are anchored and carry only what the shape lists.
+red('job-health puts the secret on the npm ci step', edit(JOB_HEALTH, (d) => { jhJob(d).steps.find((s) => /npm ci/.test(s.run ?? '')).env = { SUPABASE_DB_URL: '${{ secrets.SUPABASE_DB_URL }}' }; }), /job-health\.yml.*R17.*env/);
+red('job-health sets NODE_OPTIONS beside the secret', edit(JOB_HEALTH, (d) => { jhStep(d).env.NODE_OPTIONS = '--require ./evil.cjs'; }), /job-health\.yml.*R17.*env/);
+red('job-health has a job-level env', edit(JOB_HEALTH, (d) => { jhJob(d).env = { NODE_OPTIONS: '--require ./evil.cjs' }; }), /job-health\.yml.*R17.*env/);
+red('job-health has a workflow-level env', edit(JOB_HEALTH, (d) => { d.env = { NODE_OPTIONS: '--require ./evil.cjs' }; }), /job-health\.yml.*R17.*env/);
+red('job-health checks out another ref', edit(JOB_HEALTH, (d) => { jhJob(d).steps[0].with = { ref: 'evil' }; }), /job-health\.yml.*R17.*with/);
+red('job-health checks out another repository', edit(JOB_HEALTH, (d) => { jhJob(d).steps[0].with = { repository: 'evil/repo' }; }), /job-health\.yml.*R17.*with/);
+red('job-health uses a checkout path that is not the action', edit(JOB_HEALTH, (d) => { jhJob(d).steps[0].uses = 'actions/checkout@v4/../evil'; }), /job-health\.yml.*R17.*uses/);
+red('job-health gives setup-node another with key', edit(JOB_HEALTH, (d) => { jhJob(d).steps[1].with['registry-url'] = 'https://evil.example'; }), /job-health\.yml.*R17.*with/);
 // R8 reads only workflows that declare a Postgres service: job-health.yml declares none, and says nothing of R8.
 red('job-health.yml given an unpinned postgres service is named by R8', edit(JOB_HEALTH, (d) => { jhJob(d).services = { db: { image: 'postgres:17' } }; }), /job-health\.yml.*R8/);
 

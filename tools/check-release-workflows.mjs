@@ -86,6 +86,10 @@ const JH_CRON = '7 * * * *';
 const JH_COMMAND = 'node tools/check-job-health.mjs --db "$' + JH_SECRET + '"';
 const JH_RUNS = ['npm ci --no-audit --no-fund', 'psql --version', JH_COMMAND];
 const JH_USES = ['actions/checkout', 'actions/setup-node'];
+/** Each action's version, anchored, and the `with` keys it may carry: none for checkout, two for setup-node. */
+const JH_USES_RE = { 'actions/checkout': /^actions\/checkout@[\w.-]+$/, 'actions/setup-node': /^actions\/setup-node@[\w.-]+$/ };
+const JH_WITH = { 'actions/checkout': [], 'actions/setup-node': ['node-version', 'cache'] };
+const JH_ENV = '${{ secrets.' + JH_SECRET + ' }}';
 const JOBS = ['candidate', 'build', 'sql', 'web', ...BACKEND, 'promote', 'report'];
 const SECRET_NAMES = ['SUPABASE_ACCESS_TOKEN', 'SUPABASE_DB_URL', 'SUPABASE_PROJECT_REF', 'KAYFABB_JOBS_KEY'];
 const SECRET_NAME = new RegExp(`\\b(?:${SECRET_NAMES.join('|')})\\b`);
@@ -419,6 +423,13 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
     // Everything outside the jobs, release.yml's own top level included.
     const top = text({ ...doc, jobs: undefined });
     if (SECRET_NAME.test(top) || (path === JOB_HEALTH && /secrets\./.test(top))) found.add('names a secret outside a job');
+    // job-health.yml: each `secrets` anywhere in it, as a context, a function's argument or an index, is exactly secrets.SUPABASE_DB_URL.
+    if (path === JOB_HEALTH) {
+      const all = JSON.stringify(doc);
+      const bare = (all.match(/\bsecrets\b/g) ?? []).length;
+      const named = (all.match(new RegExp(`\\bsecrets\\.${JH_SECRET}\\b`, 'g')) ?? []).length;
+      if (bare !== named) found.add(`a \`secrets\` is not exactly secrets.${JH_SECRET} (toJSON(secrets), secrets['X'] and secrets[format(...)] are refused)`);
+    }
     if (found.size) out.push(`${path}: R11 ${[...found].join('; ')}`);
   }
 
@@ -496,6 +507,7 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
     const jobs = isObj(doc.jobs) ? doc.jobs : {};
     if (Object.keys(jobs).length !== 1 || !isObj(jobs[JH_JOB])) bad17.push(`it must have exactly one job, named ${JH_JOB} (it has ${Object.keys(jobs).join(', ') || 'none'})`);
     if (JSON.stringify(doc).includes('"continue-on-error"')) bad17.push('continue-on-error appears; a failed step must stay failed');
+    if ('env' in doc) bad17.push('the workflow has an env; only the check step has one');
     const job = jobs[JH_JOB];
     if (isObj(job)) {
       if ('if' in job) bad17.push('the job has an if, which could skip the check and leave it green');
@@ -506,8 +518,24 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
           const run = step.run.trim();
           if (!JH_RUNS.includes(run)) bad17.push(`a step runs ${JSON.stringify(run)}; the steps are a checkout, Node, ${JH_RUNS.map((r) => `\`${r}\``).join(', ')} and nothing else`);
           if (run === JH_COMMAND) commands += 1;
-        } else if (!JH_USES.some((u) => String(step?.uses ?? '').startsWith(`${u}@`))) bad17.push(`a step uses ${JSON.stringify(step?.uses)}; only ${JH_USES.join(' and ')}`);
+          if ('with' in step) bad17.push('a run step has a with');
+        } else {
+          const u = JH_USES.find((x) => JH_USES_RE[x].test(String(step?.uses ?? '')));
+          if (!u) bad17.push(`a step uses ${JSON.stringify(step?.uses)}; only ${JH_USES.join(' and ')}, each at one version tag`);
+          else {
+            const extra = Object.keys(isObj(step.with) ? step.with : {}).filter((k) => !JH_WITH[u].includes(k));
+            if (extra.length || (step.with !== undefined && !isObj(step.with))) bad17.push(`${u} has a with it may not carry (${extra.join(', ') || 'not a map'}); ${JH_WITH[u].length ? `only ${JH_WITH[u].join(' and ')}` : 'none'}`);
+          }
+        }
+        // env: only the check step has one, and it is exactly the one secret.
+        if (isObj(step) && 'env' in step) {
+          const isCheck = step.run?.trim?.() === JH_COMMAND;
+          const e = isObj(step.env) ? step.env : {};
+          if (!isCheck) bad17.push(`a step other than the check has an env (${JSON.stringify(step.run ?? step.uses ?? '')}); only the check step does`);
+          else if (Object.keys(e).length !== 1 || e[JH_SECRET] !== JH_ENV) bad17.push(`the check step's env must be exactly { ${JH_SECRET}: ${JH_ENV} } (it is ${JSON.stringify(step.env)})`);
+        }
       }
+      if ('env' in job) bad17.push('the job has an env; only the check step has one');
       if (commands !== 1) bad17.push(`it must run the one command ${JH_COMMAND} exactly once (it runs it ${commands} times)`);
     }
     if (bad17.length) out.push(`${JOB_HEALTH}: R17 ${bad17.join('; ')}`);

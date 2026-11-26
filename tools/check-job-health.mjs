@@ -29,11 +29,19 @@
  * Exit status: 0 every job is running, 1 a job is stopped or missing, or the read failed, 2 refused.
  */
 
-import { pathToFileURL } from 'node:url';
-import { JOBS, jobHealth } from '../engine/rules/jobs.ts';
-import { defaults } from '../instances/divided-world/settings.ts';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { connectOptions, isThisMachine, retrying } from './check-deployed-migrations.mjs';
 import { connection, psql, scrub } from './instance-files.mjs';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/*
+ * The engine's job list and health rule, and Divided World's grace setting. They are TypeScript, which node strips as it loads; the
+ * specifiers are built, not written, so the tools' type check (tsconfig.tools.json, which reads .mjs alone) does not try to read the
+ * engine through them.
+ */
+const { JOBS, jobHealth } = await import(pathToFileURL(path.join(repoRoot, 'engine/rules/jobs.ts')).href);
+const { defaults } = await import(pathToFileURL(path.join(repoRoot, 'instances/divided-world/settings.ts')).href);
 
 /** One JSON document: job_status()'s rows as `jobHealth` takes them. */
 export const QUERY = `select coalesce(json_agg(json_build_object(

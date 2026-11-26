@@ -15,11 +15,12 @@
  */
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { JOBS } from '../engine/rules/jobs.ts';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { run } from './check-job-health.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+// Loaded at runtime, as tools/check-guide.mjs loads the engine, so the tools' type check does not read the engine.
+const { JOBS } = await import(pathToFileURL(path.join(here, '../engine/rules/jobs.ts')).href);
 const script = path.join(here, 'check-job-health.mjs');
 let pass = 0;
 const failures = [];
