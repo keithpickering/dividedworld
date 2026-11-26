@@ -24,7 +24,7 @@ export const JOBS = Object.freeze([
   job({ name: 'kayfabb-meet', fn: 'meet', about: "Holds the Boss's daily meeting", defaultGraceMinutes: 30 }),
   job({ name: 'kayfabb-search-rebuild', fn: null, about: 'Rebuilds the search index', defaultGraceMinutes: 10 }),
   job({ name: 'kayfabb-settle', fn: 'settle', about: 'Settles Aura', defaultGraceMinutes: 30 }),
-  job({ name: 'kayfabb-staff', fn: 'staff', about: "Files Mod Bots' visits and judges reports", defaultGraceMinutes: 15 }),
+  job({ name: 'kayfabb-staff', fn: 'staff', about: "Runs the Mod Bots: visits, reports, appeals, patrols and the staff's posts", defaultGraceMinutes: 15 }),
   job({ name: 'kayfabb-system-tick', fn: null, about: "Lands The System's moves", defaultGraceMinutes: 10 }),
   job({ name: 'kayfabb-view-counts', fn: null, about: 'Counts thread views', defaultGraceMinutes: 30 }),
   job({ name: 'kayfabb-write', fn: 'write', about: 'Writes the words of cards that write', defaultGraceMinutes: 10 }),

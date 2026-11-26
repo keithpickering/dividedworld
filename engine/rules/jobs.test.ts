@@ -10,6 +10,10 @@ const row = (job: string, over: Partial<JobRow> = {}): JobRow => ({ job, schedul
 const rows = (named: Record<string, Partial<JobRow>> = {}, base: Partial<JobRow> = {}): JobRow[] => JOBS.map((j) => row(j.name, { ...base, ...(named[j.name] ?? {}) }));
 const of = (health: ReturnType<typeof jobHealth>, name: string) => health.find((h) => h.job === name)!;
 
+test("the Jobs page's plain words for staff name its whole run (the owner's words, #1199)", () => {
+  assert.equal(JOBS.find((j) => j.name === 'kayfabb-staff')?.about, "Runs the Mod Bots: visits, reports, appeals, patrols and the staff's posts");
+});
+
 test('JOBS lists the ten jobs in name order, each frozen, with the function folder or null', () => {
   assert.equal(JOBS.length, 10);
   assert.deepEqual(JOBS.map((j) => j.name), [...JOBS.map((j) => j.name)].sort());
