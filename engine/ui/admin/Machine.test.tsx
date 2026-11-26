@@ -344,7 +344,7 @@ describe('the pinned staff threads', () => {
     expect(within(section).getAllByRole('button', { name: /^Unpin/ })).toHaveLength(2);
   });
 
-  test('Unpin takes the pin down and the row leaves the list; focus lands on the next Unpin', async () => {
+  test('Unpin takes the pin down and the row leaves the list; focus goes to the section's heading', async () => {
     const { fake, a } = openPins();
     const first = await screen.findByRole('button', { name: 'Unpin: Improvement Initiative #1' });
     await userEvent.click(first);
