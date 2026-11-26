@@ -910,15 +910,17 @@ begin
   -- B is due a minute from now: it is neither lapsed nor out of the queue. Checked first, so a pass that lapses what is not yet due is named as that and not as a miscount.
   if exists (select 1 from staff_request_rulings g where g.request = rb) or (select v.waiting from staff_requests_now v where v.id = rb) is distinct from true then raise exception 'B lapsed a minute before lapses_at'; end if;
   if (tick ->> 'requestsLapsed')::integer is distinct from 3 then raise exception 'the tick lapsed % requests, not 3 (A, C and D): %', tick ->> 'requestsLapsed', tick; end if;
-  if (select (g.ruling, g.post_act is not null) from staff_request_rulings g where g.request = ra) is distinct from row('lapsed'::text, true) then raise exception 'A did not lapse with a reply at lapses_at'; end if;
+  -- The line is owed (0442) and paid from stock here, as the tick's grace pays it.
+  perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
+  if (select (g.ruling, g.post_act is not null) from staff_requests_now g where g.id = ra) is distinct from row('lapsed'::text, true) then raise exception 'A did not lapse with a reply at lapses_at'; end if;
   if (select (g.ruling, g.post_act) from staff_request_rulings g where g.request = rc) is distinct from row('lapsed'::text, null::uuid) then raise exception 'a hidden request did not lapse with no reply'; end if;
   if exists (select 1 from acts x where x.character = boss and x.kind = 'post' and x.target_act_id = (c ->> 'request')::uuid) then raise exception 'the Boss replied to a hidden post'; end if;
   -- The reply: the Boss's, in the thread, to the request post, from the stock line with {boss} and {asker} filled; written once.
-  if (select (x.character, x.thread, x.target_act_id, x.payload ->> 'body') from acts x where x.id = (select g.post_act from staff_request_rulings g where g.request = ra))
+  if (select (x.character, x.thread, x.target_act_id, x.payload ->> 'body') from acts x where x.id = (select g.post_act from staff_requests_now g where g.id = ra))
      is distinct from row(boss, (a ->> 'thread')::uuid, (a ->> 'request')::uuid, 'Move Boss says to Mm Poster: that request lapsed.'::text) then
-    raise exception 'the lapse reply is not the stock line in the thread: %', (select to_jsonb(x) from acts x where x.id = (select g.post_act from staff_request_rulings g where g.request = ra));
+    raise exception 'the lapse reply is not the stock line in the thread: %', (select to_jsonb(x) from acts x where x.id = (select g.post_act from staff_requests_now g where g.id = ra));
   end if;
-  if (select payload ->> 'body' from acts where id = (select g.post_act from staff_request_rulings g where g.request = (select id from staff_requests where request_act = (d ->> 'request')::uuid))) is distinct from 'Move Boss says to Mm Asker Two: that request lapsed.' then
+  if (select payload ->> 'body' from acts where id = (select g.post_act from staff_requests_now g where g.id = (select id from staff_requests where request_act = (d ->> 'request')::uuid))) is distinct from 'Move Boss says to Mm Asker Two: that request lapsed.' then
     raise exception 'the lapse reply does not name the asker it is for';
   end if;
   replies_a := (select count(*) from acts x where x.character = boss and x.kind = 'post' and x.target_act_id = (a ->> 'request')::uuid);

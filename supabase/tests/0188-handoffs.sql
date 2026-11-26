@@ -258,6 +258,8 @@ declare
   new_boss text;
 begin
   perform reveal_season(now() + interval '1 day');
+  -- The line is owed (0442) and paid from stock here, as the tick's grace pays it.
+  perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   new_boss := (select boss from seasons where ends_at is null);
   perform pg_temp.expect(new_boss is not null and new_boss <> 'hf-boss', 'the handover did not seat a new Boss: ' || coalesce(new_boss, 'nobody'));
   perform pg_temp.expect(pg_temp.said_by('hf-boss') = array['Farewell, you lovely lot.'], 'the stored farewell was not posted as the outgoing Boss''s: ' || pg_temp.said_by('hf-boss')::text);

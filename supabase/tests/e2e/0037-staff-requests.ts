@@ -186,6 +186,8 @@ test('a Mod grants a request on its beat; one off its beat is conferred and the 
   assert.ok(ticked.requestsLapsed >= 1, `the tick lapsed it: ${JSON.stringify(ticked)}`);
   assert.equal(json<{ thread: string }[]>(sql(`select requests_waiting(10)`)).some((r) => r.thread === c.thread), false, 'a lapsed request no longer waits');
   const stock = (instance.system.stockLines as unknown as Record<string, readonly string[]>)['requestLapsed']!;
+  // The lapse's line is owed (0442), and paid from stock here as the tick's grace pays it.
+  sql(`select pay_owed_line(owed, null) from lines_owed_open`);
   const lapse = rows(`select a.payload ->> 'body' as body, a.target_act_id as target from acts a join characters c on c.id = a.character where a.thread = '${c.thread}' and c.staff = '${BOSS}' and a.kind = 'post'`);
   assert.equal(lapse.length, 1, 'the Boss replied once, with the stock line');
   assert.equal(lapse[0]!.target, c.request);

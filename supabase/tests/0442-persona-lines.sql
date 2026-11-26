@@ -4,7 +4,7 @@
 --    `speaker` names the set where the poster is not the staff key whose name fills `{boss}`.
 -- 2. visit_line, report_line and appeal_line, each with its staff key, and boss_request_reply with its Boss, pick the same way (and say the plain words, or say nothing, where neither set has the key).
 -- 3. say_in_thread's existence check reads the speaker's set: a line only the persona has is said, and one nobody has is not.
--- 4. say_move_end: a superseded end said by the current Boss reads the Boss's set with `{boss}` naming the move's maker; any other end reads the maker's.
+-- 4. say_move_end (owing its line, paid here from stock): a superseded end said by the current Boss reads the Boss's set with `{boss}` naming the move's maker; any other end reads the maker's.
 -- 5. settings_held refuses personaLines that is not an object of objects of non-empty lists of non-blank lines, and owedLines that is not {graceMinutes 1..1440, perDay 0..10000, perRun 1..200} as whole numbers.
 -- 6. stock_lines is no client's to call.
 
@@ -137,10 +137,12 @@ begin
   perform set_config('kayfabb.staff_writer', '', true);
   perform pg_temp.sets(null, '{"tl-a": {"moveSuperseded": ["A-set {boss}."], "moveMet": ["A-set met {boss}."]}, "tl-b": {"moveSuperseded": ["B-set {boss} ended {move}."]}}');
   perform say_move_end(mv, 'superseded');
+  perform pay_owed_line((select max(o.id) from lines_owed o where o.cause_act = mv and o.line_key = 'moveSuperseded'), null);
   if not exists (select 1 from acts where kind = 'post' and thread = pg_temp.announcements() and payload ->> 'body' = 'B-set Tl Aye ended a rule.') then
     raise exception 'a superseded end did not read the poster''s set: %', (select jsonb_agg(payload ->> 'body') from acts where kind = 'post' and thread = pg_temp.announcements());
   end if;
   perform say_move_end(mv, 'met');
+  perform pay_owed_line((select max(o.id) from lines_owed o where o.cause_act = mv and o.line_key = 'moveMet'), null);
   if not exists (select 1 from acts where kind = 'post' and thread = pg_temp.announcements() and payload ->> 'body' = 'A-set met Tl Aye.') then
     raise exception 'an end by the maker did not read the maker''s set: %', (select jsonb_agg(payload ->> 'body') from acts where kind = 'post' and thread = pg_temp.announcements());
   end if;

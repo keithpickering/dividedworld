@@ -130,6 +130,8 @@ declare
   arrival uuid;
   said text;
 begin
+  -- The line is owed (0442) and paid from stock here, as the tick's grace pays it.
+  perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   select a.id into arrival from acts a join characters c on c.id = a.character
   where c.staff = 'cn-b' and a.kind = 'post' and a.thread = (select h.thread from season_handovers h where h.thread is not null order by h.id desc limit 1);
   select n.quote into said from season_news(null, 50) n where n.kind = 'bossArrived' and n.act = arrival;
