@@ -8,10 +8,9 @@ import type { Persona, SystemContent } from '../rules/types.ts';
 import { cutAtSentence } from './chatter.ts';
 import type { PostingOffice } from './pool.ts';
 import { personaPrompt } from './prompt.ts';
+import { OWED_KEYS } from './stock.ts';
 import type { Trim } from './validate.ts';
 
-// Defined here until `stock.ts` exports it (Task 1 owns it there); the two lists must then be one.
-export const OWED_KEYS = ['moveMet', 'moveExpired', 'moveUnmet', 'moveSuperseded', 'moveReversed', 'moveOverturned', 'requestLapsed', 'bossArrival'] as const;
 export type OwedKey = (typeof OWED_KEYS)[number];
 
 export const OWED_LINE_MOST = 280;
@@ -19,7 +18,7 @@ export const OWED_LINE_MOST = 280;
 /** What a move's end carries: the move's words, its `why`, how it ended in plain words, and its maker's name when that is not the speaker (else null). */
 export interface MoveEndFacts { readonly move: string; readonly why: string; readonly ended: string; readonly maker: string | null }
 export interface LapseFacts { readonly asker: string; readonly body: string }
-export interface ArrivalFacts { readonly predecessor: string; readonly how: 'nomination' | 'rotation' | string }
+export interface ArrivalFacts { readonly predecessor: string; readonly how: string }
 
 export type Owed =
   | { readonly key: Exclude<OwedKey, 'requestLapsed' | 'bossArrival'>; readonly facts: MoveEndFacts }

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { testSystem } from '../rules/test-system.ts';
 import { personaPrompt } from './prompt.ts';
-import { OWED_LINE_MOST, OWED_KEYS, owedLineCompletion, owedLinePrompt, repairOwedLine, type Owed } from './owed.ts';
+import { OWED_KEYS } from './stock.ts';
+import { OWED_LINE_MOST, owedLineCompletion, owedLinePrompt, repairOwedLine, type Owed } from './owed.ts';
 
 const persona = testSystem.roster[0]!;
 const OWNER = 'owner-account-7f3a';
