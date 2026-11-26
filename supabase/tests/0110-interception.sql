@@ -37,10 +37,16 @@ begin
 end $$;
 
 -- A visit by a Mod on a post, as the tick or a report would start it.
-create function pg_temp.visit(p uuid, staff text) returns uuid language sql as $$
-  select (start_visit(p, staff, jsonb_build_object('rule_number', 1, 'board', (select t.board from acts a join threads t on t.id = a.thread where a.id = p),
-    'band', 'minor', 'cause', 'rule', 'about_act', p, 'rule', 'Rule 1: no all-caps posts')) ->> 'visit')::uuid
-$$;
+-- A quiz visit's question is the visit's own row (0446): this gives a quiz visit the bank's question, as the tick writes it, so the questions below are asked as they always were.
+create function pg_temp.visit(p uuid, staff text) returns uuid language plpgsql as $$
+declare
+  v uuid := (start_visit(p, staff, jsonb_build_object('rule_number', 1, 'board', (select t.board from acts a join threads t on t.id = a.thread where a.id = p),
+    'band', 'minor', 'cause', 'rule', 'about_act', p, 'rule', 'Rule 1: no all-caps posts')) ->> 'visit')::uuid;
+  bank jsonb := bank_quiz_for(v);
+begin
+  if bank is not null then perform write_visit_quiz(v, 'bank', bank ->> 'question', bank -> 'choices', bank ->> 'answer'); end if;
+  return v;
+end $$;
 
 -- An interception, as the account that owns the character.
 create function pg_temp.try(through uuid, visit uuid, answer text default null) returns jsonb language plpgsql as $$
@@ -122,7 +128,7 @@ begin
       'warnBar', jsonb_build_object('size', 10, 'bands', jsonb_build_object('minor', 2, 'moderate', 4, 'severe', 7), 'decay', jsonb_build_object('unit', 'day', 'count', 14), 'banDays', jsonb_build_array(1, 3, 7)),
       'modBots', jsonb_build_object('allowanceMost', 3, 'ruleDaysMost', 7, 'visitHours', jsonb_build_object('least', 3, 'most', 5), 'patrolsPerDay', 6, 'patrolSample', 5, 'patrolPool', 20,
         'reportPrice', 25, 'reportsPerDay', 3, 'judgmentsPerDay', 60, 'filingLinesPerDay', 60, 'appealPrice', 50, 'tailHours', 24,
-        'cap', jsonb_build_object('punishments', 3, 'days', 7), 'filingCron', '*/5 * * * *', 'filingGraceMinutes', 10),
+        'cap', jsonb_build_object('punishments', 3, 'days', 7), 'filingCron', '*/5 * * * *', 'filingGraceMinutes', 10, 'quizQuestionsPerDay', 60, 'quizWriteMinutes', 15),
       'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.'), 'ruleSet', jsonb_build_array('On {board}: {rule}.'),
         'visitArrived', jsonb_build_array('{mod} is looking at this post under {rule}.'),
         'visitFiled', jsonb_build_array('{mod} filed this post under {rule}.')),

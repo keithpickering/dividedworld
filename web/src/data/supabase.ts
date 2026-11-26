@@ -498,6 +498,7 @@ function toVisitEnd(e: Row, at: unknown, act: unknown): VisitEnd | null {
 
 /** The challenge a visit carries: never an answer. A quiz whose question the page could not read is a distraction, which asks nothing it cannot say. */
 function toChallenge(c: Row): VisitChallenge {
+  if (c['kind'] === 'quiz' && c['pending'] === true) return { kind: 'quiz', pending: true };
   if (c['kind'] === 'quiz' && typeof c['question'] === 'string' && Array.isArray(c['choices'])) return { kind: 'quiz', question: c['question'], choices: (c['choices'] as unknown[]).filter((x): x is string => typeof x === 'string') };
   if (c['kind'] === 'bribe') return { kind: 'bribe', price: num(c['price']) };
   return { kind: 'distraction' };

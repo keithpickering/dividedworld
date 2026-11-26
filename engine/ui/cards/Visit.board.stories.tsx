@@ -19,7 +19,7 @@ import { useLocation } from '../router.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
 const MINUTE = 60_000;
-type Which = 'quiz' | 'bribe' | 'distraction' | 'filed' | 'filedAuthor' | 'talkedDown' | 'trapped' | 'report' | 'appeal' | 'presence';
+type Which = 'quiz' | 'quizPending' | 'bribe' | 'distraction' | 'filed' | 'filedAuthor' | 'talkedDown' | 'trapped' | 'report' | 'appeal' | 'presence';
 
 const QUIZ: SeedChallenge = { kind: 'quiz', question: 'Which form is used to request another form?', choices: ['Form 1-A', 'Form 0', 'Form 27-B/6'], answer: 'Form 0' };
 
@@ -49,7 +49,7 @@ function useSeeded(thread: string | null, which: Which): boolean {
       const clerk = fake.seed.staff('story-clerk', 'The Clerk', 'mod');
       const visit = fake.seed.visit(clerk, post, {
         at: Date.now(), endsInMs: 161 * MINUTE, line: 'Routine inspection.',
-        challenge: which === 'bribe' ? { kind: 'bribe', price: 50 } : which === 'distraction' || which === 'trapped' ? { kind: 'distraction' } : QUIZ,
+        challenge: which === 'bribe' ? { kind: 'bribe', price: 50 } : which === 'distraction' || which === 'trapped' ? { kind: 'distraction' } : which === 'quizPending' ? { kind: 'quiz', pending: true } : QUIZ,
       });
       if (which === 'filed' || which === 'filedAuthor' || which === 'appeal') {
         fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.', at: Date.now() + MINUTE });
@@ -133,6 +133,8 @@ const phone = { parameters: { moment: '02-phone' } } as const;
 
 /** Open, a quiz: the Mod's question and the answers as full-width block buttons with centered text. */
 export const Quiz: Story = { args: { which: 'quiz' } };
+/** Open, a quiz whose question is still being written: one line in the Mod's words, and no answers to press. */
+export const QuizPending: Story = { args: { which: 'quizPending' } };
 /** Open, a bribe: one button with its price. */
 export const Bribe: Story = { args: { which: 'bribe' } };
 /** Open, a distraction: a line saying any card cast on the thread talks it down. */

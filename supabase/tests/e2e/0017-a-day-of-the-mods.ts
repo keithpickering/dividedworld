@@ -192,6 +192,8 @@ test('a meeting orders two Mods; visits are drawn, intercepted, reported and fil
   assert.equal(visitsOn(deeQuiet).length + visitsOn(eveQuiet).length, 0, 'a post that breaks nothing draws no visit');
 
   // ---- Ann fails the quiz and is tailed; Bo bribes and the visit ends. ----
+  // The quiz visit's question is its own row (0446): the bank's question, as the tick writes it once quizWriteMinutes have passed.
+  sql(`select write_visit_quiz(v, 'bank', b ->> 'question', b -> 'choices', b ->> 'answer') from (select '${annV1.id}'::uuid as v, bank_quiz_for('${annV1.id}') as b) x`);
   const wrong = sql(`select c from staff_quiz_questions q, jsonb_array_elements_text(q.choices) c where q.staff = '${MONITOR}' and q.idx = ${annV1.payload.challenge.question_index} and c <> q.answer order by c limit 1`);
   const failed = await as('Modsday Ann').rpc<{ succeeded: boolean; ended: boolean; tail_until: string }>('intercept', { through: char('Modsday Ann'), visit_act: annV1.id, answer: wrong });
   assert.deepEqual([failed.succeeded, failed.ended], [false, false]);

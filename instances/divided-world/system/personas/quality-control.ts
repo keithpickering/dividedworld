@@ -167,6 +167,8 @@ export const qualityControl: Persona = {
   // DRAFT for the owner: fangame-making trivia a regular answers without looking anything up, and two questions only the desk could ask.
   weakness: {
     kind: 'quiz',
+    // DRAFT for the owner: the question the Mod asks of a post when it writes this visit's quiz question.
+    quizBrief: 'You read the post as a submission to the queue. Ask about its craft: is it finished, does it do what its title promises, is it a repeat of something already filed, does it credit anyone? A small finished thing beats an ambitious unfinished one.',
     questions: [
       { question: 'A submission is a recolor of an existing sprite. What is it?', choices: ['Original work', 'A recolor', 'A tribute', 'Lost media'], answer: 'A recolor' },
       { question: 'What does WIP stand for?', choices: ['Work in progress', 'Wario is present', 'Will it play', 'Worst idea possible'], answer: 'Work in progress' },

@@ -626,10 +626,11 @@ export interface VisitCharge {
 
 /**
  * What a visit asks of anyone who would talk it down. Never an answer: a quiz carries its question and its choices, a bribe its price
- * (hundredths), a distraction nothing (any card cast on the thread does it).
+ * (hundredths), a distraction nothing (any card cast on the thread does it). A quiz whose question is still being written is `pending`: no question yet, and no answer ever.
  */
 export type VisitChallenge =
   | { readonly kind: 'quiz'; readonly question: string; readonly choices: readonly string[] }
+  | { readonly kind: 'quiz'; readonly pending: true }
   | { readonly kind: 'bribe'; readonly price: number }
   | { readonly kind: 'distraction' };
 

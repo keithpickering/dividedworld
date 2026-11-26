@@ -12,6 +12,7 @@
  * record are not idempotent (`record_staff_call` and `record_patrol_call` number each call they are sent, and `claim_patrol` hands out the next patrol each time it is asked): `file_visit` finds a visit already ended and `apply_mod_move` finds the move of its cause, so a repeat of either writes nothing a second time and is sent again.
  */
 import { runFilings } from './core.ts';
+import { runQuizzes } from './quiz.ts';
 import { runPatrolsAfterFilings } from './patrol.ts';
 import { runApologiesAfterFilings } from './apology.ts';
 import { runOwedLinesAfterFilings } from './owed.ts';
@@ -59,6 +60,9 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
     // The tiers are the instance's `modelTiers` setting as the database holds it now; the model adapter names no model of its own.
     const { settings } = await withDatabaseSettings(instance, db);
     const modelsNow = deps.models(deps.env, ledgerWriter(db), { tiers: settings.modelTiers, oldVoice: { window: settings.oldVoiceWindow, count: tokenCounter(settings.oldVoiceTokenizer) }, fetch: deps.fetch });
+    // The questions waited on by characters at a visit, before the filings and on their own terms: a question is wanted sooner than a filing line (quiz.ts).
+    const quizzes = await runQuizzes(db, modelsNow, instance, slot);
+    if (quizzes.quizzes.some((q) => q.status === 'left' || q.why !== undefined || q.trims.length > 0)) console.warn('quizzes from the bank, left, or trimmed', slot, JSON.stringify(quizzes.quizzes.filter((q) => q.status === 'left' || q.why !== undefined || q.trims.length > 0)));
     const outcome = await runFilings(db, modelsNow, instance, slot);
     // The patrols due, after the filings and on their own: a patrol's failure costs the filings nothing, and a filing run's failure is thrown before any patrol is claimed.
     const patrols = await runPatrolsAfterFilings(db, modelsNow, instance, Date.now, begun, slot);
@@ -82,7 +86,7 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
       const odd = outcome.filings.filter((f) => f.status === 'failed' || f.trims.length > 0 || f.dropped.length > 0 || f.why !== undefined);
       if (odd.length) console.warn('filings with a trim, a drop, a stock line or a failure', slot, JSON.stringify(odd.map((f) => ({ visit: f.visit, staff: f.staff, status: f.status, why: f.why, trims: f.trims, dropped: f.dropped }))));
     }
-    return json(200, { ...outcome, patrols, apologies, owed });
+    return json(200, { ...outcome, quizzes, patrols, apologies, owed });
   } catch (e) {
     // The details go to the function's log; the answer says only that it failed, and for which slot.
     console.error('staff failed', slot, e instanceof Error ? e.message : 'unknown');
