@@ -24,7 +24,17 @@
  *    in a link's address or in code, a number split by markup, and one word standing for a number ("a dozen", "one"); it is a net for
  *    the common retype, not a proof that none is left;
  *  - a `#fragment` link that names no section: a section's anchor is its second-level heading's words, as the page makes it
- *    (`sectionsOf`), so a link to `#nope` or to a heading since renamed would scroll nowhere.
+ *    (`sectionsOf`), so a link to `#nope` or to a heading since renamed would scroll nowhere;
+ *  - a conditional passage (`<!-- kayfabb:if system-on|system-off -->` to `<!-- kayfabb:end -->`) that is malformed: a condition the
+ *    engine does not know, an `if` inside an `if`, an `if` never closed, an `end` that closes nothing, or a second-level heading inside
+ *    one (the contents and the links must be the same whichever way the switch is). The check reads both branches of a passage as it
+ *    reads the rest of the guide, so a marker, a setting, a link, a `{{`, a retyped number inside either is found as outside it;
+ *  - the words "not switched on" (case-blind) anywhere but inside a `system-off` passage. The guide used to be tied to the switch by an
+ *    exact sentence, "Built, and not switched on here yet:", required while `systemEnabled` was false and refused while it was true. That
+ *    failed the build the day the launch flipped the switch, and a rule about one string could not tell a guide that was right from one
+ *    that merely avoided the string. The guide now holds both branches and the switch picks (docs/plans/2026-11-21-gabes-voice-design.md,
+ *    section 5), so the check no longer reads the switch at all: what it refuses is a sentence that would be untrue the day the staff are
+ *    switched on, which is any such claim outside a passage only shown while they are off.
  *
  * Read from git, so an untracked scratch file neither fails the build nor makes it pass. The detection is exported and pure so
  * tools/test-guide.mjs drives every branch red. (The plan named the pair test-check-guide.mjs; tools/build.mjs pairs a check with
@@ -50,7 +60,7 @@ try {
   console.error('  guide: this check needs Node 22.18 or later (type stripping), to read the engine\'s TypeScript; this is Node ' + process.versions.node);
   process.exit(1);
 }
-const { inlineText, MARKERS, parse, sectionsOf, settingText } = reader;
+const { CONDITIONS, inlineText, MARKERS, parse, sectionsOf, settingText } = reader;
 
 export const UI_INDEX = /^instances\/([^/]+)\/ui\/index\.ts$/;
 export const GUIDE_FILE = (name) => `instances/${name}/guide/strategy-guide.md`;
@@ -79,14 +89,15 @@ function words(block) {
     case 'p': return [inlineText(block.children, say)];
     case 'ul':
     case 'ol': return block.items.map((i) => inlineText(i, say));
-    case 'quote': return block.blocks.flatMap(words);
+    case 'quote':
+    case 'when': return block.blocks.flatMap(words);
     case 'table': return [...block.head, ...block.rows.flat()].map((c) => inlineText(c, say));
     default: return [];
   }
 }
 
 /** Every marker block and every `{{setting:}}` path in a tree, with the text of each paragraph for the checks that read prose. */
-function walk(blocks, visit) {
+function walk(blocks, visit, inWhen = false) {
   const inlines = (nodes) => {
     for (const n of nodes) {
       if (n.t === 'setting') visit.setting?.(n.path);
@@ -96,11 +107,36 @@ function walk(blocks, visit) {
   };
   for (const b of blocks) {
     if (b.t === 'marker') visit.marker?.(b.name);
-    else if (b.t === 'heading' || b.t === 'p') inlines(b.children);
+    else if (b.t === 'when') walk(b.blocks, visit, true);
+    else if (b.t === 'heading' || b.t === 'p') {
+      if (b.t === 'heading' && b.level === 2 && inWhen) visit.sectionInWhen?.(inlineText(b.children));
+      inlines(b.children);
+    }
     else if (b.t === 'ul' || b.t === 'ol') b.items.forEach(inlines);
-    else if (b.t === 'quote') walk(b.blocks, visit);
+    else if (b.t === 'quote') walk(b.blocks, visit, inWhen);
     else if (b.t === 'table') [...b.head, ...b.rows.flat()].forEach(inlines);
   }
+}
+
+/** Every paragraph, heading, list item and table cell in a tree with the switch it is shown under (null outside any passage), a setting said as `words` says it. */
+function spoken(blocks, system = null) {
+  return blocks.flatMap((b) => (b.t === 'when' ? spoken(b.blocks, b.system) : b.t === 'quote' ? spoken(b.blocks, system) : words(b).map((text) => ({ text, system }))));
+}
+
+/**
+ * The lines of the Markdown a conditional's faults stand on, in the order the reader names them: an `if` inside an open one, an `end` with
+ * nothing open, and an `if` still open at the end. The reader rewrites those lines into markers, so they are found here from the source.
+ */
+function conditionalLines(markdown) {
+  const nested = [];
+  const stray = [];
+  const open = [];
+  markdown.split('\n').forEach((raw, i) => {
+    const t = raw.trim();
+    if (/^<!--\s*kayfabb:if(?:\s[^>]*)?-->$/u.test(t)) { if (open.length) nested.push(i + 1); open.push(i + 1); }
+    else if (/^<!--\s*kayfabb:end\s*-->$/u.test(t)) { if (open.length) open.pop(); else stray.push(i + 1); }
+  });
+  return { 'if-nested': nested, end: stray, 'if-unclosed': open };
 }
 
 /** The 1-based line of the first line of the Markdown holding `snippet`, or 0 when none does (a heading broken over lines, say). */
@@ -133,20 +169,27 @@ export function guideFaults({ file, markdown, hints, hintsFile = file.replace(/s
   const blocks = parse(markdown);
 
   /* Markers and settings the engine can fill. */
+  const lines = conditionalLines(markdown);
   walk(blocks, {
     marker: (name) => {
-      if (!MARKERS.includes(name)) fault(file, lineOf(markdown, `kayfabb:${name}`), `the marker "kayfabb:${name}" is not one the engine knows (${MARKERS.join(', ')})`);
+      if (name === 'if-nested') fault(file, lines[name].shift() ?? 0, 'a conditional passage stands inside another');
+      else if (name === 'if-unclosed') fault(file, lines[name].shift() ?? 0, 'a conditional passage is never closed with kayfabb:end');
+      else if (name === 'end') fault(file, lines[name].shift() ?? 0, 'kayfabb:end closes nothing');
+      else if (name === 'if' || name.startsWith('if ')) {
+        const condition = name.slice(2).trim();
+        fault(file, lineOf(markdown, `kayfabb:${name}`) || lineOf(markdown, 'kayfabb:if'), `the condition "${condition}" is not one the engine knows (${CONDITIONS.join(', ')})`);
+      } else if (!MARKERS.includes(name)) fault(file, lineOf(markdown, `kayfabb:${name}`), `the marker "kayfabb:${name}" is not one the engine knows (${MARKERS.join(', ')})`);
     },
     setting: (p) => {
       if (settingText(p, settings) === undefined) fault(file, lineOf(markdown, `{{setting:${p}`), `{{setting:${p}}} names no setting the page can say (a number or a span, by the name the screens read it)`);
     },
+    sectionInWhen: (title) => fault(file, lineOf(markdown, title), `the section "${title}" stands inside a conditional passage: a section cannot stand inside a conditional passage, since the guide's contents and its links must be the same whichever way the switch is`),
   });
 
-  /* What the guide says of The System follows the instance's switch: off, it says what is built and not on; on, it no longer does. */
-  const NOT_ON = 'Built, and not switched on here yet:';
-  const says = markdown.includes(NOT_ON);
-  if (settings.systemEnabled === false && !says) fault(file, 1, `The System is switched off here (systemEnabled is false), so the guide holds the line "${NOT_ON}" before what is built and not on`);
-  if (settings.systemEnabled === true && says) fault(file, lineOf(markdown, NOT_ON), `The System is switched on here (systemEnabled is true), so the guide no longer says "${NOT_ON}"`);
+  /* What the guide says of the staff is true whichever way the switch is: only a system-off passage may say they are not on. */
+  for (const { text, system } of spoken(blocks)) {
+    if (system !== 'off' && /not switched on/iu.test(text)) fault(file, lineOf(markdown, text.slice(0, 40)) || lineOf(markdown, text.match(/not switched on/iu)[0]), `"${text.slice(0, 60)}" says the staff are not switched on outside a system-off passage, so it would be untrue the day they are switched on`);
+  }
 
   /* A link to a fragment names a section, by the anchor the page gives it (`sectionsOf`, the page's own reading). */
   const anchors = new Set(sectionsOf(blocks, (p) => settingText(p, settings) ?? '—').map((x) => x.id));
