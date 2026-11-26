@@ -1182,16 +1182,16 @@ test('texts: the existing inputs and the unquoted corpus keep their tree and eve
   assert.ok(corpus.length >= 600);
   /* The megabyte shapes are held to the cost below, not here: a deep equality of trees that size is slow for no more proof. */
   const inputs = new Set([...parsed, ...corpus.map((c) => c.body)].filter((input) => input.length <= 20_000));
-  assert.ok(inputs.size > 700);
   let total = 0;
-  let recorded = 0;
+  const unrecorded: string[] = [];
   for (const input of inputs) {
     const { nodes, spans } = spansOf(input);
     total += nodes.length;
-    recorded += spans.filter((s) => s !== null).length;
+    if (spans.some((s) => s === null)) unrecorded.push(input);
   }
-  assert.ok(recorded > 0 && recorded <= total);
-  if (process.env.KAYFABB_TEXTS_COUNTS) console.log(`texts recorded ${recorded} of ${total} text nodes in ${inputs.size} inputs`);
+  /* The one corner left out is words joined across an empty [noparse][/noparse]; every text node of every other input, the corpus's included, is recorded, so a cover is never left unapplied on one. */
+  assert.ok(total > 3000);
+  assert.deepEqual(unrecorded.filter((input) => !input.includes('[noparse][/noparse]')), []);
 });
 
 test('texts: asking for spans keeps the parse linear', () => {
