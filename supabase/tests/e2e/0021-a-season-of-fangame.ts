@@ -26,6 +26,8 @@ import { models } from '../../functions/_shared/models/index.ts';
 import { systemOf, firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
 import { MEETING_PARTS } from '../../../engine/system/meeting.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
+import { leadInMoods } from '../../../engine/system/beats.ts';
+import { plotSections, type PublicRecord } from '../../../engine/system/chatter.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 
 /** FanGaME stays the season's Boss; the placeholder Bosses are beside him only so there is one to nominate at the end. */
@@ -119,6 +121,22 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   const shownBoards = async () => ((await player.rpc<{ boards: { name: string }[] }>('index_page', {})).boards).map((b) => b.name);
   const boardPage = (slug: string) => player.rpc<{ closed: boolean; mergedInto: { name: string } | null; stubs: { id: string; moved_to_name: string }[] }>('board_page', { in_slug: slug, in_page: 1, effect_cards: [] });
   const slugOf = (id: string) => sql(`select slug from boards_now where id = '${id}'`);
+  /** An admin, to take a pin down. */
+  const admin = sql(`with u as (insert into auth.users (email) values ('e2e-fangame-season-admin@test.invalid') returning id), a as (insert into accounts (id) select id from u returning id), m as (insert into admins (account) select id from a returning account) select account from m`);
+  /** The story a staff persona's pool call is given: `pool_record` as the chatter reads it (the Boss's lead-ins mapped to their mood lines through its file), then the record's sections as `chatterPrompt` writes them. */
+  const poolStory = async (staff: string, boss: boolean, in_thread: string) => {
+    const record = await db.rpc<PublicRecord & { push?: string[]; leadIns?: string[] }>('pool_record', { in_thread, staff_key: staff });
+    const persona = world.system.roster.find((p) => p.key === staff)!;
+    const given = Array.isArray(record.leadIns) ? { ...record, leadIns: leadInMoods(persona, record.leadIns, world.system.roster) } : record;
+    return { record, text: plotSections(given, { key: staff, boss }, world.settings.titleMaxLength).join('\n\n') };
+  };
+  /** The announcement of a beat the Boss played in the open season. */
+  const announced = (staff: string, beat: string) => JSON.parse(sql(`select coalesce((select to_jsonb(n) from arc_announcements n where n.staff = '${staff}' and n.beat = '${beat}' and n.season = (select id from seasons where ends_at is null) order by n.id desc limit 1), 'null')`)) as { thread: string; act: string; title: string; pitch: string; push: string } | null;
+  const stickiesOf = async (thread: string) => {
+    const board = sql(`select board from threads where id = '${thread}'`);
+    return (await player.rpc<{ stickies: { id: string; title: string }[] }>('board_page', { in_slug: slugOf(board), in_page: 1, effect_cards: [] })).stickies.map((x) => x.id);
+  };
+  const poolThread = thread(boardId('General'), 'The pool reads this thread', 1, Date.now() - 40 * DAY);
 
   // ---- Day 3, the honeymoon: nothing is unlocked, and all three kinds are held back. ----
   dayOfSeason(3);
