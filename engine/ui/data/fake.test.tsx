@@ -8240,6 +8240,8 @@ describe('a talked-down Mod posts its concession', () => {
     const w = setup();
     w.fake.seed.concession(w.visit, 'Fine, {who}. You win. {who} stays unfilled the second time.');
     const before = (await w.postsIn()).length;
+    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
+    expect((await w.postsIn()).some((a) => String(a.payload['body']).includes('Fine,'))).toBe(false);
     const r = await w.fake.intercept(w.anaFace, w.visit, null);
     expect(r).toMatchObject({ ok: true, value: { succeeded: true } });
     const after = await w.postsIn();
@@ -8253,9 +8255,13 @@ describe('a talked-down Mod posts its concession', () => {
   test('with none written it posts one of the stock lines of the Mod\'s staff key', async () => {
     const w = setup();
     w.fake.seed.stockConcessions('clerk', ['One, {who}.', 'Two, {who}.', 'Three, {who}.']);
+    const stock = ['One, Ana Face.', 'Two, Ana Face.', 'Three, Ana Face.'];
+    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
+    expect((await w.postsIn()).some((a) => stock.includes(String(a.payload['body'])))).toBe(false);
     await w.fake.intercept(w.anaFace, w.visit, null);
     const post = (await w.postsIn()).at(-1)!;
-    expect(['One, Ana Face.', 'Two, Ana Face.', 'Three, Ana Face.']).toContain(post.payload['body']);
+    expect(stock).toContain(post.payload['body']);
+    expect(post).toMatchObject({ character: w.mod, targetActId: w.opener });
   });
 
   test('a failed try, or a Mod with no lines at all, posts nothing and the visit still ends', async () => {

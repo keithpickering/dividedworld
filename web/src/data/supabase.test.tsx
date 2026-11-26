@@ -3722,6 +3722,14 @@ describe('a visit\'s concession post', () => {
     expect(call.body).toEqual({ visit: VISIT });
   });
 
+  it('a post that cannot be read after the RPC named it leaves the story whole, with no post', async () => {
+    const good = router([end('intercepted')], CONCESSION);
+    const h = harness((r, n) => (r.url.pathname.endsWith('/acts_public') && r.url.searchParams.get('id') === `eq.${CONCESSION}` ? json({ message: 'boom' }, 500) : good(r, n)));
+    const story = await h.api.visitStory(T, VISIT, POST);
+    expect(story.concessionPost).toBeNull();
+    expect(story.end?.outcome).toBe('intercepted');
+  });
+
   it('asks for none unless the visit was talked down, and an RPC that answers nothing is no post', async () => {
     const filed = harness(router([end('filed')], CONCESSION));
     expect((await filed.api.visitStory(T, VISIT, POST)).concessionPost).toBeNull();

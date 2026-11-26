@@ -1576,8 +1576,8 @@ describe('a visit\'s tab', () => {
     const visit = w.fake.seed.visit(clerk, post, { at: w.fake.clock.now(), endsInMs: o.endsInMs ?? 161 * 60_000, line: 'Routine inspection.', ...(o.challenge ? { challenge: o.challenge } : {}) });
     return { ...w, clerk, post, visit, seq: o.mine ? 4 : 2 };
   }
-  const openVisit = (w: ReturnType<typeof visited>) =>
-    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards, copy: { modRole: 'A Moderator' } });
+  const openVisit = (w: ReturnType<typeof visited>, settings?: { readonly postsPerPage: number }) =>
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards, copy: { modRole: 'A Moderator' }, ...(settings ? { settings } : {}) });
   const visitMark = async (seq: number) => within(await article(seq)).findByRole('button', { name: /Opens the visit\.$/u });
   const visitLens = () => screen.getByRole('dialog', { name: /^Visit/u });
   /** Tab until the control has the focus, as a keyboard reader reaches it (the Lens's tab, its close cross, then its controls). */
@@ -2066,11 +2066,25 @@ describe('a visit\'s tab', () => {
       w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', by: attempt, line: 'Gloomba got past The Clerk\'s quiz.' });
       const reply = w.fake.seed.staffPost(w.clerk, w.thread, 'Fine, Gloomba. Go.');
       w.fake.seed.concessionPost(w.visit, reply);
-      openVisit(w);
+      openVisit(w, { postsPerPage: 2 });
       const l = await press(w);
       await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
       const link = within(l).getByRole('link', { name: /The Clerk posted a reply/u });
-      expect(link.getAttribute('href')).toMatch(new RegExp(`^/t/${w.thread}\\?page=1#post-\\d+$`, 'u'));
+      /* The thread holds posts 1 to 3 and the reply is post 4: with two to a page, page 2. */
+      expect(link.getAttribute('href')).toBe(`/t/${w.thread}?page=2#post-4`);
+    });
+
+    test('a reply that has no place in the thread is named in plain words, with no link', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      const attempt = w.fake.seed.report(w.gloomba, w.second, 'unused');
+      w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', by: attempt, line: 'Gloomba got past The Clerk\'s quiz.' });
+      w.fake.seed.concessionPost(w.visit, w.visit);
+      openVisit(w);
+      const l = await press(w);
+      await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
+      expect(within(l).queryByRole('link', { name: /posted a reply/u })).toBeNull();
+      expect(l).toHaveTextContent('The Clerk posted a reply');
     });
 
     test('talked down with no reply posted, the row has no such link', async () => {

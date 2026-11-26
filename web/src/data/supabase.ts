@@ -2038,7 +2038,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const who = p && typeof p['character'] === 'string' ? p['character'] : null;
       /* Only a talked-down visit has a concession post: the id comes from visit_concession_post (the post Act's id and nothing else, never its error or source), and the post is read as any Act is. A failed read is no post, never a failed story. */
       const concession = ended[0]?.['payload'] && isObject(ended[0]['payload']) && (ended[0]['payload'] as Row)['outcome'] === 'intercepted'
-        ? read(() => client.rpc('visit_concession_post', { visit })).then(async (r) => (typeof r.data === 'string' && idOk(r.data) ? (await list(() => client.from('acts_public').select('*').eq('id', r.data).limit(1)))[0] : undefined), () => undefined)
+        ? (async (): Promise<Row | undefined> => {
+          const r = await read(() => client.rpc('visit_concession_post', { visit }));
+          return typeof r.data === 'string' && idOk(r.data) ? (await list(() => client.from('acts_public').select('*').eq('id', r.data).limit(1)))[0] : undefined;
+        })().catch(() => undefined)
         : Promise.resolve(undefined);
       const [reports, appeals, bar, posted] = await Promise.all([
         verdict && idOk(String(verdict['target_act_id'])) ? list(() => mine().eq('kind', 'report').eq('id', verdict['target_act_id']).limit(1)) : Promise.resolve([] as Row[]),

@@ -142,8 +142,8 @@ function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string,
 function HowRow({ row, name, role, tallies, mine, onSpin }: {
   readonly row: Row; readonly name: (c: Id | null) => string; readonly role: string; readonly tallies: Tallies; readonly mine: Mine; readonly onSpin: (act: Id, label: string) => void;
 }) {
-  const { instance } = useKayfa();
-  const perPage = useContext(ThreadCtx)?.perPage ?? instance.settings.postsPerPage;
+  const { settings } = useKayfa();
+  const perPage = useContext(ThreadCtx)?.perPage ?? settings.postsPerPage;
   const reply = row.reply;
   return (
     <li className="kb-lens-row" data-kb-act={row.act}>
