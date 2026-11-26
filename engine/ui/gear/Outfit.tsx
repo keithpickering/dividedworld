@@ -1,7 +1,9 @@
 /**
- * What a character wears over its portrait (the cosmetics design, section 2). The layer is a sibling of the picture inside a box the
- * picture fills, so a piece's fractions are the portrait's own: its center `x` and `y` of the box, its width `w` of the box's width, its
- * height by the art's own shape. Each piece is an `<img>` of the instance's art file for that gear, the same URL for every wearer, so the
+ * What a character wears over its portrait (the cosmetics design, section 2; the rendered-gear design, section 2). The layer is a sibling of
+ * the picture inside a box the picture fills, so a piece's fractions are the portrait's own: the pivot `x` and `y` of the box (the point of
+ * the art the item's `views.json` names, which is what `x` and `y` place and what the piece turns about), its width `w` of the box's width
+ * (in the shown view's own width against the default's), its height by the shown view's own shape. Each piece is an `<img>` of the instance's
+ * art file for the view it shows (the piece's view when the item ships it, else the item's default), the same URL for every wearer, so the
  * browser fetches each item once. The layer is decoration: the character's name says who it is, and no screen reader is told of a hat.
  *
  * On the tall portrait the layer is cut at `gear.reach` of the portrait's width past each edge, so a cap may stand above the slot but not
@@ -9,7 +11,7 @@
  * (`inSquare`) and the layer is cut at the square's edge; a piece wholly outside it is not drawn at all.
  */
 import type { CSSProperties } from 'react';
-import { inSquare, type Piece, type SquareFrame } from '../../rules/cosmetics.ts';
+import { inSquare, pieceExtent, pieceShape, shownView, type Piece, type SquareFrame } from '../../rules/cosmetics.ts';
 import { useKayfa } from '../context.tsx';
 import './outfit.css';
 
@@ -21,14 +23,9 @@ export function slotShape(tallness: number | null): CSSProperties | undefined {
 /** A fraction as a percentage, without the noise of float arithmetic. */
 const pct = (n: number) => `${Math.round(n * 1e6) / 1e4}%`;
 
-/** Whether a piece's turned box, in the box's own fractions, touches the box at all. `aspect` is the art's height over its width, and the box is as wide as tall in pixels (the square). */
-function touchesSquare(p: Piece, aspect: number): boolean {
-  const rad = (p.turn * Math.PI) / 180;
-  const w = p.w;
-  const h = p.w * aspect;
-  const hx = (w * Math.abs(Math.cos(rad)) + h * Math.abs(Math.sin(rad))) / 2;
-  const hy = (w * Math.abs(Math.sin(rad)) + h * Math.abs(Math.cos(rad))) / 2;
-  return p.x + hx > 0 && p.x - hx < 1 && p.y + hy > 0 && p.y - hy < 1;
+/** Where a piece stands in the box its picture fills: the pivot at (`x`, `y`), the shown view's width and aspect, turned about the pivot. Outfit and the dress-up page's selection box both use it. */
+export function placement(piece: Piece, shape: ReturnType<typeof pieceShape>): CSSProperties {
+  return { left: pct(piece.x), top: pct(piece.y), width: pct(shape.w), aspectRatio: `1 / ${shape.aspect}`, transformOrigin: `${pct(shape.px)} ${pct(shape.py)}`, transform: `translate(${pct(-shape.px)}, ${pct(-shape.py)}) rotate(${piece.turn}deg)` };
 }
 
 export function Outfit({ pieces, on, frame = null }: {
@@ -38,7 +35,7 @@ export function Outfit({ pieces, on, frame = null }: {
   readonly frame?: SquareFrame | null;
 }) {
   const { ui, instance } = useKayfa();
-  const drawn: { readonly piece: Piece; readonly art: string; readonly aspect: number }[] = [];
+  const drawn: { readonly piece: Piece; readonly art: string; readonly shape: ReturnType<typeof pieceShape> }[] = [];
   for (const raw of pieces) {
     const gear = ui.gear[raw.gear];
     if (!gear) continue;
@@ -46,19 +43,24 @@ export function Outfit({ pieces, on, frame = null }: {
     if (on === 'square') {
       if (!frame) continue;
       piece = inSquare(raw, frame);
-      if (!touchesSquare(piece, gear.aspect)) continue;
     }
-    drawn.push({ piece, art: gear.art, aspect: gear.aspect });
+    const shape = pieceShape(piece, gear);
+    if (on === 'square') {
+      /* The square is as wide as tall in pixels: height 1 in the extent's units. A piece wholly outside it is not drawn. */
+      const e = pieceExtent(piece, shape, 1);
+      if (!(e.right > 0 && e.left < 1 && e.bottom > 0 && e.top < 1)) continue;
+    }
+    drawn.push({ piece, art: gear.views[shownView(gear, piece.view)]!.art, shape });
   }
   if (drawn.length === 0) return null;
   drawn.sort((a, b) => a.piece.layer - b.piece.layer);
   const style = { '--kb-reach': instance.settings.cosmetics.gear.reach } as CSSProperties;
   return (
     <span className="kb-outfit" data-kb-on={on} aria-hidden="true" style={style}>
-      {drawn.map(({ piece, art, aspect }, i) => (
+      {drawn.map(({ piece, art, shape }, i) => (
         <img
           key={`${piece.layer}-${i}`} src={art} alt="" loading="lazy" decoding="async" draggable={false}
-          style={{ left: pct(piece.x), top: pct(piece.y), width: pct(piece.w), aspectRatio: `1 / ${aspect}`, transform: `translate(-50%, -50%) rotate(${piece.turn}deg)`, zIndex: i }}
+          style={{ ...placement(piece, shape), zIndex: i }}
         />
       ))}
     </span>

@@ -54,7 +54,7 @@ const wearingWorld: World = (fake, instance) => {
   fake.seed.gear(owner, Object.fromEntries(gear.map((g) => [g.key, 1])));
   fake.signInAs(owner);
   const spots = [{ x: 0.5, y: 0, w: 0.7, turn: -8 }, { x: 0.5, y: 0.3, w: 0.5, turn: 0 }, { x: 0.7, y: 0.62, w: 0.3, turn: 14 }];
-  void fake.setOutfit(mask, gear.map((g, i) => ({ gear: g.key, layer: i, ...spots[i]! })));
+  void fake.setOutfit(mask, gear.map((g, i) => ({ gear: g.key, layer: i, view: null, ...spots[i]! })));
 };
 function Mine({ name }: { readonly name: string }) {
   const { api } = useKayfa();
@@ -79,6 +79,6 @@ const trophyWorld: World = (fake, instance) => {
   const gear = instance.gear.slice(0, 3);
   fake.seed.gear(owner, Object.fromEntries(gear.map((g) => [g.key, 1])));
   fake.signInAs(owner);
-  void fake.setOutfit(mask, gear.map((g, i) => ({ gear: g.key, x: 0.5, y: 0.1 + i * 0.25, w: 0.4, turn: 0, layer: i })));
+  void fake.setOutfit(mask, gear.map((g, i) => ({ gear: g.key, x: 0.5, y: 0.1 + i * 0.25, w: 0.4, turn: 0, layer: i, view: null })));
 };
 export const TrophyCaseAndWearing: Story = { render: () => <Mine name="Dr. Bones" />, parameters: { world: trophyWorld, path: '/' } };

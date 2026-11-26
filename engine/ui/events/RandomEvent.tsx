@@ -57,7 +57,8 @@ function Dialog({ event, onClose }: { readonly event: Event; readonly onClose: (
   const item = gear?.name ?? rules?.name ?? event.item;
   /* The line is the instance's text, cut where {item} stands in it; a line the instance does not have is still said, plainly. */
   const words = (event.line ?? (item === null ? 'Something happened.' : 'You found {item}.')).split('{item}');
-  const art = gear !== undefined ? ui.gear[gear.key]?.art : undefined;
+  const shipped = gear !== undefined ? ui.gear[gear.key] : undefined;
+  const art = shipped?.views[shipped.default]?.art;
   const face = rules !== undefined ? faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds) : null;
   const pictured = art !== undefined || face !== null;
   return (

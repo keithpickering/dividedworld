@@ -6,7 +6,7 @@ import { ratio } from '../../../engine/ui/contrast.ts';
 import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
-import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
+import { guideFaults, privacyOverclaims, readInstance } from '../../../tools/check-guide.mjs';
 import { parse, sectionsOf } from '../../../engine/ui/guide/markdown.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { economyOf, faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
@@ -23,7 +23,8 @@ import type { ClassInput } from '../../../engine/rules/types.ts';
 import { instanceUi, REASON_KEYS, settingsRead, wordsRead } from './index.ts';
 import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
-import { gearUi } from './cosmetics.ts';
+import { gearOf, gearUi } from './cosmetics.ts';
+import { webpInfo } from '../../../tools/art-files.mjs';
 import { gainOf } from './sounds.ts';
 import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
@@ -118,14 +119,32 @@ describe('Divided World\'s onboarding words', () => {
     ];
     for (const line of lines) expect(line, line).not.toMatch(/The System|Administrator/u);
   });
+  test('no tip and no line of the front door\'s note claims more privacy than the game gives (#1145): "no other player", never "only you"', () => {
+    const lines = [
+      ...Object.values(instanceUi.onboarding.tips).flatMap((t) => [t.title, t.line]),
+      ...instanceUi.frontDoor.note.split('\n'),
+      instanceUi.onboarding.letter,
+    ];
+    for (const line of lines) expect(privacyOverclaims(line), line).toEqual([]);
+  });
 });
 
 describe('Divided World\'s gear and trophy art', () => {
-  test('every gear has art and an aspect, and every trophy kind has a badge, and nothing else does', () => {
+  test('every gear has a default view it ships, and each view a URL, a size and a pivot inside it, and every trophy kind has a badge, and nothing else does', () => {
     expect(Object.keys(instanceUi.gear).sort()).toEqual(instance.gear.map((g) => g.key).sort());
     for (const g of instance.gear) {
-      expect(instanceUi.gear[g.key]?.art, `${g.key}'s art`).toEqual(expect.any(String));
-      expect(instanceUi.gear[g.key]!.aspect, `${g.key}'s aspect`).toBeGreaterThan(0);
+      const item = instanceUi.gear[g.key]!;
+      expect(item.views[item.default], `${g.key} ships its default view ${item.default}`).toBeDefined();
+      for (const [view, v] of Object.entries(item.views)) {
+        const at = `${g.key}'s ${view}`;
+        expect(v.art, `${at} art`).toEqual(expect.any(String));
+        expect(v.width, `${at} width`).toBeGreaterThan(0);
+        expect(v.height, `${at} height`).toBeGreaterThan(0);
+        expect(v.pivot.x, `${at} pivot x`).toBeGreaterThanOrEqual(0);
+        expect(v.pivot.x, `${at} pivot x`).toBeLessThanOrEqual(v.width);
+        expect(v.pivot.y, `${at} pivot y`).toBeGreaterThanOrEqual(0);
+        expect(v.pivot.y, `${at} pivot y`).toBeLessThanOrEqual(v.height);
+      }
     }
     expect(Object.keys(instanceUi.trophies).sort()).toEqual(instance.trophies.kinds.map((k) => k.key).sort());
     for (const k of instance.trophies.kinds) expect(instanceUi.trophies[k.key]?.art, `${k.key}'s badge`).toEqual(expect.any(String));
@@ -147,6 +166,12 @@ describe('Divided World\'s Strategy Guide', () => {
     expect(Object.keys(instanceUi.guide.hints).sort()).toEqual(instance.classes.map((c) => c.key).sort());
     const real = await readInstance('divided-world');
     expect(guideFaults(real)).toEqual([]);
+  });
+  test('Gabe\'s sign-off is two short lines in both the letter and the guide: a hard break, no paragraph gap', () => {
+    for (const [name, md] of [['letter', instanceUi.onboarding.letter], ['guide', instanceUi.guide.markdown]] as const) {
+      const last = parse(md).filter((b) => b.t === 'p').at(-1)!;
+      expect(last, name).toEqual({ t: 'p', children: [{ t: 'text', text: 'Have fun,' }, { t: 'br' }, { t: 'text', text: 'Gabe' }] });
+    }
   });
   test('never says "The System" in what a player reads (the comment at its top is not read)', () => {
     const shown = instanceUi.guide.markdown.replace(/<!--[\s\S]*?-->/gu, '');
@@ -1178,16 +1203,44 @@ describe('the Happy Hearts, Take the Fall and Tattle-Tale in plain words (card n
 
 describe('the cosmetics art files', () => {
   const dir = path.dirname(fileURLToPath(import.meta.url));
-  const files = (kind: 'gear' | 'trophies') => fs.readdirSync(path.join(dir, kind)).filter((f) => f.endsWith('.svg')).map((f) => [`${kind}/${f}`, fs.readFileSync(path.join(dir, kind, f), 'utf8')] as const);
+  /* Every .svg of an item's folder (gear/<key>/<view>.svg), or of the trophies folder, by its path under ui/. */
+  const files = (kind: 'gear' | 'trophies') => (kind === 'trophies'
+    ? fs.readdirSync(path.join(dir, kind)).filter((f) => f.endsWith('.svg')).map((f) => [`${kind}/${f}`, fs.readFileSync(path.join(dir, kind, f), 'utf8')] as const)
+    : fs.readdirSync(path.join(dir, kind), { withFileTypes: true }).filter((e) => e.isDirectory()).flatMap((e) => fs.readdirSync(path.join(dir, kind, e.name)).filter((f) => f.endsWith('.svg')).map((f) => [`${kind}/${e.name}/${f}`, fs.readFileSync(path.join(dir, kind, e.name, f), 'utf8')] as const)));
 
-  test('each gear piece\'s aspect is its viewBox height over width', () => {
-    for (const [key, ui] of Object.entries(gearUi)) {
-      const svg = fs.readFileSync(path.join(dir, 'gear', `${key}.svg`), 'utf8');
-      const box = /viewBox="\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/u.exec(svg);
-      expect(box, key).not.toBeNull();
-      expect(ui.aspect, key).toBeCloseTo(Number(box![2]) / Number(box![1]), 10);
+  test('gearOf throws at build time when views.json and the imported pictures disagree', () => {
+    const shape = { width: 10, height: 10, pivot: { x: 5, y: 5 } };
+    expect(gearOf({ default: 'front', views: { front: shape } }, { front: 'a.svg' }).views.front?.art).toBe('a.svg');
+    expect(() => gearOf({ default: 'front', views: { front: shape } }, {})).toThrow(/no picture/u);
+    expect(() => gearOf({ default: 'back', views: { front: shape } }, { front: 'a.svg' })).toThrow(/default/u);
+    expect(() => gearOf({ default: 'front', views: { front: shape } }, { front: 'a.svg', back: 'b.svg' })).toThrow(/back/u);
+  });
+
+  test('each view\'s views.json size is its picture\'s own size: a WebP\'s header, an SVG\'s viewBox', () => {
+    let webps = 0;
+    let svgs = 0;
+    for (const key of Object.keys(gearUi)) {
+      const shipped = JSON.parse(fs.readFileSync(path.join(dir, 'gear', key, 'views.json'), 'utf8')) as { views: Record<string, { width: number; height: number }> };
+      for (const [view, size] of Object.entries(shipped.views)) {
+        const webp = path.join(dir, 'gear', key, `${view}.webp`);
+        const svg = path.join(dir, 'gear', key, `${view}.svg`);
+        expect(fs.existsSync(webp) || fs.existsSync(svg), `${key}/${view} has no picture`).toBe(true);
+        if (fs.existsSync(webp)) {
+          const info = webpInfo(fs.readFileSync(webp));
+          expect('fault' in info ? info.fault : null, `${key}/${view}.webp`).toBeNull();
+          expect([size.width, size.height], `${key}/${view}.webp`).toEqual('fault' in info ? [] : [info.width, info.height]);
+          webps++;
+        } else {
+          const box = /viewBox="\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/u.exec(fs.readFileSync(svg, 'utf8'));
+          expect(box, `${key}/${view}`).not.toBeNull();
+          expect([size.width, size.height], `${key}/${view}`).toEqual([Number(box![1]), Number(box![2])]);
+          svgs++;
+        }
+      }
     }
-    expect(fs.readdirSync(path.join(dir, 'gear')).filter((f) => f.endsWith('.svg')).length).toBe(Object.keys(gearUi).length);
+    expect(webps, 'the ten caps ship five WebP views each').toBe(50);
+    expect(svgs, 'the four placeholders ship one SVG each').toBe(4);
+    expect(fs.readdirSync(path.join(dir, 'gear')).filter((f) => f.endsWith('.svg')), 'no flat file of the old layout is left').toEqual([]);
   });
 
   test('each art file is a bare SVG: no script, no link, no event attribute', () => {

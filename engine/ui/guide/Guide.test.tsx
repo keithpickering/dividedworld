@@ -187,6 +187,14 @@ describe('the Markdown', () => {
     expect(within(one).getByRole('cell', { name: '2' })).toBeInTheDocument();
   });
 
+  test('a backslash that ends a line is a hard break: two lines in one paragraph, with a <br> between them', () => {
+    const { container } = page('## One\n\nHave fun,\\\nGabe');
+    const paragraphs = sectionOf('One').querySelectorAll('p');
+    expect(paragraphs).toHaveLength(1);
+    expect(paragraphs[0]!.innerHTML).toBe('Have fun,<br>Gabe');
+    expect(container.querySelectorAll('br')).toHaveLength(1);
+  });
+
   test('raw HTML is shown as the text it is, and nothing in it runs or becomes markup', () => {
     const { container } = page('## One\n\n<script>window.hacked = true</script> and <b>bold?</b> and <img src=x onerror="window.hacked = true">');
     expect(within(sectionOf('One')).getByText(/<script>window\.hacked = true<\/script> and <b>bold\?<\/b> and <img src=x/u)).toBeInTheDocument();

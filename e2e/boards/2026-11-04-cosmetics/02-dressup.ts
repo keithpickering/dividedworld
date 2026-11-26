@@ -7,7 +7,8 @@
  *  - The page frame: the build's own page head (title, lead and the Character select across the page) stands above the three columns, where the board sets the dressing select and its note
  *    in a row of its own over them and the title in the third column; the select, the portrait stage and the wardrobe's tiles are therefore not held, and the build's third column is
  *    the class cards' carousel (the owner's addition on confirming the board) beside the chosen piece's panel, not the board's grid of tiles.
- *  - The Selected panel carries Worn now (a row of the layers) the board does not draw, and the intro sentence wraps to one more line in the build's wider panel, so what follows stands 113 to 137px lower.
+ *  - The Selected panel carries Worn now (a row of the layers) the board does not draw, and the intro sentence wraps to one more line in the build's wider panel, so what follows stands 113 to 137px lower (before the Facing row).
+ *  - The Facing row is new: the mustache ships five views in the story, so under the size and turn buttons the build draws a radio group of five picture tiles in one line, with a line naming the checked one, which the board does not; Take it off, On the square and Save the outfit therefore stand 139px lower than before it (113 to 129px became 252 to 268px).
  *  - The menu is the glass's, without a Wardrobe tab (the page is reached from My characters and from a Random Event's Wear it); only its height is held.
  *  - The glass's button measure and type (type: false, position only); the pieces and the portrait are the instance's and the story's placeholders.
  */
@@ -27,9 +28,9 @@ const manifest: BoardManifest = {
     at('left', 'button', 'Move left', { buildShift: { y: 126 } }),
     at('bigger', 'button', 'BIGGER', { buildShift: { y: 122 }, buildName: 'Bigger' }),
     at('forward', 'button', 'BRING FORWARD', { buildShift: { y: 137 }, buildName: 'Bring forward' }),
-    at('off', 'button', 'TAKE IT OFF', { buildShift: { y: 129 }, buildName: 'Take it off' }),
-    at('square', 'text', 'ON THE SQUARE', { buildShift: { y: 113 }, buildName: 'On the square' }),
-    at('save', 'button', 'SAVE THE OUTFIT', { buildShift: { y: 124 }, buildName: 'Save the outfit' }),
+    at('off', 'button', 'TAKE IT OFF', { buildShift: { y: 268 }, buildName: 'Take it off' }),
+    at('square', 'text', 'ON THE SQUARE', { buildShift: { y: 252 }, buildName: 'On the square' }),
+    at('save', 'button', 'SAVE THE OUTFIT', { buildShift: { y: 263 }, buildName: 'Save the outfit' }),
     at('title', 'heading', 'THE WARDROBE', { buildShift: { x: 126 }, buildName: 'The wardrobe', buildNth: 1 }),
   ],
 };

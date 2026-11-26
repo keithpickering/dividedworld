@@ -291,3 +291,63 @@
 .kb-glass .kb-wardrobe .kb-notice {
   padding: 8px 12px;
 }
+
+.kb-wardrobe-facing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.kb-wardrobe-facing-legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-wardrobe-facing-now {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--kb-glass-text);
+}
+
+.kb-wardrobe-face {
+  flex: 1 1 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px;
+  border: 1px solid var(--kb-glass-text-2);
+  background: var(--kb-glass-field);
+  cursor: pointer;
+}
+
+.kb-wardrobe-face[data-kb-chosen] {
+  border-color: var(--kb-glass-ready);
+  box-shadow: inset 0 0 0 2px var(--kb-glass-ready);
+}
+
+.kb-wardrobe-face:focus-within {
+  outline: 2px solid var(--kb-glass-neon-text);
+  outline-offset: 2px;
+}
+
+.kb-wardrobe-facing:disabled .kb-wardrobe-face {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.kb-wardrobe-face-art img {
+  display: block;
+  width: 36px;
+  height: 28px;
+  object-fit: contain;
+}
