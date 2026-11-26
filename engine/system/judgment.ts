@@ -250,6 +250,7 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   const landing = repairLandingLine(raw['line'], kind.key === 'setRule' ? 'ruleSet' : 'moveLanded');
   trims.push(...landing.trims.map((t) => ({ ...t, path: `move.${t.path}` })));
   const line = landing.line;
+  if (raw['line'] !== undefined && raw['line'] !== null && typeof raw['line'] !== 'string') trims.push({ path: 'move.line', predicate: 'isString', before: 1, after: 0 });
 
   // How long it runs: a lasting kind has none; any other is whole hours, from the fewest any move lasts to the most days a Mod's rule may.
   const hoursRead = readHours(raw['expires_in_hours'], kind.lasting, ctx.expiryLeastHours, ctx.ruleDaysMost * 24, trims);

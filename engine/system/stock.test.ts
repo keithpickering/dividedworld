@@ -38,3 +38,13 @@ test('repairLandingLine: cut at a sentence to 280 and recorded, foreign tokens s
   for (const bad of [5, null, undefined, {}]) assert.deepEqual(repairLandingLine(bad, 'moveLanded'), { line: null, trims: [] });
   assert.deepEqual(repairLandingLine('Fine.', 'moveLanded'), { line: 'Fine.', trims: [] });
 });
+
+test('repairLandingLine: a nested brace leaves no token the key is not given, every strip counted', () => {
+  const boss = repairLandingLine('{{boss}} rules.', 'moveLanded');
+  assert.equal(boss.line, 'boss rules.');
+  assert.deepEqual(boss.trims, [{ path: 'line', predicate: 'tokens(moveLanded)', before: 2, after: 0 }]);
+  // An allowed token inside stray braces is kept, the outer pair stripped and recorded.
+  const move = repairLandingLine('{{move}} lands.', 'moveLanded');
+  assert.equal(move.line, '{move} lands.');
+  assert.deepEqual(move.trims, [{ path: 'line', predicate: 'tokens(moveLanded)', before: 1, after: 0 }]);
+});

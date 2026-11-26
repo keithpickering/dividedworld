@@ -1973,7 +1973,9 @@ test('a move\'s landing line is repaired, never rejected: cut to 280 at a senten
   assert.ok(tokens.trims.some((t) => t.path === 'moves[0].line' && t.predicate === 'tokens(moveLanded)'), JSON.stringify(tokens.trims));
   assert.equal(run('   ').moves[0]!.line, null);
   assert.equal(run(undefined).moves[0]!.line, null);
-  assert.equal(run(7).moves[0]!.line, null);
+  const notText = run(7);
+  assert.equal(notText.moves[0]!.line, null);
+  assert.ok(notText.trims.some((t) => t.path === 'moves[0].line' && t.predicate === 'isString'), JSON.stringify(notText.trims));
   assert.equal(run('Fine.').moves[0]!.line, 'Fine.');
   assert.equal(run('Fine.').trims.some((t) => t.path.endsWith('.line')), false);
 });

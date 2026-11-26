@@ -65,7 +65,7 @@ export const LANDING_LINE_MOST = 280;
 
 /**
  * A landing line as the model wrote it, repaired and never rejected: whitespace collapsed, a `{token}` the landing key is not given
- * stripped of its braces (the word inside stays; recorded as `tokens(<key>)`), then cut at a sentence to `LANDING_LINE_MOST` (recorded).
+ * stripped of its braces (nested braces too) (the word inside stays; recorded as `tokens(<key>)`), then cut at a sentence to `LANDING_LINE_MOST` (recorded).
  * Blank, or not text, is none (null) and the move lands with the speaker's stock line. The trims' paths are `line`; the caller prefixes them.
  */
 export function repairLandingLine(raw: unknown, key: (typeof LANDING_KEYS)[number]): { readonly line: string | null; readonly trims: readonly Trim[] } {
@@ -74,13 +74,19 @@ export function repairLandingLine(raw: unknown, key: (typeof LANDING_KEYS)[numbe
   const trims: Trim[] = [];
   const given = STOCK_LINE_TOKENS[key];
   let stripped = 0;
-  text = text.replace(/\{([^{}]*)\}/g, (whole, token: string) => {
-    const [name, form, ...extra] = token.split('.');
-    const fine = form === undefined ? given.includes(token) : given.includes(name!) && (STAFF_TOKENS as readonly string[]).includes(name!) && !extra.length && (PRONOUN_FORMS as readonly string[]).includes(form);
-    if (fine) return whole;
-    stripped++;
-    return token;
-  });
+  // Repeat until stable, so a nested brace never survives as a token the key is not given: `{{boss}}` is `boss` (two strips), and an allowed token
+  // inside stray braces, `{{move}}`, keeps `{move}` with the outer pair stripped (one strip). Every strip is counted.
+  for (let before = ''; before !== text; ) {
+    before = text;
+    text = text.replace(/\{(\{[^{}]*\})\}/g, (_whole, inner: string) => { stripped++; return inner; });
+    text = text.replace(/\{([^{}]*)\}/g, (whole, token: string) => {
+      const [name, form, ...extra] = token.split('.');
+      const fine = form === undefined ? given.includes(token) : given.includes(name!) && (STAFF_TOKENS as readonly string[]).includes(name!) && !extra.length && (PRONOUN_FORMS as readonly string[]).includes(form);
+      if (fine) return whole;
+      stripped++;
+      return token;
+    });
+  }
   if (stripped) trims.push({ path: 'line', predicate: `tokens(${key})`, before: stripped, after: 0 });
   if (text.length > LANDING_LINE_MOST) {
     const cut = cutAtSentence(text, LANDING_LINE_MOST);

@@ -48,6 +48,13 @@ const good = { kind: 'setRule', params: { board: GAMES, predicate: 'bannedWord',
 
 /* ------------------------------------------------------------------------------------------------ repairModMove ---- */
 
+test('repairModMove: a landing line that is not text is none and recorded as isString; text, null and absent record nothing', () => {
+  const out = repairModMove({ ...good, line: 7 }, ctx);
+  assert.equal(out.move!.line, null);
+  assert.deepEqual(out.trims, [{ path: 'move.line', predicate: 'isString', before: 1, after: 0 }]);
+  for (const line of [undefined, null, 'Fine.']) assert.equal(repairModMove({ ...good, line }, ctx).trims.some((t) => t.path === 'move.line'), false);
+});
+
 test('no move is no move, and nothing is recorded', () => {
   for (const raw of [undefined, null]) assert.deepEqual(repairModMove(raw, ctx), { move: null, trims: [], dropped: null });
 });
