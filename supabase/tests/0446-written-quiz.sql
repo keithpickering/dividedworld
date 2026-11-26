@@ -264,7 +264,7 @@ begin
   select * into row from visit_quizzes where visit_act = v_on;
   bank := bank_quiz_for(v_on);
   if row.visit_act is null or row.source is distinct from 'bank' or row.question is distinct from bank ->> 'question' or row.choices is distinct from bank -> 'choices' or row.answer is distinct from bank ->> 'answer' then
-    raise exception 'the tick did not write the bank question at 15 minutes (switch on): % / %', to_jsonb(row), bank;
+    raise exception 'the tick did not write the bank question at 15 minutes (switch on): % / % / %', to_jsonb(row), bank, tick;
   end if;
   if (tick ->> 'quizzesBanked')::integer is distinct from 1 then raise exception 'the tick did not count the banked question: %', tick; end if;
   if exists (select 1 from visit_quizzes where visit_act in (v_off, v_young)) then raise exception 'the tick wrote a question for a visit that was not due'; end if;
