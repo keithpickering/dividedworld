@@ -56,7 +56,7 @@ test('a whole move passes, its board in lowercase and its parameter as the predi
   const out = repairModMove({ ...good, params: { ...good.params, board: GAMES.toUpperCase() } }, ctx);
   assert.deepEqual(out.dropped, null);
   assert.deepEqual(out.trims, []);
-  assert.deepEqual(out.move, good);
+  assert.deepEqual(out.move, { ...good, line: null });
   const count = repairModMove({ ...good, params: { board: GAMES, predicate: 'minLength', param: '12', band: 'moderate' } }, ctx);
   assert.deepEqual(count.move?.params, { board: GAMES, predicate: 'minLength', param: 12, band: 'moderate' }, 'a count given as digits is a number');
   const none = repairModMove({ ...good, params: { board: GAMES, predicate: 'noAllCaps', param: '', band: 'minor' } }, ctx);
@@ -95,7 +95,7 @@ const moving = { kind: 'moveThread', params: { thread: T1, board: MORE }, why: '
 test('a Mod\'s moveThread with both boards on its beat is kept with expiry 0', () => {
   const out = repairModMove(moving, moveCtx);
   assert.equal(out.dropped, null);
-  assert.deepEqual(out.move, { kind: 'moveThread', params: { thread: T1, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.' });
+  assert.deepEqual(out.move, { kind: 'moveThread', params: { thread: T1, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.', line: null });
   assert.deepEqual(out.trims, []);
 });
 
@@ -181,7 +181,7 @@ const conferral = { kind: 'conferGroup', params: { character: WHO, group: 'trial
 test('a Mod\'s conferGroup passes, with the demand set to the apology whatever the model wrote', () => {
   const out = repairModMove({ ...conferral, params: { ...conferral.params, character: WHO.toUpperCase(), board: GAMES.toUpperCase(), checkAt: null } }, groupCtx);
   assert.equal(out.dropped, null);
-  assert.deepEqual(out.move, { ...conferral, demand: { kind: 'apologyAccepted', params: {} } });
+  assert.deepEqual(out.move, { ...conferral, line: null, demand: { kind: 'apologyAccepted', params: {} } });
   assert.deepEqual(out.trims, [{ path: 'move.demand', predicate: 'setByCode(apologyAccepted)', before: 0, after: 1 }]);
   const wrote = repairModMove({ ...conferral, demand: { kind: 'postsOnBoard', params: { board: GAMES, posts: 9 } } }, groupCtx);
   assert.deepEqual(wrote.move?.demand, { kind: 'apologyAccepted', params: {} });
@@ -301,7 +301,7 @@ test('a line that is blank or missing is dropped and the move is kept: the move 
   for (const raw of [{ move: good }, { words: '  ', move: good }, { words: 7, move: good }]) {
     const out = repairFiling(raw, ctx);
     assert.equal(out.line, null);
-    assert.deepEqual(out.move, good);
+    assert.deepEqual(out.move, { ...good, line: null });
     assert.equal(out.dropped[0]?.path, 'words');
   }
   const none = repairFiling('no', ctx);
@@ -989,4 +989,33 @@ test('a judge never rules on a post the model did not see: no read, or a read wi
     }
   }
   assert.doesNotThrow(() => appealPrompt(appeal({ punishment: { kind: 'move', group: 'Trial', apology: false }, read: null })), 'an appeal of a move has no post to judge');
+});
+
+test('a Mod\'s landing line is repaired, never rejected: cut to 280 at a sentence, a foreign token stripped, blank none', () => {
+  const withLine = (line: unknown, over: Record<string, unknown> = {}) => repairModMove({ ...good, ...over, line }, ctx);
+  const long = withLine('One sentence. '.repeat(30));
+  assert.ok(long.move !== null && long.dropped === null);
+  assert.ok(long.move!.line!.length <= 280 && long.move!.line!.endsWith('.'));
+  assert.ok(long.trims.some((t) => t.path === 'move.line' && t.predicate === 'maxLength(280)' && t.before === 30 * 14 - 1), JSON.stringify(long.trims));
+  const tokens = withLine('{appellant} is on notice under {rule}.');
+  assert.equal(tokens.move!.line, 'appellant is on notice under {rule}.', 'a setRule lands under ruleSet, which is given {rule} and {board}: {rule} stays');
+  const foreign = withLine('{appellant} is on notice under {rule}.');
+  assert.ok(foreign.trims.some((t) => t.path === 'move.line' && t.predicate === 'tokens(ruleSet)'), JSON.stringify(foreign.trims));
+  const other = repairModMove({ kind: 'moveThread', params: { board: GAMES, thread: T1 }, expires_in_hours: 0, why: 'Off topic.', line: '{move} {appellant}' }, { ...ctx, threadBoards: new Map([[T1, OTHER]]), beat: [GAMES, OTHER] });
+  assert.ok(other.move !== null, JSON.stringify(other));
+  assert.equal(other.move!.line, '{move} appellant');
+  assert.ok(other.trims.some((t) => t.path === 'move.line' && t.predicate === 'tokens(moveLanded)'));
+  for (const blank of ['  ', '', undefined, null, 5]) {
+    const r = withLine(blank);
+    assert.ok(r.move !== null && r.move.line === null && r.dropped === null, String(blank));
+  }
+  assert.equal(withLine('Fine.').move!.line, 'Fine.');
+});
+
+test('the Mod move schema offers an optional line, and the prompt says what it is for', () => {
+  const f = filingPrompt(filing());
+  const move = (f.schema as any).properties.move;
+  assert.deepEqual(move.properties.line, { type: 'string' });
+  assert.ok(!move.required.includes('line'), 'optional: a blank never costs the move');
+  assert.ok(f.system.includes('the post your move lands with, in your voice; the screens say what it does plainly'), f.system);
 });

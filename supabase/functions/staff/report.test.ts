@@ -186,7 +186,7 @@ test('a report passes its thread to the prompt and its board to the repair: a Mo
   assert.equal((await go(d, m)).status, 200);
   assert.ok(m.chats[0]!.system!.includes(`this thread, ${THREAD}, to another board`), 'the prompt names the reported thread');
   assert.deepEqual((m.chats[0]!.schema as any).properties.move.properties.params.properties.thread, { type: 'string', enum: [THREAD] });
-  assert.deepEqual(d.state.moves.map((a) => a.move), [{ kind: 'moveThread', params: { thread: THREAD, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.' }]);
+  assert.deepEqual(d.state.moves.map((a) => a.move), [{ kind: 'moveThread', params: { thread: THREAD, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.', line: null }]);
   const other = fakeDbs({ standing });
   assert.equal((await go(other, fakeModels(() => mt('99999999-9999-4999-8999-999999999999')))).status, 200);
   assert.equal(other.state.moves.length, 0, 'a thread the call was not given is dropped');

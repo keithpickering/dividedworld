@@ -7,6 +7,8 @@
  */
 import { PRONOUN_FORMS } from '../rules/pronouns.ts';
 import type { SystemContent } from '../rules/types.ts';
+import { cutAtSentence } from './chatter.ts';
+import type { Trim } from './validate.ts';
 
 export { PRONOUN_FORMS };
 
@@ -56,4 +58,34 @@ export const LANDING_KEYS = ['moveLanded', 'ruleSet'] as const satisfies readonl
 /** The lines a speaker says at a standing order: the roster persona's own list for the key, else the instance's. */
 export function stockLinesOf(system: Pick<SystemContent, 'roster' | 'stockLines'>, speaker: string, key: StockLineKey): readonly string[] {
   return system.roster.find((p) => p.key === speaker)?.stockLines[key] ?? system.stockLines[key];
+}
+
+/** The most characters of a landing line a move carries (the database holds the same in `queued_moves.line`). */
+export const LANDING_LINE_MOST = 280;
+
+/**
+ * A landing line as the model wrote it, repaired and never rejected: whitespace collapsed, a `{token}` the landing key is not given
+ * stripped of its braces (the word inside stays; recorded as `tokens(<key>)`), then cut at a sentence to `LANDING_LINE_MOST` (recorded).
+ * Blank, or not text, is none (null) and the move lands with the speaker's stock line. The trims' paths are `line`; the caller prefixes them.
+ */
+export function repairLandingLine(raw: unknown, key: (typeof LANDING_KEYS)[number]): { readonly line: string | null; readonly trims: readonly Trim[] } {
+  let text = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
+  if (text === '') return { line: null, trims: [] };
+  const trims: Trim[] = [];
+  const given = STOCK_LINE_TOKENS[key];
+  let stripped = 0;
+  text = text.replace(/\{([^{}]*)\}/g, (whole, token: string) => {
+    const [name, form, ...extra] = token.split('.');
+    const fine = form === undefined ? given.includes(token) : given.includes(name!) && (STAFF_TOKENS as readonly string[]).includes(name!) && !extra.length && (PRONOUN_FORMS as readonly string[]).includes(form);
+    if (fine) return whole;
+    stripped++;
+    return token;
+  });
+  if (stripped) trims.push({ path: 'line', predicate: `tokens(${key})`, before: stripped, after: 0 });
+  if (text.length > LANDING_LINE_MOST) {
+    const cut = cutAtSentence(text, LANDING_LINE_MOST);
+    trims.push({ path: 'line', predicate: `maxLength(${LANDING_LINE_MOST})`, before: text.length, after: cut.length });
+    text = cut;
+  }
+  return { line: text, trims };
 }

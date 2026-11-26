@@ -10,7 +10,7 @@ import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
 import { AnswerRejected, LedgerWriteFailed, SchemaRefused } from '../_shared/models/index.ts';
 import { TransportFailure } from '../_shared/models/transport.ts';
-import { MEETING_PARTS, movesAsk, partRule, partSchema, type MeetingPartKey } from '../../../engine/system/meeting.ts';
+import { MEETING_PARTS, movesAsk, partAsk, partRule, partSchema, type MeetingPartKey } from '../../../engine/system/meeting.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
@@ -22,6 +22,7 @@ const SLOT = '2026-11-01T09:23:00.000Z';
 const BOSS = dividedWorld.system.firstBoss;
 const OTHER_BOSS = dividedWorld.system.roster.find((b) => b.key !== BOSS && !dividedWorld.system.firstStaff.includes(b.key))!.key;
 const BOARD = '11111111-1111-4111-8111-111111111111';
+const LINE_ASK = 'A move\'s line is the post your move lands with, in your voice; the screens say what it does plainly.';
 const BOARD2 = '22222222-2222-4222-8222-222222222222';
 const HOT = '33333333-3333-4333-8333-333333333333';
 const ANN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -435,16 +436,18 @@ test('a successor named before the meltdown\'s last week is dropped and recorded
 test('the first message ends with the ask for what this meeting offers, and is the same in all four calls', async () => {
   const act = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
   const due = [{ act, kind: 'renameBoard', params: { board: BOARD, name: 'Pie Place', premise: 'Pie.' }, landedAt: '2026-10-20T09:00:00.000Z', expiresAt: null, by: 'The Old Boss', boardName: 'Mario Fan Games' }];
-  for (const [world, text] of [
-    [{ inheritanceDue: due }, 'Hold your meeting. This first turn is your moves: answer moves and inherited.'],
-    [{ endsIn: 3 * DAY }, 'Hold your meeting. This first turn is your moves: answer moves and successor.'],
-    [{ endsIn: 3 * DAY, inheritanceDue: due }, 'Hold your meeting. This first turn is your moves: answer moves, inherited and successor.'],
+  for (const [world, text, bundle] of [
+    [{ inheritanceDue: due }, 'Hold your meeting. This first turn is your moves: answer moves and inherited. ' + LINE_ASK, false],
+    [{ endsIn: 3 * DAY }, 'Hold your meeting. This first turn is your moves: answer moves. ' + LINE_ASK, true],
+    [{ endsIn: 3 * DAY, inheritanceDue: due }, 'Hold your meeting. This first turn is your moves: answer moves and inherited. ' + LINE_ASK, true],
   ] as const) {
     const m = fakeModels(answer([]));
     await run(fakeDb(world).db, m.models, quiet, SLOT, clock, noFeeds);
     assert.equal(m.chats.length, 4);
     assert.ok(m.chats[0]!.messages[0]!.content.endsWith(`\n${text}`), text);
     for (const c of m.chats) assert.deepEqual(c.messages[0], m.chats[0]!.messages[0], 'the first message is the same in every call');
+    assert.equal(m.chats[1]!.messages.at(-1)!.content, partAsk('bundle', { successor: bundle }), 'the bundle turn asks for the successor only where one may be named');
+    assert.equal(m.chats[1]!.messages.at(-1)!.content.includes('successor'), bundle);
   }
 });
 
@@ -1093,12 +1096,12 @@ test('a meeting is four chat calls in order, each with its part\'s schema, rule 
     assert.deepEqual(c.messages[0], m.chats[0]!.messages[0]);
   }
   // No moves were inherited and no successor may be named, so the ask names only moves.
-  assert.ok(m.chats[0]!.messages[0]!.content.endsWith(movesAsk({ inherited: false, successor: false })));
-  assert.ok(m.chats[0]!.messages[0]!.content.endsWith('Hold your meeting. This first turn is your moves: answer moves.'));
+  assert.ok(m.chats[0]!.messages[0]!.content.endsWith(movesAsk({ inherited: false })));
+  assert.ok(m.chats[0]!.messages[0]!.content.endsWith(`Hold your meeting. This first turn is your moves: answer moves. ${LINE_ASK}`));
   assert.equal(m.chats[0]!.messages.length, 1);
   // Each call is shown every earlier answer, then the ask for its own part.
   m.chats.forEach((c, i) => {
-    const earlier = m.chats.slice(0, i).flatMap((before, j) => [{ role: 'assistant', content: JSON.stringify(perPart(whole)(before)) }, { role: 'user', content: MEETING_PARTS[j + 1]!.ask }]);
+    const earlier = m.chats.slice(0, i).flatMap((before, j) => [{ role: 'assistant', content: JSON.stringify(perPart(whole)(before)) }, { role: 'user', content: partAsk(MEETING_PARTS[j + 1]!.key, { successor: false }) }]);
     assert.deepEqual(c.messages.slice(1), earlier, MEETING_PARTS[i]!.key);
   });
   const payload = d.state.applied[0]!.payload;
@@ -1384,4 +1387,15 @@ test('the digest is rendered at the meeting\'s slot, not the clock nor the windo
   const sent = m.chats[0]!.messages[0]!.content;
   assert.match(sent, /Open: ends in 2 hours\./, 'the poll\'s time is told from the slot');
   assert.ok(sent.includes(`[${card.name} was played, an hour ago]`), `the card is named from the instance's list: ${sent.split('Cards on the board')[1]?.slice(0, 200)}`);
+});
+
+test('a move\'s landing line reaches apply_meeting\'s move json, trimmed and recorded; none is sent as null', async () => {
+  const d = fakeDb();
+  const m = fakeModels(answer([rename(0, { line: '{appellant} hears it. '.repeat(20) }), rename(1)]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  const [a, b] = d.state.applied[0]!.payload.moves;
+  assert.ok(a.line.length <= 280 && a.line.startsWith('appellant hears it.'), a.line);
+  assert.equal(b.line, null);
+  assert.ok(out.trims.some((t: any) => t.path === 'moves[0].line' && t.predicate === 'maxLength(280)'), JSON.stringify(out.trims));
+  assert.ok(out.trims.some((t: any) => t.path === 'moves[0].line' && t.predicate === 'tokens(moveLanded)'), JSON.stringify(out.trims));
 });

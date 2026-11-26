@@ -36,6 +36,7 @@ import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
 import { careerText, type Career } from './career.ts';
 // chatter.ts imports this module's repairs and kind helpers back: a cycle, and safe, because each side uses the other only inside functions, never while its module loads.
+import { repairLandingLine } from './stock.ts';
 import { cutAtSentence, fitThreadPrompt, memoryLines, type PromptFit } from './chatter.ts';
 import { groupMoveBar, WHY_MOST, type ConferredGroup } from './meeting.ts';
 import { noteMost, type Memory } from './memory.ts';
@@ -53,6 +54,8 @@ export interface ModMove {
   readonly params: Record<string, unknown>;
   readonly expires_in_hours: number;
   readonly why: string;
+  /** The post the move lands with, written ahead in the Mod's voice (repaired: cut, tokens stripped); null when none, and the speaker's stock line stands in. Absent on a Boss's request move, which lands with the stock line. */
+  readonly line?: string | null;
   /** A group punishment's demand, set by the code to the apology (never the model's); absent on a rule. */
   readonly demand?: { readonly kind: 'apologyAccepted'; readonly params: Record<string, never> };
 }
@@ -243,13 +246,18 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   if ('path' in whyRead) return no(whyRead.path, whyRead.predicate, trims);
   const why = whyRead.why;
 
+  // The line it lands with: repaired, never a reason to lose the move.
+  const landing = repairLandingLine(raw['line'], kind.key === 'setRule' ? 'ruleSet' : 'moveLanded');
+  trims.push(...landing.trims.map((t) => ({ ...t, path: `move.${t.path}` })));
+  const line = landing.line;
+
   // How long it runs: a lasting kind has none; any other is whole hours, from the fewest any move lasts to the most days a Mod's rule may.
   const hoursRead = readHours(raw['expires_in_hours'], kind.lasting, ctx.expiryLeastHours, ctx.ruleDaysMost * 24, trims);
   if (typeof hoursRead !== 'number') return no(hoursRead.path, hoursRead.predicate, trims);
   const hours = hoursRead;
-  if (kind.lasting) return { move: { kind: kind.key, params: { ...given, ...(thread === null ? {} : { thread }), board }, expires_in_hours: 0, why }, trims, dropped: null };
+  if (kind.lasting) return { move: { kind: kind.key, params: { ...given, ...(thread === null ? {} : { thread }), board }, expires_in_hours: 0, why, line }, trims, dropped: null };
 
-  if (!conferring) return { move: { kind: kind.key, params: { ...given, board }, expires_in_hours: hours, why }, trims, dropped: null };
+  if (!conferring) return { move: { kind: kind.key, params: { ...given, board }, expires_in_hours: hours, why, line }, trims, dropped: null };
 
   // The character is one no group move may name now. A punishment carries no check (the guard refuses the key, even null), and the code sets its demand to the apology.
   const who = String(given['character']).toLowerCase();
@@ -263,7 +271,7 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   }
   const wrote = isObject(raw['demand']) ? raw['demand']['kind'] : undefined;
   if (wrote !== 'apologyAccepted') trims.push({ path: 'move.demand', predicate: 'setByCode(apologyAccepted)', before: 0, after: 1 });
-  return { move: { kind: kind.key, params: params2, expires_in_hours: hours, why, demand: { kind: 'apologyAccepted', params: {} } }, trims, dropped: null };
+  return { move: { kind: kind.key, params: params2, expires_in_hours: hours, why, line, demand: { kind: 'apologyAccepted', params: {} } }, trims, dropped: null };
 }
 
 /** What a Boss's request fulfill is held to: the numbers the database holds again in `apply_boss_move`. */
@@ -470,7 +478,7 @@ export function modPrompt(i: ModPromptInput): string {
       ...(i.thread !== undefined
         ? [`A moveThread move takes this thread, ${i.thread}, to another board. Its params: thread (${i.thread}) and board (the board it goes to, one of your beat above). The thread must be on a board of your beat now. It has no expiry: set expires_in_hours to 0. The thread stays where you put it until the move is reversed or another move takes it elsewhere.`]
         : []),
-      `${i.thread !== undefined ? 'For any other kind, its' : 'Its'} expires_in_hours is from ${i.expiryLeastHours} to ${days * 24} hours: a rule you set lasts at most ${days} days. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it. A move that does not hold is dropped, not corrected.`,
+      `${i.thread !== undefined ? 'For any other kind, its' : 'Its'} expires_in_hours is from ${i.expiryLeastHours} to ${days * 24} hours: a rule you set lasts at most ${days} days. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it. A move that does not hold is dropped, not corrected. Its line is the post your move lands with, in your voice; the screens say what it does plainly.`,
     ].join('\n')
     : 'You have no allowance left from the Boss, so you make no move this time: do not answer with a move.';
   return [
@@ -532,6 +540,8 @@ const MOVE_SCHEMA = (i: Pick<ModPromptInput, 'beat' | 'conferred' | 'thread'>): 
     },
     expires_in_hours: { type: 'number' },
     why: { type: 'string' },
+    // Optional: blank is none, and the move lands with the speaker's stock line.
+    line: { type: 'string' },
   },
   required: ['kind', 'params', 'expires_in_hours', 'why'],
   additionalProperties: false,

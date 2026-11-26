@@ -38,6 +38,7 @@ import type { Memory } from '../../../engine/system/memory.ts';
 import {
   MEETING_PARTS,
   movesAsk,
+  partAsk,
   REFERENCE_MOST,
   SUCCESSOR_WINDOW_MS,
   farewellFactsText,
@@ -363,14 +364,14 @@ export async function runMeeting(
       }, heldBack),
       '',
       // The first part's ask closes the message, and names only what this meeting offers. Both facts are known before the first call and fixed for the meeting, so the message is the same in every call.
-      movesAsk({ inherited: due.length > 0, successor: successorAllowed }),
+      movesAsk({ inherited: due.length > 0 }),
     ].join('\n');
 
     // One call for each part, in order, each shown the earlier answers as prior turns; a part that fails is recorded and the next still runs, shown that it was not kept.
     const messages: { role: 'user' | 'assistant'; content: string }[] = [{ role: 'user', content: message }];
     const merged: Record<string, unknown> = {};
     for (const [i, p] of MEETING_PARTS.entries()) {
-      if (i > 0) messages.push({ role: 'user', content: p.ask });
+      if (i > 0) messages.push({ role: 'user', content: partAsk(p.key, { successor: successorAllowed }) });
       let shown: string;
       try {
         const answered = await models.chat({
@@ -493,6 +494,8 @@ export async function runMeeting(
           go_live_at: new Date(m.goLiveAt).toISOString(),
           expires_in_hours: m.expiresInHours,
           why: m.why,
+          // The post the move lands with (null: the speaker's stock line stands in; the SQL write takes either).
+          line: m.line,
         })),
         // The bundles: a beat's (authored: named by its beat, at no cost, played with the bundle) and the Boss's own (at one move a part). Parts are in dependency order; a role names an earlier part.
         bundles: repaired.bundles.map((b) => ({

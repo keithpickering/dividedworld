@@ -654,7 +654,7 @@ const rule = (r: string, extra: Record<string, unknown> = {}) => ({ reply: R1, r
 test('a Mod fulfills with a thread move: kept, expiry 0, the reply named', () => {
   const r = repairRuling(rule('fulfill', { move: moveThread }), modRuling());
   assert.equal(r.dropped, null);
-  assert.deepEqual(r.request, { reply: R1, ruling: 'fulfill', move: moveThread });
+  assert.deepEqual(r.request, { reply: R1, ruling: 'fulfill', move: { ...moveThread, line: null } });
   assert.deepEqual(r.trims, []);
 });
 
@@ -689,7 +689,7 @@ test('a Mod fulfills with conferGroup under the group context: kept; without the
   const conferral = { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: B1 }, expires_in_hours: 48, why: 'Needs a cooling off.' };
   const kept = repairRuling(rule('fulfill', { move: conferral }), modRuling({ groups }));
   assert.equal(kept.dropped, null);
-  assert.deepEqual(kept.request, { reply: R1, ruling: 'fulfill', move: { ...conferral, demand: { kind: 'apologyAccepted', params: {} } } });
+  assert.deepEqual(kept.request, { reply: R1, ruling: 'fulfill', move: { ...conferral, line: null, demand: { kind: 'apologyAccepted', params: {} } } });
   const bare = repairRuling(rule('fulfill', { move: conferral }), modRuling());
   assert.deepEqual(bare.request, { reply: R1, ruling: 'confer' });
   assert.ok(bare.dropped !== null);
@@ -808,7 +808,7 @@ test('a Mod ruling is held by repairModMove: the same move, the same drop', () =
 
 test('repairChatter keeps a repaired request beside the words', () => {
   const r = ok({ words: 'Done.', request: rule('fulfill', { move: moveThread }) }, { ruling: modRuling() });
-  assert.deepEqual(r.answer.request, { reply: R1, ruling: 'fulfill', move: moveThread });
+  assert.deepEqual(r.answer.request, { reply: R1, ruling: 'fulfill', move: { ...moveThread, line: null } });
 });
 
 test('a request block on a turn that was not offered one is dropped, notAsked, and the words stand', () => {
