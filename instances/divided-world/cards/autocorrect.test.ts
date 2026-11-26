@@ -11,6 +11,8 @@ import { on, seenOf } from './test-kit.ts';
 import { instance } from '../index.ts';
 import { coveredBody } from '../../../engine/system/cover.ts';
 import { stripsOf } from './autocorrect/tape.ts';
+import { parse } from '../../../engine/bbcode/parse.ts';
+import { visibleWalk } from '../../../engine/bbcode/visible.ts';
 
 /* ---- Autocorrect (docs/plans/2026-11-03-autocorrect-plan.md, Task 5) ---- */
 const config = (phrase: unknown, replacement: unknown = 'Luigi') => autocorrect.validateConfig({ phrase, replacement });
@@ -238,6 +240,7 @@ test('Autocorrect says what is taped over what, and how much of the tape has bee
   assert.doesNotMatch(seenOf('autocorrect', { config, state: { peeled: [0] } }), /reads as the tape shows it/, 'a peeled strip is no longer the board\'s tape');
   assert.match(seenOf('autocorrect', { config, by: null }), /^Someone taped over every “Mario Kart”/);
   assert.match(seenOf('autocorrect', { config: {} }), /^Wario taped over the words it names in this post/, 'a play whose words are missing still reads');
+  assert.doesNotMatch(seenOf('autocorrect', { config: {} }), /reads as the tape shows it/, 'a play that covers nothing never says the post reads as tape');
   assert.doesNotMatch(seenOf('autocorrect', { config, state: { peeled: [] } }), /peeled/, 'nothing peeled says nothing');
   assert.match(seenOf('autocorrect', { config, state: { peeled: [0] } }), /2 days ago\. Some of the tape has been peeled off/);
   assert.match(seenOf('autocorrect', { config, state: { peeled: [], stuck: { 1: [[0, 0.5, 2]] } } }), /half peeled/);
@@ -254,6 +257,10 @@ test('Autocorrect covers the stretches the board lays strips on, in the same ord
     const strips = stripsOf(text, [{ id: 'a', phrase, replacement }]).strips.map((s) => ({ from: s.from, to: s.to, words: s.replacement }));
     assert.deepEqual(covers(text), strips, text);
   }
+  // Across formatting the strips lie over the visible text, which is what `covers` is handed.
+  const shown = visibleWalk(parse('the warp [b]pipe[/b] and [i]WARP[/i] PIPE')).text;
+  assert.deepEqual(covers(shown), stripsOf(shown, [{ id: 'a', phrase, replacement }]).strips.map((s) => ({ from: s.from, to: s.to, words: s.replacement })), shown);
+  assert.equal(covers(shown)?.length, 2);
   const across = 'the warp [b]pipe[/b] here';
   assert.equal(coveredBody(across, [played({ phrase, replacement }, null)], (_c, p) => autocorrect.covers!(p)), 'the haunted toilet[b][/b] here', 'across formatting: the words go over the stretch, the tags stay');
   assert.ok((covers('warp pipe warp pipe')?.length ?? 0) === 2);

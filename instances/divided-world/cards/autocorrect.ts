@@ -44,6 +44,10 @@ const holdsPeel = (state: unknown): boolean => {
   return (Array.isArray(peeled) && peeled.length > 0) || (typeof stuck === 'object' && stuck !== null && Object.keys(stuck).length > 0) || field(state, 'clean') === true;
 };
 
+/** Whether the play lays its strips in a staff read: its phrase and replacement are there and no peel is saved (`covers`, and the line that says so). */
+const tapeShown = (config: unknown, state: unknown): boolean =>
+  typeof field(config, 'phrase') === 'string' && typeof field(config, 'replacement') === 'string' && !holdsPeel(state);
+
 export const REPLACEMENT = { most: 100 } as const;
 /**
  * The most occurrences a saved peel can name: a post at the instance's longest (20,000 characters) holds at most 4,000 of the
@@ -80,12 +84,12 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     const peeled = field(p.state, 'peeled'), stuck = field(p.state, 'stuck');
     const loose = Array.isArray(peeled) ? peeled.length : 0, half = typeof stuck === 'object' && stuck !== null ? Object.keys(stuck).length : 0;
     const rest = field(p.state, 'clean') === true ? ' Every strip has been peeled away.' : loose > 0 ? ' Some of the tape has been peeled off, leaving the words under it bare.' : half > 0 ? ' A strip has been half peeled, and hangs by a corner.'
-      : holdsPeel(p.state) ? '' : ` The post above reads as the tape shows it; the marker words are ${typeof p.by === 'string' && p.by.trim() !== '' ? `${p.by}'s` : "not the post's own"}.`;
+      : !tapeShown(p.config, p.state) ? '' : ` The post above reads as the tape shows it; the marker words are ${typeof p.by === 'string' && p.by.trim() !== '' ? `${p.by}'s` : "not the post's own"}.`;
     return `${who(p)} taped over ${tape}, ${p.ago}.${rest}`;
   },
   covers: (p) => {
-    const phrase = field(p.config, 'phrase'), replacement = field(p.config, 'replacement');
-    if (typeof phrase !== 'string' || typeof replacement !== 'string' || holdsPeel(p.state)) return null;
+    if (!tapeShown(p.config, p.state)) return null;
+    const phrase = field(p.config, 'phrase') as string, replacement = field(p.config, 'replacement') as string;
     return occurrences(p.text, phrase).map(({ from, to }): Cover => ({ from, to, words: replacement }));
   },
   playPrice: (settings, target, config) => {
