@@ -25,7 +25,12 @@ export type Owed =
   | { readonly key: 'requestLapsed'; readonly facts: LapseFacts }
   | { readonly key: 'bossArrival'; readonly facts: ArrivalFacts };
 
-const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
+/**
+ * A player's words as one line that cannot leave its frame: whitespace collapsed (a newline cannot add a line), and a quote mark or a bracket becomes
+ * an apostrophe-style quote or a parenthesis, so it cannot close the quote in the message or the `[Notice: ...]` in the completion (the house's `unquote`, as the digest does,
+ * with the notice's brackets treated the same way).
+ */
+const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim().replace(/["\u201c\u201d]/g, "'").replace(/\[/g, '(').replace(/\]/g, ')');
 
 /** What happened, in plain words; nothing here names an account. */
 function happened(o: Owed): string {
@@ -53,7 +58,7 @@ export function owedLinePrompt(system: Pick<SystemContent, 'offices'>, persona: 
 
 /** The old voice's document: a board page whose last line is the facts and whose open line is the speaker's own; it stops at the end of the line. */
 export function owedLineCompletion(i: { readonly name: string; readonly owed: Owed }): { readonly prompt: string; readonly stop: readonly string[] } {
-  const prompt = ['Welcome to the Message Boards - Announcements', `[Notice: ${oneLine(happened(i.owed))}]`, `${oneLine(i.name).slice(0, 60)}:`].join('\n');
+  const prompt = ['Welcome to the Message Boards - Announcements', `[Notice: ${happened(i.owed).replace(/\s+/g, ' ').trim()}]`, `${oneLine(i.name).slice(0, 60)}:`].join('\n');
   return { prompt, stop: ['\n'] };
 }
 
