@@ -223,8 +223,8 @@ red('the shard flag is only in a shell comment', shards((d) => { e2eStep(d).run 
 red('the shard flag is given twice', shards((d) => { e2eStep(d).run = `${E2E_RUN} --shard=1/1`; }), /R9.*command/);
 red('the command is the old count cut, --shard=', shards((d) => { e2eStep(d).run = 'npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}'; }), /R9.*command/);
 red('the cost-shard total is a literal 7', shards((d) => { e2eStep(d).run = 'npm run test:e2e -- --cost-shard=${{ matrix.shard }}/7'; }), /R9.*command/);
-red('the cost-shard total has a suffix', shards((d) => { e2eStep(d).run = `${E2E_RUN}0`; }), /R9.*command/);
-red('the cost-shard flag is only in a shell comment', shards((d) => { e2eStep(d).run = `npm run test:e2e # ${E2E_RUN}`; }), /R9.*command/);
+red('the cost-shard total has a second total after it', shards((d) => { e2eStep(d).run = `${E2E_RUN}/7`; }), /R9.*command/);
+red('the cost-shard flag is only in a comment after the old count cut', shards((d) => { e2eStep(d).run = `npm run test:e2e -- --shard=\${{ matrix.shard }}/\${{ strategy.job-total }} # --cost-shard=\${{ matrix.shard }}/\${{ strategy.job-total }}`; }), /R9.*command/);
 red('the shard list is empty', shards((d) => { e2eJob(d).strategy.matrix.shard = []; }), /R9.*shard list/);
 red('the shard list is one number, not a list', shards((d) => { e2eJob(d).strategy.matrix.shard = 3; }), /R9.*shard list/);
 red('the job has no matrix', shards((d) => { delete e2eJob(d).strategy.matrix; }), /R9.*only key.*no matrix/);
