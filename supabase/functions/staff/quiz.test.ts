@@ -303,6 +303,8 @@ test('an old-voice quiz Mod asks its question on chat and writes its concession 
   assert.equal(m.completes.length, 1);
   assert.deepEqual([m.completes[0]!.duty, m.completes[0]!.staff], ['concession', MON]);
   assert.match(m.completes[0]!.prompt, /Odyssey\. Odyssey\./);
+  assert.match(m.completes[0]!.prompt, /answered/);
+  assert.doesNotMatch(m.completes[0]!.prompt, /distract/);
   assert.deepEqual(concessionRows(d), [['model', 'Old fine, {who}.', null]], 'the chat answer\'s own concession is not used');
   assert.equal(d.records[0]!.record.calls, 2);
   assert.equal(out.quizzes[0]!.calls, 2);
@@ -312,4 +314,13 @@ test('an old-voice quiz Mod asks its question on chat and writes its concession 
   assert.equal(n.completes.length, 0);
   assert.equal(n.chats.length, 1, 'the question is still asked');
   assert.match(String(concessionRows(spent)[0]![2]), /concessionsPerDay is spent/);
+});
+
+test('an old-voice quiz visit left pending makes no concession call, on this run or the next; a chat Mod\'s concession is written again, harmlessly', async () => {
+  const d = fakeDb({ bank: false, concessionsToday: 0 });
+  const m = fakeModels(() => ({ question: 'Which?', choices: ['A', 'B'], answer: 'C' }));
+  for (let n = 0; n < 2; n++) await run(d, m, oldVoiceWorld());
+  assert.equal(d.count('write_visit_quiz'), 0);
+  assert.equal(m.completes.length, 0);
+  assert.equal(d.count('write_visit_concession'), 0, 'nothing is written for the old voice until its question is');
 });

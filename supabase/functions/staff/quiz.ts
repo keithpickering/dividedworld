@@ -105,6 +105,7 @@ export async function runQuizzes(db: Db, models: Models, instance: Instance, slo
     let calls = 0;
     let why: string | undefined;
     let made: { question: string; choices: readonly string[]; answer: string } | null = null;
+    let asked: ReturnType<typeof concessionInput> | null = null;
     let concession: { source: 'model'; body: string } | { source: 'none'; why: string } | null = null;
 
     if (!settings.systemEnabled) why = 'the System is off';
@@ -124,7 +125,8 @@ export async function runQuizzes(db: Db, models: Models, instance: Instance, slo
       if (!heard) { /* the bank row, with the read's failure on the record */ }
       else if (!post) why = 'the post inspected cannot be read';
       else {
-        const input = concessionInput(persona, v, heard, post);
+        asked = concessionInput(persona, v, heard, post);
+        const input = asked;
         const brief = persona.weakness.kind === 'quiz' ? persona.weakness.quizBrief ?? null : null;
         const frame = quizPrompt({
           persona, brief, board: { name: v.board_name }, title: heard.title,
@@ -150,15 +152,6 @@ export async function runQuizzes(db: Db, models: Models, instance: Instance, slo
           if (stopsTheRun(e)) throw e;
           why = (e instanceof AnswerRejected ? 'the answer was rejected: ' : 'the call failed: ') + said(e);
         }
-        if (persona.voice === 'oldVoice') {
-          const budget = await concessionsLeft();
-          if (budget.spent) concession = { source: 'none', why: 'the day\'s concessionsPerDay is spent' };
-          else {
-            budget.take(); calls++;
-            const c = await callConcession(models, persona, input);
-            if (c.ok) { concession = { source: 'model', body: c.body }; trims.push(...c.trims); } else concession = { source: 'none', why: c.why };
-          }
-        }
       }
     }
 
@@ -167,14 +160,25 @@ export async function runQuizzes(db: Db, models: Models, instance: Instance, slo
       const bank = await db.rpc<Bank | null>('bank_quiz_for', { visit: v.visit_act });
       if (!bank) {
         const note = `${why ?? 'no model question'}; the persona has no bank question for this visit`;
-        const left = await writeConcession(v, concession ?? { source: 'none', why: why ?? 'no model concession' });
-        await record(v, { source: null, why: note, trims, calls, concession: left });
-        return { visit: v.visit_act, staff: v.staff, status: 'left', why: note, trims, calls, concession: left };
+        // An old-voice Mod's concession waits for its question: a `none` row now would stand in the way of the call it is owed.
+        const left = persona?.voice === 'oldVoice' ? undefined : await writeConcession(v, concession ?? { source: 'none', why: why ?? 'no model concession' });
+        await record(v, { source: null, why: note, trims, calls, ...(left ? { concession: left } : {}) });
+        return { visit: v.visit_act, staff: v.staff, status: 'left', why: note, trims, calls, ...(left ? { concession: left } : {}) };
       }
       made = bank;
       source = 'bank';
     }
     const row = await db.rpc<Written>('write_visit_quiz', { visit: v.visit_act, source, question: made.question, choices: made.choices, answer: made.answer });
+    // The old voice's concession is its own call, made once its question stands: a visit left pending is retried, and must not pay for it each time.
+    if (persona?.voice === 'oldVoice' && asked && row.written) {
+      const budget = await concessionsLeft();
+      if (budget.spent) concession = { source: 'none', why: 'the day\'s concessionsPerDay is spent' };
+      else {
+        budget.take(); calls++;
+        const c = await callConcession(models, persona, asked);
+        if (c.ok) { concession = { source: 'model', body: c.body }; trims.push(...c.trims); } else concession = { source: 'none', why: c.why };
+      }
+    }
     // The concession beside it: the model's where the answer carried one, else none with the reason (a bank question's included).
     const written = await writeConcession(v, concession ?? { source: 'none', why: why ?? 'no model concession' });
     // A row that stood first is the standing one: the record says whose it is.

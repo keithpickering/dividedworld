@@ -168,6 +168,13 @@ test('the concession prompt carries the post as given, its author, the title, th
   assert.ok(/card|distract/i.test(d) && !/paid|bribe/i.test(d), 'a distracted Mod is told nothing of a bribe');
 });
 
+test('an answered Mod is told it was talked down by a right answer: nothing of a bribe or a card, in the chat prompt and the old voice\'s document', () => {
+  const a = concessionPrompt(cinput({ how: 'answered' })).message;
+  assert.ok(/answer/i.test(a) && !/paid|bribe|card|distract/i.test(a), a);
+  const c = concessionCompletion({ name: 'Mod One', board: 'Games', title: null, author: 'Bob', body: 'x', charges: [], how: 'answered' }).prompt;
+  assert.ok(/answered/.test(c) && !/paid|distract/.test(c), c);
+});
+
 test('the concession prompt never carries the quiz brief, even if one is handed in', () => {
   const p = concessionPrompt({ ...cinput(), brief: 'SECRET BRIEF TEXT' } as unknown as ConcessionInput);
   assert.ok(!p.message.includes('SECRET BRIEF TEXT') && !p.message.includes('What you care about'), p.message);

@@ -69,8 +69,8 @@ const quoted = (body: string): string => {
   return safe.length <= QUIZ_BODY_MOST ? safe : `${safe.slice(0, QUIZ_BODY_MOST)}\n[the rest of the post is left out for space]`;
 };
 
-/** How a Mod is talked down: a bribe paid, or a card that distracted it. (A quiz is answered right; its call is `quizPrompt`'s.) */
-export type TalkedDownBy = 'paid' | 'distracted';
+/** How a Mod is talked down: a bribe paid, a card that distracted it, or a quiz answered right. (The quiz call's own concession, made before anyone knows, is `quizPrompt`'s; `answered` is for the old voice's separate call.) */
+export type TalkedDownBy = 'paid' | 'distracted' | 'answered';
 
 /**
  * What a concession call reads: what a quiz call reads, and how the Mod will be talked down. It has no `brief`: that steers what a quiz asks, and the concession call reads only the plan's inputs.
@@ -85,7 +85,9 @@ const concessionAsk = (how: TalkedDownBy | null): string => [
     ? 'If someone talks you down from this visit, you post once in the thread to concede, quoting the post.'
     : how === 'paid'
       ? 'Someone has paid you to drop this visit, and you post once in the thread to concede, quoting the post.'
-      : 'Someone has distracted you with a card and you drop this visit, and you post once in the thread to concede, quoting the post.',
+      : how === 'answered'
+        ? 'Someone has answered your question right and you drop this visit, and you post once in the thread to concede, quoting the post.'
+        : 'Someone has distracted you with a card and you drop this visit, and you post once in the thread to concede, quoting the post.',
   `Write that post, in your own voice, as a concession: at most ${CONCESSION_MOST} characters. Write {who} where you mean whoever talked you down; it is filled in with their name. Use no other braces.`,
 ].join(' ');
 
@@ -126,7 +128,7 @@ export function concessionPrompt(i: ConcessionInput): { readonly system: string;
  */
 export function concessionCompletion(i: { readonly name: string; readonly board: string; readonly title: string | null; readonly author: string; readonly body: string; readonly charges: QuizInput['charges']; readonly how: TalkedDownBy }): { readonly prompt: string; readonly stop: readonly string[] } {
   const action = i.charges.length ? `[Moderator action: ${i.charges.map((c) => clip(c.rule, 200)).join('; ')}]` : null;
-  const note = i.how === 'paid' ? '[Moderator action withdrawn: the moderator was paid, and {who} paid it.]' : '[Moderator action withdrawn: the moderator was distracted, and {who} distracted it.]';
+  const note = i.how === 'paid' ? '[Moderator action withdrawn: the moderator was paid, and {who} paid it.]' : i.how === 'answered' ? '[Moderator action withdrawn: the moderator\'s question was answered, and {who} answered it.]' : '[Moderator action withdrawn: the moderator was distracted, and {who} distracted it.]';
   const prompt = [
     'Welcome to the Message Boards - Thread View',
     `Board: ${clip(i.board, 80)}`,

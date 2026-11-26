@@ -59,8 +59,8 @@ export class ConcessionBudget {
   take(): void { this.used++; }
 }
 
-/** How a Mod of this weakness is talked down. (A quiz Mod is talked down by a right answer, which `concessionCompletion` has no wording for: it is worded as a distraction.) */
-export const howTalkedDown = (persona: Persona): TalkedDownBy => (persona.weakness.kind === 'bribe' ? 'paid' : 'distracted');
+/** How a Mod of this weakness is talked down: a bribe paid, a card's distraction, or a quiz answered right. */
+export const howTalkedDown = (persona: Persona): TalkedDownBy => (persona.weakness.kind === 'bribe' ? 'paid' : persona.weakness.kind === 'quiz' ? 'answered' : 'distracted');
 
 /** What the concession calls read of a visit's post, as readers see it. */
 export function concessionInput(persona: Persona, v: PendingVisit, heard: Heard, post: Heard['read']['posts'][number]) {
