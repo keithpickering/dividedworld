@@ -41,15 +41,18 @@ export function timeLeftWords(endsAt: string, now: number): string {
   return h > 0 ? [part(h, 'hour'), m > 0 ? part(m, 'minute') : ''].filter((x) => x !== '').join(' ') : part(m, 'minute');
 }
 
-/** What the mark's tile says: the time left while the visit is open, else how it went. */
-export function markText(state: VisitState, endsAt: string, now: number): string {
+/** What the mark's stopwatch draws for a state. An ended mark has no words: its outcome is in the mark's name and the Lens tab. */
+export type VisitIcon = 'watch' | 'bang' | 'slash' | 'teeth' | 'stop' | 'dashed';
+
+/** The icon the mark draws for a state; the open mark's time is `timeLeft(endsAt, now)`, which the screen shows itself. */
+export function markIcon(state: VisitState): VisitIcon {
   switch (state) {
-    case 'open': return timeLeft(endsAt, now);
-    case 'filed': return 'Filed';
-    case 'intercepted': return 'Talked down';
-    case 'trapped': return 'Trapped';
-    case 'reversed': return 'Ended';
-    case 'dropped': return 'Dropped';
+    case 'open': return 'watch';
+    case 'filed': return 'bang';
+    case 'intercepted': return 'slash';
+    case 'trapped': return 'teeth';
+    case 'reversed': return 'stop';
+    case 'dropped': return 'dashed';
   }
 }
 
@@ -65,7 +68,7 @@ export function tabName(state: VisitState): string {
   }
 }
 
-/** The mark's name for a screen reader: the Mod, the time left or how it ended, and that it opens the visit. The name holds the tile's visible words ("2:41", "Trapped"), so a voice command that says what it reads finds it (WCAG 2.5.3). */
+/** The mark's name for a screen reader: the Mod, the time left or how it ended, and that it opens the visit. The open tile's visible words ("2:41") are in its name, so a voice command that says what it reads finds it (WCAG 2.5.3); an ended tile has none. */
 export function markLabel(mod: string, pronouns: PronounSet, state: VisitState, endsAt: string, now: number): string {
   const how = {
     open: `${mod} is on a visit to this post, ${timeLeft(endsAt, now)} left, ${timeLeftWords(endsAt, now)}`,

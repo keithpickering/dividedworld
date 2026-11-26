@@ -379,12 +379,12 @@ begin
   perform pg_temp.end_play(first_play);
   perform place_cast(caster, 'ce-th', t, '{}', '', 'thread', null, player, 0);
 
-  board_play := (place_cast(caster, 'ce-bd', brd, '{}', '', 'board', null, player, 0) ->> 'id')::uuid;
-  why := pg_temp.refusal(format($s$select place_cast(%L, 'ce-bd2', %L, '{}', '', 'board', null, %L, 0)$s$, caster, brd, player));
+  board_play := (place_cast(caster, 'ce-bd', brd, '{}', '', 'board', null, player, 0, '{}', t) ->> 'id')::uuid;
+  why := pg_temp.refusal(format($s$select place_cast(%L, 'ce-bd2', %L, '{}', '', 'board', null, %L, 0, '{}', %L)$s$, caster, brd, player, t));
   if why is null or why not like 'this board already carries a board card until%' then raise exception 'a live board card holds the board: %', why; end if;
   perform pg_temp.end_play(board_play);
-  perform place_cast(caster, 'ce-bd2', brd, '{}', '', 'board', null, player, 0);
-  why := pg_temp.refusal(format($s$select place_cast(%L, 'ce-bd', %L, '{}', '', 'board', null, %L, 0)$s$, caster, brd, player));
+  perform place_cast(caster, 'ce-bd2', brd, '{}', '', 'board', null, player, 0, '{}', t);
+  why := pg_temp.refusal(format($s$select place_cast(%L, 'ce-bd', %L, '{}', '', 'board', null, %L, 0, '{}', %L)$s$, caster, brd, player, t));
   if why is null or why not like 'this board already carries a board card until%' then raise exception 'the second board card holds it again: %', why; end if;
 end $$;
 

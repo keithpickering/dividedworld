@@ -52,9 +52,9 @@ insert into settings (key, value) values
   ('reachLasts', '{"character": {"unit": "day", "count": 7}, "thread": {"unit": "day", "count": 1}, "board": {"unit": "day", "count": 1}}'),
   ('cardSettings', '{"whoops.clean": 95}'),
   ('economy', '{}'),
-  -- The Promos thread's title is the one word The System needs (0099). The three older keys stay in this row because the e2e files that load it
+  -- The season thread's title is the word The System needs (0440 renamed it rosterThreadTitle; 0099 made it the one word). The older keys stay in this row because the e2e files that load it
   -- onto the migrations before 0099 (e2e/0008, 0010, 0014) meet the check those migrations kept; 0099 stops asking for them.
-  ('copy', '{"announcementsThreadTitle": "Season {season}: Promos", "turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
+  ('copy', '{"rosterThreadTitle": "Season {season}: Promos", "announcementsThreadTitle": "Season {season}: Promos", "turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
 insert into class_kinds (key, name) values ('alpha', 'Alpha'), ('beta', 'Beta');
 insert into reaction_kinds (key, emoji, quadrant) values
   ('up', '⬆️', 'excitedPositive'), ('boo', '👻', 'excitedNegative'),
@@ -91,11 +91,21 @@ begin
   return id;
 end $$;
 
--- A character of a player's, with its first class. It has debuted, as one a settlement has passed since; create_character(name, class, 'tally') makes one that waits.
+-- A character of a player's, with its first class. It has debuted, as one a settlement has passed since; a character made by create_character is active at once, as this one is.
 create function tests.character(owner uuid, name text, class_key text default 'alpha', at timestamptz default now()) returns uuid language plpgsql as $$
 declare id uuid;
 begin
   insert into characters (owner, name, created_at, debuted_at) values (owner, name, at, at) returning characters.id into id;
+  insert into class_history (character, class_key, started_at) values (id, class_key, at);
+  return id;
+end $$;
+
+-- A character that has not debuted: the state a staff persona waits in until an office debuts it (0082), and the one no player character is made in. Nothing debuts it but an office, so a test
+-- of what a waiting character cannot do makes one here.
+create function tests.waiting(owner uuid, name text, class_key text default 'alpha', at timestamptz default now()) returns uuid language plpgsql as $$
+declare id uuid;
+begin
+  insert into characters (owner, name, created_at) values (owner, name, at) returning characters.id into id;
   insert into class_history (character, class_key, started_at) values (id, class_key, at);
   return id;
 end $$;
@@ -116,6 +126,20 @@ $$;
 create function tests.act(by_character uuid, kind text, in_thread uuid, payload jsonb default '{}', target uuid default null, at timestamptz default now()) returns uuid language sql as $$
   insert into acts (character, kind, thread, payload, target_act_id, created_at) values (by_character, kind, in_thread, payload, target, at) returning id
 $$;
+
+-- A debut announcement as the settlement wrote one before 0436: an old Act, read as a reveal, a clue and a post's author's. Nothing writes one now (acts_well_formed refuses it), so a test
+-- that needs an old one stands the trigger down for the insert, which a rollback gives back. Standing the trigger down skips every acts_well_formed check for that insert, and `alter table` takes a lock that
+-- keeps acts locked until the transaction ends. Answers the Act's projection, as write_announce does.
+create function tests.old_debut(of_character uuid, in_thread uuid, cls text default null, at timestamptz default now()) returns jsonb language plpgsql as $$
+declare written uuid;
+begin
+  alter table acts disable trigger acts_well_formed;
+  insert into acts (character, kind, thread, payload, created_at)
+  values (of_character, 'announce', in_thread, jsonb_build_object('what', 'debut') || case when cls is not null then jsonb_build_object('class', cls) else '{}'::jsonb end, at)
+  returning id into written;
+  alter table acts enable trigger acts_well_formed;
+  return act_projection(written);
+end $$;
 
 create function tests.post(by_character uuid, in_thread uuid, body text default 'Hello.', at timestamptz default now()) returns uuid language sql as $$
   select tests.act(by_character, 'post', in_thread, jsonb_build_object('body', body), null, at)
@@ -285,3 +309,13 @@ begin
   perform set_config('role', 'service_role', true);
 end $$;
 grant execute on all functions in schema tests to anon, authenticated, service_role;
+
+-- A pending announced Turn as it was queued before turns were announced at once (0435): announced, naming what its player chose, with no announcement
+-- written (announce_act null), so the settlement writes it the old way, in the season's Promos thread. As turn() wrote the row then.
+create function tests.queue_old_turn(c uuid, to_class text, show_from boolean default false, show_to boolean default false) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  -- plpgsql, so that fixtures.sql still loads on the older schemas the end-to-end files build it on (pending_turns has no due_at before 0100).
+  insert into pending_turns (character, class_key, loudness, show_from, show_to) values (c, to_class, 'announced', show_from, show_to)
+  on conflict (character) do update set class_key = excluded.class_key, loudness = 'announced', show_from = excluded.show_from, show_to = excluded.show_to, asked_at = clock_timestamp(), due_at = null;
+end $$;

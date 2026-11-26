@@ -1,5 +1,5 @@
 /*
- * My characters, New character, the Turn and the debut dialogs, on the glass: the Roster board
+ * My characters, New character and the Turn dialog, on the glass: the Roster board
  * (docs/research/2026-10-29-two-worlds/10-roster.html) and the Turn board (06-turn.html). Colors
  * are the glass's tokens and the instance's class colors (`--kb-glass-class-<key>-*`, set on a card
  * or a chip as `--kb-class-fill`, `-ink`, `-large` by ClassChip.tsx); sizes are the boards' px or
@@ -11,7 +11,7 @@
  * its large color only on the Turn (`data-kb-large`), the one surface here that draws a class's
  * large text (engine/ui/glass/apply.ts); My characters and New character draw a class as a chip.
  *
- * The reveal is drawn once, as a glass overlay beside Debut (RevealOverlay.tsx, `.kb-reveal-dialog`).
+ * The reveal is drawn once, as a glass overlay beside the Turn (RevealOverlay.tsx, `.kb-reveal-dialog`).
  * The `.kb-dialog-actions` rule near the foot of this file is the board's modal's (QuoteSomeone.tsx).
  */
 
@@ -410,8 +410,7 @@
   color: var(--kb-glass-text);
 }
 
-.kb-roster-pending,
-.kb-character-waiting {
+.kb-roster-pending {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1030,7 +1029,6 @@
 }
 
 .kb-turn-dialog,
-.kb-debut-dialog,
 .kb-reveal-dialog {
   zoom: var(--kb-board-scale, 1);
 }
@@ -1047,14 +1045,12 @@
   flex-direction: column;
 }
 
-.kb-debut-dialog,
 .kb-reveal-dialog {
-  /* The Debut and Reveal boards' dialog: 1100px, the words 40px in. */
+  /* The Reveal board's dialog: 1100px, the words 40px in. */
   width: min(100%, 1100px);
 }
 
 .kb-turn-dialog .kb-glass-dialog-head,
-.kb-debut-dialog .kb-glass-dialog-head,
 .kb-reveal-dialog .kb-glass-dialog-head {
   margin-top: 2px;
   font-size: 4.25rem;
@@ -1293,7 +1289,6 @@
   margin-right: auto;
 }
 
-.kb-debut,
 .kb-reveal {
   display: flex;
   flex-direction: column;
@@ -1510,7 +1505,6 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-turn-dialog .kb-glass-dialog-head,
-:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-dialog-head,
 :where(:root[data-kb-layout='phone']) .kb-reveal-dialog .kb-glass-dialog-head {
   font-size: var(--kb-glass-size-phone-display);
 }
@@ -1533,7 +1527,7 @@
   font-size: var(--kb-glass-size-phone-display);
 }
 
-:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) :is(.kb-reveal-line, .kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-class-hurt, .kb-choice-option, .kb-turn-toggle, .kb-notice, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
+:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-reveal-dialog) :is(.kb-reveal-line, .kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-class-hurt, .kb-choice-option, .kb-turn-toggle, .kb-notice, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
   font-size: var(--kb-glass-size-phone-body);
 }
 
@@ -1545,30 +1539,6 @@
   min-height: 48px;
   padding: 0 20px;
   font-size: var(--kb-glass-size-phone-display);
-}
-
-/*
- * The Debut dialog on the phone is a sheet (the Phone board's second screen): it stands on the window's foot, the window's width less the
- * overlay's 8px, and its two buttons stand at its foot, Cancel one part wide and the action two where both words fit one line. It is as tall
- * as its words and no taller: a sheet stretched to the window (the board's, from 40px under the top) moved what the calm covers at 200% text,
- * which the contrast measurement (e2e/glass-text.spec.ts) reads, and the buttons are at its foot all the same.
- */
-:where(:root[data-kb-layout='phone']) .kb-debut-dialog {
-  align-self: end;
-  width: 100%;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-form-foot > .kb-button-row {
-  flex: 1 1 100%;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-form-foot > .kb-button-row > :first-child {
-  flex: 1 1 auto;
-}
-
-/* The action twice as wide as Cancel where both words fit one line; where its words are longer than that, it takes a line of its own (never a label split across a shared line). */
-:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-form-foot > .kb-button-row > :last-child {
-  flex: 2 1 auto;
 }
 
 /* ---- the board's modal's action row (QuoteSomeone.tsx, Cropper.tsx) ---- */

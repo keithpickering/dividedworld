@@ -50,10 +50,10 @@ function world() {
   const h3 = seed.post(thread, hoo, 'Mrs. Hooligan speaks.', { at: at(28, 11) });
   seed.react(rival, glo, p2, 'tomato');
   seed.wallet(me, 200);
-  seed.settle({ at: at(28, 8, 17), debut: false, sharesKept: false, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 50 }, { character: hoo, reason: 'face.cheered', amount: 40 }] });
-  seed.turn(pipe, 'face', { loudness: 'announced', showFrom: true });
+  seed.settle({ at: at(28, 8, 17), sharesKept: false, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 50 }, { character: hoo, reason: 'face.cheered', amount: 40 }] });
+  seed.turn(pipe, 'face', { loudness: 'silent' });
   seed.settle({
-    at: at(29, 8, 17), debut: false, turns: true,
+    at: at(29, 8, 17), turns: true,
     ledger: [
       { character: pipe, reason: 'heel.drewHeat', amount: 280, shares: [{ act: p2, quadrant: 'excitedNegative', amount: 280 }] },
       { character: pipe, reason: 'heel.shrugged', amount: -5, shares: [{ act: p2, quadrant: 'calmPositive', amount: -5 }] },
@@ -467,7 +467,7 @@ describe('My log', () => {
     const fake = buildWorld();
     const me = fake.seed.account('me');
     const pipe = fake.seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
-    fake.seed.settle({ at: at(28, 8, 17), debut: false, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 50 }] });
+    fake.seed.settle({ at: at(28, 8, 17), ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 50 }] });
     fake.signInAs(me);
     const page = await fake.logPage(null);
     vi.spyOn(fake, 'logPage').mockResolvedValue({ ...page, log: { ...page.log, settlements: page.log.settlements.map((x) => ({ ...x, lines: [] })), wallet: [], saves: [] }, turns: [] });
@@ -740,7 +740,7 @@ describe('the breakdown', () => {
     const p4 = seed.post(w.thread, w.pipe, 'Pipewrench again.', { at: at(29, 14) });
     const p5 = seed.post(w.thread, w.pipe, 'And again.', { at: at(29, 15) });
     seed.settle({
-      at: at(30, 8, 17), debut: false, turns: false,
+      at: at(30, 8, 17), turns: false,
       ledger: [
         { character: w.pipe, reason: 'heel.drewHeat', amount: 287, shares: [
           { act: w.p2, quadrant: 'excitedNegative', amount: 143 }, { act: p4, quadrant: 'excitedNegative', amount: 96 }, { act: p5, quadrant: 'boredNegative', amount: 48 },
@@ -804,7 +804,7 @@ describe('the breakdown', () => {
     const w = world();
     const { seed } = w.fake;
     seed.settle({
-      at: at(30, 8, 17), debut: false, turns: false,
+      at: at(30, 8, 17), turns: false,
       ledger: [
         { character: w.pipe, reason: 'card.skim', amount: 30, params: { card: 'mooch' } },
         { character: w.pipe, reason: 'card.skim', amount: 20, params: { card: 'toll' } },

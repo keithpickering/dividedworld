@@ -88,6 +88,13 @@
   margin-top: -8px;
 }
 
+/* A board card's thread: the board's own picker, under the line that says where the card lands. */
+.kb-play-board-thread {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 0.5rem;
+}
+
 .kb-play-both {
   font-weight: 800;
   color: var(--kb-glass-salty-text);

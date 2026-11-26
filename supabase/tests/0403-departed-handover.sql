@@ -65,7 +65,7 @@ end $$;
 create function pg_temp.refused(stmt text) returns text language plpgsql as $$
 begin execute stmt; return null; exception when others then return sqlstate || ' ' || sqlerrm; end $$;
 create function pg_temp.said_count() returns bigint language sql as $$
-  select count(*) from acts a where a.kind = 'post' and a.thread = pg_temp.ann()
+  select count(*) from acts a where a.kind = 'post' and a.thread in (select sh.thread from season_handovers sh where sh.thread is not null)
 $$;
 create function pg_temp.meeting() returns bigint language sql as $$
   insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id
@@ -157,7 +157,7 @@ begin
   -- The farewell (the stock line, no handoff was written) and the arrival, as posts of the announcements, the arrival being the row's.
   perform pg_temp.expect(pg_temp.said_count() - said_before = 2, 'the departure posted ' || (pg_temp.said_count() - said_before) || ' posts, not the farewell and the arrival');
   perform pg_temp.expect((select c.staff is not distinct from 'dp-mod2' and a.payload ->> 'body' is not distinct from 'Hello from Dp Mod Two.' from acts a join characters c on c.id = a.character where a.id = h.arrival_act), 'the arrival act is not the new Boss''s hello');
-  perform pg_temp.expect(exists (select 1 from acts a join characters c on c.id = a.character where c.staff = 'dp-mod' and a.kind = 'post' and a.thread = pg_temp.ann() and a.payload ->> 'body' is not distinct from 'Farewell from Dp Mod.'), 'the outgoing Boss''s farewell was not posted');
+  perform pg_temp.expect(exists (select 1 from acts a join characters c on c.id = a.character where c.staff = 'dp-mod' and a.kind = 'post' and a.thread in (select sh.thread from season_handovers sh where sh.thread is not null) and a.payload ->> 'body' is not distinct from 'Farewell from Dp Mod.'), 'the outgoing Boss''s farewell was not posted');
   -- The roll-over's row is as it was.
   perform pg_temp.expect((select r.cause is not distinct from 'rollover' and r.boss is not distinct from 'dp-mod' from season_handovers r where r.id = (select id from pg_temp.ids where name = 'rollover')), 'the roll-over row changed');
   -- The career: the first term (opened with dp-mod, until the departure) and the second (from the departure, still going), each its own entry.

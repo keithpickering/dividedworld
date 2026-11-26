@@ -24,7 +24,7 @@ import { ThreadCtx } from '../thread/context.ts';
 import { dayAndTime } from '../characters/format.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import {
-  VISIT_KIND, appealTerms, noticeWords, auraWords, chargeWords, markLabel, markText, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, topCharge, tryTerms, pointsPlain, visitState,
+  VISIT_KIND, appealTerms, noticeWords, auraWords, chargeWords, markIcon, markLabel, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, timeLeft, topCharge, tryTerms, pointsPlain, visitState, type VisitIcon,
 } from './visit.ts';
 import { useMinute } from './minute.ts';
 import './visit.css';
@@ -45,12 +45,17 @@ export function ViolationNotice({ visit }: { readonly visit: Visit | undefined }
   return words === null ? null : <p className="kb-violation">{words}</p>;
 }
 
-/** The stopwatch, drawn in the mark's ink. */
-function Stopwatch() {
+/** The stopwatch, drawn in the mark's ink; its face says how the visit went (an ended mark has no words, `markIcon`). */
+function Stopwatch({ icon }: { readonly icon: VisitIcon }) {
   return (
-    <svg className="kb-visit-watch" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="14" r="7.5" />
-      <path d="M12 14V9.5M9.5 3h5M12 3v3M18.2 7.2l1.4-1.4" />
+    <svg className="kb-visit-watch" data-kb-icon={icon} viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="14" r="7.5" {...(icon === 'dashed' ? { strokeDasharray: '3 2.6' } : {})} />
+      <path d="M9.5 3h5M12 3v3M18.2 7.2l1.4-1.4" />
+      {(icon === 'watch' || icon === 'slash' || icon === 'teeth' || icon === 'dashed') && <path d="M12 14V9.5" />}
+      {icon === 'bang' && <><path d="M12 15V9.5" /><circle className="kb-visit-dot" cx="12" cy="17.6" r="1.25" /></>}
+      {icon === 'slash' && <path className="kb-visit-over kb-visit-slash" d="M3.5 21.5L20.5 4.5" />}
+      {icon === 'teeth' && <path className="kb-visit-over" d="M3 23l3-4 3 4 3-4 3 4 3-4 3 4" />}
+      {icon === 'stop' && <rect className="kb-visit-stop" x="9" y="11" width="6" height="6" />}
     </svg>
   );
 }
@@ -67,7 +72,7 @@ export const VisitMark = memo(function VisitMark({ visit, mod, pronouns, expande
       aria-label={markLabel(mod, pronouns, state, visit.endsAt, now)} aria-haspopup="dialog" aria-expanded={expanded}
       onClick={(e) => onOpen(VISIT_KIND, e.currentTarget)}
     >
-      <span className="kb-meta-tile-in" aria-hidden="true"><Stopwatch /><span className="kb-visit-time">{markText(state, visit.endsAt, now)}</span></span>
+      <span className="kb-meta-tile-in" aria-hidden="true"><Stopwatch icon={markIcon(state)} />{state === 'open' && <span className="kb-visit-time">{timeLeft(visit.endsAt, now)}</span>}</span>
     </button>
   );
 });

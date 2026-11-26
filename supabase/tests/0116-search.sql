@@ -81,7 +81,8 @@ begin
   card := tests.act(b, 'card', t1, '{}', first_post);
   perform tests.act(null, 'tally', t1);
   perform tests.act(null, 'reveal', t1);
-  announced := tests.act(a, 'announce', t1, '{"what": "debut"}');
+  -- An old debut announcement, written by the one writer that may (a new one is refused by acts_well_formed, 0435).
+  announced := (tests.old_debut(a, t1) ->> 'id')::uuid;
   if (select count(*) from post_search) is distinct from before_count then raise exception 'a card play, a tally, a reveal or an announce got a search row'; end if;
   if exists (select 1 from post_search where act = card) then raise exception 'a card play got a search row'; end if;
   if exists (select 1 from post_search where act = announced) then raise exception 'an announce got a search row'; end if;

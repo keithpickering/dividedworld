@@ -42,6 +42,8 @@ begin
 end $$;
 
 create function pg_temp.ann() returns uuid language sql as $$ select (value #>> '{}')::uuid from settings where key = 'systemAnnouncements' $$;
+-- The thread the latest real handover opened (season_handovers.thread).
+create function pg_temp.hth() returns uuid language sql as $$ select thread from season_handovers where thread is not null order by id desc limit 1 $$;
 
 -- ---- A season played, an announced debut and an old tally, a reveal and a handover ----
 do $$
@@ -64,7 +66,7 @@ begin
   insert into standings (character, season, amount) values (sprit, in_season, 650), (gloom, in_season, 400), (hooli, in_season, 300), (pipe, in_season, 100)
   on conflict (season, character) do update set amount = excluded.amount;
   -- One announcement is a debut; an old tally names a Turn announced with its old class.
-  perform write_announce(hooli, (promos_thread(in_season)).in_thread, 'debut', null, null, t0 + interval '3 hours');
+  perform tests.old_debut(hooli, (promos_thread(in_season)).in_thread, null, t0 + interval '3 hours');
   -- An old tally, as an instance written before the announce Act holds it.
   perform tests.act(null, 'tally', (promos_thread(in_season)).in_thread, jsonb_build_object('season', 1, 'part', 1, 'of', 1, 'debuts', '[]'::jsonb,
     'turns', jsonb_build_array(jsonb_build_object('character', pipe, 'name', 'Pipewrench', 'loudness', 'revealed', 'was', 'alpha', 'since', t0))), null, t0 + interval '4 hours');
@@ -112,12 +114,13 @@ begin
   end if;
   if exists (select 1 from pg_temp.sn() x where x.kind = 'tally' and not exists (select 1 from acts a where a.id = x.act and a.kind in ('tally', 'announce'))) then raise exception 'a tally item links its tally or announce Act'; end if;
 
-  -- The Boss: the arrival quotes its first words and links its post in the announcements thread; so does the departure.
-  select a.id into b_post from acts a join characters c on c.id = a.character where c.staff = 'sn-b' and a.kind = 'post' and a.thread = pg_temp.ann();
-  select a.id into a_post from acts a join characters c on c.id = a.character where c.staff = 'sn-a' and a.kind = 'post' and a.thread = pg_temp.ann();
+  -- The Boss: the arrival quotes its first words and links its post in the thread the handover opened (a staff thread, not the announcements thread, which takes nothing new); so does the departure.
+  if not exists (select 1 from threads t where t.id = pg_temp.hth() and t.staff_placed and t.id is distinct from pg_temp.ann()) then raise exception 'the handover opened no staff thread of its own'; end if;
+  select a.id into b_post from acts a join characters c on c.id = a.character where c.staff = 'sn-b' and a.kind = 'post' and a.thread = pg_temp.hth();
+  select a.id into a_post from acts a join characters c on c.id = a.character where c.staff = 'sn-a' and a.kind = 'post' and a.thread = pg_temp.hth();
   select * into n from pg_temp.sn() where kind = 'bossArrived';
   if n.seq is distinct from (select seq from acts where id = b_post) then raise exception 'the arrival names its post''s place in the thread'; end if;
-  if n.act is distinct from b_post or n.thread is distinct from pg_temp.ann() or n.name is distinct from 'Sn B' or n.quote is distinct from 'Hello from Sn B.' or n.season is distinct from 2 then
+  if n.act is distinct from b_post or n.thread is distinct from pg_temp.hth() or n.name is distinct from 'Sn B' or n.quote is distinct from 'Hello from Sn B.' or n.season is distinct from 2 then
     raise exception 'the arrival: %', to_jsonb(n);
   end if;
   select * into n from pg_temp.sn() where kind = 'bossLeft';
@@ -238,10 +241,11 @@ declare
   s2 seasons%rowtype;
 begin
   select * into s2 from seasons where ends_at is null;
-  perform write_announce((select id from characters where name = 'Gloomba'), (promos_thread(s2.id)).in_thread, 'debut', null, null, s2.starts_at + interval '1 hour');
+  perform tests.old_debut((select id from characters where name = 'Gloomba'), (promos_thread(s2.id)).in_thread, null, s2.starts_at + interval '1 hour');
   perform reveal_season(s2.starts_at + interval '1 day');
-  if (select count(*) from thread_open where board = sys) is distinct from before_all + 1 then raise exception 'a Turns thread was made, and no reveal thread'; end if;
-  if (select count(*) from thread_list where board = sys) is distinct from before_list + 1 then raise exception 'the new thread is listed'; end if;
+  -- The settlement made its thread and the roll-over's handover opened its own (a listed staff thread, 0437): two threads, both listed.
+  if (select count(*) from thread_open where board = sys) is distinct from before_all + 2 then raise exception 'a Turns thread was made, and no reveal thread'; end if;
+  if (select count(*) from thread_list where board = sys) is distinct from before_list + 2 then raise exception 'the new threads are listed'; end if;
   if (select count(*) from thread_list where board = sys) is distinct from (select threads from board_counts where board = sys) then raise exception 'the counter follows the list'; end if;
 end $$;
 
@@ -439,7 +443,7 @@ begin
   if (select count(*) from unlisted_threads where thread in (select r.thread from seasons s join acts r on r.id = s.reveal_act)) is distinct from gone then
     raise exception 'every reveal thread is recorded as unlisted again';
   end if;
-  if (select count(*) from news_landed) is distinct from (select count(*) from acts where kind = 'tally' and tally_names(payload) > 0) + (select count(*) from (select distinct thread, created_at from acts where kind = 'announce') l) then
+  if (select count(*) from news_landed) is distinct from (select count(*) from acts where kind = 'tally' and tally_names(payload) > 0) + (select count(*) from (select distinct thread, created_at from acts where kind = 'announce' and coalesce(payload ->> 'ahead', '') <> 'true') l) then
     raise exception 'every old tally and every landing of announcements gets a landing time, and no reveal header does';
   end if;
   if exists (select 1 from news_landed n join acts a on a.id = n.act where n.landed_at is distinct from a.created_at) then raise exception 'an old item landed when it is dated'; end if;

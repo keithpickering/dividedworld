@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, HANDOFF_MOST, POINTS_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, movesAsk, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, HANDOFF_MOST, MINUTES_MOST, POINTS_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, movesAsk, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { MEMORY_MOST, noteMost } from './memory.ts';
 import type { TrophyFacts } from './moves.ts';
 import { schemaProblems } from './schema.ts';
@@ -1362,7 +1362,7 @@ const tally = (schema: any): { properties: number; optional: number; unions: num
 
 test('every field of the answer is in exactly one part, and MEETING_RULE is built from the parts', () => {
   assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'bundle', 'staff', 'self']);
-  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited', 'successor'], ['bundle'], ['orders', 'patrols', 'points', 'requests'], ['memory', 'profile', 'beats', 'farewell', 'handoff']]);
+  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited', 'successor'], ['bundle'], ['orders', 'patrols', 'points', 'requests'], ['memory', 'profile', 'minutes', 'beats', 'farewell', 'handoff']]);
   const listed = MEETING_PARTS.flatMap((p) => [...p.fields]);
   assert.equal(new Set(listed).size, listed.length, `a field is in two parts: ${listed.join(', ')}`);
   assert.deepEqual([...listed].sort(), Object.keys(MEETING_FIELDS).sort(), 'a field is in no part');
@@ -1409,8 +1409,8 @@ test('a successor naming the Boss\'s standing nominee is dropped as no new nomin
 // The moves part is 40 of the provider's 40, the fangame split's three kinds and awardTrophy's trophy param included: properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own.
 // The staff part is 40 of the provider's 40: the orders and patrols, the talking points' list with its two fields (points, staff, line), and the requests' ruling (staff requests plan, Task 5): requests, its item's id, ruling, line and move,
 // the move's kind, params, expires_in_hours and why, and five params (thread, board, into, name, premise; a rename's description is left to the stock one, the fallback to none: the provider's 40 allows no more).
-const DESIGN_PROPERTIES = { moves: 40, bundle: 37, staff: 40, self: 28 } as const;
-const OPTIONAL = { moves: 1, bundle: 1, staff: 10, self: 4 } as const;
+const DESIGN_PROPERTIES = { moves: 40, bundle: 37, staff: 40, self: 29 } as const;
+const OPTIONAL = { moves: 1, bundle: 1, staff: 10, self: 5 } as const;
 for (const key of ['moves', 'bundle', 'staff', 'self'] as const) {
   const t = tally(partSchema(key));
   test(`the ${key} part's schema is accepted by the provider's rules: ${t.properties} properties, ${t.optional} optional, ${t.unions} unions`, () => {
@@ -1595,7 +1595,7 @@ test('the system prompt says the meeting is answered in four turns, and names ea
   for (const p of MEETING_PARTS) assert.equal(text.split(`the "${p.key}" part (${p.fields.filter((f) => !['beats', 'farewell', 'handoff', 'requests'].includes(f)).join(', ')})`).length - 1, 1, p.key);
   assert.equal(MEETING_PARTS.length, 4);
   const told = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, farewell: { postMaxLength: 500 }, beats: shownSplit });
-  assert.ok(told.includes('the "self" part (memory, profile, beats, farewell, handoff)'), 'a meeting with beats and a farewell to write is told to answer them in the self part');
+  assert.ok(told.includes('the "self" part (memory, profile, minutes, beats, farewell, handoff)'), 'a meeting with beats and a farewell to write is told to answer them in the self part');
   assert.ok(text.endsWith('Answer only in the structure you are asked for.'));
 });
 
@@ -1918,4 +1918,39 @@ test('the prompt tells the Boss of the requests only when one waits, and the par
   assert.ok(/the "staff" part \([^)]*requests/.test(waiting), waiting);
   assert.ok(waiting.includes('A request you leave out stays waiting'), 'what leaving one out does');
   assert.ok(waiting.includes('waits') && waiting.includes('admin'), 'a structural kind waits for admins');
+});
+
+/* ---------------------------------------------------------------------------------------- the minutes ---- */
+
+test('the answer\'s rule carries minutes, optional, in the self part, and the schema says so', () => {
+  const fields = (MEETING_RULE as { fields: Record<string, { optional?: boolean; type?: string }> }).fields;
+  assert.ok(fields['minutes']?.optional && fields['minutes']?.type === 'string');
+  assert.ok(MEETING_PARTS.find((p) => p.key === 'self')!.fields.includes('minutes'));
+  assert.ok(!MEETING_PARTS.filter((p) => p.key !== 'self').some((p) => (p.fields as readonly string[]).includes('minutes')));
+  assert.match(MEETING_PARTS.find((p) => p.key === 'self')!.ask, /minutes/);
+});
+
+test('a 700-character minutes is trimmed to MINUTES_MOST and the trim is recorded; a short one is kept whole, a blank one is none', () => {
+  assert.equal(MINUTES_MOST, 600);
+  const r = withAnswer({ minutes: 'm'.repeat(700) });
+  assert.equal(r.minutes!.length, 600);
+  assert.ok(r.trims.some((t) => t.path === 'minutes' && t.predicate === 'maxLength(600)' && t.before === 700 && t.after === 600), JSON.stringify(r.trims));
+  const whole = withAnswer({ minutes: '  We argued about the Palace.  ' });
+  assert.equal(whole.minutes, 'We argued about the Palace.');
+  assert.ok(!whole.trims.some((t) => t.path === 'minutes'));
+  assert.equal(withAnswer({ minutes: '   ' }).minutes, null);
+  assert.equal(withAnswer({}).minutes, null);
+});
+
+test('the minutes\' trim never splits a surrogate pair', () => {
+  const r = withAnswer({ minutes: 'a'.repeat(599) + '\u{1F600}' });
+  assert.equal(r.minutes, 'a'.repeat(599));
+  assert.ok(r.trims.some((t) => t.path === 'minutes' && t.after === 599), JSON.stringify(r.trims));
+});
+
+test('the system prompt names the minutes, beside the memory and the profile, as words that decide nothing', () => {
+  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  assert.match(text, /minutes: a few lines, in your voice, on the meeting you just held, for the board to read\./);
+  assert.match(text, /It is posted as written, and decides nothing\./);
+  assert.ok(text.includes('the "self" part (memory, profile, minutes)'));
 });
