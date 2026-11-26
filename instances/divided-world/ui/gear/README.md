@@ -66,7 +66,7 @@ it has a `rig.json`,
 
 where `model` is the key of the item whose model it uses, `hue` is the turn in degrees, and `recolor` names the objects
 in that model to recolor. The rig loads the base item's model, turns the hue of every color stop of every Color Ramp
-node in the materials of those objects (HSV hue; saturation and value are kept), and renders the same views the base
+node in the materials of those objects (HSV hue; saturation and value are kept unless the lift below is given), and renders the same views the base
 ships, with the same default. A material the named objects share with another object turns with it: the Baseball Cap's
 button shares the hat's material and turns with it, and the Plumber's Cap's emblem has its own material and does not.
 Run it as for any item, after the base has been rendered (the variant takes its views from the base's `views.json`):
@@ -75,8 +75,12 @@ Run it as for any item, after the base has been rendered (the variant takes its 
 blender -b -P rig.py -- baseball-cap-green
 ```
 
-A plain hue turn keeps every stop's lightness, so a color whose stops are dark reads dull at some hues; if a color looks
-wrong, change the `hue` and render again rather than touching the model.
+A plain hue turn keeps every stop's lightness, so a color whose stops are dark reads dull at some hues (a yellow made
+from a red ramp reads mustard). Two optional fields lift the recolored stops toward 1: `"value": f` and `"saturation": f`,
+each from 0 (no lift, the default) to 1, make a stop's HSV value v (or saturation s) become `1 - (1 - v) * (1 - f)`. The
+lift keeps the order of the stops, so a dark stop stays darker than a light one and the shading is kept. The yellow caps
+use it: `{ "model": "baseball-cap", "hue": 55, "value": 0.9, "saturation": 1, "recolor": ["hat"] }`. If a color looks
+wrong, change `hue`, `value` or `saturation` and render again rather than touching the model.
 
 ## A drawn item
 
