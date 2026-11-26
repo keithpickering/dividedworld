@@ -122,11 +122,8 @@ const reachWorld: World = (fake, instance) => {
   void fake.spin(play, mine, 'Spun from the shine', 'About that card.');
 };
 
-/** The small form under a post that starts a thread from it. */
+/** The small form under a post that starts a thread from it: the Board field starts on the board the post is on, with the others offered. */
 export const SpinFormOpen: StoryObj = { render: () => <OpenForm />, parameters: { world } };
-
-/** The Board field under a post, starting on the board the post is on, with another board offered. */
-export const BoardField: StoryObj = { render: () => <OpenForm />, parameters: { world } };
 
 /** The Board field with a board the character is barred from: a disabled option that says until when. */
 export const BoardFieldWithBarredBoard: StoryObj = { render: () => <OpenForm />, parameters: { world: ((fake, instance) => { barredWorld(fake, instance, 'other'); }) satisfies World } };

@@ -1970,6 +1970,39 @@ describe('the spin form\'s Board field', () => {
     expect(made.board).toBe(await boardIdOf(w.fake, 'general'));
   });
 
+  test('an apology whose boards could not be read sends no board', async () => {
+    const w = boardsWorld();
+    const move = w.bar('general', w.fake.clock.now() + DAY);
+    vi.spyOn(w.fake, 'spinPlaces').mockRejectedValue(new Error('offline'));
+    const apologize = vi.spyOn(w.fake, 'apologize');
+    renderIn(w.fake, <SpinForm origin={move} label={null} onClose={() => undefined} apology={{ to: 'the Boss' }} />);
+    const form = await screen.findByRole('form', { name: 'Write an apology' });
+    expect(await within(form).findByText('The boards could not be read. The thread will open where spins open by default.')).toBeInTheDocument();
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Sorry');
+    await userEvent.type(within(form).getByLabelText('Your apology'), 'I was wrong.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
+    await waitFor(() => expect(apologize).toHaveBeenCalledWith(move, w.pipe, 'Sorry', 'I was wrong.'));
+  });
+
+  test('a pick carried across a swap to a character barred on it falls back to today\'s board, and sends that', async () => {
+    const w = boardsWorld();
+    w.fake.seed.groupMove('s-boss', { character: w.zed, group: testGroups.conferred[0]!.key, board: 'off-topic', at: w.fake.clock.now() - 3_600_000, expiresAt: null });
+    const spun = vi.spyOn(w.fake, 'spin');
+    openThread(w);
+    const form = await openForm();
+    await userEvent.selectOptions(await boardSelect(form), 'Off Topic');
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Carried');
+    await userEvent.click(screen.getByRole('button', { name: 'Switch to Zed' }));
+    await within(form).findByText(/now posting as/u);
+    const select = await boardSelect(form);
+    expect(select).toHaveDisplayValue('General');
+    expect(within(select).getByRole('option', { name: /^Off Topic/u })).toBeDisabled();
+    await userEvent.click(within(form).getByRole('button', { name: /Confirm posting as Zed/u }));
+    expect(spun).not.toHaveBeenCalled();
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.zed, 'Carried', '', undefined, undefined, 'general'));
+  });
+
   test('a refusal naming the board shows in the server\'s words', async () => {
     const w = boardsWorld();
     vi.spyOn(w.fake, 'spin').mockResolvedValue({ ok: false, error: 'this board was closed, and its threads are in General; start your thread there instead' });

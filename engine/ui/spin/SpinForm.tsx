@@ -83,13 +83,11 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
   useEffect(() => { first.current?.focus(); }, []);
   useEffect(() => {
     if (hud === null) return undefined;
-    let live = true;
     setPlaces({ for: hud, state: 'loading' });
-    api.spinPlaces(origin, hud).then(
-      (value) => { if (live) setPlaces({ for: hud, state: 'ready', value }); },
-      () => { if (live) setPlaces({ for: hud, state: 'failed' }); },
-    );
-    return () => { live = false; };
+    /* A read lands only if the form is still on the character it was made for; the render treats any other character's answer as not read. */
+    const land = (next: { readonly state: 'failed' } | { readonly state: 'ready'; readonly value: SpinPlaces }) => setPlaces((prev) => (prev.for === hud ? { for: hud, ...next } : prev));
+    api.spinPlaces(origin, hud).then((value) => land({ state: 'ready', value }), () => land({ state: 'failed' }));
+    return undefined;
   }, [api, origin, hud]);
 
   const label = apology ? 'Write an apology' : named === null ? 'Spin a thread' : `Spin a thread from ${named}`;
@@ -149,9 +147,9 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
       let answer;
       try {
         /* A failed read sends no board: the server opens the thread where spins open by default. */
-        const named = list !== null ? board : undefined;
-        answer = await (apology ? (named === undefined ? api.apologize(origin, character, title, body, ...framingArgs(body)) : api.apologize(origin, character, title, body, framingArgs(body)[0], named))
-          : named !== undefined ? api.spin(origin, character, title, body, framingArgs(body)[0], sentAt, named)
+        const sendBoard = list !== null ? board : undefined;
+        answer = await (apology ? (sendBoard === undefined ? api.apologize(origin, character, title, body, ...framingArgs(body)) : api.apologize(origin, character, title, body, framingArgs(body)[0], sendBoard))
+          : sendBoard !== undefined ? api.spin(origin, character, title, body, framingArgs(body)[0], sentAt, sendBoard)
             : sentAt === undefined ? api.spin(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, framingArgs(body)[0], sentAt));
       } catch { await look(null, character); return; }
       if (answer.ok) went(answer.value.thread.id);
@@ -185,7 +183,7 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
         : (
           <div className="kb-field">
             <label htmlFor={`spin-board-${origin}`}>Board</label>
-            <select id={`spin-board-${origin}`} className="kb-input kb-spin-board" value={list === null ? '' : board} disabled={list === null} aria-describedby={note ? noteId : undefined} onChange={(e) => setPicked(e.target.value)}>
+            <select id={`spin-board-${origin}`} className="kb-input" value={list === null ? '' : board} disabled={list === null} aria-describedby={note ? noteId : undefined} onChange={(e) => setPicked(e.target.value)}>
               {list === null ? <option value="">Loading boards…</option> : (
                 <>
                   {board === '' && <option value="">Pick a board</option>}
