@@ -870,10 +870,11 @@ grant execute on function intercept(uuid, uuid, text) to authenticated, service_
 -- It ends every visit first, in 0108's order (each visit's open row, then its intercept Act and end), and only then posts the concessions, in the order of the Mods' character ids (then the visit's id). One cast can end
 -- visits of several Mods, each posting as its own character and so taking that character's post-count row; two statements that each take several of those rows must take them in one order, or two casts ending
 -- visits of the same two Mods would each hold one and wait for the other. The visits' open rows are each a visit's own, and one thread's visits are the one cast's, so they are no cross-wait.
--- Lock order, honestly: a thread cast takes the thread's row `for no key update` (place_cast), then each visit's open row here, then (inside post_concession's block) the thread's row again via lock_for_quote and the Mod's
--- count row. An interception takes the visit's open row first and reaches the thread's row only inside post_concession. So a cast and an interception in one thread can wait on each other (the cast holds the thread and wants
--- a visit's open row; the interception holds that open row and wants the thread), and the race file has not made it happen. If it does, the detector's victim is either the post (post_concession's block rolls back only
--- the post: the talk-down stands and the row records the error) or the cast/interception statement itself, which fails whole and can be retried. Nothing is written half.
+-- Lock order: a thread cast takes the thread's row `for no key update` (place_cast), then each distraction visit's open row here, then (inside post_concession's block) the thread's row again via lock_for_quote and the
+-- Mod's count row. An interception takes the visit's open row first and reaches the thread's row only inside post_concession. The two cannot wait on each other in a cycle: a cast ends only distraction visits (a card moves
+-- them) and an interception ends only quiz and bribe visits (an interception of a distraction visit is refused before it writes anything), so no open row is wanted by both, and a persona has one challenge kind, so no
+-- Mod's count row is either. An interception waiting at the thread holds only its own visit's open row, which the cast never wants. The race file forces that interleaving (round E: the cast holds the thread, the
+-- interception is in flight and waiting, then the cast runs) and both succeed. A filing racing a concession on a post with a live back is the one wait left (see above); post_concession's block takes its loss.
 create or replace function distract_visits(caster uuid, in_thread uuid, card_act uuid) returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare

@@ -177,3 +177,54 @@ begin
     end loop;
   end loop;
 end $$;
+
+-- ---- E. The interleaving forced: a cast holds the thread's row (as place_cast does at thread reach) and an interception of a bribe visit in that thread is already in flight ----
+-- A (the cast): opens a transaction, takes the thread row `for no key update`. B (the interception, async): starts and, with no thread lock of its own first, takes the bribe visit's open row and then waits for the thread's row
+-- (the concession post). A then runs distract_visits for the thread, which ends the two distraction visits. A cast and an interception never want the same open row (a distraction visit is moved by a card only, a bribe visit by
+-- a payment only; an interception of a distraction visit is refused before it posts), so A needs nothing B holds: A commits, B's wait ends, both succeed, one post per ended visit.
+do $$
+declare
+  url text := current_setting('kayfabb.scratch_url');
+  rd text := 'e1'; t uuid; v uuid; waited integer := 0; r text; said_a text; said_b text;
+begin
+  perform pg_temp.round(rd, 'mixed');
+  t := pg_temp.id(rd, 't');
+  perform extensions.dblink_connect('cr_a', url);
+  perform extensions.dblink_connect('cr_b', url);
+  begin
+    perform extensions.dblink_exec('cr_a', 'begin');
+    perform * from extensions.dblink('cr_a', format('select 1 from threads where id = %L for no key update', t)) as x(one int);
+    perform extensions.dblink_exec('cr_b', 'begin');
+    perform * from extensions.dblink('cr_b', format($c$select set_config('request.jwt.claims', %L, true), set_config('role', 'authenticated', true)$c$,
+      jsonb_build_object('sub', pg_temp.id(rd, 'ua'), 'role', 'authenticated')::text)) as x(a text, b text);
+    perform extensions.dblink_send_query('cr_b', format('select intercept(%L, %L)', pg_temp.id(rd, 'ca'), pg_temp.id(rd, 'v3')));
+    -- B is in flight and waiting for a lock (the thread's row) before A goes on.
+    loop
+      exit when exists (select 1 from pg_stat_activity s where s.datname = current_database() and s.wait_event_type = 'Lock' and s.query like '%intercept(%' || pg_temp.id(rd, 'v3')::text || '%');
+      waited := waited + 1;
+      if waited > 400 then raise exception 'the interception never waited on a lock'; end if;
+      perform pg_sleep(0.025);
+    end loop;
+    begin
+      perform * from extensions.dblink('cr_a', format('select distract_visits(%L, %L, %L)', pg_temp.id(rd, 'cb'), t, gen_random_uuid())) as x(n int);
+      said_a := null;
+    exception when others then said_a := sqlerrm;
+    end;
+    begin perform extensions.dblink_exec('cr_a', 'commit'); exception when others then said_a := coalesce(said_a, sqlerrm); end;
+    begin
+      select x.s into said_b from extensions.dblink_get_result('cr_b') as x(s text);
+      perform * from extensions.dblink_get_result('cr_b') as x(s text);
+    exception when others then said_b := sqlerrm;
+    end;
+    begin perform extensions.dblink_exec('cr_b', 'commit'); exception when others then null; end;
+  exception when others then
+    perform extensions.dblink_disconnect('cr_a'); perform extensions.dblink_disconnect('cr_b');
+    raise;
+  end;
+  perform extensions.dblink_disconnect('cr_a'); perform extensions.dblink_disconnect('cr_b');
+  if said_a is not null then raise exception 'the cast failed: %', said_a; end if;
+  if said_b is null or said_b !~ 'succeeded' then raise exception 'the interception failed: %', said_b; end if;
+  foreach v in array array[pg_temp.id(rd, 'v1'), pg_temp.id(rd, 'v2'), pg_temp.id(rd, 'v3')] loop
+    if pg_temp.ends_of(v) is distinct from 1::bigint or pg_temp.posts_of(v) is distinct from 1::bigint then raise exception 'visit % has % ends and % posts', v, pg_temp.ends_of(v), pg_temp.posts_of(v); end if;
+  end loop;
+end $$;
