@@ -33,12 +33,12 @@ const SWEEP_PX_S = Number(/export const SWEEP_PX_S = (\d+)/.exec(readFileSync(ne
 if (!Number.isFinite(SWEEP_PX_S)) throw new Error('SWEEP_PX_S is not in instances/divided-world/cards/whoops/scrub.ts');
 
 /* The ladder's budget, read from the effect's own source (importing the effect would pull in React and its stylesheet), and refused if it is not found. */
-const FOG_BUDGET_MS = Number(/export const FOG_BUDGET_MS = (\d+(?:\.\d+)?)/.exec(readFileSync(new URL('../instances/divided-world/ui/hot-box/Effect.tsx', import.meta.url), 'utf8'))?.[1]);
-if (!Number.isFinite(FOG_BUDGET_MS)) throw new Error('FOG_BUDGET_MS is not in instances/divided-world/ui/hot-box/Effect.tsx');
+const FOG_BUDGET_MS = Number(/export const FOG_BUDGET_MS = (\d+(?:\.\d+)?)/.exec(readFileSync(new URL('../instances/divided-world/ui/hot-box/ladder.ts', import.meta.url), 'utf8'))?.[1]);
+if (!Number.isFinite(FOG_BUDGET_MS)) throw new Error('FOG_BUDGET_MS is not in instances/divided-world/ui/hot-box/ladder.ts');
 /* The frames painted at the ladder's last rung before the fog's cost there is judged: as many as the ladder judges its own mean on, read from the effect's
  * source as the budget is, so that it is a mean. */
-const LADDER_SETTLED = Number(/const LADDER_FIRST = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/ui/hot-box/Effect.tsx', import.meta.url), 'utf8'))?.[1]);
-if (!Number.isInteger(LADDER_SETTLED)) throw new Error('LADDER_FIRST is not in instances/divided-world/ui/hot-box/Effect.tsx');
+const LADDER_SETTLED = Number(/const LADDER_FIRST = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/ui/hot-box/ladder.ts', import.meta.url), 'utf8'))?.[1]);
+if (!Number.isInteger(LADDER_SETTLED)) throw new Error('LADDER_FIRST is not in instances/divided-world/ui/hot-box/ladder.ts');
 /* How long the cost cases' sweep goes on past its length while the ladder has not settled (#864). */
 const SETTLE_CAP_MS = 6000;
 

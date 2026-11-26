@@ -18,11 +18,11 @@
  * it says of itself, and no more.
  */
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
-import type { Piece } from '../../rules/cosmetics.ts';
+import { GEAR_VIEWS, pieceShape, shownView, type GearView, type Piece } from '../../rules/cosmetics.ts';
 import { gemOf, rarityName } from '../cards/faces.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, Id, ShownTrophy, TrophyItem, WardrobeItem } from '../data/api.ts';
-import { Outfit, slotShape } from '../gear/Outfit.tsx';
+import { Outfit, placement, slotShape } from '../gear/Outfit.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { Carousel } from '../glass/Carousel.tsx';
@@ -41,6 +41,11 @@ const FIRST_WIDTH = 0.4;
 const FALLBACK_TALLNESS = 1.5;
 /** What is said when a nudge changes nothing: the piece is at an edge of the portrait. */
 const STUCK = "It can't move further that way.";
+
+/** The words for each view of a piece: the option's name and the live line. */
+const FACING: Readonly<Record<GearView, string>> = { 'side-left': 'Side, facing left', 'three-quarter-left': 'Three-quarter, facing left', front: 'Front', 'three-quarter-right': 'Three-quarter, facing right', 'side-right': 'Side, facing right' };
+/** What the live words say a piece now shows, in a sentence: "<name> now shows <this>." */
+const SHOWS: Readonly<Record<GearView, string>> = { 'side-left': 'its side, facing left', 'three-quarter-left': 'a three-quarter view, facing left', front: 'its front', 'three-quarter-right': 'a three-quarter view, facing right', 'side-right': 'its side, facing right' };
 
 type Drag = { readonly mode: 'move' | 'size' | 'turn'; readonly index: number; readonly start: Piece; readonly sx: number; readonly sy: number; readonly d0: number; readonly a0: number; readonly dirty: boolean };
 
@@ -136,7 +141,11 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
   const most = instance.settings.cosmetics.gear.wornMost;
   const reach = instance.settings.cosmetics.gear.reach;
   const group = useId();
-  const [pieces, setPieces] = useState<Piece[]>(() => drafts.get(id) ?? renumber(face?.outfit ?? []));
+  const [pieces, setPieces] = useState<Piece[]>(() => {
+    /* A piece saved in a view its item does not ship (the art was replaced since) is drawn in the default view; the draft says so too, so what is saved is what is shown. */
+    const known = (p: Piece): Piece => { const item = ui.gear[p.gear]; return p.view !== null && item !== undefined && item.views[p.view] === undefined ? { ...p, view: null } : p; };
+    return (drafts.get(id) ?? renumber(face?.outfit ?? [])).map(known);
+  });
   const [at, setAt] = useState<number | null>(null);
   const [gear, setGear] = useState<string | null>(items.some((i) => i.gear === wear) ? wear : items[0]?.gear ?? null);
   const [say, setSay] = useState('');
@@ -158,7 +167,8 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
 
   const rules = (key: string) => instance.gear.find((g) => g.key === key);
   const nameOf = (key: string) => rules(key)?.name ?? key;
-  const aspectOf = (key: string) => ui.gear[key]?.aspect ?? 1;
+  /* A piece's shape in the view it shows; undefined for gear the instance has no art for. */
+  const shapeOf = (p: Piece) => { const item = ui.gear[p.gear]; return item === undefined ? undefined : pieceShape(p, item); };
   const masks = new Map(characters.map((c) => [c.id, c.name]));
 
   /* Where each gear's copies stand: held, those on the other masks (by mask), and those on this stage. */
@@ -199,7 +209,7 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
     if (busy) return;
     const why = whyNot(key);
     if (why !== null) { speak(why); return; }
-    const piece = fit({ gear: key, x: where?.x ?? 0.5, y: where?.y ?? 0.5, w: FIRST_WIDTH, turn: 0, layer: pieces.length });
+    const piece = fit({ gear: key, x: where?.x ?? 0.5, y: where?.y ?? 0.5, w: FIRST_WIDTH, turn: 0, layer: pieces.length, view: null });
     change([...pieces, piece], pieces.length, `${nameOf(key)} put on, layer ${pieces.length + 1} of ${pieces.length + 1} worn. The buttons under Selected piece move it.`);
   };
 
@@ -218,6 +228,20 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
     const p = f(current);
     if (JSON.stringify(p) === JSON.stringify(current)) { speak(none); return; }
     change(pieces.map((x, i) => (i === at ? p : x)), at, words?.(p));
+  };
+  const faces = current && ui.gear[current.gear] ? GEAR_VIEWS.filter((v) => ui.gear[current.gear]!.views[v] !== undefined) : [];
+  const facingShown = current && ui.gear[current.gear] ? shownView(ui.gear[current.gear]!, current.view) : null;
+  const faceTo = (v: GearView) => edit((p) => ({ ...p, view: v }), '', () => `${nameOf(current!.gear)} now shows ${SHOWS[v]}.`);
+  /* A radio group's arrows, kept here because they move the page's choice (and focus), whatever the browser does with a name. */
+  const faceKeys = (e: KeyboardEvent<HTMLInputElement>, v: GearView) => {
+    const by = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (by === 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const to = faces[(faces.indexOf(v) + by + faces.length) % faces.length]!;
+    faceTo(to);
+    const radios = e.currentTarget.closest('fieldset')?.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+    radios?.[faces.indexOf(to)]?.focus();
   };
   const takeOff = () => {
     if (at === null || !current || busy) return;
@@ -274,7 +298,7 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
     const handle = (e.target as HTMLElement).closest('[data-kb-handle]')?.getAttribute('data-kb-handle');
     let index = at;
     if (handle === undefined || handle === null) {
-      index = hit(pieces, aspectOf, p.x, p.y, p.w, p.h);
+      index = hit(pieces, shapeOf, p.x, p.y, p.w, p.h);
       setAt(index);
       if (index === null) return;
       setFocusSel(true);
@@ -344,7 +368,7 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
               onChange={() => { setGear(i.gear); follow(i.gear); }} onFocus={() => follow(i.gear)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); putGear(i.gear); } }}
             />
-            <span className="kb-wardrobe-art" aria-hidden="true">{ui.gear[i.gear] && <img src={ui.gear[i.gear]!.art} alt="" draggable={false} />}</span>
+            <span className="kb-wardrobe-art" aria-hidden="true">{ui.gear[i.gear] && <img src={ui.gear[i.gear]!.views[ui.gear[i.gear]!.default]!.art} alt="" draggable={false} />}</span>
             <span className="kb-wardrobe-rarity"><span className="kb-gem" aria-hidden="true" data-kb-rarity={i.rarity} data-kb-gem={gemOf(i.rarity)} /> <span>{rarityName(i.rarity)}</span></span>
             <b id={ids.name} className="kb-wardrobe-name">{nameOf(i.gear)}</b>
             <span id={ids.worn} className="kb-wardrobe-worn-line">{s.text}</span>
@@ -416,17 +440,21 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
             <img src={portrait} alt="" draggable={false} onLoad={(e) => { const i = e.currentTarget; if (i.naturalWidth > 0) setTall(i.naturalHeight / i.naturalWidth); }} />
             <Outfit pieces={pieces} on="portrait" />
             <span className="kb-wardrobe-reach" aria-hidden="true" />
-            {current && ui.gear[current.gear] && (
+            {current && ui.gear[current.gear] && (() => {
+              /* The box is drawn as `Outfit` draws the piece (pivot, transform-origin, the shown view's width and aspect), so its handles hug the picture. */
+              const shape = pieceShape(current, ui.gear[current.gear]!);
+              return (
               <div
                 ref={sel} className="kb-wardrobe-sel" tabIndex={0} role="group" onKeyDown={keys}
                 aria-label={`${gearName(current)}, selected`} aria-describedby={help}
-                style={{ left: `${Math.round(current.x * 1e6) / 1e4}%`, top: `${Math.round(current.y * 1e6) / 1e4}%`, width: `${Math.round(current.w * 1e6) / 1e4}%`, aspectRatio: `1 / ${aspectOf(current.gear)}`, transform: `translate(-50%, -50%) rotate(${current.turn}deg)` }}
+                style={placement(current, shape)}
               >
                 <span id={help} className="kb-visually-hidden">Arrow keys move it, plus and minus size it, left and right brackets turn it, Delete takes it off.</span>
                 {['nw', 'ne', 'sw', 'se'].map((c) => <span key={c} className="kb-wardrobe-handle" data-kb-handle="size" data-kb-corner={c} aria-hidden="true" />)}
                 <span className="kb-wardrobe-handle kb-wardrobe-turn" data-kb-handle="turn" aria-hidden="true" />
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       </section>
@@ -454,6 +482,22 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
             <button type="button" className="kb-wardrobe-ctl kb-wardrobe-wide" disabled={current === null || top || busy} onClick={() => reorder(1)}>Bring forward</button>
             <button type="button" className="kb-wardrobe-ctl kb-wardrobe-wide" disabled={current === null || bottom || busy} onClick={() => reorder(-1)}>Send back</button>
           </div>
+          {current && faces.length > 1 && (
+            <fieldset className="kb-wardrobe-facing" disabled={busy}>
+              <legend className="kb-wardrobe-facing-legend">Facing</legend>
+              {faces.map((v) => (
+                <label key={v} className="kb-wardrobe-face" data-kb-chosen={facingShown === v || undefined}>
+                  <input
+                    type="radio" name={`${group}-facing`} value={v} className="kb-visually-hidden" checked={facingShown === v}
+                    tabIndex={facingShown === v ? 0 : -1} onChange={() => faceTo(v)} onKeyDown={(e) => faceKeys(e, v)}
+                  />
+                  <span className="kb-wardrobe-face-art" aria-hidden="true"><img src={ui.gear[current.gear]!.views[v]!.art} alt="" draggable={false} /></span>
+                  <span className="kb-visually-hidden">{FACING[v]}</span>
+                </label>
+              ))}
+              <p className="kb-wardrobe-facing-now">Facing: {FACING[facingShown!]}</p>
+            </fieldset>
+          )}
           <ButtonRow><GlassButton onClick={takeOff} disabled={current === null || busy}>Take it off</GlassButton></ButtonRow>
         </section>
 

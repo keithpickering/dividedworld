@@ -24,7 +24,7 @@ import { pollHeard, type LogBallot, type LogPlace, type LogPollClose } from './a
 import { decide } from '../../rules/actions.ts';
 import { countedBallots, lastsHours, pickRefusal, pollCounts, pollDraftProblems, type PollDraft } from '../../rules/polls.ts';
 import { isFixed, rollPack } from '../../rules/packs.ts';
-import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
+import { beltHolder, GEAR_VIEWS, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
@@ -299,9 +299,10 @@ export interface Seed {
    * A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action).
    * With `paid`, its player's card ledger records the play at that price and the wallet pays it, as `play_card` does (a wallet event
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
-   * moments were snapshotted (0072): its moment is not taken.
+   * moments were snapshotted (0072): its moment is not taken. With `id`, the play's Act has that id instead of a fresh one (refused
+   * where an Act already has it), so a story or a test can choose what an id-seeded effect rolls.
    */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; instant?: boolean; unrecorded?: boolean; spring?: Id; tokens?: number; drawn?: string }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; instant?: boolean; unrecorded?: boolean; spring?: Id; tokens?: number; drawn?: string; id?: string }): Id;
   /**
    * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
@@ -3488,6 +3489,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!within(piece.y, 0, 1)) return 'a piece\'s y is outside the portrait';
       if (!within(piece.w, PIECE_WIDTH.least, PIECE_WIDTH.most)) return 'a piece\'s width is from 0.05 to 1.5 of the portrait\'s width';
       if (!within(piece.turn, -PIECE_TURN_MOST, PIECE_TURN_MOST)) return 'a piece\'s turn is from -180 to 180 degrees';
+      if (piece.view != null && !(GEAR_VIEWS as readonly unknown[]).includes(piece.view)) return 'a piece\'s view is side-left, three-quarter-left, front, three-quarter-right or side-right';
       if (!Number.isInteger(piece.layer) || !within(piece.layer, 0, most - 1)) return `a piece's layer is a whole number below ${most}`;
       return null;
     })();
@@ -3522,7 +3524,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const o of characters.values()) if (o.owner === account.id && o.id !== c.id) for (const w of o.outfit) elsewhere[w.gear] = (elsewhere[w.gear] ?? 0) + 1;
     const problems = outfitProblems(pieces, account.gear, elsewhere, cosmetics());
     if (problems.length > 0) return refuse(problems.join('; '));
-    c.outfit = pieces.map((p) => ({ gear: p.gear, x: p.x, y: p.y, w: p.w, turn: p.turn, layer: p.layer })).sort((a, b) => a.layer - b.layer);
+    c.outfit = pieces.map((p) => ({ gear: p.gear, x: p.x, y: p.y, w: p.w, turn: p.turn, layer: p.layer, view: p.view ?? null })).sort((a, b) => a.layer - b.layer);
     return ok({ worn: pieces.length });
   }
 
@@ -6329,7 +6331,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o?.instant === true) payload.instant = true;
       /* A play of a drive card joins the post's open drive, or opens one named by its own id (place_cast, 0153). */
       const driveRules = instance.cards.find((c) => c.key === card);
-      const seededId = uuid();
+      /* A given id is the play's own (a test that needs to know it before the play exists); one in use is refused. */
+      if (o?.id !== undefined && acts.has(o.id)) throw new Error(`an Act ${o.id} already exists`);
+      const seededId = o?.id ?? uuid();
       const drive = o?.caught === undefined && driveRules ? driveOf(driveRules, target, seededId, o?.at) : undefined;
       if (drive !== undefined) payload.drive = drive;
       /* A paid play is refused before its Act is written, as play_card refuses before it writes; the hand is the seed's to set (`cards`). */

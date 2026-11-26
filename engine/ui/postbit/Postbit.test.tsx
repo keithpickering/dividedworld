@@ -397,7 +397,7 @@ describe('the side by side avatar slot, in the stylesheet', () => {
 });
 
 describe('gear on the postbit', () => {
-  const worn = [{ gear: 'band', x: 0.5, y: 0, w: 0.5, turn: 0, layer: 0 }];
+  const worn = [{ gear: 'band', x: 0.5, y: 0, w: 0.5, turn: 0, layer: 0, view: null }];
   const SQUARE = { x: 0, y: 0, w: 1, h: 0.5 };
 
   test('a portrait wears its pieces in a layer of its own, hidden from assistive tech', () => {
@@ -410,11 +410,11 @@ describe('gear on the postbit', () => {
 
   test('the root carries --kb-overhang for a cap standing above its slot, and none for gear inside', () => {
     /* `tall` (aspect 2) at w 0.5, y 0.1 in a slot 2 tall: half-height 0.5 above a center of 0.2, so 0.3 over the top. */
-    show(person({}, { outfit: [{ gear: 'tall', x: 0.5, y: 0.1, w: 0.5, turn: 0, layer: 0 }], portraitTallness: null }));
+    show(person({}, { outfit: [{ gear: 'tall', x: 0.5, y: 0.1, w: 0.5, turn: 0, layer: 0, view: null }], portraitTallness: null }));
     const root = screen.getByRole('group') as HTMLElement;
     expect(Number(root.style.getPropertyValue('--kb-overhang'))).toBeCloseTo(0.3, 6);
     document.body.innerHTML = '';
-    show(person({}, { outfit: [{ gear: 'band', x: 0.5, y: 0.5, w: 0.5, turn: 0, layer: 0 }], portraitTallness: null }));
+    show(person({}, { outfit: [{ gear: 'band', x: 0.5, y: 0.5, w: 0.5, turn: 0, layer: 0, view: null }], portraitTallness: null }));
     expect((screen.getByRole('group') as HTMLElement).style.getPropertyValue('--kb-overhang')).toBe('');
   });
 
@@ -460,7 +460,7 @@ describe('gear on the postbit', () => {
 });
 
 describe('a portrait with no square', () => {
-  const worn = [{ gear: 'band', x: 0.5, y: 0.1, w: 0.5, turn: 0, layer: 0 }];
+  const worn = [{ gear: 'band', x: 0.5, y: 0.1, w: 0.5, turn: 0, layer: 0, view: null }];
   test('stacked, the square gear is not drawn over the initial letter', () => {
     widthOf(1440);
     show(person({}, { avatarSquare: null, outfit: worn, portraitTallness: 2 }), 'stacked');

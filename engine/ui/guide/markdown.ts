@@ -22,6 +22,12 @@
  * it does not know is a marker named `if <condition>`, an `if` inside an `if` a marker named `if-nested`, an `if` never closed one named
  * `if-unclosed`, and an `end` with no `if` one named `end`. The page draws nothing for those, as for any marker it does not know.
  *
+ * A hard break is the one CommonMark has: a backslash at the very end of a line, with another line of the same paragraph after it, ends
+ * the line there (`Have fun,\` then `Gabe` is two short lines, no paragraph gap) and is a `br` node. Nothing else breaks a line: an
+ * ordinary newline in a paragraph is still a space. A backslash anywhere else stays text, as does one ending a paragraph's last line (a
+ * break with nothing after it), and a pair of them (`\\`) is an escaped backslash, so the line ends in one literal backslash and no break.
+ * Only a paragraph's own lines take it; a list item's continuation lines are still joined by a space.
+ *
  * Any other `<!-- comment -->`, on one line or many, is the author's note and is dropped; one that never closes is text, so a stray
  * `<!--` cannot swallow the rest of the guide.
  */
@@ -33,7 +39,8 @@ export type Inline =
   | { readonly t: 'strong' | 'em'; readonly children: readonly Inline[] }
   | { readonly t: 'code'; readonly text: string }
   | { readonly t: 'link'; readonly href: string; readonly children: readonly Inline[] }
-  | { readonly t: 'setting'; readonly path: string };
+  | { readonly t: 'setting'; readonly path: string }
+  | { readonly t: 'br' };
 
 export type Block =
   | { readonly t: 'heading'; readonly level: 1 | 2 | 3 | 4; readonly children: readonly Inline[] }
@@ -98,6 +105,8 @@ function inline(src: string): Inline[] {
   let i = 0;
   while (i < src.length) {
     const c = src[i]!;
+    /* A newline reaches here only from `joinLines`, which puts one where a paragraph's line ended in a hard break. */
+    if (c === '\n') { flush(); out.push({ t: 'br' }); i++; continue; }
     if (c === '\\' && i + 1 < src.length && ESCAPABLE.includes(src[i + 1]!)) { buf += src[i + 1]; i += 2; continue; }
     if (c === '`') {
       const end = src.indexOf('`', i + 1);
@@ -145,6 +154,7 @@ export function inlineText(nodes: readonly Inline[], say: (path: string) => stri
   return nodes.map((n) => {
     if (n.t === 'text' || n.t === 'code') return n.text;
     if (n.t === 'setting') return say(n.path);
+    if (n.t === 'br') return ' ';
     return inlineText(n.children, say);
   }).join('');
 }
@@ -203,6 +213,14 @@ const startsTable = (lines: readonly string[], i: number): boolean => lines[i]!.
 function startsBlock(lines: readonly string[], i: number): boolean {
   const t = lines[i]!.trim();
   return t.startsWith('<!--') || HEADING.test(t) || RULE.test(t) || ITEM.test(lines[i]!) || t.startsWith('>') || startsTable(lines, i);
+}
+
+/** Whether a line ends in an odd run of backslashes, whose last one is a hard break (an even run is escaped backslashes). */
+const hardBreaks = (line: string): boolean => (/\\+$/u.exec(line)?.[0].length ?? 0) % 2 === 1;
+
+/** A paragraph's lines as one string for `inline`: a space between lines, a newline (and no backslash) where a line but the last ends in a hard break. */
+function joinLines(para: readonly string[]): string {
+  return para.map((l, k) => (k === para.length - 1 ? l : hardBreaks(l) ? `${l.slice(0, -1)}\n` : `${l} `)).join('');
 }
 
 function blocks(lines: readonly string[]): Block[] {
@@ -293,7 +311,7 @@ function blocks(lines: readonly string[]): Block[] {
     const para: string[] = [t];
     i++;
     while (i < lines.length && lines[i]!.trim() !== '' && !startsBlock(lines, i)) { para.push(lines[i]!.trim()); i++; }
-    out.push({ t: 'p', children: inline(para.join(' ')) });
+    out.push({ t: 'p', children: inline(joinLines(para)) });
   }
   return out;
 }

@@ -1240,6 +1240,12 @@ describe('what a list row shows', () => {
     expect([plain?.originThread, plain?.origin]).toEqual([null, null]);
   });
 
+  test('seed.card with an id makes a play of that id, and a second play of an id in use throws', () => {
+    const { fake, anaFace, opener } = world();
+    expect(fake.seed.card(anaFace, opener, 'whoops', { id: 'abc' })).toBe('abc');
+    expect(() => fake.seed.card(anaFace, opener, 'whoops', { id: 'abc' })).toThrow('an Act abc already exists');
+  });
+
   test('a thread spun from a play has the place the SQL gives it: a play, with its card and where it landed (0079)', async () => {
     const { fake, anaFace, boFace, opener, thread } = world();
     const place = async (origin: string) => (await fake.thread(must(await fake.spin(origin, anaFace, 'Spun', 'b')).thread.id))?.origin;
@@ -4545,7 +4551,7 @@ describe('gear, trophies and Random Events', () => {
     events: { lines: [{ key: 'nothing', outcome: 'line', text: 'Nothing happens.' }, { key: 'found', outcome: 'gear', text: 'You find {item}.' }] },
     settings: { ...settings, cosmetics: { ...settings.cosmetics, gear: { wornMost: 2, reach: 0.4 }, trophies: { shownMost: 2 }, events: { ...settings.cosmetics.events, windowMinutes: 15, dayMost: 2 } } },
   };
-  const piece = (gear: string, layer: number) => ({ gear, x: 0.5, y: 0.5, w: 0.4, turn: 0, layer });
+  const piece = (gear: string, layer: number) => ({ gear, x: 0.5, y: 0.5, w: 0.4, turn: 0, layer, view: null as null });
   function dressing() {
     const fake = createFake({ instance: dressed });
     const ana = fake.seed.account('ana');
@@ -4569,6 +4575,14 @@ describe('gear, trophies and Random Events', () => {
     expect((await fake.setOutfit(a2, [piece('hat', 0)]))).toEqual(refused('"hat" is worn 1 time here, and 0 copies are free'));
     expect(must(await fake.setOutfit(a1, [piece('monocle', 0)]))).toEqual({ worn: 1 });
     expect(must(await fake.setOutfit(a2, [piece('hat', 0)]))).toEqual({ worn: 1 });
+    // A piece's view is kept, and one that is not among the five is refused in piece_problem's words.
+    expect(must(await fake.setOutfit(a1, [{ ...piece('monocle', 0), view: 'side-left' as const }]))).toEqual({ worn: 1 });
+    expect((await fake.characters([a1]))[0]!.outfit[0]!.view).toBe('side-left');
+    expect(await fake.setOutfit(a1, [{ ...piece('monocle', 0), view: 'back' as never }])).toEqual(refused('a piece\'s view is side-left, three-quarter-left, front, three-quarter-right or side-right'));
+    // A piece with no view key reads back as view null, as the server's missing key does.
+    const { view: _none, ...noView } = piece('monocle', 0);
+    expect(must(await fake.setOutfit(a1, [noView as never]))).toEqual({ worn: 1 });
+    expect((await fake.characters([a1]))[0]!.outfit[0]!.view).toBeNull();
   });
 
   test('a piece over the worn limit, a shared layer, a bad bound and an unknown gear are refused in the server\'s words', async () => {

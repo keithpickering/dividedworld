@@ -39,7 +39,7 @@ import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, RE
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ENGINE_DEFAULT_PRONOUNS, normalizePronouns, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
-import type { Piece } from '../../../engine/rules/cosmetics.ts';
+import { GEAR_VIEWS, type GearView, type Piece } from '../../../engine/rules/cosmetics.ts';
 import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type { HandoffFacts } from '../../../engine/system/meeting.ts';
@@ -1083,8 +1083,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /** The office characters_public shows a staff character; anything else it might say is no office. */
   const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' || o === 'anonymous' ? o : undefined);
 
+  /** A view as the database stores it: one of the five names, else null (the item's default). */
+  const toView = (v: unknown): GearView | null => ((GEAR_VIEWS as readonly unknown[]).includes(v) ? (v as GearView) : null);
   /** A piece worn as gear_worn or a profile's `outfit` has it, in layer order. */
-  const toPieces = (v: unknown): Piece[] => rowsOf(v).map((w): Piece => ({ gear: w['gear'], x: num(w['x']), y: num(w['y']), w: num(w['w']), turn: num(w['turn']), layer: num(w['layer']) })).sort((a, b) => a.layer - b.layer);
+  const toPieces = (v: unknown): Piece[] => rowsOf(v).map((w): Piece => ({ gear: w['gear'], x: num(w['x']), y: num(w['y']), w: num(w['w']), turn: num(w['turn']), layer: num(w['layer']), view: toView(w['view']) })).sort((a, b) => a.layer - b.layer);
   /** An award as `trophy_item` has it; `held` is a belt's alone, null otherwise. */
   const toShownTrophy = (t: Row): ShownTrophy => ({ award: t['award'], trophy: t['trophy'], name: t['name'], art: trophyArtUrl(str(t['art'])), belt: t['belt'] === true, held: t['held'] === true });
   const toTrophyItem = (t: Row): TrophyItem => ({ ...toShownTrophy(t), line: str(t['line']), at: t['at'], by: t['by'], season: typeof t['season'] === 'number' ? t['season'] : null,
@@ -1130,7 +1132,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office,group').in('id', part))),
       byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,portrait_tallness,pip_style,pronouns').in('character', part))),
       /* Paged and ordered, since a chunk of masks can wear more than the row cap holds: a page cut short would drop pieces silently. */
-      byChunks(ids, (part) => every((start, end) => client.from('gear_worn').select('character,layer,gear,x,y,w,turn').in('character', part).order('character', { ascending: true }).order('layer', { ascending: true }).range(start, end))),
+      byChunks(ids, (part) => every((start, end) => client.from('gear_worn').select('character,layer,gear,x,y,w,turn,view').in('character', part).order('character', { ascending: true }).order('layer', { ascending: true }).range(start, end))),
     ]);
     const outfits = new Map<string, Row[]>();
     for (const w of worn) outfits.set(w['character'] as string, [...(outfits.get(w['character'] as string) ?? []), w]);

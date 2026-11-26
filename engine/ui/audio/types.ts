@@ -1,6 +1,6 @@
 /** Which of the account's two sound settings a sound answers to. */
 export type SoundBus = 'game' | 'interface';
-/** One sound an instance supplies (InstanceUi.sounds): a file the bundler resolved, its bus, and its caption, which the engine shows whenever it plays. */
+/** One sound an instance supplies (InstanceUi.sounds): a file the bundler resolved, its bus, and its caption, which the engine shows whenever it plays unless that play gives its own words (`SoundPlay.play`'s `caption`); the ink stays the slot's. */
 export interface SoundSlot {
   readonly key: string;
   readonly src: string;
