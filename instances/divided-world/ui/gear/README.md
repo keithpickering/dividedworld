@@ -91,5 +91,7 @@ sit. An SVG is held to the card art's safety reading: nothing in it runs or reac
 
 ## The items here
 
-`baseball-cap` and `plumbers-cap` are the two modeled items, each with its model beside its pictures, and each has four
-color variants: green, blue, yellow and purple. The other items are drawings until their models exist.
+`baseball-cap` and `plumbers-cap` are modeled by hand, each with its model beside its pictures, and each has four
+color variants: green, blue, yellow and purple. `nostalgic-hat` (a top hat with a sprig of mistletoe) is modeled by a
+script, `nostalgic-hat/make-model.py`, which writes its `model.blend`; it ships all five views with
+`three-quarter-left` as its default, the side its sprig is on. The other items are drawings until their models exist.
