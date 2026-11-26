@@ -520,6 +520,10 @@ create function pg_temp.act_reads() returns bigint language sql as $$
   from pg_class t cross join lateral (select t.oid union all select i.indexrelid from pg_index i where i.indrelid = t.oid) o(oid)
   where t.relname = 'acts' and t.relnamespace = 'public'::regnamespace
 $$;
+-- Index entries returned by acts_created alone: what the newcomer scan reads of the Acts of a span of time. The held characters' probes of acts_public go through other indexes, so they are not in it.
+create function pg_temp.created_reads() returns bigint language sql as $$
+  select coalesce(pg_stat_get_xact_tuples_returned('public.acts_created'::regclass) + pg_stat_get_xact_tuples_fetched('public.acts_created'::regclass), 0)::bigint
+$$;
 do $$
 declare
   accts uuid[] := '{}';
@@ -533,6 +537,8 @@ declare
   before bigint;
   reads2 bigint;
   reads6 bigint;
+  scan2 bigint;
+  scan6 bigint;
   rows2 bigint;
   rows6 bigint;
   pending_n bigint;
@@ -561,8 +567,13 @@ begin
   perform pg_temp.expect(not exists (select 1 from roster_seen s where s.character = any(made)), 'nothing skipped is written down as seen');
   -- What one window reads of `acts` does not grow with the windows skipped before it (the floor is the last entry of any kind).
   perform roster_newcomers(ws[2]); perform roster_newcomers(ws[6]);
+  before := pg_temp.created_reads(); perform roster_newcomers(ws[2]); scan2 := pg_temp.created_reads() - before;
+  before := pg_temp.created_reads(); perform roster_newcomers(ws[6]); scan6 := pg_temp.created_reads() - before;
   before := pg_temp.act_reads(); perform roster_newcomers(ws[2]); reads2 := pg_temp.act_reads() - before;
   before := pg_temp.act_reads(); perform roster_newcomers(ws[6]); reads6 := pg_temp.act_reads() - before;
+  -- The scan of Acts by time reads one window's: each window holds 15 Acts, so the 6th reads about what the 2nd does, where a scan back to the System going off reads six windows' to the 2nd's two.
+  perform pg_temp.expect(scan2 > 0 and scan6 * 2 <= scan2 * 3,
+    format('roster_newcomers reads %s entries of acts_created for the 6th System-off window where the 2nd reads %s: it scans every Act since the System went off, where one window holds 15', scan6, scan2));
   -- Each held character is probed again in acts_public (a veil cast since keeps it out), so the work follows the characters named (those held since the last report that posted, and the window's own), never the Acts skipped:
   -- what a window reads of `acts` for each character it names is what it was for the 2nd window.
   select count(*) into rows2 from roster_newcomers(ws[2]);
