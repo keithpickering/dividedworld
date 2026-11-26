@@ -233,13 +233,25 @@
     "files": [
       "ui/gear/button/front.svg",
       "ui/gear/mustache/front.svg",
-      "ui/gear/nostalgic-hat/front.svg",
       "ui/gear/shades/front.svg"
     ],
     "maker": "Divided World",
     "terms": "layer",
     "work": "Placeholder gear art",
     "note": "Placeholders copied from docs/research/2026-11-04-cosmetics/art.svg, which stand until the owner's art replaces them (ui/cosmetics.ts; docs/plans/2026-11-23-rendered-gear-design.md)."
+  },
+  {
+    "files": [
+      "ui/gear/nostalgic-hat/front.webp",
+      "ui/gear/nostalgic-hat/side-left.webp",
+      "ui/gear/nostalgic-hat/side-right.webp",
+      "ui/gear/nostalgic-hat/three-quarter-left.webp",
+      "ui/gear/nostalgic-hat/three-quarter-right.webp"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Nostalgic Hat renders",
+    "note": "Rendered by ui/gear/rig.py from ui/gear/nostalgic-hat/model.blend, which was modeled in a session from the owner's sprite of the hat (a top hat with a sprig of mistletoe) and finished by the owner, who placed the sprig and redrew the berries."
   },
   {
     "files": [
