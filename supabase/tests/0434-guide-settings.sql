@@ -20,10 +20,13 @@ begin
   if not seen ? 'cardEconomy' or not seen ? 'groups' then raise exception 'screen_settings dropped cardEconomy or groups'; end if;
 end $$;
 
--- The key list itself (the view's text), so a key the instance has no row for is still checked: every one of the earlier keys is named, and so are the two new.
+-- The key list itself (the view's WHERE, read from its definition), so a key the instance has no row for is still checked: every one of the earlier keys is
+-- listed, and so are the two new, and nothing else.
 do $$
 declare
   def text := pg_get_viewdef('public.screen_settings'::regclass);
+  -- The WHERE's own list, as Postgres prints it (WHERE (key = ANY (ARRAY['a'::text, ...]))), so a name quoted in another clause cannot stand in for it.
+  listed text[] := array(select m[1] from regexp_matches(substring(def from 'WHERE \(key = ANY \(ARRAY\[([^]]*)\]'), '''([^'']+)''', 'g') as m);
   k text;
 begin
   foreach k in array array['postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'crowdPayEach', 'crowdFloor', 'crowdPayMost', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime',
@@ -31,6 +34,7 @@ begin
                   'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'searchLanguage', 'searchRankPool', 'pronouns', 'setLasts',
                   'oldVoiceWindow', 'oldVoicePromptFloor',
                   'pollOptionsMax', 'pollQuestionMax', 'pollOptionMax', 'pollLastsMin', 'pollLastsMax', 'systemEnabled', 'seasonLength'] loop
-    if position('''' || k || '''' in def) = 0 then raise exception 'the view''s key list lacks %', k; end if;
+    if not k = any(listed) then raise exception 'the view''s key list lacks %', k; end if;
   end loop;
+  if cardinality(listed) <> 34 then raise exception 'the view''s key list holds % keys, not the 34 asked: %', cardinality(listed), listed; end if;
 end $$;
