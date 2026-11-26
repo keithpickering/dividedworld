@@ -479,14 +479,17 @@ export interface TextSpan {
   readonly to: number;
 }
 
-/** Copy the span of each `text` node the finished tree holds (and no node that was merged or split away) from `known` to `texts`: one iterative walk, linear in the tree. */
-function collectTexts(root: readonly BbNode[], known: ReadonlyMap<BbNode, TextSpan>, texts: Map<BbNode, TextSpan>): void {
+/**
+ * Copy the span of each `text` node the finished tree holds (and no node that was merged or split away) from `known` to `texts`: one iterative walk, linear in the tree. A span is
+ * copied only where the input's slice is the node's text, so a span the bookkeeping got wrong is left out rather than handed to a caller who writes into the input by it.
+ */
+function collectTexts(input: string, root: readonly BbNode[], known: ReadonlyMap<BbNode, TextSpan>, texts: Map<BbNode, TextSpan>): void {
   const stack: (readonly BbNode[])[] = [root];
   while (stack.length > 0) {
     for (const n of stack.pop() as readonly BbNode[]) {
       if (n.type === 'text') {
         const span = known.get(n);
-        if (span) texts.set(n, span);
+        if (span && input.slice(span.from, span.to) === n.text) texts.set(n, span);
       } else if ('children' in n) stack.push(n.children);
       else if (n.type === 'list') for (const item of n.items) stack.push(item);
     }
@@ -820,6 +823,6 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
     if (f.kind !== 'literal') finish(f, null);
   }
   autolinkTree(root.out, known);
-  if (texts && known) collectTexts(root.out, known, texts);
+  if (texts && known) collectTexts(input, root.out, known, texts);
   return root.out;
 }
