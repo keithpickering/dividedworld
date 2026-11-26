@@ -297,7 +297,7 @@
     "maker": "Divided World",
     "terms": "layer",
     "work": "Gear art: the baseball cap and the plumber's cap, each in five colors",
-    "note": "Rendered from the owner's own models by ui/gear/rig.py (ui/gear/README.md): model.blend is the baseball cap's and the plumber's cap's model, and each color's rig.json says which model it is made from and how it is recolored."
+    "note": "Rendered from the owner's own models by ui/gear/rig.py (ui/gear/README.md): model.blend is the baseball cap's and the plumber's cap's model, and each color's rig.json says which model it is made from and how it is recolored. The plumber's cap echoes a cap from Nintendo's games, and Nintendo's trademarks are not licensed here."
   },
   {
     "files": [

@@ -143,6 +143,8 @@ def append_model(sc, path):
     if pivot is None:
         sys.exit(f'{path} has no empty named pivot')
     where = pivot.location.copy()  # the model's objects and its pivot carry no parent, so location is where they are
+    # Only the mesh and its helpers are the model: a camera or light left in model.blend is not appended, so the rig's own light is the only light.
+    objs = [o for o in objs if o is pivot or o.type in {'MESH', 'EMPTY', 'CURVE', 'FONT'}]
     roots = []
     for o in objs:
         if o is pivot:
@@ -169,6 +171,7 @@ def recolor(objects, rig):
     missing = names - {o.name for o in objects}
     if missing or not mats:
         sys.exit(f'recolor: no object {sorted(missing)} or no material with nodes among {sorted(names)}')
+    turned = 0
     for mat in mats.values():
         for node in mat.node_tree.nodes:
             if node.type == 'VALTORGB':
@@ -176,6 +179,9 @@ def recolor(objects, rig):
                     r, g, b, alpha = stop.color
                     h, s, v = colorsys.rgb_to_hsv(r, g, b)
                     stop.color = (*colorsys.hsv_to_rgb((h + hue) % 1.0, s, v), alpha)
+                    turned += 1
+    if turned == 0:
+        sys.exit(f'recolor: the materials of {sorted(names)} hold no Color Ramp, so the variant would render as its base')
 
 
 def item_size(objects):
