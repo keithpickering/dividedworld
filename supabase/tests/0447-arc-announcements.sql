@@ -457,6 +457,68 @@ begin
   perform pg_temp.expect(msg like '23514%nothing more%', 'an of that is not the predecessor was queued: ' || coalesce(msg, 'allowed'));
 end $$;
 
+-- ---- 9b. A part that cannot land in its announcement thread does not wait forever; a thread moved to another board is still landed in ----
+-- An announced bundle's part, queued straight (as pg_temp.part queues a predecessor's), with its announcement written by hand: a thread, its post, the played event and the row.
+create function pg_temp.announced(who text, beat text, title text) returns table (bundle uuid, thread uuid) language plpgsql as $$
+declare
+  th uuid := open_staff_thread(who, title);
+  a uuid := (write_staff_act(who, 'post', th, null, jsonb_build_object('body', 'Words.')) ->> 'id')::uuid;
+  b uuid := gen_random_uuid();
+begin
+  perform pg_temp.play(who, beat, b);
+  insert into arc_announcements (season, staff, beat, thread, act, title, play, repeatable)
+  values (pg_temp.season(), who, beat, th, a, title, (select max(e.id) from arc_beat_events e where e.staff = who and e.beat = announced.beat and e.event = 'played'), true);
+  insert into staff_pin_events (thread, season, event) values (th, pg_temp.season(), 'pinned');
+  return query select b, th;
+end $$;
+create function pg_temp.refuse_moves_in(th uuid) returns void language plpgsql as $$
+begin
+  execute format($f$create function pg_temp.refuse_in() returns trigger language plpgsql as $t$
+    begin if new.kind = 'move' and new.thread = %L then raise exception 'this thread takes no more moves'; end if; return new; end $t$ $f$, th);
+  create trigger zz_refuse_in before insert on acts for each row execute function pg_temp.refuse_in();
+end $$;
+do $$
+declare
+  b uuid;
+  th uuid;
+  q1 bigint;
+  q2 bigint;
+  fb uuid;
+  other uuid;
+  mv bigint;
+begin
+  update persona_arcs set beats = jsonb_build_array(jsonb_build_object('key', 'fall1', 'mini', true, 'repeatable', true, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'phase', 'phase', 'reign'))),
+    jsonb_build_object('key', 'fall2', 'mini', true, 'repeatable', true, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'phase', 'phase', 'reign')))) where staff = 'an-succ';
+  select * into b, th from pg_temp.announced('an-succ', 'fall1', 'Fall back one');
+  perform pg_temp.refuse_moves_in(th);
+  q1 := pg_temp.part('an-succ', b, 'Fall back one', 'one', pg_temp.mkboard('Fall One'));
+  perform system_tick();
+  perform pg_temp.expect((select landed_act is not null from queued_moves where id = q1), 'a part the announcement thread refused sits due: ' || coalesce((select failure from queued_moves where id = q1), 'no failure'));
+  select a.thread into fb from queued_moves q join acts a on a.id = q.landed_act where q.id = q1;
+  perform pg_temp.expect(fb <> th and (select staff_placed from threads where id = fb), 'the part did not land in a staff thread of its own: ' || fb::text);
+  perform pg_temp.expect((select failure like 'landed in a thread of its own%this thread takes no more moves%' from queued_moves where id = q1), 'the fall-back was not recorded on the part: ' || coalesce((select failure from queued_moves where id = q1), 'none'));
+  perform pg_temp.expect(exists (select 1 from staff_stickies(system_board()) s where s.thread = th), 'the announcement lost its pin');
+  -- The bundle's next part joins the first one's thread, not a third.
+  q2 := pg_temp.part('an-succ', b, 'Fall back one', 'two', pg_temp.mkboard('Fall Two'));
+  perform system_tick();
+  perform pg_temp.expect((select a.thread from queued_moves q join acts a on a.id = q.landed_act where q.id = q2) = fb, 'the second part did not follow the first out of the refusing thread');
+  drop trigger zz_refuse_in on acts;
+
+  -- A thread moved to another board: the announcement's later part still lands in it, and the pin is kept (the thread is a sticky of the board it is on now).
+  select * into b, th from pg_temp.announced('an-succ', 'fall2', 'Moved announcement');
+  other := (select id from boards where slug = 'elsewhere');
+  mv := (select m.id from (select pg_temp.part('an-succ', gen_random_uuid(), 'Mover', null, '{}'::jsonb) as id) m);
+  alter table queued_moves disable trigger queued_moves_guard;
+  update queued_moves set kind = 'moveThread', params = jsonb_build_object('thread', th, 'board', other), structural = false where id = mv;
+  alter table queued_moves enable trigger queued_moves_guard;
+  perform system_tick();
+  perform pg_temp.expect((select landed_act is not null from queued_moves where id = mv) and thread_place(th) = other, 'setup: the announcement thread was not moved: ' || coalesce((select failure from queued_moves where id = mv), 'no failure'));
+  q1 := pg_temp.part('an-succ', b, 'Moved one', 'one', pg_temp.mkboard('Moved Board'));
+  perform system_tick();
+  perform pg_temp.expect((select a.thread from queued_moves q join acts a on a.id = q.landed_act where q.id = q1) = th, 'a part did not land in the announcement thread that moved: ' || coalesce((select failure from queued_moves where id = q1), 'no failure'));
+  perform pg_temp.expect(exists (select 1 from staff_stickies(other) s where s.thread = th) and not exists (select 1 from staff_stickies(system_board()) s where s.thread = th), 'the moved thread''s pin is not a sticky of the board it is on now');
+end $$;
+
 -- ---- 10. The recap: kept beside the farewell and handoff within the window, cut to 300 (recorded), checked by the table ----
 do $$
 declare
