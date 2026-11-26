@@ -793,10 +793,10 @@ begin
   perform pg_temp.expect(pg_temp.leaks_hunk('pg_temp.poisoned_hunk()'::regprocedure, '-- no such hunk.*?-- hunk ends') = 'hunk missing', 'the hunk check passed a hunk it could not find');
   perform pg_temp.expect(pg_temp.leaks_hunk('apply_meeting(bigint,jsonb)'::regprocedure, 'for ann in select.*?\n  if spent > floor') is null, 'apply_meeting''s announcement sub-block reads a private fact or was not found: ' || pg_temp.leaks_hunk('apply_meeting(bigint,jsonb)'::regprocedure, 'for ann in select.*?\n  if spent > floor'));
   perform pg_temp.expect(pg_temp.leaks_hunk('system_tick()'::regprocedure, 'ann_mt := null;.*?landed_act = written where id = due.id;') is null, 'system_tick''s routing hunk reads a private fact or was not found: ' || pg_temp.leaks_hunk('system_tick()'::regprocedure, 'ann_mt := null;.*?landed_act = written where id = due.id;'));
-  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'board_page_ids', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard') loop
+  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'board_page_ids', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard', 'handover_facts_guard', 'handover_facts_write') loop
     perform pg_temp.expect(pg_temp.leaks(p) is null, p::text || ' reads a private fact: ' || pg_temp.leaks(p));
   end loop;
-  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'board_page_ids', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard')) = 8, 'a function the masks check reads is missing');
+  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'board_page_ids', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard', 'handover_facts_guard', 'handover_facts_write')) = 10, 'a function the masks check reads is missing');
   for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('pool_record', 'meeting_context', 'board_page') loop
     perform pg_temp.expect(pg_temp.leaks(p, '(owner)') is null, p::text || ' reads a character''s owner: ' || pg_temp.leaks(p, '(owner)'));
   end loop;
@@ -805,6 +805,45 @@ begin
   -- system_tick finds a bundle's announcement through the event that played the bundle: one probe by bundle, not a read of every event.
   perform pg_temp.expect(exists (select 1 from pg_indexes where tablename = 'arc_beat_events' and indexdef like '%(bundle)%WHERE%bundle IS NOT NULL%'), 'arc_beat_events has no index by bundle');
   perform pg_temp.expect(not has_function_privilege('anon', 'arc_plot(text)', 'execute') and not has_function_privilege('authenticated', 'arc_plot(text)', 'execute'), 'a client can call arc_plot');
+end $$;
+
+-- ---- 10c. The plot's facts are built once, at the handover: handover_facts ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  hid bigint := (select h.id from season_handovers h where h.boss = 'an-succ' and h.outgoing = 'an-pred' order by h.id desc limit 1);
+  stored jsonb;
+  j jsonb;
+  def text;
+  msg text;
+begin
+ begin
+  -- (1) The handover wrote its facts row, once, of the season the outgoing Boss served.
+  perform pg_temp.expect(to_regclass('handover_facts') is not null, 'there is no handover_facts table');
+  perform pg_temp.expect((select count(*) from handover_facts where handover = hid) = 1, 'the handover did not write its facts row exactly once');
+  select f.facts into stored from handover_facts f where f.handover = hid;
+  perform pg_temp.expect(jsonb_typeof(stored) = 'object' and stored ? 'beats' and stored ? 'busiest', 'the stored facts are not handoff_facts'' shape: ' || stored::text);
+  msg := pg_temp.refusal(format('insert into handover_facts (handover, facts) values (%s, ''{}'')', hid));
+  perform pg_temp.expect(msg is not null, 'a second facts row was written for a handover');
+  -- (2) With no recap, the plot's facts are the stored row.
+  perform pg_temp.handed_over(1);
+  j := pg_temp.plot('an-m1');
+  perform pg_temp.expect(jsonb_typeof(j #> '{last,recap}') = 'null' and j #> '{last,facts}' = stored, 'arc_plot did not return the stored facts: ' || coalesce((j -> 'last')::text, 'none'));
+  -- (3) The poison: arc_plot never calls handoff_facts (it counts the season's posts, and is read by every pool call of a honeymoon).
+  select pg_get_functiondef('arc_plot(text)'::regprocedure) into def;
+  perform pg_temp.expect(def !~* 'handoff_facts', 'arc_plot calls handoff_facts: it recounts the season''s posts on every pool call');
+  perform pg_temp.expect(def ~* 'handover_facts', 'arc_plot does not read handover_facts');
+  -- (4) A facts row is only ever added.
+  msg := pg_temp.refusal(format('update handover_facts set facts = ''{}'' where handover = %s', hid));
+  perform pg_temp.expect(msg like 'P0001:%', 'a facts row was updated: ' || coalesce(msg, 'no refusal'));
+  msg := pg_temp.refusal('delete from handover_facts');
+  perform pg_temp.expect(msg like 'P0001:%', 'a facts row was deleted: ' || coalesce(msg, 'no refusal'));
+  msg := pg_temp.refusal('truncate handover_facts');
+  perform pg_temp.expect(msg like 'P0001:%', 'handover_facts was truncated: ' || coalesce(msg, 'no refusal'));
+  perform pg_temp.expect(not has_table_privilege('anon', 'handover_facts', 'select') and not has_table_privilege('authenticated', 'handover_facts', 'select') and (select relrowsecurity from pg_class where oid = 'handover_facts'::regclass), 'handover_facts is open to a client');
+  raise exception using errcode = 'RB000', message = 'put the fixture back';
+exception when sqlstate 'RB000' then null;
+ end;
 end $$;
 
 -- ---- 11. A roll-over ends the pins with their season: the open season holds none of them ----
