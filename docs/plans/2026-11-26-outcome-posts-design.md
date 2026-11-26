@@ -135,7 +135,11 @@ Act's thread (`acts.thread` of the move; no table records it apart), quoting the
 A move whose thread is not a staff thread (one that landed in the old announcements thread before `0437`, an archive
 that takes no new Act) posts nothing. A ruling that ends its move (overturned, or reduced to an end already past)
 says the end itself: the move's end line (`say_move_end`'s owed `moveOverturned` or `moveExpired`) is not owed when
-the ruling posted, so one decision is one post; when the ruling's post is refused, the end line is owed as today.
+the ruling posted, so one decision is one post; when the ruling's post is refused, the end line is owed as today. The
+owner, asked in review: "this is okay unless there is value in posting both, which seems unlikely. Ideally we would have
+one model call after the outcome is already known." It is that call: the appeal's judge chooses the verdict and writes
+the ruling's words in one call, so the post that ends the move is written knowing how it ends, and the end line's own
+call is not made.
 Weighed: the ruling as an Act alone, as first written (a reader of the move's thread never learns its appeal was
 heard).
 
@@ -186,7 +190,7 @@ persona line added later by an edit (an edit Act on the Mod's own post a minute 
 calls are counted with the owed lines' (`standing_order_line_calls_today`) against `owedLines.perDay`, at most
 `owedLines.perRun` a run, and the stock follows past `owedLines.graceMinutes`. No setting is added. Weighed: the
 filing's `filingLinesPerDay`, which a ban would take from the filings it follows; a `banEntriesPerDay` of its own, a
-setting for a call that is at most one for each full bar.
+setting for a call that is at most one for each full bar. The owner, asked in review: "Shared budget is fine."
 
 **These posts carry no visit mark.** Section 4's mark opens a visit and says the post "answers" the visited post. A
 ban's entry answers no visited post, a ban's ruling is about the bar and not one visit, and a group move came from
