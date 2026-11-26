@@ -4,7 +4,7 @@
 -- fails, is rejected, the day's `quizQuestionsPerDay` is spent, the System is off, or `quizWriteMinutes` has passed. Until the row exists the quiz is PENDING: `visit_quiz` answers
 -- {"pending": true} and `intercept` refuses a quiz answer, in the same words for everyone and before anything is written, so the character's one try is not spent.
 --
--- visit_quizzes     one row per quiz visit: its source, question, choices (2 to 4 distinct strings) and answer, and when it was written. Append-only (an update, delete or truncate is refused, always);
+-- visit_quizzes     one row per quiz visit: its source, question, choices (2 to 8 distinct strings: the model's are repaired to 4 by the engine, but the bank's may hold up to 8, which the seed allows, and a snapshot of it must never fail) and answer, and when it was written. Append-only (an update, delete or truncate is refused, always);
 --                   no client reads it (row security on, nothing granted). `visit_quiz` hands a page the question and choices and never the answer or the source.
 -- visits_open.quiz_at   the pending quizzes' index. A column on visits_open (the open visits, which a trigger on the visit Act already keeps) holding the visit's start while it awaits its question and null
 --                   otherwise, with a partial index on it, so "the open quiz visits with no row, oldest first" reads only the pending ones. A trigger sets it when the open row is made (the visit's
@@ -26,23 +26,29 @@
 
 -- ------------------------------------------------------------------------------------------------ the table ----
 
-create function visit_quiz_choices_ok(choices jsonb) returns boolean
-language sql immutable set search_path = public, pg_temp as $$
-  select coalesce(jsonb_typeof(choices) = 'array' and jsonb_array_length(choices) between 2 and 4
-    and not exists (select 1 from jsonb_array_elements(choices) e where jsonb_typeof(e) <> 'string')
-    and (select count(distinct e) from jsonb_array_elements_text(choices) e) = jsonb_array_length(choices), false)
-$$;
-
 create table visit_quizzes (
   visit_act uuid primary key references acts (id),
   source text not null check (source in ('model', 'bank')),
   question text not null check (btrim(question) <> ''),
-  choices jsonb not null check (visit_quiz_choices_ok(choices)),
+  choices jsonb not null check (jsonb_typeof(choices) = 'array' and jsonb_array_length(choices) between 2 and 8),
   answer text not null check (choices ? answer),
   at timestamptz not null default now()
 );
 alter table visit_quizzes enable row level security;
 revoke all on visit_quizzes from public, anon, authenticated;
+
+-- The choices are 2 to 4 distinct strings (the table's check holds the count, 2 to 8; a trigger holds what a check cannot say).
+create function visit_quizzes_well_formed() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  if exists (select 1 from jsonb_array_elements(new.choices) e where jsonb_typeof(e) <> 'string')
+     or (select count(distinct e) from jsonb_array_elements_text(new.choices) e) <> jsonb_array_length(new.choices) then
+    raise exception 'a question''s choices are distinct strings' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  return new;
+end $$;
+revoke execute on function visit_quizzes_well_formed() from public, anon, authenticated;
+create trigger visit_quizzes_well_formed before insert on visit_quizzes for each row execute function visit_quizzes_well_formed();
 
 create function visit_quizzes_append_only() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
@@ -80,8 +86,6 @@ begin
 end $$;
 revoke execute on function visit_quizzes_clear_mark() from public, anon, authenticated;
 create trigger visit_quizzes_clear_mark after insert on visit_quizzes for each row execute function visit_quizzes_clear_mark();
-
-revoke execute on function visit_quiz_choices_ok(jsonb) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------------------------- the writers ----
 
@@ -138,7 +142,7 @@ begin
     select v.id, 'bank', q.question, q.choices, q.answer
     from acts v join characters c on c.id = v.character
     join staff_quiz_questions q on q.staff = c.staff and q.idx = (v.payload #>> '{challenge,question_index}')::integer
-    where v.kind = 'visit' and v.payload #>> '{challenge,kind}' = 'quiz' and visit_quiz_choices_ok(q.choices)
+    where v.kind = 'visit' and v.payload #>> '{challenge,kind}' = 'quiz'
     on conflict (visit_act) do nothing
     returning 1
   ) select count(*)::integer into n from made;

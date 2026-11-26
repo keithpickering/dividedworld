@@ -223,14 +223,14 @@ begin
   if (select count(*) from visit_quizzes where visit_act = v) is distinct from 1::bigint or (select question from visit_quizzes where visit_act = v) is distinct from 'First question?' then
     raise exception 'the second write changed the row';
   end if;
-  -- Refused: a post that is no visit; a bad shape (one choice, five, a repeat, an answer not among them, an empty question).
+  -- Refused: a post that is no visit; a bad shape (one choice, nine, a repeat, an answer not among them, an empty question).
   if pg_temp.refusal(format('select write_visit_quiz(%L, ''bank'', ''Q?'', ''["A", "B"]''::jsonb, ''A'')', not_quiz)) !~ '^P0002: there is no such quiz visit' then raise exception 'a write for a post was not refused'; end if;
   if pg_temp.refusal(format('select write_visit_quiz(%L, ''bank'', ''Q?'', ''["A", "B"]''::jsonb, ''A'')', gen_random_uuid())) is null then raise exception 'a write for nothing was accepted'; end if;
   declare
     v3 uuid := pg_temp.visit(tests.post(author, t, 'A shape post.'), 'wq-m1');
   begin
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A"]''::jsonb, ''A'')', v3)) is null then raise exception 'one choice was accepted'; end if;
-    if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", "B", "C", "D", "E"]''::jsonb, ''A'')', v3)) is null then raise exception 'five choices were accepted'; end if;
+    if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", "B", "C", "D", "E", "F", "G", "H", "I"]''::jsonb, ''A'')', v3)) is null then raise exception 'nine choices were accepted'; end if;
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", "A"]''::jsonb, ''A'')', v3)) is null then raise exception 'a repeated choice was accepted'; end if;
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", "B"]''::jsonb, ''C'')', v3)) is null then raise exception 'an answer outside the choices was accepted'; end if;
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', '' '', ''["A", "B"]''::jsonb, ''A'')', v3)) is null then raise exception 'an empty question was accepted'; end if;
