@@ -296,10 +296,10 @@ begin
   k := (play_card(ann, 'glint', a, b, '{}', 0, '', 'character', from_post) ->> 'id')::uuid;
   s_at := pg_temp.spun_at(cat, c, k, at_post);
   s_from := pg_temp.spun_at(cat, c, k, null);
-  if pg_temp.place(s_at) is distinct from jsonb_build_object('kind', 'play', 'card', 'glint', 'on', on_b, 'from', from_place, 'at', at_place) then
+  if pg_temp.place(s_at) is distinct from (jsonb_build_object('kind', 'play', 'card', 'glint', 'on', on_b, 'from', from_place, 'at', at_place) || jsonb_build_object('board', general)) then
     raise exception 'a spin at a post: %', pg_temp.place(s_at);
   end if;
-  if pg_temp.place(s_from) is distinct from jsonb_build_object('kind', 'play', 'card', 'glint', 'on', on_b, 'from', from_place, 'at', null) then
+  if pg_temp.place(s_from) is distinct from (jsonb_build_object('kind', 'play', 'card', 'glint', 'on', on_b, 'from', from_place, 'at', null) || jsonb_build_object('board', general)) then
     raise exception 'a spin with no post has the cast-from post alone: %', pg_temp.place(s_from);
   end if;
   -- A play on a post, a thread's play and a board's play: neither key, and the rest as before.
@@ -309,11 +309,11 @@ begin
   s_post := pg_temp.spun_at(cat, c, blot, null);
   s_thread := pg_temp.spun_at(cat, c, marquee, null);
   s_board := pg_temp.spun_at(cat, c, quake, null);
-  if pg_temp.place(s_post) is distinct from jsonb_build_object('kind', 'play', 'card', 'blot', 'on', at_place, 'from', null, 'at', null) then raise exception 'a spin from a play on a post: %', pg_temp.place(s_post); end if;
-  if pg_temp.place(s_thread) is distinct from jsonb_build_object('kind', 'play', 'card', 'marquee', 'on', jsonb_build_object('kind', 'thread', 'id', t_at, 'title', 'Place pressed'), 'from', null, 'at', null) then
+  if pg_temp.place(s_post) is distinct from (jsonb_build_object('kind', 'play', 'card', 'blot', 'on', at_place, 'from', null, 'at', null) || jsonb_build_object('board', general)) then raise exception 'a spin from a play on a post: %', pg_temp.place(s_post); end if;
+  if pg_temp.place(s_thread) is distinct from (jsonb_build_object('kind', 'play', 'card', 'marquee', 'on', jsonb_build_object('kind', 'thread', 'id', t_at, 'title', 'Place pressed'), 'from', null, 'at', null) || jsonb_build_object('board', general)) then
     raise exception 'a spin from a thread''s play: %', pg_temp.place(s_thread);
   end if;
-  if pg_temp.place(s_board) is distinct from jsonb_build_object('kind', 'play', 'card', 'quake', 'on', jsonb_build_object('kind', 'board', 'slug', 'general', 'name', 'General'), 'from', null, 'at', null) then
+  if pg_temp.place(s_board) is distinct from (jsonb_build_object('kind', 'play', 'card', 'quake', 'on', jsonb_build_object('kind', 'board', 'slug', 'general', 'name', 'General'), 'from', null, 'at', null) || jsonb_build_object('board', general)) then
     raise exception 'a spin from a board''s play: %', pg_temp.place(s_board);
   end if;
 end $$;

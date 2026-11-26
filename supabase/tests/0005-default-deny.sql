@@ -51,7 +51,7 @@ declare
                            -- The two readers behind it and behind thread_page's voters (0396): definers that read the ids of a public poll's ballots newest first (nothing for a secret poll), which the invokers then read through acts_public by id.
                            'poll_voter_acts(uuid,timestampwithtimezone,integer)', 'poll_ballot_acts(uuid,timestampwithtimezone,uuid,integer)',
                            -- Whether a poll is secret (0395): a column of acts_public's projection of a ballot, whose reader executes it (a view's functions run as its reader); a public fact of any poll id, naming no one.
-                           'ballot_secret(uuid)', 'spin(uuid,uuid,text,text,uuid[],uuid)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'play_landed_at(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,text,text,jsonb)', 'set_debut(uuid,text,text)',
+                           'ballot_secret(uuid)', 'spin(uuid,uuid,text,text,uuid[],uuid,text)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'play_landed_at(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,text,text,jsonb)', 'set_debut(uuid,text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'origin_moment(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer,text,text,text,integer,text,integer,text,text[],boolean)', 'meet_card(text)', 'see_welcome()', 'see_tip(text)', 'skip_tips()', 'restore_tips()', 'resume_tips()', 'replay_tour()', 'my_account_opened()', 'see_alerts(timestampwithtimezone)', 'see_settlement(timestampwithtimezone)', 'follow_thread(uuid,boolean)', 'following_thread(uuid)', 'my_alerts(timestampwithtimezone,integer)', 'my_alerts_unread()', 'my_settlement_moved(bigint)', 'set_profile(uuid,text,text,text,jsonb)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
                            'open_pack(uuid)', 'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'admin_machine()', 'set_slot(uuid,text,integer)', 'move_slot(uuid,text)', 'save_machine(jsonb)', 'hold_move(bigint)', 'replace_queued_description(bigint,text)', 'describe_board(uuid,text)', 'reverse_move(uuid)', 'reverse_card(uuid)', 'card_ended(uuid)', 'post_tails(uuid[])', 'replace_successor(bigint,text)', 'set_office(text,text)', 'boss_roster_names()', 'dismiss_handover_todo(bigint)', 'move_progress(uuid)',
                            'here(text,uuid,uuid)', 'set_presence_hidden(uuid,boolean)',
@@ -116,7 +116,7 @@ declare
                            'group_now(uuid)', 'move_expires_at(uuid)',
                            -- The bar and the apology (0130): barred() is a public fact, from bars_now, for any character and board; apologize() is the barred character's door, which verifies the caller
                            -- plays the character and that it is not banned. The ruling and the judge's queue are the service's.
-                           'barred(uuid,uuid)', 'bars_of(uuid)', 'apologize(uuid,uuid,text,text,uuid[])',
+                           'barred(uuid,uuid)', 'bars_of(uuid)', 'apologize(uuid,uuid,text,text,uuid[],text)',
                            -- The barred box's read (0133): the caller's own character's apologies, empty for any other id.
                            'my_apologies(uuid)',
                            -- A report (0107): the player's door, which verifies the caller plays the character and is not banned. Its closing, its refund and its budget are the service's.
@@ -167,6 +167,8 @@ declare
                            'post_kind(text)',
                            -- The place of a thread spun from a report, a verdict, an appeal or a ruling (0422): thread_open is read as its caller and calls it; a definer answering the public names, post and punishment of one public Act.
                            'spin_answer_place(uuid)',
+                           -- The board a spin of an Act lands on, and what the spin form reads (0442): a board is public and so are the caller's own character's bars; spin_places asks acting() first.
+                           'spin_board(uuid)', 'spin_places(uuid,uuid)',
                            -- What an Alerts page's ruling, gift and drew rows name, merged into the page (0423): alerts_page is read as its caller and calls it; public Acts and public names, from the caller's own page.
                            'alert_line_refs(jsonb)',
                            -- The ids of the Acts that cut a given list of plays (0405), a definer reading the one expression acts_cut_play holds: ids of card Acts whose `cut` acts_public already shows, never a caller's own.

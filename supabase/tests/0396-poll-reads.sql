@@ -212,13 +212,13 @@ begin
   -- ---- 3. thread_open's origin_place ----
   perform tests.become(dee);
   select o.origin_place into place from thread_open o where o.id = t2;
-  if place is distinct from jsonb_build_object('kind', 'poll', 'question', 'Best kart?', 'on', jsonb_build_object('kind', 'post', 'thread', t, 'title', 'Pr reads', 'seq', 1)) then raise exception '3 the origin place of a poll: %', place; end if;
+  if place is distinct from (jsonb_build_object('kind', 'poll', 'question', 'Best kart?', 'on', jsonb_build_object('kind', 'post', 'thread', t, 'title', 'Pr reads', 'seq', 1)) || jsonb_build_object('board', (select board from threads where id = t))) then raise exception '3 the origin place of a poll: %', place; end if;
   select o.origin_place into place from thread_open o where o.id = t3;
-  if place is distinct from jsonb_build_object('kind', 'ballot', 'character', jsonb_build_object('id', b1, 'name', 'Pr Bob'), 'question', 'Best kart?', 'on', jsonb_build_object('kind', 'post', 'thread', t, 'title', 'Pr reads', 'seq', 1)) then raise exception '3 the origin place of a ballot: %', place; end if;
+  if place is distinct from (jsonb_build_object('kind', 'ballot', 'character', jsonb_build_object('id', b1, 'name', 'Pr Bob'), 'question', 'Best kart?', 'on', jsonb_build_object('kind', 'post', 'thread', t, 'title', 'Pr reads', 'seq', 1)) || jsonb_build_object('board', (select board from threads where id = t))) then raise exception '3 the origin place of a ballot: %', place; end if;
   select o.origin_place into place from thread_open o where o.id = t4;
   if place is not null then raise exception '3 a secret ballot is named as an origin: %', place; end if;
   select o.origin_place into place from thread_open o where o.id = t5;
-  if place is distinct from jsonb_build_object('kind', 'post', 'thread', t, 'title', 'Pr reads', 'seq', 1) then raise exception '3 the origin place of a post is not as it was: %', place; end if;
+  if place is distinct from (jsonb_build_object('kind', 'post', 'thread', t, 'title', 'Pr reads', 'seq', 1) || jsonb_build_object('board', (select board from threads where id = t))) then raise exception '3 the origin place of a post is not as it was: %', place; end if;
   perform tests.unbecome();
 
   -- ---- 4. log_page ----

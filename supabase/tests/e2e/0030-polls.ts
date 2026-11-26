@@ -146,7 +146,7 @@ test('the masks of a secret poll hold in every read another account can make, an
   const refused = await runAction(asAnn, instance, { action: 'spin', origin: one.body && (one.body as { act: { id: string } }).act.id, character: voters[0]!.id, title: 'On a ballot' });
   assert.equal(refused.status, 400, 'a secret ballot cannot be spun');
   const place = (account: string, thread: string) => JSON.parse(readAs(account, `select origin_place from thread_open where id = '${thread}';`) || 'null') as Row | null;
-  assert.deepEqual(place(bob.account, spunThread), { kind: 'poll', question: 'Which kart, in secret?', on: { kind: 'post', thread: secret.thread, title: 'Which kart, in secret?', seq: 1 } }, 'a spun poll is named by its question');
+  assert.deepEqual(place(bob.account, spunThread), { kind: 'poll', question: 'Which kart, in secret?', on: { kind: 'post', thread: secret.thread, title: 'Which kart, in secret?', seq: 1 }, board: sql(`select board from threads where id = '${secret.thread}'`) }, 'a spun poll is named by its question');
   // A public ballot is an origin that names its character; a secret one, which no spin writes, is planted here as a direct write would, and names no one.
   const ballotOf = (poll: string, character: string) => sql(`select id from acts where kind = 'ballot' and target_act_id = '${poll}' and character = '${character}' order by created_at desc, id desc limit 1`);
   const origins = {
