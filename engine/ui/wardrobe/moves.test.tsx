@@ -20,6 +20,8 @@ describe('the pointer\'s moves, in the portrait\'s fractions', () => {
   test('a corner drag begun at the pivot does not jump to the most: the start distance is floored at the handle\'s size', () => {
     expect(dragSized(piece(), 0.5, 10).w).toBe(0.4 * (10 / HANDLE_SIZE));
     expect(dragSized(piece(), 0.5, 10).w).toBeLessThan(1.5);
+    /* Begun on the pivot itself: a pointer still a handle's width away leaves the size as it was. */
+    expect(dragSized(piece(), 0, HANDLE_SIZE).w).toBe(0.4);
     expect(dragSized(piece(), 100, 150).w).toBe(0.6);
   });
 
