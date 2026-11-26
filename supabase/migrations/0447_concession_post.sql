@@ -10,7 +10,7 @@
 --                         Append-only; only an admin reads it (no client role), as visit_draw_failures (0105) is.
 -- staff_concessions       a persona's stock lines, seeded from its `concessions` as staff_quiz_questions is from its quiz. No client reads it. A reseed replaces what an earlier seed wrote.
 -- visits_open.concession_at   the pending concessions' index. FORM USED: a column on visits_open, as visits_open.quiz_at (0446) is, with a partial index on it, so "the open non-quiz visits with no row, oldest first" reads only the
---                         pending ones. A trigger sets it when the open row is made (the visit's challenge is not a quiz and no row stands) and another clears it when the row is written, so rebuild_visits_open (0105)
+--                         pending ones. A trigger sets it when the open row is made (no row stands; a quiz visit is marked too, for the tick) and another clears it when the row is written, so rebuild_visits_open (0105)
 --                         needs no change. A visit that ends while pending loses its open row, and with it the mark; a late write is refused for an ended visit.
 -- concession_line_index(visit, n)   service only. Which of a persona's n stock lines the visit draws: the visit id's own hash modulo n, never negative, so the same visit draws the same line on any database.
 -- write_visit_concession(visit, source, body, why)   service only. Writes the row once (a second write answers the row that stands); writes nothing for a visit that has ended ({written: false, ended: true}), so a late call is
@@ -21,9 +21,10 @@
 -- backfill_visit_concessions()   service only, and run once below: a `none` row (why `before`) for every visit that has none, open or ended, so no staff run calls for an old visit and an open one talked down posts its stock. Idempotent.
 -- post_concession(visit, interceptor)   internal: security definer, with no grant to any role; only intercept and distract_visits call it. Posts the concession in a block of its own, so a refusal (a lockout, a benched or waiting
 --                         persona, a No quote, a spring) rolls back only the post, and records the outcome in visit_concession_posts either way.
--- system_tick       (0446), step 7 also writes the `none` concession row (why `window`) in the same step as a quiz's bank row, and a new step 8 writes `none` for each open non-quiz visit past `concessionWriteMinutes`, whatever
---                   the switch says; counted as `concessionsLapsed`. Best effort per visit.
--- intercept         (0446) and distract_visits (0108): after a successful talk-down's end_visit answers `ended: true`, they call post_concession.
+-- system_tick       (0446), step 7 also writes the `none` concession row (why `window`) in the same step as a quiz's bank row, and a new step 8 writes `none` for each open visit with no concession row past its window
+--                   (`quizWriteMinutes` for a quiz visit, whether or not its question was written; `concessionWriteMinutes` for any other), whatever the switch says; counted as `concessionsLapsed`. Best effort per visit.
+-- intercept         (0446) and distract_visits (0108): after a successful talk-down's end_visit answers `ended: true`, they call post_concession (distract_visits after it has ended every visit, in the Mods' character order). intercept takes the
+--                   thread's row first, so a cast and an interception in one thread are one after the other (the reasoning is on distract_visits below).
 -- seed_instance     (0413), seeding staff_concessions from each persona's `concessions`. setting_modbots (0446), holding `concessionsPerDay` and `concessionWriteMinutes`. staff_call_records (0446), taking the duty `concession`.
 -- Latest definitions copied: system_tick (0446), intercept (0446), setting_modbots (0446), distract_visits (0108), seed_instance (0413); quiz_calls_today (0446) is the pattern for concession_calls_today.
 --
@@ -94,11 +95,12 @@ revoke all on staff_concessions from public, anon, authenticated;
 alter table visits_open add column concession_at timestamptz;
 create index visits_open_concession_pending on visits_open (concession_at, visit_act) where concession_at is not null;
 
--- When an open row is made for a visit that is no quiz and has no concession yet, it is marked with the visit's start. (A quiz visit's concession comes with its question.)
+-- When an open row is made for a visit that has no concession yet, it is marked with the visit's start, a quiz visit's too: its concession comes with its question where the staff run writes both, and the tick settles it `none`
+-- at quizWriteMinutes where that run wrote only the question (or none). pending_concessions leaves the quiz visits out of the staff run's list.
 create function visits_open_mark_concession() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  new.concession_at := (select a.created_at from acts a where a.id = new.visit_act and a.kind = 'visit' and a.payload #>> '{challenge,kind}' is distinct from 'quiz'
+  new.concession_at := (select a.created_at from acts a where a.id = new.visit_act and a.kind = 'visit'
                           and not exists (select 1 from visit_concessions c where c.visit_act = a.id));
   return new;
 end $$;
@@ -155,6 +157,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   join threads t on t.id = v.thread
   left join boards_now b on b.id = t.board
   where o.concession_at is not null
+    and v.payload #>> '{challenge,kind}' is distinct from 'quiz'
     and o.concession_at > now() - make_interval(mins => coalesce((select (s.value ->> 'concessionWriteMinutes')::integer from settings s where s.key = 'modBots'), 15))
   order by o.concession_at, o.visit_act
   limit greatest(pending_concessions.most, 0)
@@ -181,6 +184,7 @@ end $$;
 -- The post a talked-down Mod makes. The body is the visit's `model` row's, else a line of the persona's stock drawn by the visit's id; `{who}` is the interceptor's character's name (one `replace` pass, so a name that holds
 -- `{who}` is not filled again). It is written as the Mod's own post quoting the visited post, inside a block of its own: any refusal (a lockout, a benched or waiting persona, a No quote on the visited post, a trap springing)
 -- rolls back only the post, and is recorded with a warning. A visit already recorded posts nothing, and a Mod with no line and no body records `no concession`. The talk-down never fails with the post.
+-- The filled body is cut to `postMaxLength` (see `cap`). The block's rollback takes everything write_staff_act did after the block began (the Act, its counts and quote rows) and nothing before it.
 create function post_concession(visit uuid, interceptor uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -189,8 +193,10 @@ declare
   who text;
   said text;
   src text := 'stock';
-  n integer;
   made jsonb;
+  -- What bounds the body: a line is at most 280 characters, but each `{who}` in it grows it by the interceptor's name (up to 40 characters), so a line of many tokens could outgrow a post. A staff Act is no player's
+  -- post and write_staff_act checks no length, so the filled body is cut to the instance's `postMaxLength` here (5000 where it is missing).
+  cap integer := greatest(coalesce((select (s.value #>> '{}')::integer from settings s where s.key = 'postMaxLength'), 5000), 1);
 begin
   if exists (select 1 from visit_concession_posts p where p.visit_act = post_concession.visit) then return; end if;
   select * into v from acts a where a.id = post_concession.visit and a.kind = 'visit';
@@ -202,11 +208,12 @@ begin
     if said is not null then
       src := 'model';
     else
-      select count(*) into n from staff_concessions l where l.staff = mod_key;
-      select l.line into said from staff_concessions l where l.staff = mod_key order by l.idx offset coalesce(concession_line_index(post_concession.visit, n), 0) limit 1;
+      -- One read: the persona's lines numbered in order, the count beside each, and the one the visit's id draws.
+      select l.line into said from (select s.line, row_number() over (order by s.idx) - 1 as pos, count(*) over () as total from staff_concessions s where s.staff = mod_key) l
+      where l.pos = concession_line_index(post_concession.visit, l.total::integer);
     end if;
     if said is null then raise exception 'no concession' using errcode = 'P0001'; end if;
-    made := write_staff_act(mod_key, 'post', v.thread, v.target_act_id, jsonb_build_object('body', replace(said, '{who}', coalesce(who, 'someone'))));
+    made := write_staff_act(mod_key, 'post', v.thread, v.target_act_id, jsonb_build_object('body', left(replace(said, '{who}', coalesce(who, 'someone')), cap)));
     insert into visit_concession_posts (visit_act, source, post_act) values (post_concession.visit, src, (made ->> 'id')::uuid);
   exception when others then
     raise warning 'post_concession: visit % posted no concession: % (%)', post_concession.visit, sqlerrm, sqlstate;
@@ -788,7 +795,8 @@ end $function$;
 
 -- ------------------------------------------------------------------------------------ the talk-down ----
 
--- intercept (0446_written_quiz.sql), a successful interception's end calling post_concession once the visit has ended. Everything else as 0446 wrote it.
+-- intercept (0446_written_quiz.sql), taking the thread's row before the visit's open row (the order place_cast's distraction has), and a successful interception's end calling post_concession once the visit has ended.
+-- Everything else as 0446 wrote it.
 create or replace function intercept(through uuid, visit_act uuid, answer text default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -813,6 +821,9 @@ begin
   perform not_banned(through);
   select * into v from acts a where a.id = intercept.visit_act and a.kind = 'visit';
   if not found then raise exception 'there is no such visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The thread's row first, `for no key update` as place_cast takes it at thread reach: a cast that ends visits in this thread and an interception in it are one after the other and never hold a visit's open row while
+  -- waiting at the thread (the concession post below takes the thread's row too). See distract_visits for the whole order.
+  perform 1 from threads t where t.id = v.thread for no key update;
   -- The visit's open row, taken for update: a filing or another interception waits, then finds the visit over. A visit with no open row has ended.
   perform 1 from visits_open o where o.visit_act = v.id for update;
   if not found then raise exception 'this visit is over' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
@@ -860,7 +871,16 @@ end $$;
 revoke execute on function intercept(uuid, uuid, text) from public, anon;
 grant execute on function intercept(uuid, uuid, text) to authenticated, service_role;
 
--- distract_visits (0108_interception.sql), each visit it ends calling post_concession for the caster. Everything else as 0108 wrote it. Create or replace keeps 0108's grants (none to an API role).
+-- distract_visits (0108_interception.sql), every visit it ends then calling post_concession for the caster. Everything else as 0108 wrote it. Create or replace keeps 0108's grants (none to an API role).
+-- It ends every visit first, in 0108's order (each visit's open row, then its intercept Act and end), and only then posts the concessions, in the order of the Mods' character ids (then the visit's id). One cast can end
+-- visits of several Mods, each posting as its own character and so taking that character's post-count row; two statements that each take several of those rows must take them in one order, or two casts ending
+-- visits of the same two Mods would each hold one and wait for the other. The visits' open rows are each a visit's own, and one thread's visits are the one cast's, so they are no cross-wait.
+-- Why an interception and a cast in one thread cannot deadlock: both take the thread's row first. place_cast at thread reach takes it `for no key update` before it lays the card and calls this; intercept takes it
+-- the same way before it takes the visit's open row (see intercept below). So of two such statements the second waits at the thread for the first to commit, and neither waits there holding a visit's open row or a
+-- post-count row. After the thread, every writer takes the visit's open row, then (inside post_concession's own block) the quoted post `for share` where a live back may spring on it, the thread again, and the Mod's count row. A
+-- filing takes the post's row before the open row, and intercept and a thread cast take the post's row after it, so a filing racing a concession on a post with a live back could still wait both ways; that is the one wait
+-- this leaves, and it falls inside post_concession's block: the deadlock detector's victim, if it is the post, loses only the post (the talk-down stands, the row records the error), and if it is the filing the tick files it
+-- again.
 create or replace function distract_visits(caster uuid, in_thread uuid, card_act uuid) returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -870,6 +890,7 @@ declare
   me text := (select c.name from characters c where c.id = caster);
   said text;
   closed jsonb;
+  done uuid[] := '{}';
 begin
   for v in
     select a.id, a.target_act_id, (select m.name from characters m where m.id = a.character) as mod_name
@@ -887,16 +908,21 @@ begin
     perform set_config('kayfabb.intercept_writer', '', true);
     said := me || ' drew ' || v.mod_name || '''s attention away from this post with a card.';
     closed := end_visit(v.id, 'intercepted', iid, said);
-    -- The Mod concedes in the thread, by the caster's name (best effort: post_concession never fails the talk-down).
-    if (closed ->> 'ended')::boolean then perform post_concession(v.id, caster); end if;
+    if (closed ->> 'ended')::boolean then done := done || v.id; end if;
     ended := ended + 1;
+  end loop;
+  -- The Mods concede in the thread, by the caster's name, in the order of their character ids (best effort: post_concession never fails the talk-down).
+  for v in
+    select a.id from acts a where a.id = any (done) order by a.character, a.id
+  loop
+    perform post_concession(v.id, caster);
   end loop;
   return ended;
 end $$;
 revoke execute on function distract_visits(uuid, uuid, uuid) from public, anon, authenticated;
 
--- system_tick (0446_written_quiz.sql), a quiz's bank row written beside its `none` concession row (step 7), and a step 8 that settles each pending non-quiz visit past `modBots.concessionWriteMinutes` as `none`, the count in its answer as
--- `concessionsLapsed`. Everything else as 0446 wrote it.
+-- system_tick (0446_written_quiz.sql), a quiz's bank row written beside its `none` concession row (step 7), and a step 8 that settles each pending visit past its window (`modBots.quizWriteMinutes` for a quiz visit,
+-- `modBots.concessionWriteMinutes` otherwise) as `none`, the count in its answer as `concessionsLapsed`. Everything else as 0446 wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1350,12 +1376,15 @@ begin
     end;
   end loop;
 
-  -- 8. Pending concessions (the concession post plan, Task 1): an open visit that is no quiz, with no concession row, whose start is `modBots.concessionWriteMinutes` or more in the past is given a `none` row (why `window`), whatever
-  -- the switch says: the staff run writes the Mod's own words sooner where it can, and no visit waits longer than this. (A quiz visit's none row is written in step 7, beside its bank row.) The oldest first, found by the
+  -- 8. Pending concessions (the concession post plan, Task 1): an open visit with no concession row whose start is past its window (`modBots.quizWriteMinutes` for a quiz visit, `modBots.concessionWriteMinutes` for any other)
+  -- is given a `none` row (why `window`), whatever the switch says: the staff run writes the Mod's own words sooner where it can, and no visit waits longer than this. A quiz visit is covered here whether or not its
+  -- question was written (step 7 writes the `none` row beside a bank row it has just written, so a quiz visit reaches this step only when the run wrote its question, or its persona has no bank question to fall back on). The oldest first, found by the
   -- partial index on visits_open (the pending ones alone), at most `demandChecksPerTick`, and none once the budget is spent. Best effort per visit: one that fails is warned and left for the next tick; a row the staff run wrote
   -- first is left as it stands (write_visit_concession answers it and writes nothing).
   for conc_late in
-    select o.visit_act from visits_open o where o.concession_at is not null and o.concession_at <= now() - conc_grace
+    select o.visit_act from visits_open o join acts v on v.id = o.visit_act
+    where o.concession_at is not null
+      and o.concession_at <= now() - case when v.payload #>> '{challenge,kind}' = 'quiz' then quiz_grace else conc_grace end
     order by o.concession_at, o.visit_act limit cap
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;

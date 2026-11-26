@@ -119,8 +119,11 @@ create function pg_temp.seed(m2_lines jsonb) returns jsonb language sql as $$
           'visitHours', jsonb_build_object('least', 3, 'most', 5), 'challenge', jsonb_build_object('kind', 'distraction'),
           'concessions', jsonb_build_array('{who} wins. This time.', 'Fine, {who}, the card works.', 'The card is noted, {who}.')),
         jsonb_build_object('key', 'cp-m4', 'name', 'Concession Mod Four', 'title', 'Mod', 'signature', 'Hi', 'beats', '[]'::jsonb,
-          'visitHours', jsonb_build_object('least', 3, 'most', 5), 'challenge', jsonb_build_object('kind', 'bribe', 'price', 50))),
-      'firstStaff', jsonb_build_array('cp-m1', 'cp-m2', 'cp-m3', 'cp-m4'),
+          'visitHours', jsonb_build_object('least', 3, 'most', 5), 'challenge', jsonb_build_object('kind', 'bribe', 'price', 50)),
+        jsonb_build_object('key', 'cp-m5', 'name', 'Concession Mod Five', 'title', 'Mod', 'signature', 'Hi', 'beats', '[]'::jsonb,
+          'visitHours', jsonb_build_object('least', 3, 'most', 5), 'challenge', jsonb_build_object('kind', 'distraction'),
+          'concessions', jsonb_build_array('{who} again.', 'Five concedes to {who}.', 'Noted, {who}.'))),
+      'firstStaff', jsonb_build_array('cp-m1', 'cp-m2', 'cp-m3', 'cp-m4', 'cp-m5'),
       'moves', jsonb_build_array(jsonb_build_object('key', 'setRule', 'structural', false, 'shapesBoard', false, 'offices', jsonb_build_array('boss', 'mod'))),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')),
       'predicates', jsonb_build_array(
@@ -193,7 +196,7 @@ declare
   posted acts%rowtype;
   n_posts bigint := (select count(*) from acts where kind = 'post');
 begin
-  if (select concession_at from visits_open where visit_act = v) is not null then raise exception 'a quiz visit is marked pending for a concession'; end if;
+  if (select concession_at from visits_open where visit_act = v) is null then raise exception 'a quiz visit with no concession row is not marked pending'; end if;
   perform write_visit_quiz(v, 'model', 'Which is the oldest?', '["Moss", "Stone", "Dust"]'::jsonb, 'Stone');
   if (write_visit_concession(v, 'model', 'Well played, {who}. Carry on.', null) ->> 'written')::boolean is distinct from true then raise exception 'the concession was not written'; end if;
   got := pg_temp.try(ann, v, 'Stone');
@@ -282,9 +285,11 @@ declare
   t uuid := tests.thread('Cp no posts');
   vq uuid := pg_temp.visit(tests.post(author, t, 'Wrong answer.'), 'cp-m1');
   vf uuid := pg_temp.visit(tests.post(author, t, 'Filed.'), 'cp-m2');
-  vt uuid := pg_temp.visit(tests.post(author, t, 'Trapped.'), 'cp-m2');
   vr uuid := pg_temp.visit(tests.post(author, t, 'Reversed.'), 'cp-m2');
   vd uuid := pg_temp.visit(tests.post(author, t, 'Dropped.'), 'cp-m2');
+  pt uuid := tests.post(author, t, 'Trapped.');
+  vt uuid;
+  sset uuid;
   n_posts bigint := (select count(*) from acts where kind = 'post');
   got jsonb;
   o text;
@@ -292,11 +297,25 @@ begin
   perform write_visit_quiz(vq, 'model', 'Which is the oldest?', '["Moss", "Stone", "Dust"]'::jsonb, 'Stone');
   perform write_visit_concession(vq, 'model', 'Never said, {who}.', null);
   got := pg_temp.try(ann, vq, 'Moss');
+  -- A trap: a visit trap set on the post springs as the visit starts and ends it (start_visit's own path).
+  insert into card_kinds (key, name, alignment, rarity, play, trap, gimmick, lasts) values ('cp-vtrap', 'Cp Visit Trap', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', null, null) on conflict (key) do nothing;
+  sset := tests.act(author, 'set', t, '{}', pt);
+  insert into face_down (play, account, card, post, thread, round, ends_at) values (sset, pg_temp.bob(), 'cp-vtrap', pt, t, 1, now() + interval '1 day');
+  vt := pg_temp.visit(pt, 'cp-m2');
+  if (pg_temp.end_of(vt)).payload ->> 'outcome' is distinct from 'trapped' then raise exception 'the trap did not end the visit trapped: %', to_jsonb(pg_temp.end_of(vt)); end if;
+  -- A drop: a visit that cannot file ends `dropped` at the tick's ceiling.
+  execute $f$create function pg_temp.poison_filing() returns trigger language plpgsql as $b$ begin
+    if new.payload ->> 'visit_act' = current_setting('cp.dropping') then raise exception 'a forever failing filing'; end if; return new; end $b$ $f$;
+  perform set_config('cp.dropping', vd::text, true);
+  create trigger cp_poison_filing before insert on acts for each row when (new.kind = 'infraction') execute function pg_temp.poison_filing();
+  update visits_open set ends_at = now() - interval '2 hours', attempts = 9 where visit_act = vd;
+  perform system_tick();
+  drop trigger cp_poison_filing on acts;
+  if (pg_temp.end_of(vd)).payload ->> 'outcome' is distinct from 'dropped' then raise exception 'the tick did not drop the visit: %', to_jsonb(pg_temp.end_of(vd)); end if;
   if (got ->> 'succeeded')::boolean is not false then raise exception 'a wrong answer succeeded: %', got; end if;
   perform end_visit(vf, 'filed', null, 'Filed.');
-  perform end_visit(vt, 'trapped', null, 'Trapped.');
+  -- A reversal: no live path writes `reversed` any more (the tick's drop is `dropped`, below), so end_visit is the only way to write one.
   perform end_visit(vr, 'reversed', null, 'Reversed.');
-  perform end_visit(vd, 'dropped', null, 'Dropped.');
   if (select count(*) from acts where kind = 'post') is distinct from n_posts then raise exception 'a visit that did not end intercepted wrote % posts', (select count(*) from acts where kind = 'post') - n_posts; end if;
   if exists (select 1 from visit_concession_posts where visit_act in (vq, vf, vt, vr, vd)) then raise exception 'a post record was written for a visit that was not talked down'; end if;
   -- A real filing too, through file_visit.
@@ -358,6 +377,27 @@ begin
   end;
 end $$;
 
+-- ---- 3b. A cast that ends visits of two Mods posts their concessions in the Mods' character order, whatever order the visits were made in ----
+do $$
+declare
+  author uuid := pg_temp.chr('Cp Bob A');
+  caster uuid := pg_temp.chr('Cp Ann B');
+  t uuid := tests.thread('Cp order');
+  lo text; hi text;
+  v_hi uuid; v_lo uuid;
+  seq_lo integer; seq_hi integer;
+begin
+  select (array_agg(c.staff order by c.id))[1], (array_agg(c.staff order by c.id))[2] into lo, hi from characters c where c.staff in ('cp-m3', 'cp-m5');
+  -- The higher-id Mod's visit is made first, so the order the visits end in is the opposite of the character order.
+  v_hi := pg_temp.visit(tests.post(author, t, 'High first.'), hi);
+  v_lo := pg_temp.visit(tests.post(author, t, 'Low second.'), lo);
+  perform place_cast(caster, 'cp-th', t, '{}', '', 'thread', null, pg_temp.ann(), 0);
+  if (select count(*) from visit_concession_posts where visit_act in (v_hi, v_lo) and post_act is not null) is distinct from 2::bigint then raise exception 'one cast did not post two concessions'; end if;
+  select a.seq into seq_lo from visit_concession_posts r join acts a on a.id = r.post_act where r.visit_act = v_lo;
+  select a.seq into seq_hi from visit_concession_posts r join acts a on a.id = r.post_act where r.visit_act = v_hi;
+  if seq_lo > seq_hi then raise exception 'the concessions were posted out of the Mods'' character order (lo %, hi %)', seq_lo, seq_hi; end if;
+end $$;
+
 -- ---- 6. A Mod locked out of the thread, or benched: the talk-down stands, nothing is posted, the row holds the refusal ----
 do $$
 declare
@@ -409,6 +449,41 @@ begin
   insert into staff_offices (staff, office, cause) values ('cp-m2', 'mod', 'admin');
 end $$;
 
+-- ---- 6b. A post that fails after its Act was inserted rolls back only the post: the talk-down, the wallet and the record stand ----
+do $$
+declare
+  author uuid := pg_temp.chr('Cp Bob A');
+  ann uuid := pg_temp.chr('Cp Ann A');
+  mod uuid := pg_temp.modchar('cp-m2');
+  t uuid := tests.thread('Cp planted');
+  p uuid := tests.post(author, t, 'A post whose concession fails late.');
+  v uuid := pg_temp.visit(p, 'cp-m2');
+  w0 integer := pg_temp.wallet(pg_temp.ann());
+  tails0 bigint := (select count(*) from tails);
+  posts0 bigint := (select count(*) from acts where kind = 'post');
+  counts0 integer := (select posts from character_post_counts_base where character = mod);
+  acts0 bigint;
+  got jsonb;
+  r visit_concession_posts%rowtype;
+begin
+  execute format($f$create function pg_temp.plant_post() returns trigger language plpgsql as $b$ begin raise exception 'planted after the post' using errcode = 'P0001'; end $b$ $f$);
+  execute format('create trigger cp_plant_post after insert on acts for each row when (new.kind = %L and new.character = %L) execute function pg_temp.plant_post()', 'post', mod);
+  acts0 := (select count(*) from acts);
+  got := pg_temp.try(ann, v);
+  drop trigger cp_plant_post on acts;
+  if (got ->> 'succeeded')::boolean is not true or (got ->> 'ended')::boolean is not true then raise exception 'the talk-down failed with the post failing late: %', got; end if;
+  if (pg_temp.end_of(v)).payload ->> 'outcome' is distinct from 'intercepted' then raise exception 'the visit end did not stand'; end if;
+  if (select count(*) from acts where kind = 'intercept' and payload ->> 'visit_act' = v::text) is distinct from 1::bigint then raise exception 'the intercept Act did not stand'; end if;
+  if pg_temp.wallet(pg_temp.ann()) is distinct from w0 - 50 then raise exception 'the wallet did not stand'; end if;
+  if (select count(*) from tails) is distinct from tails0 then raise exception 'a tail was written'; end if;
+  if (select count(*) from acts where kind = 'post') is distinct from posts0 then raise exception 'a partial post Act remains'; end if;
+  -- Exactly the talk-down's own Acts (the intercept and the visit's end) were added: nothing of the failed post.
+  if (select count(*) from acts) is distinct from acts0 + 2 then raise exception 'the talk-down added % Acts (two wanted)', (select count(*) from acts) - acts0; end if;
+  if (select posts from character_post_counts_base where character = mod) is distinct from counts0 then raise exception 'the Mod''s post count moved with a post that was rolled back'; end if;
+  select * into r from visit_concession_posts where visit_act = v;
+  if r.visit_act is null or r.post_act is not null or r.error !~ 'planted after the post' then raise exception 'the refusal was not recorded: %', to_jsonb(r); end if;
+end $$;
+
 -- ---- 7. A name holding {who} is put in once ----
 do $$
 declare
@@ -440,6 +515,30 @@ begin
   if r.visit_act is null or r.post_act is not null or r.error is distinct from 'no concession' then raise exception 'a Mod with nothing to say was not recorded as such: %', to_jsonb(r); end if;
   if (select count(*) from acts where kind = 'post') is distinct from n_posts then raise exception 'a Mod with nothing to say posted'; end if;
   if (pg_temp.end_of(v)).payload ->> 'outcome' is distinct from 'intercepted' then raise exception 'the visit did not end'; end if;
+end $$;
+
+-- ---- 5c. A filled body is cut at the instance's post length: many {who} in a line grow it by the name each time ----
+do $$
+declare
+  author uuid := pg_temp.chr('Cp Bob A');
+  big uuid := tests.character(pg_temp.eve(), repeat('W', 40));
+  t uuid := tests.thread('Cp long');
+  v uuid := pg_temp.visit(tests.post(author, t, 'A post for a long body.'), 'cp-m4');
+  body text;
+  most integer;
+  was jsonb;
+begin
+  insert into staff_concessions (staff, idx, line) values ('cp-m4', 0, repeat('{who}', 56));
+  was := (select value from settings where key = 'postMaxLength');
+  if was is null then raise exception 'the world holds no postMaxLength'; end if;
+  -- Below the 2,240 characters the line fills to, so the cut is what is asked.
+  update settings set value = '300'::jsonb where key = 'postMaxLength';
+  most := 300;
+  perform pg_temp.try(big, v);
+  update settings set value = was where key = 'postMaxLength';
+  select a.payload ->> 'body' into body from visit_concession_posts r join acts a on a.id = r.post_act where r.visit_act = v;
+  if body is null then raise exception 'no post for the long line: %', (select error from visit_concession_posts where visit_act = v); end if;
+  if char_length(body) > most then raise exception 'the body (% characters) is longer than postMaxLength (%)', char_length(body), most; end if;
 end $$;
 
 -- ---- 8. pending_concessions: a bribe visit 14 minutes old is listed, one 15 minutes old is not, nor a quiz visit; the tick writes none past the window ----
@@ -494,15 +593,48 @@ begin
   update settings set value = was where key = 'systemEnabled';
   -- Nothing past its window is left pending.
   if exists (select 1 from visits_open where concession_at is not null and concession_at <= now() - interval '15 minutes') then raise exception 'a visit past its time is still pending after the tick'; end if;
-  -- The quiz visit whose row the staff run wrote first is left as it stands: its bank row is not written, and neither is a concession.
+  -- The quiz visit whose question the staff run wrote first is left as it stands (no bank row), but its concession is settled `none`.
   declare vfirst uuid := pg_temp.visit(tests.post(author, t, 'Quiz written first.'), 'cp-m1');
   begin
     perform write_visit_quiz(vfirst, 'model', 'Which is the oldest?', '["Moss", "Stone", "Dust"]'::jsonb, 'Stone');
     perform pg_temp.age(vfirst, 20);
     perform system_tick();
     if (select source from visit_quizzes where visit_act = vfirst) is distinct from 'model' then raise exception 'the tick overwrote a model question'; end if;
-    if exists (select 1 from visit_concessions where visit_act = vfirst) then raise exception 'the tick wrote a concession for a quiz the staff run wrote'; end if;
+    -- Its concession is still settled: the question the staff run wrote does not carry the concession, so the tick writes `none` for the quiz visit past quizWriteMinutes.
+    if (select source from visit_concessions where visit_act = vfirst) is distinct from 'none' or (select why from visit_concessions where visit_act = vfirst) is distinct from 'window' then raise exception 'the tick did not write none for a quiz visit whose question the staff run wrote'; end if;
   end;
+end $$;
+
+-- ---- 8c. A quiz visit's concession lapses at quizWriteMinutes, whether or not its question was written; a non-quiz visit's at concessionWriteMinutes ----
+do $$
+declare
+  author uuid := pg_temp.chr('Cp Bob A');
+  t uuid := tests.thread('Cp quiz window');
+  vq20 uuid := pg_temp.visit(tests.post(author, t, 'Quiz twenty.'), 'cp-m1');
+  vq31 uuid := pg_temp.visit(tests.post(author, t, 'Quiz thirty-one.'), 'cp-m1');
+  vq31m uuid := pg_temp.visit(tests.post(author, t, 'Quiz thirty-one, model concession.'), 'cp-m1');
+  vb20 uuid := pg_temp.visit(tests.post(author, t, 'Bribe twenty.'), 'cp-m2');
+  tick jsonb;
+  was jsonb := (select value from settings where key = 'modBots');
+begin
+  update settings set value = value || '{"quizWriteMinutes": 30}'::jsonb where key = 'modBots';
+  perform write_visit_quiz(vq20, 'model', 'Which is the oldest?', '["Moss", "Stone", "Dust"]'::jsonb, 'Stone');
+  perform write_visit_quiz(vq31, 'model', 'Which is the oldest?', '["Moss", "Stone", "Dust"]'::jsonb, 'Stone');
+  perform write_visit_quiz(vq31m, 'model', 'Which is the oldest?', '["Moss", "Stone", "Dust"]'::jsonb, 'Stone');
+  perform write_visit_concession(vq31m, 'model', 'Said by the run, {who}.', null);
+  perform pg_temp.age(vq20, 20);
+  perform pg_temp.age(vq31, 31);
+  perform pg_temp.age(vq31m, 31);
+  perform pg_temp.age(vb20, 20);
+  tick := system_tick();
+  if exists (select 1 from visit_concessions where visit_act = vq20) then raise exception 'a quiz visit inside quizWriteMinutes (20 of 30) was settled'; end if;
+  if (select why from visit_concessions where visit_act = vq31) is distinct from 'window' or (select source from visit_concessions where visit_act = vq31) is distinct from 'none' then raise exception 'a quiz visit past quizWriteMinutes with a written question got no none row'; end if;
+  if (select source from visit_concessions where visit_act = vq31m) is distinct from 'model' then raise exception 'the tick overwrote a written quiz concession'; end if;
+  if (select why from visit_concessions where visit_act = vb20) is distinct from 'window' then raise exception 'a bribe visit past concessionWriteMinutes was not settled'; end if;
+  if exists (select 1 from visit_quizzes where visit_act in (vq31) and source <> 'model') then raise exception 'the tick banked a question the run had written'; end if;
+  if pg_temp.refusal(format('select count(*) from pending_concessions(100) x where x.visit_act = %L', vq20)) is not null then raise exception 'pending_concessions failed'; end if;
+  if exists (select 1 from pending_concessions(100) x where x.visit_act in (vq20, vq31)) then raise exception 'pending_concessions listed a quiz visit'; end if;
+  update settings set value = was where key = 'modBots';
 end $$;
 
 -- ---- 8b. A failing visit does not stop the tick's other visits ----
