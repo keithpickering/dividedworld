@@ -253,6 +253,20 @@ function apologyRule(v: unknown): string | null {
   return null;
 }
 
+/** The owed lines' settings (`Settings.owedLines`): graceMinutes 1 to 1440, perDay 0 to 10000, perRun 1 to 200, each a whole number. Mirrors the `owedLines` branch of `settings_held`. */
+const OWED_LINES_BOUNDS = { graceMinutes: [1, 1440], perDay: [0, 10000], perRun: [1, 200] } as const;
+function owedLinesRule(v: unknown): string | null {
+  const shape = 'an object giving graceMinutes (the minutes an owed line waits for the staff run, 1 to 1440), perDay (the most voiced owed lines a day, 0 to 10000) and perRun (the most owed lines one run takes, 1 to 200), each a whole number';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const extra = Object.keys(v).find((k) => !(k in OWED_LINES_BOUNDS));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const [k, [least, most]] of Object.entries(OWED_LINES_BOUNDS)) {
+    const n = (v as Record<string, unknown>)[k];
+    if (!isWhole(n, least) || n > most) return `${shape}; "${k}" is not`;
+  }
+  return null;
+}
+
 /**
  * The staff requests' settings (`Settings.staffRequests`): exactly daysMost and meetingMost, each a whole number of at least 1. Mirrors
  * `setting_staffrequests` in supabase/migrations/0424_staff_requests.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
@@ -420,6 +434,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   modBots: modBotsRule,
   warnBar: warnBarRule,
   apology: apologyRule,
+  owedLines: owedLinesRule,
   conduct: conductRule,
   staffRequests: staffRequestsRule,
   boardNameMaxLength: whole(1, 'characters'),

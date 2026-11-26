@@ -85,6 +85,7 @@ const settings: Settings = {
   modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
+  owedLines: { graceMinutes: 15, perDay: 60, perRun: 20 },
   conduct: { openReportsMost: 3, adminAddress: null },
   staffRequests: { daysMost: 3, meetingMost: 10 },
   boardNameMaxLength: 60,
@@ -194,6 +195,22 @@ test('a card\'s stack is a whole number, at least 1', () => {
   assert.deepEqual(instanceProblems(card(3)), []);
   assert.deepEqual(instanceProblems(card(undefined)), []);
   for (const bad of [0, 1.5, '3', -1]) assert.match(instanceProblems(card(bad)).join('\n'), /card "splat" stacks .*; a stack is a whole number, at least 1/, String(bad));
+});
+
+test('the owed lines settings: each a whole number within its bounds, nothing else, and the object present', () => {
+  const o = settings.owedLines;
+  const bad = (v: unknown) => settingsProblems({ ...settings, owedLines: v as typeof o }).join('\n');
+  assert.match(bad({ ...o, perRun: 0 }), /owedLines.*"perRun" is not/);
+  assert.match(bad({ ...o, perRun: 201 }), /owedLines.*"perRun" is not/);
+  assert.match(bad({ ...o, graceMinutes: 0 }), /owedLines.*"graceMinutes" is not/);
+  assert.match(bad({ ...o, graceMinutes: 1441 }), /owedLines.*"graceMinutes" is not/);
+  assert.match(bad({ ...o, perDay: -1 }), /owedLines.*"perDay" is not/);
+  assert.match(bad({ ...o, perDay: 1.5 }), /owedLines.*"perDay" is not/);
+  assert.match(bad({ ...o, other: 1 }), /owedLines.*"other" is not one of its fields/);
+  assert.deepEqual(settingsProblems({ ...settings, owedLines: { graceMinutes: 1, perDay: 0, perRun: 1 } }), [], 'perDay 0 turns the voice off');
+  const { owedLines: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "owedLines" is missing/);
+  assert.match(instanceProblems({ ...good, settings: { ...good.settings, owedLines: { ...o, perRun: 0 } } }).join('\n'), /owedLines/);
 });
 
 test('the view counts are recounted on a cron of their own', () => {

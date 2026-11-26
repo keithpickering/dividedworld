@@ -164,6 +164,19 @@ export interface ApologySettings {
 }
 
 /**
+ * The owed lines' numbers (`Settings.owedLines`; the persona-lines design, section 1.4). A line owed for an act that has happened is voiced by the staff run, or paid from the
+ * speaker's stock once it has waited too long; these bound how long, how many a day and how many a run.
+ */
+export interface OwedLineSettings {
+  /** The minutes an owed line waits for the staff run before the tick pays it from stock. A whole number, 1 to 1440. */
+  readonly graceMinutes: number;
+  /** The most voiced owed lines the instance pays for in a day, counted from the ledger; past it a line is paid from stock. A whole number, 0 to 10000. */
+  readonly perDay: number;
+  /** The most owed lines one run of the staff run takes. A whole number, 1 to 200. */
+  readonly perRun: number;
+}
+
+/**
  * The code of conduct's numbers (`Settings.conduct`; the conduct design, sections 5 and 7). Not the code itself, which is the instance's UI content
  * (`InstanceUi.conduct`); the seed carries its version and section keys beside these (`conductVersion`, `conductSections`).
  */
@@ -406,6 +419,8 @@ export interface Settings {
   readonly warnBar: WarnBarSettings;
   /** The apology's numbers: how often a barred character may apologize, how many the judge hears at once, how long a ruling runs. */
   readonly apology: ApologySettings;
+  /** The owed lines' numbers: how long a line waits for the staff run, how many are voiced a day, and how many a run takes. */
+  readonly owedLines: OwedLineSettings;
   /** The code of conduct's numbers: how many reports to admins an account holds open, and where replies to a moderation email go. */
   readonly conduct: ConductSettings;
   /** The staff requests' numbers: how long a request waits for a ruling, and how many one meeting rules on. A starting point each. */
