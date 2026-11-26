@@ -1,7 +1,7 @@
 -- Rendered gear, Task 2 (docs/plans/2026-11-23-rendered-gear-plan.md; the design's section 6): a worn piece may name which view of its item it shows.
 
--- Null is the item's default view; which views an item ships is the instance's art, not held here. The five names are engine/rules/cosmetics.ts GEAR_VIEWS, and
--- engine/rules/gear-views-held.test.ts holds the two lists to one.
+-- Null is the item's default view; which views an item ships is the instance's art, not held here. The five names are written three times: engine/rules/cosmetics.ts GEAR_VIEWS,
+-- this column's check and piece_problem's list below; engine/rules/gear-views-held.test.ts holds all three to one.
 alter table gear_worn add column view text check (view in ('side-left', 'three-quarter-left', 'front', 'three-quarter-right', 'side-right'));
 comment on column gear_worn.view is 'Which view of the item the piece shows; null is the item''s default. Which views an item ships is the instance''s art, not held here.';
 
