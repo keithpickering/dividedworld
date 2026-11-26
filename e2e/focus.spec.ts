@@ -525,7 +525,7 @@ for (const width of [320, 390]) {
 }
 
 /* A change of section within Settings keeps the screen mounted and swaps only its body: the title is never filtered or faded, and focus ends on the section's own link. */
-test('smooth: pressing Settings › The board swaps the body without ever filtering or fading the title, and leaves focus on The board', async ({ page }) => {
+test('smooth: pressing Settings > The board swaps the body without ever filtering or fading the title, and leaves focus on The board', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto('/settings?section=account');
   await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });

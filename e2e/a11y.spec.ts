@@ -425,7 +425,7 @@ test.describe('between the boards\' widths', () => {
    * the app, at the Phone board's width.
    */
   for (const [label, path] of [['Rankings', '/?fixture=boards&story=boards-13-rankings--season'], ['Alerts', '/?fixture=boards&story=boards-02-alerts--open'], ['Updates', '/?fixture=boards&story=boards-03-updates--newest'], ['Season news', '/?fixture=boards&story=boards-04-season-news--news'], ['My characters', '/characters'], ['New character', '/characters/new'], ['Settings', '/settings'], ['Settings › Account', '/settings?section=account']] as const) {
-    test(`on a phone 390 wide, the restyled ${label} page does not scroll sideways`, async ({ page }) => {
+    test(`on a phone 390 wide, the restyled ${label.replace(' › ', ' > ')} page does not scroll sideways`, async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();

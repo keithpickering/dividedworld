@@ -150,7 +150,7 @@ for (const [label, viewport] of SIZES) {
   test.describe(`at ${label}`, () => {
     test.use({ viewport });
     for (const s of [...PAGES, ...OVERLAYS, ...FIXTURE_OVERLAYS, ...STORIES]) {
-      test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
+      test(`${s.name.replace(' › ', ' > ')}: every line of glass text is legible on its smoke`, async ({ page }) => {
         /* The same read as the text sizes' and high contrast's below, at the default preferences: the Strategy Guide rewritten in Gabe's voice
            (#1133) takes about 23s alone at 1920×1080, and CI crossed the default 30s on it (PR #1150), so it gets their 90s. 90s still ends a hang. */
         test.setTimeout(90_000);
@@ -327,7 +327,7 @@ for (const [size, widths] of TEXT_SIZES) {
       test.describe(`at ${label}`, () => {
         test.use({ viewport });
         for (const s of [...PAGES, ...OVERLAYS].filter((x) => !x.signedOut).map(onTheAccount)) {
-          test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
+          test(`${s.name.replace(' › ', ' > ')}: every line of glass text is legible on its smoke`, async ({ page }) => {
             /* Every line's pixels are read, against its smoke and under each preference: the Strategy Guide at 200% is read in
                many windows, and with tests spread fully parallel (playwright.config.ts) several of these share a machine. 90s still ends a hang. */
             test.setTimeout(90_000);
@@ -347,7 +347,7 @@ test.describe('under high contrast', () => {
     test.describe(`at ${label}`, () => {
       test.use({ viewport });
       for (const s of [...PAGES, ...OVERLAYS].filter((x) => !x.signedOut).map(onTheAccount)) {
-        test(`${s.name}: every line of glass text stands on solid ground`, async ({ page }) => {
+        test(`${s.name.replace(' › ', ' > ')}: every line of glass text stands on solid ground`, async ({ page }) => {
           /* The same read as the text sizes' (every line's pixels, against its smoke): the Strategy Guide grows a sheet with every card the
              instance adds, so it outgrew the default 30s at 1920×1080 when Buzzkill joined it. 90s still ends a hang, as above. */
           test.setTimeout(90_000);
