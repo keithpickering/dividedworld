@@ -1,4 +1,4 @@
--- Announcements, the staff pin and the recap (supabase/migrations/0447_arc_announcements.sql; docs/plans/2026-11-25-arc-announcements-plan.md, Task 3, part 1; its design, sections 1, 3, 4 and 8).
+-- Announcements, the staff pin and the recap (supabase/migrations/0448_arc_announcements.sql; docs/plans/2026-11-25-arc-announcements-plan.md, Task 3, part 1; its design, sections 1, 3, 4 and 8).
 --
 --   * A payload that plays an announced beat opens a staff thread (the Boss's post at seq 1), pins it and writes the arc_announcements row; the beat's bundle lands in that thread, and a bundle with no
 --     announcement opens its move thread as 0437 wrote it (a played bundle with no announcement, as an instance holds before this migration, still lands where it did).
@@ -134,7 +134,7 @@ create function pg_temp.landed_in(bundle_name text) returns uuid[] language sql 
   select coalesce(array_agg(distinct a.thread), '{}') from queued_moves q join acts a on a.id = q.landed_act where q.bundle_name = landed_in.bundle_name
 $$;
 create function pg_temp.staff_threads() returns bigint language sql as $$ select count(*) from threads where staff_placed $$;
--- A part queued straight, as a predecessor's played bundle is (0446's fixture), live a minute ago.
+-- A part queued straight, as a predecessor's played bundle is (0447's fixture), live a minute ago.
 create function pg_temp.part(who text, bundle uuid, bname text, role text, params jsonb) returns bigint language plpgsql as $$
 declare
   m bigint;

@@ -93,7 +93,7 @@ interface World {
   applyThrows?: boolean;
   /** What meeting_context() says of the Boss's arc (0334): the beats unlocked and not played, and the kinds held back; absent: an older database. */
   arc?: { beats: { key: string; mini: boolean; due: boolean }[]; heldBack: string[] };
-  /** What meeting_context() says of the plot so far and the lead-ins live now (0447). */
+  /** What meeting_context() says of the plot so far and the lead-ins live now (0448). */
   plot?: unknown;
   leadIns?: string[];
   /** What meeting_context() hands a meeting in the farewell window (0337): the season's facts. Absent or null: the meeting was not handed any. */

@@ -240,7 +240,7 @@ test('the seed carries the conditions and each persona\'s arc as SQL checks it: 
   assert.equal(seed.system.staff[0]!.beats.length, first.beats.length, 'the patrol beats are as they were');
 });
 
-test('the seed carries a lead-in\'s unlock and the aftermath beats as SQL checks them, never a brief, a mood or an announcement (0446)', () => {
+test('the seed carries a lead-in\'s unlock and the aftermath beats as SQL checks them, never a brief, a mood or an announcement (0447)', () => {
   const first = instance.system.roster[0]!;
   const announce = { titleHint: 'A hint.', defaultTitle: 'A title', defaultBody: 'A body.', defaultPitch: 'A pitch.', push: 'A push.' };
   const arced: Persona = {

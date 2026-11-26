@@ -442,7 +442,7 @@ test('an instance exported and imported into a fresh database is the same instan
         update seasons set meetings_thread = meetings where ends_at is null;
         assert (select count(*) from threads where staff_placed and id in (staff_thread, meetings)) = 2, 'the fixture holds its two staff threads';
       end;
-      -- An announcement (0447): the Split played, its thread opened by the Boss with the post at seq 1, pinned and then unpinned by an admin, and the row naming the play, so the two insert-only tables round-trip with their links to a thread, an Act and a play.
+      -- An announcement (0448): the Split played, its thread opened by the Boss with the post at seq 1, pinned and then unpinned by an admin, and the row naming the play, so the two insert-only tables round-trip with their links to a thread, an Act and a play.
       declare ann_thread uuid; ann_act uuid; ann_play bigint;
       begin
         insert into arc_beat_events (season, staff, beat, event) select id, 'exp-boss', 'split', 'played' from seasons where ends_at is null returning id into ann_play;

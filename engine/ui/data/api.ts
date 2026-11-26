@@ -2504,7 +2504,7 @@ export interface BoardClosed {
   readonly goesTo: BoardRef | null;
 }
 
-/** A live pin on a staff thread, as `admin_staff_pins()` (added by 0447) returns a row of it for the admin's Machine screen: the thread, its title and when it was pinned (ISO 8601), the live pins of the open season, oldest pin first. */
+/** A live pin on a staff thread, as `admin_staff_pins()` (added by 0448) returns a row of it for the admin's Machine screen: the thread, its title and when it was pinned (ISO 8601), the live pins of the open season, oldest pin first. */
 export interface StaffPin {
   readonly thread: Id;
   readonly title: string;
@@ -2522,7 +2522,7 @@ export interface BoardPage {
   readonly page: number;
   readonly threads: readonly ThreadSummary[];
   readonly pins: Awaited<ReturnType<KayfaApi['pinnedThreads']>>;
-  /** Page 1 of the staff board: the threads an announcement pinned (board_page's `stickies`, 0447), each as the page's own rows are, oldest pin first. Empty on every other page and board. Drawn first, taking none of the page's slots, and left out of the rows below. */
+  /** Page 1 of the staff board: the threads an announcement pinned (board_page's `stickies`, 0448), each as the page's own rows are, oldest pin first. Empty on every other page and board. Drawn first, taking none of the page's slots, and left out of the rows below. */
   readonly stickies: readonly ThreadSummary[];
   /** The board's own live card plays (`effectsAbove([], null, board)`). */
   readonly banner: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
@@ -3077,7 +3077,7 @@ export interface KayfaApi {
   adminMachine(): Promise<readonly AdminSlot[]>;
   /** The live pins on staff threads, oldest pin first, for the Machine screen (`admin_staff_pins`). An admin's alone; anyone else is refused (the call throws). */
   adminStaffPins(): Promise<readonly StaffPin[]>;
-  /** An admin takes a staff thread's pin down (`unpin_staff_thread`, 0447). A thread with no live pin is refused in the server's words ("That thread has no live pin."). */
+  /** An admin takes a staff thread's pin down (`unpin_staff_thread`, 0448). A thread with no live pin is refused in the server's words ("That thread has no live pin."). */
   unpinStaffThread(thread: Id): Promise<Answer<{ readonly thread: Id }>>;
   /**
    * Saves a slot's availability and price (`set_slot`). A price is at least 1 (hundredths of an orb). Taking a pack off sale ends, as reversed by the admin, every

@@ -20,12 +20,12 @@
 --                       `after:<pred>:<key>` and queues its authored bundle at no cost, as an own beat's. It stores the payload's `recap` beside the farewell and handoff, under the same window rule.
 --   handoffs            gains `recap` (at most 300 characters); handoffs_latest gains it as its last column.
 --   queued_moves_guard  (0424) reads a role of the predecessor's beat, {role, beat, of: 'predecessor'}, through beat_role_board's fifth argument; a role is written with those keys and no others.
---   system_tick         (0445) lands a part of a bundle in the thread of the announcement of the beat that played the bundle; a bundle with no announcement (an instance's played Split before this migration, a
+--   system_tick         (0446_written_quiz) lands a part of a bundle in the thread of the announcement of the beat that played the bundle; a bundle with no announcement (an instance's played Split before this migration, a
 --                       beat with no `announce` block) lands as 0437 wrote it: in the thread of the bundle's earliest landed part, else a thread of its own. A part the announcement thread refuses (write_staff_act raises) does not wait
 --                       on it for good: it falls back the same way (the earliest landed part's thread outside the announcement's, else a thread of its own) and its row's `failure` says so; a thread moved to another board takes the
 --                       part as before. Its role resolution passes `of` likewise.
 --
--- Latest definitions copied: apply_meeting and system_tick (0445_persona_lines.sql), queued_moves_guard (0424_staff_requests.sql), handoffs_latest (0403_departed_personas.sql). Everything each does that is not
+-- Latest definitions copied: apply_meeting (0445_persona_lines.sql), system_tick (0446_written_quiz.sql), queued_moves_guard (0424_staff_requests.sql), handoffs_latest (0403_departed_personas.sql). Everything each does that is not
 -- named here is as written there; security definer, search_path and grants stay (they are replaced in place).
 -- Existing rows: the new tables start empty and no announcement is written retroactively, so a bundle played before this migration still lands in the move thread 0437 opened.
 -- Ways out: a staff pin ends with its season or by an admin's unpin; no state is added to a player, a character or a post. A thread that promised something an admin held is the fiction; the log and the move posts
@@ -453,7 +453,7 @@ begin
   return new;
 end $$;
 
--- system_tick (0445), a part of a bundle landing in the announcement thread of the beat that played the bundle where there is one, and a role of the predecessor's beat resolved through its `of`. Everything else as 0445 wrote it.
+-- system_tick (0446_written_quiz), a part of a bundle landing in the announcement thread of the beat that played the bundle where there is one, and a role of the predecessor's beat resolved through its `of`. Everything else as 0446_written_quiz wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -507,6 +507,10 @@ declare
   ann_mt uuid;
   ann_why text;
   act_p jsonb;
+  quiz_grace interval := make_interval(mins => coalesce((select (s.value ->> 'quizWriteMinutes')::integer from settings s where s.key = 'modBots'), 15));
+  quiz_late record;
+  quiz_bank jsonb;
+  quiz_banked integer := 0;
 begin
   if not pg_try_advisory_xact_lock(hashtext('kayfabb.system_tick')) then return jsonb_build_object('skipped', true); end if;
 
@@ -902,8 +906,32 @@ begin
     end;
   end loop;
 
+  -- 7. Pending quizzes (the written quiz plan, Task 1): a quiz visit with no question row whose start is `modBots.quizWriteMinutes` or more in the past is given its bank question (snapshotted into the row, so a reseed of
+  -- the bank cannot change it), whatever the switch says: the staff run writes the model's question sooner where it can, and no visit waits longer than this. The oldest first, found by the partial index on visits_open
+  -- (the pending ones alone), at most `demandChecksPerTick`, and none once the budget is spent. A visit whose persona has no bank question for it (a reseed removed it) is not scanned at all, so it can never hold the head of the scan and starve the rest (pending_quizzes leaves it out for the same reason); it ends with its visit, or is banked once a reseed gives the bank that question back. Best effort per visit: one that fails is warned and left for the next tick; a row
+  -- the staff run wrote first is left as it stands (write_visit_quiz answers it and writes nothing).
+  for quiz_late in
+    select o.visit_act from visits_open o where o.quiz_at is not null and o.quiz_at <= now() - quiz_grace
+      and exists (select 1 from acts v join characters c on c.id = v.character join staff_quiz_questions q on q.staff = c.staff and q.idx = (v.payload #>> '{challenge,question_index}')::integer where v.id = o.visit_act)
+    order by o.quiz_at, o.visit_act limit cap
+  loop
+    if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
+    begin
+      quiz_bank := bank_quiz_for(quiz_late.visit_act);
+      if quiz_bank is null then
+        raise warning 'system_tick: quiz visit % has no bank question to fall back on', quiz_late.visit_act;
+        continue;
+      end if;
+      if (write_visit_quiz(quiz_late.visit_act, 'bank', quiz_bank ->> 'question', quiz_bank -> 'choices', quiz_bank ->> 'answer') ->> 'written')::boolean then
+        quiz_banked := quiz_banked + 1;
+      end if;
+    exception when others then
+      raise warning 'system_tick: the question for visit % was not banked: % (%)', quiz_late.visit_act, sqlerrm, sqlstate;
+    end;
+  end loop;
+
   return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'superseded', superseded, 'unmet', unmet, 'failed', failed, 'checked', checked, 'visits', filed, 'beats', arcs, 'budget', out_of_time,
-    'awardsFailed', awards_failed, 'requestsLapsed', lapsed_n, 'owedPaid', owed_paid);
+    'awardsFailed', awards_failed, 'requestsLapsed', lapsed_n, 'owedPaid', owed_paid, 'quizzesBanked', quiz_banked);
 end $$;
 
 
@@ -1573,7 +1601,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'moves', coalesce((select jsonb_agg(jsonb_build_object('act', n.act, 'kind', n.kind, 'params', n.params, 'state', n.state, 'at', n.at, 'why', n.why) order by n.at desc, n.act) from newest n), '[]'::jsonb),
     'rules', rules_in_force((select t.board from threads t where t.id = in_thread)),
     'order', mod_standing(staff_key) -> 'order',
-    -- The plot so far (0447), the same for every persona; the Boss alone is also given the push of what it announced this season and the lead-ins that are live for it.
+    -- The plot so far (0448), the same for every persona; the Boss alone is also given the push of what it announced this season and the lead-ins that are live for it.
     'plot', arc_plot(staff_key))
     || case when staff_key is not distinct from current_boss() then jsonb_build_object(
       'push', coalesce((select jsonb_agg(z.push order by z.at, z.id)
@@ -1594,7 +1622,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'boss', current_boss(),
     -- The Boss's arc (0334): the beats unlocked and not yet played, each with whether it is due, and the kinds still held back. Never a locked beat, a brief or a template.
     'arc', arc_for_meeting(current_boss(), (select x.id from seasons x where x.ends_at is null)),
-    -- The plot so far (0447) and the lead-ins live for the Boss (the keys arc_for_meeting lists under `arc` as well; the Edge Function maps them to the briefs the Boss reads).
+    -- The plot so far (0448) and the lead-ins live for the Boss (the keys arc_for_meeting lists under `arc` as well; the Edge Function maps them to the briefs the Boss reads).
     'plot', arc_plot(current_boss()),
     'leadIns', to_jsonb(arc_lead_ins(current_boss(), (select x.id from seasons x where x.ends_at is null))),
     -- The farewell and the handoff (0337, above): a meeting within farewellWindowHours of the season's end is shown what the code knows of the season (`handoffFacts`), to write its handoff from;

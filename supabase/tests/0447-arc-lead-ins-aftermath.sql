@@ -1,4 +1,4 @@
--- Lead-ins, aftermath and the new conditions (supabase/migrations/0446_arc_lead_ins_aftermath.sql; docs/plans/2026-11-25-arc-announcements-plan.md, Task 2; its design, sections 6, 7 and 8b).
+-- Lead-ins, aftermath and the new conditions (supabase/migrations/0447_arc_lead_ins_aftermath.sql; docs/plans/2026-11-25-arc-announcements-plan.md, Task 2; its design, sections 6, 7 and 8b).
 --
 --   * persona_arcs holds `lead_ins` ({beat key: unlock}) and `aftermath` (the beats a successor plays), and seed_instance writes both from the roster, never a brief.
 --   * `phase` with `daysIntoPhase` holds once that many days of the phase have passed; a lead-in shows from the honeymoon's second week, not its first, and stops once its beat unlocks.

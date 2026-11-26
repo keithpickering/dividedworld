@@ -32,7 +32,7 @@ function quizOf(w: Weakness): { quiz: { question: string; choices: string[]; ans
 
 /**
  * A persona's arc as the seed carries it to `persona_arcs` (0332): each beat's key, whether it is a mini-arc and repeatable, its unlock conditions and its due point, in the persona's
- * order (the arc, then the mini-arcs), and a lead-in's unlock where the beat has one (0446). Never a brief, a mood, an announcement or a bundle template: those are the instance's, read
+ * order (the arc, then the mini-arcs), and a lead-in's unlock where the beat has one (0447). Never a brief, a mood, an announcement or a bundle template: those are the instance's, read
  * by the meeting in code, as the prompts are, so the database holds only what it checks. An arc's beat is not a patrol `beats` (the boards a Mod Bot watches), which travels beside it unchanged.
  */
 type SeedBeat = { key: string; mini: boolean; repeatable: boolean; unlock: Beat['unlock']; due?: Beat['due'] | null; leadIn?: { unlock: Condition[] } };
@@ -42,7 +42,7 @@ function arcOf(p: Persona): SeedBeat[] {
   return [...(p.arc ?? []).map((b) => one(b, false)), ...(p.miniArcs ?? []).map((b) => one(b, true))];
 }
 
-/** A persona's aftermath as the seed carries it (0446): the beats a successor plays, kept as the arc's are, each a mini-arc that is never repeatable and never due. */
+/** A persona's aftermath as the seed carries it (0447): the beats a successor plays, kept as the arc's are, each a mini-arc that is never repeatable and never due. */
 function aftermathOf(p: Persona): SeedBeat[] {
   return (p.aftermath ?? []).map((b) => ({ key: b.key, mini: true, repeatable: false, unlock: b.unlock, ...leadInOf(b) }));
 }

@@ -255,7 +255,7 @@ export interface Seed {
   career(key: string, career: Career): void;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
-  /** A staff thread pinned as a sticky (what an announcement writes, 0447), at `at` (default now): the staff board's page 1 lists it first, and the admin's Machine screen lists it with an Unpin. */
+  /** A staff thread pinned as a sticky (what an announcement writes, 0448), at `at` (default now): the staff board's page 1 lists it first, and the admin's Machine screen lists it with an Unpin. */
   stickyPin(thread: Id, options?: { at?: number }): void;
   /** A staff character's post in a thread (The System's board for the Boss; any board for a persona's pool post, which presence lists it for). */
   staffPost(staff: Id, thread: Id, body: string, options?: { at?: number; ruling?: { readonly verdict: 'accepted' | 'rejected'; readonly apology: Id } }): Id;
@@ -684,7 +684,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return found;
   };
   /** Where a landed `moveThread` took a thread from (thread_departures, 0326). */
-  /** The live pins on staff threads (staff_pin_events, 0447): a thread and when it was pinned; an unpin removes it. */
+  /** The live pins on staff threads (staff_pin_events, 0448): a thread and when it was pinned; an unpin removes it. */
   const staffPins: { thread: Id; at: number }[] = [];
   const departures: { thread: Id; origin: Id; to: Id; at: number }[] = [];
   /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0320). */

@@ -158,7 +158,7 @@ declare
                            'pack_pulls_problem(jsonb)', 'card_held(uuid,text)', 'back_closed(uuid)',
                            -- A board's page reads the stubs of the threads moved away from it and, for a closed board, where its threads went (0326); the page is a signed-in read of public facts.
                            'board_stubs(uuid)', 'board_closed_to(uuid)',
-                           -- The staff threads a board's page lists first, pinned in the open season (0447): board_page runs as its caller and asks. A public fact of the board, the same for every caller.
+                           -- The staff threads a board's page lists first, pinned in the open season (0448): board_page runs as its caller and asks. A public fact of the board, the same for every caller.
                            'staff_stickies(uuid)', 'board_page_ids(uuid,integer,integer)',
                            -- The title of a moved thread and the board it left, for a move's sentence (0327): public facts.
                            'move_thread_names(jsonb)',

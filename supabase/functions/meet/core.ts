@@ -122,9 +122,9 @@ interface Context {
   readonly machine?: readonly MachineSlotFacts[];
   /** The Boss's arc as the database reads it (0334, over arc_for_meeting): the beats unlocked and not yet played, with whether each is due, and the kinds held back. Absent from an older database, which holds nothing back. */
   readonly arc?: ArcRead;
-  /** The plot so far (0447): last season's Boss and recap and the season's announced initiatives. Absent from an older database. */
+  /** The plot so far (0448): last season's Boss and recap and the season's announced initiatives. Absent from an older database. */
   readonly plot?: PlotRead;
-  /** The lead-in beats live now (0447), by key: each one's brief reaches the Boss's prompt as a worry. Absent from an older database. */
+  /** The lead-in beats live now (0448), by key: each one's brief reaches the Boss's prompt as a worry. Absent from an older database. */
   readonly leadIns?: readonly string[];
   /**
    * What the code knows of the open season (0337), handed over only to a meeting within farewellWindowHours of the season's end, to write its handoff from; null or absent otherwise, and from an
