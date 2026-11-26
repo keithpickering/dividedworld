@@ -6,6 +6,10 @@
 --                       thread, act (the post), title, pitch, push (the authored line, copied at write so a later seed cannot change what was said), the arc_beat_events row it announces (`play`) and `repeatable`.
 --                       Uniqueness knows a repeatable beat by that column, set at write from the persona's file: unique (season, staff, beat) where not repeatable, and unique (play) always, so a repeatable beat
 --                       announces once for each play. The pitch is cut at 200 characters and the push at 300 (PITCH_MOST, PUSH_MOST); a bound a model overshoots is trimmed and recorded, never a lost answer.
+--   handover_facts      insert-only (its guards fire always; RLS on, no client grant; in the instance export): one row for each handover that seated a Boss by nomination or rotation, written by an AFTER INSERT
+--                       trigger on season_handovers in the handover's own transaction: handoff_facts of the season the outgoing Boss served, as arc_predecessor reads it (the season before for a roll-over, the same
+--                       season, as of the handover, for a departure). Existing handovers are backfilled once at migrate time, one handoff_facts each (a count of the season's posts through acts_public: a few
+--                       handovers on an instance, one pass each, never repeated). An import writes the table's own rows, as a replica, so the trigger does not run twice. arc_plot reads it by primary key.
 --   staff_pin_events    insert-only (`pinned` | `unpinned`; by is null for the system, the admin's account otherwise), indexed (season, thread, id desc). staff_stickies(board) lists the threads of a board whose latest
 --                       event is `pinned` in the open season, oldest pin first: a pin ends with its season, or when an admin unpins it. unpin_staff_thread (admin only) writes `unpinned`, and refuses a thread
 --                       with no live pin in plain words. Both are read-only to players: staff_stickies is called by board_page, in part 2, which runs as its caller, so part 2 grants it to the signed-in role like board_stubs; the admin's unpin is granted to authenticated as the
@@ -36,7 +40,7 @@
 --   arc_plot(in_staff)  `{last, initiatives}`: the plot so far, the same for every reader (in_staff, the reader, changes nothing in it: the engine compares its own key with `last.boss` and each initiative's `boss`
 --                       for its second-person reading, design 8a). `last` is {boss, name, recap, facts} for the length of the CURRENT Boss's honeymoon (arc_season_span, so its persona's own phase_days count) after the
 --                       handover that seated it (season_handovers.at, the one arc_predecessor reads), else null; recap is handoffs_latest's (null where none) and `facts` is handoff_facts of the season that Boss served,
---                       given only where there is no recap (it is the fallback, and only ever read inside a prompt). `initiatives` are the open season's arc_announcements, oldest first, a departed Boss's included
+--                       given only where there is no recap (it is the fallback, and only ever read inside a prompt), read from the stored handover_facts row, never recomputed. `initiatives` are the open season's arc_announcements, oldest first, a departed Boss's included
 --                       (the season's story is one), capped at the latest 12: a persona file may hold 24 beats (ARC_BEATS_MOST), and a Boss that announces every one would put about 24 x 350 characters in
 --                       every staff pool call; 12 keep the section to about 4,000 characters, and a season with more has its older ones scroll off, as they do the board.
 --   admin_staff_pins    (admin only) the open season's live staff pins on every board with each title, oldest first, for the Machine screen.
@@ -94,6 +98,52 @@ alter table arc_announcements enable always trigger arc_announcements_insert;
 alter table arc_announcements enable always trigger arc_announcements_no_update;
 alter table arc_announcements enable always trigger arc_announcements_no_delete;
 alter table arc_announcements enable always trigger arc_announcements_no_truncate;
+
+-- The facts of a handover, built once when it is written (see the header). A past handover's answer never changes, so arc_plot reads this row for every pool call of the honeymoon instead of counting the season's posts.
+create table handover_facts (
+  handover bigint primary key references season_handovers (id),
+  facts jsonb not null check (jsonb_typeof(facts) = 'object'),
+  at timestamptz not null default now()
+);
+alter table handover_facts enable row level security;
+revoke all on handover_facts from public, anon, authenticated;
+create function handover_facts_guard() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if tg_op <> 'INSERT' then raise exception 'a handover''s facts are only ever added (%)', tg_op using errcode = 'P0001'; end if;
+  return new;
+end $$;
+revoke execute on function handover_facts_guard() from public, anon, authenticated;
+create trigger handover_facts_insert before insert on handover_facts for each row execute function handover_facts_guard();
+create trigger handover_facts_no_update before update on handover_facts for each row execute function handover_facts_guard();
+create trigger handover_facts_no_delete before delete on handover_facts for each row execute function handover_facts_guard();
+create trigger handover_facts_no_truncate before truncate on handover_facts for each statement execute function handover_facts_guard();
+alter table handover_facts enable always trigger handover_facts_insert;
+alter table handover_facts enable always trigger handover_facts_no_update;
+alter table handover_facts enable always trigger handover_facts_no_delete;
+alter table handover_facts enable always trigger handover_facts_no_truncate;
+
+-- Written with the handover: the season arc_predecessor names for it (a departure: its own season, as of now; a roll-over: the season before), only for the handovers arc_predecessor reads.
+create function handover_facts_write() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  served bigint;
+begin
+  if new.outgoing is null or new.outgoing = new.boss or new.how not in ('nomination', 'rotation') then return new; end if;
+  served := case when new.cause = 'departure' then new.season else (select z.id from seasons z where z.id < new.season order by z.id desc limit 1) end;
+  if served is null then return new; end if;
+  insert into handover_facts (handover, facts) values (new.id, handoff_facts(served));
+  return new;
+end $$;
+revoke execute on function handover_facts_write() from public, anon, authenticated;
+create trigger season_handovers_facts after insert on season_handovers for each row execute function handover_facts_write();
+
+-- Existing handovers, once: one handoff_facts each.
+insert into handover_facts (handover, facts)
+select h.id, handoff_facts(case when h.cause = 'departure' then h.season else (select z.id from seasons z where z.id < h.season order by z.id desc limit 1) end)
+from season_handovers h
+where h.outgoing is not null and h.outgoing <> h.boss and h.how in ('nomination', 'rotation')
+  and (h.cause = 'departure' or exists (select 1 from seasons z where z.id < h.season));
 
 create table staff_pin_events (
   id bigint generated always as identity primary key,
@@ -1507,7 +1557,7 @@ end $$;
 -- `last.boss` and each initiative's `boss` for the second-person reading of the design's section 8a).
 --   last         {boss, name, recap, facts} for the sitting Boss's honeymoon (arc_season_span's length: its persona's own days where it sets them, else the instance's) counted from the handover that seated it
 --                (the season_handovers row arc_predecessor reads), else null. boss is the outgoing Boss's staff key and name its character's; recap is the outgoing Boss's latest for the season it served
---                (handoffs_latest), null where none; facts is handoff_facts of that season, given only where there is no recap: it is what the engine's fallback line is built from, and nothing reads it otherwise.
+--                (handoffs_latest), null where none; facts is that handover's stored handover_facts row (null where there is none), given only where there is no recap: it is what the engine's fallback line is built from, and nothing reads it otherwise. arc_plot never calls handoff_facts: it counts every post of a season, and 0337 bounded it to a read at the farewell and one for the new Boss's meetings, never for each pool call; a past handover's answer never changes, so it is built once, at the handover.
 --   initiatives  the open season's announcements, oldest first, a departed Boss's among them, at most the latest 12. A file holds up to 24 beats (ARC_BEATS_MOST) and a Boss that announces every one would
 --                put 24 x about 350 characters in every pool call all season; 12 is about 4,000 characters, and an older initiative scrolls out of the plot as it does out of the board's sight.
 create function arc_plot(in_staff text) returns jsonb
@@ -1517,6 +1567,7 @@ declare
   sitting text := current_boss();
   pred record;
   seated timestamptz;
+  seated_id bigint;
   span record;
   recap text;
   last_season jsonb;
@@ -1526,13 +1577,13 @@ begin
   if sitting is not null and exists (select 1 from settings g where g.key = 'phases') then
     select * into pred from arc_predecessor(sitting, sn) p;
     if found then
-      select h.at into seated from season_handovers h
+      select h.at, h.id into seated, seated_id from season_handovers h
       where h.boss = sitting and h.outgoing = pred.staff and h.season = pred.seated and h.how in ('nomination', 'rotation') order by h.id desc limit 1;
       select * into span from arc_season_span(sitting, sn);
       if seated is not null and found and now() < seated + (span.honeymoon_ends - span.starts_at) then
         select nullif(btrim(x.recap), '') into recap from handoffs_latest x where x.season = pred.season and x.staff = pred.staff;
         last_season := jsonb_build_object('boss', pred.staff, 'name', (select c.name from characters c where c.staff = pred.staff), 'recap', recap,
-          'facts', case when recap is null then handoff_facts(pred.season) end);
+          'facts', case when recap is null then (select f.facts from handover_facts f where f.handover = seated_id) end);
       end if;
     end if;
   end if;
