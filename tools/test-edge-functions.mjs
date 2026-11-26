@@ -125,21 +125,21 @@ red('conceal is rescheduled with both headers', {
 }, /E4.*kayfabb-conceal.*Authorization header/);
 
 /* ---- E5: a job's function asks for the jobs key ---- */
-red('mail no longer calls fromTheService', change('supabase/functions/mail/index.ts', (t) => t.replaceAll('fromTheService', 'fromSomeone')), /E5.*mail/);
+red('mail no longer calls fromTheService', change('supabase/functions/mail/handler.ts', (t) => t.replaceAll('fromTheService', 'fromSomeone')), /E5.*mail/);
 red('mail calls fromTheService only in a test', {
-  ...change('supabase/functions/mail/index.ts', (t) => t.replaceAll('fromTheService', 'fromSomeone')),
+  ...change('supabase/functions/mail/handler.ts', (t) => t.replaceAll('fromTheService', 'fromSomeone')),
   'supabase/functions/mail/core.test.ts': 'if (!fromTheService(request, key)) throw new Error();\n',
 }, /E5.*mail/);
 
-const MAIL = 'supabase/functions/mail/index.ts';
+const MAIL = 'supabase/functions/mail/handler.ts';
 const noCall = (t) => t.replaceAll('fromTheService', 'fromSomeone');
 red('mail names the call only in a trailing line comment', change(MAIL, (t) => `${noCall(t)}\nconst a = 1; // fromTheService(request, env.jobs)\n`), /E5.*mail/);
 red('mail names the call only in a block comment', change(MAIL, (t) => `${noCall(t)}\n/* fromTheService(request, env.jobs) */\n`), /E5.*mail/);
 red('mail names the call only in a string', change(MAIL, (t) => `${noCall(t)}\nconst a = "fromTheService(";\n`), /E5.*mail/);
 quiet('a /* inside a string does not hide mail\'s real call', change(MAIL, (t) => {
-  if (!/^.*Deno\.serve/m.test(t)) throw new Error('mail/index.ts has no Deno.serve line');
+  if (!/^export const handle/m.test(t)) throw new Error('mail/handler.ts has no handle line');
   // The `*/` in the trailing line comment is what an old block-comment strip would run to.
-  return `${t.replace(/^(.*Deno\.serve)/m, 'const g = "a/*";\n$1')}\n// done */\n`;
+  return `${t.replace(/^(export const handle)/m, 'const g = "a/*";\n$1')}\n// done */\n`;
 }));
 
 /* ---- a check over nothing ---- */

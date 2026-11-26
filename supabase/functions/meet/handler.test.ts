@@ -27,7 +27,7 @@ test('meet: a good request runs the meeting on the database deps.db made, with m
   assert.equal(res.status, 200);
   // The fake models fail the chat: the meeting closes failed, answered 200 with the outcome, as the deployed function does.
   assert.equal(((await res.json()) as { status: string }).status, 'failed');
-  assert.equal(d.dbs.length, 1);
+  assert.equal(d.dbs.length, 2, "the run's client, then the heartbeat's");
   assert.equal(d.dbs[0]!.env.url, 'http://db.test');
   assert.equal(d.dbs[0]!.env.secret, KEY);
   assert.equal(d.dbs[0]!.safeToRepeat, undefined, 'the meeting asks for the default client');

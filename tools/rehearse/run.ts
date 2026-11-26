@@ -10,6 +10,7 @@ import type { RehearsalContent, RehearsalCorpus, Scenario } from "../../engine/r
 import { dayActions, DAY_MS, MINUTE, type TimedAction, type World } from "../../engine/rehearsal/generate.ts";
 import { runAction } from "../../supabase/functions/act/core.ts";
 import type { JobDeps } from "../../supabase/functions/_shared/handler.ts";
+import { recordingMail } from "./stand-ins.ts";
 import { startCluster, type Cluster } from "./cluster.ts";
 import { simulateClock } from "./clock.ts";
 import { connect, type Connection } from "./db.ts";
@@ -201,6 +202,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
       ...(profile ? { KAYFABB_PROFILE: profile } : {}),
     };
     const sent: { topic: string; event: string }[] = [];
+    const mail = recordingMail();
     const deps: JobDeps = {
       env: (name) => env[name],
       db: () => service,
@@ -217,6 +219,8 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
           return true;
         },
       })) as unknown as JobDeps["broadcaster"],
+      mailer: mail.mailer,
+      authAdmin: mail.authAdmin,
     };
     const sched: ScheduleCtx = {
       connection: conn, deps, cap: models.cap, ...(o.stallMs === undefined ? {} : { stallMs: o.stallMs }), lastDrained: 0, dispatched: [], cluster, clock, jobs: [],

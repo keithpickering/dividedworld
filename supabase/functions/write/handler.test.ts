@@ -20,7 +20,7 @@ test('write: a good request claims on deps.db, builds its models from deps with 
   const res = await handle(post({}), d.deps);
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { claimed: 0, written: 0, failed: 0, errored: 0 });
-  assert.equal(d.dbs.length, 1);
+  assert.equal(d.dbs.length, 2, "the run's client, then the heartbeat's");
   assert.equal(d.dbs[0]!.env.secret, KEY);
   assert.equal(d.dbs[0]!.safeToRepeat!('record_model_call'), false, 'the ledger\'s write is sent once');
   assert.equal(d.dbs[0]!.safeToRepeat!('finish_card_write'), true, 'a second finish writes nothing, so it may be sent again');

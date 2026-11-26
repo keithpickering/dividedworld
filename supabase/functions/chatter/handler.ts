@@ -14,11 +14,12 @@ import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { JobDeps } from '../_shared/handler.ts';
+import { asJob } from '../_shared/job.ts';
 
 /** The calls that write: not sent again after an answer that may have been lost on the way back. The ledger's own writer is one. */
 const WRITES = new Set(['write_staff_act', 'write_staff_thread', 'staff_play_card', 'staff_set_card', 'write_staff_note', 'record_pool_spend', 'claim_pool_run', 'claim_pool_round', 'write_staff_turn', 'write_sessions', 'keep_pick', 'record_model_call']);
 
-export async function handle(request: Request, deps: JobDeps): Promise<Response> {
+export const handle = asJob('kayfabb-chatter', async (request: Request, deps: JobDeps): Promise<Response> => {
   const env = environment(deps.env);
   if (!fromTheService(request, env.jobs)) return notTheService(env.jobs, 'the pool is run by the service');
   const body = (await request.json().catch(() => ({}))) as { slot?: unknown };
@@ -43,4 +44,4 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
     console.error('chatter failed', slot, e instanceof Error ? e.message : 'unknown');
     return json(500, { error: 'the chatter failed', slot });
   }
-}
+});

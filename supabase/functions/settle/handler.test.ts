@@ -26,7 +26,7 @@ test('settle: a good request settles on deps.db and delivers through deps.broadc
   const res = await handle(post({ until: SLOT }), d.deps);
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { status: 'nothing to settle', until: SLOT });
-  assert.equal(d.dbs.length, 1);
+  assert.equal(d.dbs.length, 2, "the run's client, then the heartbeat's");
   assert.equal(d.dbs[0]!.env.secret, KEY);
   assert.equal(made.length, 1);
   assert.deepEqual({ url: made[0]!.url, key: made[0]!.key }, { url: 'http://db.test', key: KEY });

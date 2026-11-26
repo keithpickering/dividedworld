@@ -70,8 +70,6 @@ export class UnknownFunction extends Error {
 
 const MODEL_FUNCTIONS = new Set(["meet", "chatter", "staff", "write"]);
 export const REAL = ["meet", "chatter", "staff", "settle", "write", "mail", "conceal"];
-/** Functions with no handler.ts of their own (their deployed file is a Deno.serve one): the rehearsal's twin, in tools/rehearse/. */
-const REHEARSAL_OWN = new Set(["mail", "conceal"]);
 
 async function handlerFor(ctx: DispatchCtx, name: string, path: string): Promise<Handler> {
   if (ctx.handlers) {
@@ -80,7 +78,6 @@ async function handlerFor(ctx: DispatchCtx, name: string, path: string): Promise
     return h;
   }
   if (!REAL.includes(name)) throw new UnknownFunction(path);
-  if (REHEARSAL_OWN.has(name)) return (await import(`./${name}.ts`)).handle as Handler;
   return (await import(`../../supabase/functions/${name}/handler.ts`)).handle as Handler;
 }
 
