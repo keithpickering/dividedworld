@@ -11,6 +11,7 @@
 import {
   keysOf, keyProblems, listProblems, price, pack, parseCostShard, compareRun, testList, WORKERS, BUDGET_MINUTES,
 } from './e2e-cost.mjs';
+import { problems } from './check-e2e-cost.mjs';
 
 let failures = 0;
 const ok = (name) => console.log(`ok    ${name}`);
@@ -173,6 +174,47 @@ eq('compareRun: an exact run has neither', compareRun(KEYS, LIST), { missing: []
 
 /* ---- testList ---- */
 eq('testList: a line each and a final newline', testList(['a › b', 'c › d']), 'a › b\nc › d\n');
+
+/* ---- problems (tools/check-e2e-cost.mjs) ---- */
+const CLEAN = {
+  manifest: { measured: { run: '123', date: '2026-11-26' }, specs: { 'a.spec.ts': { count: 3, mean: 60 }, 'dir/b.spec.ts': { count: 1, mean: 30 } }, tests: { 'a.spec.ts › top test': 90 } },
+  keys: KEYS,
+  shards: 2,
+};
+const withManifest = (patch) => ({ ...CLEAN, manifest: { ...CLEAN.manifest, ...patch } });
+eq('problems: a clean manifest and clean keys give none', problems(CLEAN).problems, []);
+eq('problems: a null measured is clean', problems(withManifest({ measured: null })).problems, []);
+const mustFault = (name, input, re) => {
+  const got = problems(input).problems;
+  if (got.length > 0 && got.some((p) => re.test(p))) ok(name);
+  else fail(name, `expected a problem matching ${re}, got ${JSON.stringify(got)}`);
+};
+mustFault('problems: a spec with count 0', withManifest({ specs: { ...CLEAN.manifest.specs, 'a.spec.ts': { count: 0, mean: 60 } } }), /a\.spec\.ts.*count/);
+mustFault('problems: a negative mean', withManifest({ specs: { ...CLEAN.manifest.specs, 'a.spec.ts': { count: 3, mean: -1 } } }), /a\.spec\.ts.*mean/);
+mustFault('problems: a test entry whose spec is missing', withManifest({ tests: { 'gone.spec.ts › x': 5 } }), /gone\.spec\.ts/);
+mustFault('problems: a test entry of zero seconds', withManifest({ tests: { 'a.spec.ts › top test': 0 } }), /top test/);
+mustFault('problems: measured as a string', withManifest({ measured: 'yesterday' }), /measured/);
+mustFault('problems: measured missing its date', withManifest({ measured: { run: '1' } }), /measured/);
+mustFault('problems: a key holding ›', { ...CLEAN, keys: [...KEYS, 'a.spec.ts › x › y'], list: { suites: [{ title: 'a.spec.ts', file: 'a.spec.ts', specs: [test('x › y')] }] } }, /›/);
+mustFault('problems: a prefix pair', { ...CLEAN, keys: [...KEYS, 'a.spec.ts › outer'] }, /prefix/);
+mustFault('problems: the list JSON finds a title holding ›', { ...CLEAN, list: { suites: [{ title: 'a.spec.ts', file: 'a.spec.ts', specs: [test('Settings › Account')] }] } }, /Settings › Account/);
+
+const ALL = (secs) => ({ manifest: { measured: null, specs: { 'a.spec.ts': { count: 4, mean: secs } }, tests: {} }, keys: ['a.spec.ts › one', 'a.spec.ts › two', 'a.spec.ts › three', 'a.spec.ts › four'], shards: 2 });
+const rep = problems(ALL(600)).report;
+if (rep.lines.some((l) => /unpriced|fallback/i.test(l) && l.includes('0%'))) ok('report: names the unpriced share (all priced here, 0%)');
+else fail('report: names the unpriced share', JSON.stringify(rep));
+const noSpecs = problems({ manifest: { measured: null, specs: {}, tests: {} }, keys: ['x.spec.ts › one', 'x.spec.ts › two'], shards: 2 }).report;
+if (noSpecs.lines.some((l) => /unpriced|fallback/i.test(l) && l.includes('100%'))) ok('report: an empty manifest is 100% unpriced');
+else fail('report: an empty manifest is 100% unpriced', JSON.stringify(noSpecs));
+eq('report: busiest is a shard total over WORKERS in minutes', rep.busiestMinutes, (1200 / WORKERS) / 60);
+if (rep.lines.some((l) => l.includes('10.0') && l.includes(String(BUDGET_MINUTES)))) ok('report: names the busiest estimate against the budget');
+else fail('report: names the busiest estimate against the budget', JSON.stringify(rep.lines));
+const over = problems(ALL(1200)).report; // 2400 s per shard, 20 min
+if (over.lines.some((l) => /add .*shard.*web\.yml/i.test(l))) ok('report: over the budget says to add a shard');
+else fail('report: over the budget says to add a shard', JSON.stringify(over.lines));
+if (rep.lines.some((l) => /add .*shard/i.test(l))) fail('report: under the budget must not say to add a shard', JSON.stringify(rep.lines));
+else ok('report: under the budget does not say to add a shard');
+eq('report: over the budget is not a problem', problems(ALL(1200)).problems, []);
 
 if (failures) {
   console.error(`\n${failures} case${failures === 1 ? '' : 's'} failed`);

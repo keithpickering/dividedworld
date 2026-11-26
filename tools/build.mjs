@@ -72,6 +72,7 @@ export const STEPS = [
   'node tools/test-release-workflows.mjs',
   'node tools/check-release-workflows.mjs',
   'node tools/test-e2e-cost.mjs',
+  'node tools/check-e2e-cost.mjs',
   'node tools/test-sql-refusal.mjs',
   'node tools/test-sql-coverage.mjs',
   'node tools/test-deployed-migrations.mjs',
