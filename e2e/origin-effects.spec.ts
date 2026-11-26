@@ -6,6 +6,8 @@ import { pageViolations } from './axe.ts';
 import { watchPuff } from './puff-watch.ts';
 import { settled } from './settled.ts';
 import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.ts';
+import { FRAME_MOST_S, LID_SECONDS, NO_LID_BY_S } from './lid-watch.ts';
+
 
 /** The room a post of chairs keeps: the stories' plays have ids that roll chairs. */
 const ROOM_HEIGHT = roomHeightOf([]);
@@ -1043,7 +1045,8 @@ test('20. the extinguisher\'s puff is drawn in the box\'s area from its floor co
 });
 
 test('21. the can\'s lid leaves the box\'s area and is seen outside it', async ({ page }) => {
-  test.setTimeout(45_000);
+  /* The watcher runs on the effect's own capped clock, so a slow machine takes longer in wall time: this only ends a hang. */
+  test.setTimeout(120_000);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.addInitScript((given: number) => {
     const real = crypto.getRandomValues.bind(crypto);
@@ -1057,13 +1060,17 @@ test('21. the can\'s lid leaves the box\'s area and is seen outside it', async (
   await expect(page.locator('.dw-chair').first()).toBeAttached();
   await page.evaluate(() => document.fonts.ready);
   await area(page).scrollIntoViewIfNeeded();
-  const seen = await page.evaluate(() => new Promise<{ lids: number; outside: number; seen: number; gone: boolean }>((resolve) => {
+  const seen = await page.evaluate(([frameMost, lidSeconds, noLidBy]) => new Promise<{ lids: number; outside: number; seen: number; gone: boolean }>((resolve) => {
     const a = document.querySelector<HTMLElement>('.kb-origin-area:has(.dw-chair)')!;
     const out = { lids: 0, outside: 0, seen: 0, gone: false };
-    const started = performance.now();
+    /* The effect's own clock (Effect.tsx): each frame ages it by at most `frameMost`, so a slow frame does not age the lid as wall time would. */
+    let last = 0, clock = 0, lidFrom = -1;
     const clips = (el: Element): boolean => { const s = getComputedStyle(el); return s.overflowX !== 'visible' || s.overflowY !== 'visible' || /paint|strict|content/.test(s.contain) || s.clipPath !== 'none'; };
-    const tick = (): void => {
+    const tick = (t: number): void => {
+      clock += last ? Math.min(frameMost, Math.max(0, (t - last) / 1000)) : 0;
+      last = t;
       const lid = a.querySelector<HTMLElement>('.dw-chair-lid');
+      if (lid && lidFrom < 0) lidFrom = clock;
       if (lid) {
         out.lids++;
         const rects = [...lid.querySelectorAll('.dw-chair-piece')].map((p) => p.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
@@ -1084,11 +1091,12 @@ test('21. the can\'s lid leaves the box\'s area and is seen outside it', async (
           }
         }
       } else if (out.lids > 0) { out.gone = true; resolve(out); return; }
-      if (performance.now() - started > 20_000) { resolve(out); return; }
+      /* Stop once the lid has had its whole arc and some frames over, or when none has appeared by `noLidBy` of the effect's time. */
+      if (lidFrom < 0 ? clock > noLidBy : clock - lidFrom > lidSeconds + 3 * frameMost) { resolve(out); return; }
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  }));
+  }), [FRAME_MOST_S, LID_SECONDS, NO_LID_BY_S] as const);
   console.log(`origin can: ${seen.lids} frames with a lid, ${seen.outside} wholly outside the area, ${seen.seen} of them seen`);
   expect(seen.lids, 'a lid was drawn').toBeGreaterThan(0);
   expect(seen.outside, 'the lid was wholly outside the box\'s area at some frame').toBeGreaterThan(0);
