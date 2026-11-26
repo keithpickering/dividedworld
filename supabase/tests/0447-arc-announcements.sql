@@ -683,6 +683,7 @@ declare
   j jsonb;
   row_ jsonb;
   th uuid;
+  pg integer;
 begin
   perform tests.character(pg_temp.acct('an-player'), 'An Reader');
   -- Enough threads on the board that it has a second page.
@@ -698,6 +699,17 @@ begin
     perform pg_temp.expect(row_ = (select to_jsonb(l.*) from thread_list l where l.id = (row_ ->> 'id')::uuid), 'a sticky is not its thread_list row: ' || row_::text);
   end loop;
   perform pg_temp.expect(jsonb_array_length(j -> 'threads') = 20 and (j -> 'pins') = '[]'::jsonb, 'the stickies took a slot of the page or were counted among the pins');
+  -- The page's rows are thread_list's own (its exclusions and order), with an unlisted thread and the Updates thread on the board, on both pages: board_page_ids stands for the view's WHERE.
+  insert into threads (board, title) values (sb, 'Unlisted one') returning id into th;
+  insert into unlisted_threads (thread) values (th);
+  insert into threads (board, title) values (sb, 'The updates thread') returning id into th;
+  insert into settings (key, value) values ('updatesThread', to_jsonb(th::text)) on conflict (key) do update set value = excluded.value;
+  for pg in 1 .. 2 loop
+    j := pg_temp.page(slug, pg);
+    perform pg_temp.expect((select array_agg((e ->> 'id')::uuid order by n) from jsonb_array_elements(j -> 'threads') with ordinality x(e, n))
+      is not distinct from (select array_agg(q.id order by q.rn) from (select l.id, row_number() over (order by l.last_at desc) rn from thread_list l where l.board = sb order by l.last_at desc offset (pg - 1) * 20 limit 20) q),
+      'page ' || pg || ' of the board is not thread_list''s page: ' || (j -> 'threads')::text);
+  end loop;
   -- The stickies' authors are in the page's characters, so the rows can be drawn.
   perform pg_temp.expect((select count(distinct c ->> 'id') from jsonb_array_elements(j -> 'characters') c where (c ->> 'id')::uuid in (select first_character from thread_list where id = any (want))) >= 1, 'the stickies'' authors are not in the page''s characters');
 
@@ -779,10 +791,10 @@ begin
   perform pg_temp.expect(pg_temp.leaks_hunk('pg_temp.poisoned_hunk()'::regprocedure, '-- no such hunk.*?-- hunk ends') = 'hunk missing', 'the hunk check passed a hunk it could not find');
   perform pg_temp.expect(pg_temp.leaks_hunk('apply_meeting(bigint,jsonb)'::regprocedure, 'for ann in select.*?\n  if spent > floor') is null, 'apply_meeting''s announcement sub-block reads a private fact or was not found: ' || pg_temp.leaks_hunk('apply_meeting(bigint,jsonb)'::regprocedure, 'for ann in select.*?\n  if spent > floor'));
   perform pg_temp.expect(pg_temp.leaks_hunk('system_tick()'::regprocedure, 'ann_mt := null;.*?landed_act = written where id = due.id;') is null, 'system_tick''s routing hunk reads a private fact or was not found: ' || pg_temp.leaks_hunk('system_tick()'::regprocedure, 'ann_mt := null;.*?landed_act = written where id = due.id;'));
-  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard') loop
+  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'board_page_ids', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard') loop
     perform pg_temp.expect(pg_temp.leaks(p) is null, p::text || ' reads a private fact: ' || pg_temp.leaks(p));
   end loop;
-  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard')) = 7, 'a function the masks check reads is missing');
+  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'board_page_ids', 'arc_beat_key', 'admin_staff_pins', 'unpin_staff_thread', 'arc_announcements_guard', 'staff_pin_events_guard')) = 8, 'a function the masks check reads is missing');
   for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('pool_record', 'meeting_context', 'board_page') loop
     perform pg_temp.expect(pg_temp.leaks(p, '(owner)') is null, p::text || ' reads a character''s owner: ' || pg_temp.leaks(p, '(owner)'));
   end loop;
