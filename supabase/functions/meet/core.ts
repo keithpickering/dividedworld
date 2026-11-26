@@ -33,10 +33,12 @@ import { DIGEST_MOST, renderDigest, shownRequests, withPronouns, type RawDigest,
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName } from '../../../engine/rules/pronouns.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import { feedTitles } from '../../../engine/system/feed.ts';
+import { stockLinesOf } from '../../../engine/system/stock.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import {
   MEETING_PARTS,
   movesAsk,
+  partAsk,
   REFERENCE_MOST,
   SUCCESSOR_WINDOW_MS,
   farewellFactsText,
@@ -362,14 +364,14 @@ export async function runMeeting(
       }, heldBack),
       '',
       // The first part's ask closes the message, and names only what this meeting offers. Both facts are known before the first call and fixed for the meeting, so the message is the same in every call.
-      movesAsk({ inherited: due.length > 0, successor: successorAllowed }),
+      movesAsk({ inherited: due.length > 0 }),
     ].join('\n');
 
     // One call for each part, in order, each shown the earlier answers as prior turns; a part that fails is recorded and the next still runs, shown that it was not kept.
     const messages: { role: 'user' | 'assistant'; content: string }[] = [{ role: 'user', content: message }];
     const merged: Record<string, unknown> = {};
     for (const [i, p] of MEETING_PARTS.entries()) {
-      if (i > 0) messages.push({ role: 'user', content: p.ask });
+      if (i > 0) messages.push({ role: 'user', content: partAsk(p.key, { successor: successorAllowed }) });
       let shown: string;
       try {
         const answered = await models.chat({
@@ -458,9 +460,9 @@ export async function runMeeting(
     }
 
     const trims: Trim[] = [...repaired.trims];
-    const moves = repaired.moves.map((m, i) => withDescription(tuned, m, `moves[${i}]`, notes));
+    const moves = repaired.moves.map((m, i) => withDescription(tuned, bossKey, m, `moves[${i}]`, notes));
     // A granted request's rename takes the stock description as a rename among the moves does (the request's move is asked without one).
-    const requests = repaired.requests.map((r, i) => (r.move ? { ...r, move: withDescription(tuned, r.move, `requests[${i}].move`, notes) } : r));
+    const requests = repaired.requests.map((r, i) => (r.move ? { ...r, move: withDescription(tuned, bossKey, r.move, `requests[${i}].move`, notes) } : r));
 
     const record = {
       phase: phase.phase,
@@ -492,6 +494,8 @@ export async function runMeeting(
           go_live_at: new Date(m.goLiveAt).toISOString(),
           expires_in_hours: m.expiresInHours,
           why: m.why,
+          // The post the move lands with (null: the speaker's stock line stands in; the SQL write takes either).
+          line: m.line,
         })),
         // The bundles: a beat's (authored: named by its beat, at no cost, played with the bundle) and the Boss's own (at one move a part). Parts are in dependency order; a role names an earlier part.
         bundles: repaired.bundles.map((b) => ({
@@ -568,12 +572,12 @@ function reportRequestReplies(ruled: readonly RuledRequest[], notes: string[]): 
   });
 }
 
-/** A move with its params complete: a rename keeps the Boss's own description, or takes the instance's stock one when the Boss gave none. `at` names the move in the notes (`moves[2]`). */
-function withDescription<M extends { readonly kind: string; readonly params: Readonly<Record<string, unknown>> }>(instance: Instance, move: M, at: string, notes: string[]): M {
+/** A move with its params complete: a rename keeps the Boss's own description, or takes the meeting Boss's stock one (else the instance's) when the Boss gave none. `at` names the move in the notes (`moves[2]`). */
+function withDescription<M extends { readonly kind: string; readonly params: Readonly<Record<string, unknown>> }>(instance: Instance, boss: string, move: M, at: string, notes: string[]): M {
   if (move.kind !== 'renameBoard') return move;
   if (typeof move.params['description'] === 'string' && move.params['description'] !== '') return move;
   const name = String(move.params['name']);
-  const lines = instance.system.stockLines.boardDescription;
+  const lines = stockLinesOf(instance.system, boss, 'boardDescription');
   // The same name always draws the same line, so a retried meeting writes what the first would have.
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;

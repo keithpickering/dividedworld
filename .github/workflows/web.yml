@@ -54,3 +54,11 @@ jobs:
           name: board-match-report-${{ matrix.shard }}
           path: e2e/report/boards/
           if-no-files-found: ignore
+      # Every test's duration and outcome on this shard (playwright.config.ts's json reporter), on a pass as well, so the
+      # shards can be cut by cost (issue #1166).
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-timings-${{ matrix.shard }}
+          path: e2e/report/timings/
+          if-no-files-found: warn

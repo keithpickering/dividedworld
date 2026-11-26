@@ -144,6 +144,8 @@ begin
   -- Its end follows it into the same thread.
   perform end_move(act, 'reversed', 'test');
   perform say_move_end(act, 'reversed');
+  -- The line is owed (0445) and paid from stock here, as the tick's grace pays it.
+  perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   -- A move landed and ended in one tick is never dated before itself: the move is stamped by the clock (write_staff_act), so its end is too (end_move).
   perform pg_temp.expect((select e.created_at from acts e where e.kind = 'move_end' and e.target_act_id = act) >= (select m.created_at from acts m where m.id = act),
     'a move''s end is dated before the move it ends: ' || (select e.created_at from acts e where e.kind = 'move_end' and e.target_act_id = act) || ' < ' || (select m.created_at from acts m where m.id = act));
@@ -263,6 +265,8 @@ declare
   quote text;
 begin
   answer := hand_over(open_id, 'mt-boss', now(), true);
+  -- The line is owed (0445) and paid from stock here, as the tick's grace pays it.
+  perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   perform pg_temp.expect(answer ->> 'boss' is distinct from 'mt-boss' and answer ->> 'boss' is not null, 'the handover seated no new Boss: ' || answer::text);
   select * into h from season_handovers x where x.season = open_id order by x.id desc limit 1;
   ht := h.thread;

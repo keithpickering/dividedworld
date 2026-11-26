@@ -304,16 +304,20 @@ describe('many voters on one option', () => {
 describe('live', () => {
   /* Times on the fake's own clock, which the poll's end is dated on. */
   let at = (ms: number) => new Date(ms).toISOString();
-  const heardOn = (w: ReturnType<typeof world>) => {
+  /* An event is heard only once the screen's channels have joined, as Realtime delivers nothing sooner, so the catch-up
+     read their joins ask is asked before it and cannot land over it (issue #1156). tapThread would hand an event to a
+     listener not yet joined; reach joins after the thread channel, so its count says both have. */
+  const heardOn = async (w: ReturnType<typeof world>) => {
     const tap = tapThread(w.fake);
     at = (ms) => new Date(w.fake.clock.now() + ms).toISOString();
     openThread(w);
+    await waitFor(() => expect(w.fake.broadcast.reachListeners()).toBe(1));
     return tap;
   };
 
   test('a `poll` event replaces the counts, and an older one heard late changes nothing', async () => {
     const w = world();
-    const tap = heardOn(w);
+    const tap = await heardOn(w);
     const poll = await group();
     const base = { poll: w.poll, voters: 6, endsAt: at(DAY), closed: false };
     act(() => tap().onPoll?.({ ...base, counts: [1, 5, 0], at: at(2_000) }));
@@ -325,7 +329,7 @@ describe('live', () => {
 
   test('a ballot heard live on a public poll moves the character\'s name, reading a stranger once', async () => {
     const w = world();
-    const tap = heardOn(w);
+    const tap = await heardOn(w);
     const poll = await group();
     const stranger = w.fake.seed.character(w.fake.seed.account('late'), 'Latecomer', 'face');
     const read = vi.spyOn(w.fake, 'characters');
@@ -340,7 +344,7 @@ describe('live', () => {
 
   test('a poll Act heard live (an edit\'s) replaces the post\'s poll, and a removal takes it away', async () => {
     const w = world();
-    const tap = heardOn(w);
+    const tap = await heardOn(w);
     await group();
     const act2 = (payload: Record<string, unknown>, ms: number) => ({ id: `p-${ms}`, character: w.spritey, kind: 'poll' as const, thread: w.thread, targetActId: w.ids[0]!, seq: null, createdAt: at(ms), payload, currentPayload: payload, editedAt: null, shownEditedAt: null });
     act(() => tap().onAct?.(act2({ question: 'Best course?', options: ['Rainbow Road', 'Mute City'], pick: 1, secret: false, closes_at: at(DAY) }, 5_000)));

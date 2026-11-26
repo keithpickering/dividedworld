@@ -85,6 +85,7 @@ const settings: Settings = {
   modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
+  owedLines: { graceMinutes: 15, perDay: 60, perRun: 20 },
   conduct: { openReportsMost: 3, adminAddress: null },
   staffRequests: { daysMost: 3, meetingMost: 10 },
   boardNameMaxLength: 60,
@@ -111,8 +112,9 @@ const botFields = {
   weakness: { kind: 'quiz', questions: [{ question: 'Which is a number?', choices: ['one', 'cat'], answer: 'one' }] },
   voice: 'chat', persuadedBy: 'Pedantry.',
 } as const;
-const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', ...bossFields, ...botFields };
-const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', selfPrompt: 'You are a bot.', ...bossFields, ...botFields };
+const personaLines = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'];
+const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', stockLines: personaLines, ...bossFields, ...botFields };
+const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', selfPrompt: 'You are a bot.', stockLines: personaLines, ...bossFields, ...botFields };
 
 const system: SystemContent = {
   roster: [boss, bot],
@@ -193,6 +195,22 @@ test('a card\'s stack is a whole number, at least 1', () => {
   assert.deepEqual(instanceProblems(card(3)), []);
   assert.deepEqual(instanceProblems(card(undefined)), []);
   for (const bad of [0, 1.5, '3', -1]) assert.match(instanceProblems(card(bad)).join('\n'), /card "splat" stacks .*; a stack is a whole number, at least 1/, String(bad));
+});
+
+test('the owed lines settings: each a whole number within its bounds, nothing else, and the object present', () => {
+  const o = settings.owedLines;
+  const bad = (v: unknown) => settingsProblems({ ...settings, owedLines: v as typeof o }).join('\n');
+  assert.match(bad({ ...o, perRun: 0 }), /owedLines.*"perRun" is not/);
+  assert.match(bad({ ...o, perRun: 201 }), /owedLines.*"perRun" is not/);
+  assert.match(bad({ ...o, graceMinutes: 0 }), /owedLines.*"graceMinutes" is not/);
+  assert.match(bad({ ...o, graceMinutes: 1441 }), /owedLines.*"graceMinutes" is not/);
+  assert.match(bad({ ...o, perDay: -1 }), /owedLines.*"perDay" is not/);
+  assert.match(bad({ ...o, perDay: 1.5 }), /owedLines.*"perDay" is not/);
+  assert.match(bad({ ...o, other: 1 }), /owedLines.*"other" is not one of its fields/);
+  assert.deepEqual(settingsProblems({ ...settings, owedLines: { graceMinutes: 1, perDay: 0, perRun: 1 } }), [], 'perDay 0 turns the voice off');
+  const { owedLines: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "owedLines" is missing/);
+  assert.match(instanceProblems({ ...good, settings: { ...good.settings, owedLines: { ...o, perRun: 0 } } }).join('\n'), /owedLines/);
 });
 
 test('the view counts are recounted on a cron of their own', () => {
@@ -511,14 +529,26 @@ test('a duty left unassigned is a problem, one for each', () => {
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
   const { moveExpired: _x, ...rest } = system.stockLines;
-  assert.match(said(withSystem({ stockLines: rest as SystemContent['stockLines'] })), /stock line "moveExpired"/);
-  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: [] } })), /stock line "moveMet"/);
-  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: ['  '] } })), /stock line "moveMet"/);
+  assert.match(said(withSystem({ stockLines: rest as SystemContent['stockLines'] })), /^stock line "moveExpired"/m);
+  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: [] } })), /^stock line "moveMet"/m);
+  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: ['  '] } })), /^stock line "moveMet"/m);
 });
 
 test('a stock line naming a token its key does not offer is a problem', () => {
   assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: ['Well done, {boss}.'] } })), /stock line "moveMet".*\{boss\}/);
   assert.deepEqual(instanceProblems(withSystem({ stockLines: { ...system.stockLines, moveMet: ['The {move} is over.'] } })), []);
+});
+
+test('a persona\'s own stock lines are checked as the instance\'s are, each problem naming the persona and the key', () => {
+  assert.match(said(withBot({ stockLines: undefined as never })), /bot-a has no stock lines/);
+  const { moveExpired: _x, ...rest } = personaLines;
+  assert.match(said(withBot({ stockLines: rest as Persona['stockLines'] })), /bot-a's stock line "moveExpired"/);
+  assert.match(said(withBoss({ stockLines: { ...personaLines, moveMet: [] } })), /boss-a's stock line "moveMet"/);
+  assert.match(said(withBot({ stockLines: { ...personaLines, moveMet: ['  '] } })), /bot-a's stock line "moveMet"/);
+  assert.match(said(withBot({ stockLines: { ...personaLines, bogus: ['A line.'] } as never })), /bot-a's stock line "bogus" is for no standing order/);
+  assert.match(said(withBot({ stockLines: { ...personaLines, moveLanded: ['Hi {appellant}.'] } })), /bot-a's stock line "moveLanded" uses \{appellant\}/);
+  assert.match(said(withBot({ stockLines: { ...personaLines, visitFiled: ['Note from {boss.their} desk.'] } })), /bot-a's stock line "visitFiled" uses \{boss\.their\}/);
+  assert.deepEqual(instanceProblems(withBot({ stockLines: { ...personaLines, moveMet: ['The {move} is over.'] } })), []);
 });
 
 test('firstBoss must be in the roster, and an empty roster is flagged', () => {

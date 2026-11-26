@@ -148,6 +148,8 @@ begin
   if (select e.payload ->> 'why' || '/' || (e.payload ->> 'by') from acts e where e.kind = 'move_end' and e.target_act_id = mv_met) is distinct from 'met/demand' then raise exception 'a met demand did not end its move met'; end if;
   if exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id in (mv_open, mv_never)) then raise exception 'a move whose demand is not met, or that has none, ended'; end if;
   if (ran ->> 'met')::integer is distinct from 1 or (ran ->> 'expired')::integer is distinct from 0 or (ran ->> 'failed')::integer is distinct from 0 then raise exception 'the tick counted %', ran; end if;
+  -- The line is owed (0445) and paid from stock here, as the tick's grace pays it.
+  perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   -- The Boss says it in the announcements thread, in the stock line for it, once.
   if (select count(*) from acts a where a.kind = 'post' and a.thread = ann and a.payload ->> 'body' = 'Met: the renaming of a board to "Met Manor".') is distinct from 1::bigint then raise exception 'the Boss did not say the demand was met once'; end if;
   if (select count(*) from acts a where a.kind = 'post' and a.thread = ann and a.payload ->> 'body' = 'Expired: the renaming of a board to "Old Orchard".') is distinct from 1::bigint then raise exception 'the Boss did not say the move expired once'; end if;
@@ -353,7 +355,7 @@ end $$;
 do $$
 declare
   src text := regexp_replace((select prosrc from pg_proc where proname = 'system_tick' and pronamespace = 'public'::regnamespace), '\s+', ' ', 'g');
-  due text := 'select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description, q.bundle, q.depends_on from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked';
+  due text := 'select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description, q.bundle, q.depends_on, q.line from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked';
   open_ text := 'select o.move_act, a.character, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act order by o.landed_at, o.move_act';
   demand_ text := 'select o.move_act, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act where jsonb_typeof(a.payload -> ''demand'') = ''object'' and not (a.payload ->> ''kind'' = ''conferGroup'' and a.payload #> ''{params,checkAt}'' is not null) and (o.checked_at is null or o.checked_at <= now() - check_every) order by o.checked_at nulls first, o.move_act limit cap';
   m bigint;

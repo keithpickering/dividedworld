@@ -15,7 +15,8 @@ Each item has a folder, `instances/divided-world/ui/gear/<key>/`, holding:
 - **`views.json`**, which names the item's default view and gives each view's width, height and pivot in pixels. For a
   rendered item the rig writes it; for a drawn one you write it by hand.
 - **`model.blend`**, for an item that is rendered: the Blender model the pictures came from.
-- **`rig.json`**, for a color variant of another item (see Color variants below): no model of its own.
+- **`rig.json`**, optional: an item's own camera pitch (see Seen from higher, below), and for a color variant of
+  another item, which model it uses (see Color variants below), since a variant has no model of its own.
 
 The **pivot** is the one point of the item a player sets on a head: for a cap, the middle of its band. A piece's
 position places the pivot on the portrait, and turning the piece turns it about the pivot, so switching views keeps the
@@ -48,6 +49,20 @@ its vertical axis (0 degrees for the front, 35.5 for a three-quarter and 90 for 
 crops each view to its outline, scales all of an item's views by one factor so the largest is 1024 pixels on its longest
 side, and writes the WebP (quality 90) and `views.json`. The research it came from, with the proof that turning the
 item reproduces an orbiting camera, is `docs/research/2026-11-23-gear-renders/README.md`.
+
+### Seen from higher
+
+The camera's 6 degrees suits a cap, whose shape is its sides. An item whose top is what reads, such as a top hat, can
+give its own pitch in a `rig.json` in its folder:
+
+```json
+{ "pitch": 25 }
+```
+
+`pitch` is how far below the horizon the camera looks, from 0 to 60 degrees. The rig swings the camera up round the
+horizontal axis through the pivot, and nothing else: the light stays where it is, so the item is lit as every other
+item is and its top catches more of the light. A color variant takes its base item's pitch unless its own `rig.json`
+gives one. Every item worn on one portrait is seen from its own height, so keep a pitch for an item that needs it.
 
 **The files are what ship; the model is how to make them again.** Nothing in the build renders a model or compares it
 with its pictures, because a render needs Blender and minutes of CPU, and two renders of one model are not the same
@@ -95,5 +110,7 @@ sit. An SVG is held to the card art's safety reading: nothing in it runs or reac
 
 ## The items here
 
-`baseball-cap` and `plumbers-cap` are the two modeled items, each with its model beside its pictures, and each has four
-color variants: green, blue, yellow and purple. The other items are drawings until their models exist.
+`baseball-cap` and `plumbers-cap` are the owner's models, each beside its pictures, and each has four color variants:
+green, blue, yellow and purple. `nostalgic-hat` (a top hat with a sprig of mistletoe) was modeled in a session from the
+owner's sprite and finished by the owner, who placed the sprig and redrew the berries; it ships all five views with
+`three-quarter-left` as its default, the side its sprig is on, seen from a pitch of 25 degrees. The other items are drawings until their models exist.

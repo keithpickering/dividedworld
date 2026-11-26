@@ -244,7 +244,7 @@ begin
   plan := (select string_agg(l, ' ') from pg_temp.explain_lines(format($q$select c.name from characters c where c.id = case when lower(%L::text) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (%L::text)::uuid end$q$, eve, eve)) l);
   perform set_config('enable_seqscan', 'on', true);
   perform pg_temp.expect(plan like '%characters_pkey%', 'the character lookup uses the primary key: ' || plan);
-  perform pg_temp.expect(pg_get_functiondef('system_line(text,text,jsonb,text)'::regprocedure) !~ 'c\.id::text', 'system_line does not cast the key to text');
+  perform pg_temp.expect(pg_get_functiondef('system_line_fill(text,text,jsonb,text)'::regprocedure) !~ 'c\.id::text', 'system_line_fill (where system_line names a character since 0437) does not cast the key to text');
   words := system_line('moveLanded', 'awardTrophy', jsonb_build_object('trophy', 'aw-pet', 'character', upper(eve::text)), 'aw-boss');
   perform pg_temp.expect(words like '%Aw Eve%', 'an upper-case key still names the character: ' || words);
   words := system_line('moveLanded', 'awardTrophy', jsonb_build_object('trophy', 'aw-pet', 'character', 'not-a-uuid'), 'aw-boss');

@@ -122,6 +122,8 @@ begin
   perform pg_temp.expect((select count(*) from queued_moves q where q.id in (select id from pg_temp.ids where name in ('rule1', 'rule2')) and q.refused_at is null and q.failed_at is null and q.failure is null and q.landed_act is null and q.held_at is null) = 2,
     'a Mod''s waiting move was withdrawn');
   -- Nothing is posted for the withdrawn rows: the handover says its farewell and its welcome, and no more.
+  -- The line is owed (0445) and paid from stock here, as the tick's grace pays it.
+  perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   perform pg_temp.expect(pg_temp.said_count() - said_before = 2, 'the handover posted ' || (pg_temp.said_count() - said_before) || ' posts, not the farewell and the arrival');
   perform pg_temp.expect(not exists (select 1 from acts a where a.payload ->> 'kind' in ('mergeBoard', 'nameSuccessor', 'renameBoard') and a.id <> (select landed_act from pg_temp.before where kind = 'renameBoard')), 'a move act exists for the withdrawn rows');
   perform pg_temp.expect((select (r.note is null) from season_handovers r where r.season = pg_temp.season()), 'the handover recorded a note: ' || (select r.note from season_handovers r where r.season = pg_temp.season()));

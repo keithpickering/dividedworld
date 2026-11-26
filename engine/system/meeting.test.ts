@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, HANDOFF_MOST, MINUTES_MOST, POINTS_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, movesAsk, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, HANDOFF_MOST, MINUTES_MOST, POINTS_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, movesAsk, partAsk, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { MEMORY_MOST, noteMost } from './memory.ts';
 import type { TrophyFacts } from './moves.ts';
 import { schemaProblems } from './schema.ts';
@@ -25,6 +25,7 @@ const BOB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const HIDDEN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const HIDDEN2 = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02';
 
+const LINE_ASK = 'A move\'s line is the post your move lands with, in your voice; the screens say what it does plainly.';
 const settings = { ...systemSettings, reactionCap: 3 };
 
 const ctx = (): RepairContext => ({
@@ -1362,7 +1363,7 @@ const tally = (schema: any): { properties: number; optional: number; unions: num
 
 test('every field of the answer is in exactly one part, and MEETING_RULE is built from the parts', () => {
   assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'bundle', 'staff', 'self']);
-  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited', 'successor'], ['bundle'], ['orders', 'patrols', 'points', 'requests'], ['memory', 'profile', 'minutes', 'beats', 'farewell', 'handoff']]);
+  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited'], ['bundle', 'successor'], ['orders', 'patrols', 'points', 'requests'], ['memory', 'profile', 'minutes', 'beats', 'farewell', 'handoff']]);
   const listed = MEETING_PARTS.flatMap((p) => [...p.fields]);
   assert.equal(new Set(listed).size, listed.length, `a field is in two parts: ${listed.join(', ')}`);
   assert.deepEqual([...listed].sort(), Object.keys(MEETING_FIELDS).sort(), 'a field is in no part');
@@ -1374,11 +1375,13 @@ test('every field of the answer is in exactly one part, and MEETING_RULE is buil
   assert.ok(MEETING_PARTS[0]!.ask.includes('Hold your meeting.'));
 });
 
-test('the first turn asks only for what the meeting offers: moves always, inherited when moves were inherited, successor when one may be named', () => {
-  assert.equal(movesAsk({ inherited: false, successor: false }), 'Hold your meeting. This first turn is your moves: answer moves.');
-  assert.equal(movesAsk({ inherited: true, successor: false }), 'Hold your meeting. This first turn is your moves: answer moves and inherited.');
-  assert.equal(movesAsk({ inherited: false, successor: true }), 'Hold your meeting. This first turn is your moves: answer moves and successor.');
-  assert.equal(movesAsk({ inherited: true, successor: true }), 'Hold your meeting. This first turn is your moves: answer moves, inherited and successor.');
+test('the first turn asks only for what the meeting offers: moves always, inherited when moves were inherited; the bundle turn asks for the successor only when one may be named', () => {
+  assert.equal(movesAsk({ inherited: false }), `Hold your meeting. This first turn is your moves: answer moves. ${LINE_ASK}`);
+  assert.equal(movesAsk({ inherited: true }), `Hold your meeting. This first turn is your moves: answer moves and inherited. ${LINE_ASK}`);
+  assert.equal(partAsk('bundle', { successor: true }), MEETING_PARTS[1]!.ask);
+  assert.ok(MEETING_PARTS[1]!.ask.includes('successor'));
+  assert.ok(!partAsk('bundle', { successor: false }).includes('successor'));
+  assert.equal(partAsk('staff', { successor: false }), MEETING_PARTS[2]!.ask);
 });
 
 test('a standing nomination is told to the Boss in place of the invitation to name one; the roster line stays', () => {
@@ -1406,11 +1409,11 @@ test('a successor naming the Boss\'s standing nominee is dropped as no new nomin
   assert.ok(unnamed.ok && unnamed.successor !== null, 'with none standing, naming it stands');
 });
 
-// The moves part is 40 of the provider's 40, the fangame split's three kinds and awardTrophy's trophy param included: properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own.
+// The moves part is 38 of the provider's 40 (each move's line, the fangame split's three kinds and awardTrophy's trophy param included: properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own). The successor (three properties) moved to the bundle part to make room for the line: the bundle part is 37 and its successor 3, so 40 of 40.
 // The staff part is 40 of the provider's 40: the orders and patrols, the talking points' list with its two fields (points, staff, line), and the requests' ruling (staff requests plan, Task 5): requests, its item's id, ruling, line and move,
 // the move's kind, params, expires_in_hours and why, and five params (thread, board, into, name, premise; a rename's description is left to the stock one, the fallback to none: the provider's 40 allows no more).
-const DESIGN_PROPERTIES = { moves: 40, bundle: 37, staff: 40, self: 29 } as const;
-const OPTIONAL = { moves: 1, bundle: 1, staff: 10, self: 5 } as const;
+const DESIGN_PROPERTIES = { moves: 38, bundle: 40, staff: 40, self: 29 } as const;
+const OPTIONAL = { moves: 1, bundle: 2, staff: 10, self: 5 } as const;
 for (const key of ['moves', 'bundle', 'staff', 'self'] as const) {
   const t = tally(partSchema(key));
   test(`the ${key} part's schema is accepted by the provider's rules: ${t.properties} properties, ${t.optional} optional, ${t.unions} unions`, () => {
@@ -1796,7 +1799,7 @@ test('a fulfill of a shown request keeps its move (a Boss request move, repaired
   const r = repairAnswer(withRequests([grant(7), { id: 8, ruling: 'reject', line: 'No.' }]), requestsCtx());
   assert.ok(r.ok, JSON.stringify(r));
   assert.deepEqual(r.requests, [
-    { id: 7, ruling: 'fulfill', move: { kind: 'moveThread', params: { thread: R_THREAD, board: BOARD }, expires_in_hours: 0, why: 'The meeting says yes.' }, line: 'Fine. Done.' },
+    { id: 7, ruling: 'fulfill', move: { kind: 'moveThread', params: { thread: R_THREAD, board: BOARD }, expires_in_hours: 0, why: 'The meeting says yes.', line: null }, line: 'Fine. Done.' },
     { id: 8, ruling: 'reject', move: null, line: 'No.' },
   ]);
 });
@@ -1953,4 +1956,32 @@ test('the system prompt names the minutes, beside the memory and the profile, as
   assert.match(text, /minutes: a few lines, in your voice, on the meeting you just held, for the board to read\./);
   assert.match(text, /It is posted as written, and decides nothing\./);
   assert.ok(text.includes('the "self" part (memory, profile, minutes)'));
+});
+
+test('a move\'s landing line is repaired, never rejected: cut to 280 at a sentence, a foreign token stripped, blank none', () => {
+  const run = (line: unknown) => {
+    const demand = { kind: 'postsOnBoard', params: { board: BOARD, count: 5 } };
+    const r = repairAnswer({ ...answer(demand), moves: [{ ...move(demand), line }] }, ctx());
+    assert.ok(r.ok, JSON.stringify(r));
+    return r;
+  };
+  const long = run('One sentence. '.repeat(30));
+  assert.ok(long.moves[0]!.line!.length <= 280 && long.moves[0]!.line!.endsWith('.'));
+  assert.ok(long.trims.some((t) => t.path === 'moves[0].line' && t.predicate === 'maxLength(280)' && t.before === 30 * 14 - 1), JSON.stringify(long.trims));
+  const tokens = run('{appellant} is heard. {move} lands.');
+  assert.equal(tokens.moves[0]!.line, 'appellant is heard. {move} lands.');
+  assert.ok(tokens.trims.some((t) => t.path === 'moves[0].line' && t.predicate === 'tokens(moveLanded)'), JSON.stringify(tokens.trims));
+  assert.equal(run('   ').moves[0]!.line, null);
+  assert.equal(run(undefined).moves[0]!.line, null);
+  const notText = run(7);
+  assert.equal(notText.moves[0]!.line, null);
+  assert.ok(notText.trims.some((t) => t.path === 'moves[0].line' && t.predicate === 'isString'), JSON.stringify(notText.trims));
+  assert.equal(run('Fine.').moves[0]!.line, 'Fine.');
+  assert.equal(run('Fine.').trims.some((t) => t.path.endsWith('.line')), false);
+});
+
+test('the moves\' field rule takes an optional line, and the ask says what it is for', () => {
+  const list = MEETING_FIELDS['moves'] as unknown as { of: { fields: Record<string, { type: string; optional?: boolean }> } };
+  assert.deepEqual(list.of.fields['line'], { type: 'string', optional: true });
+  assert.ok(movesAsk({ inherited: false }).includes('the post your move lands with, in your voice; the screens say what it does plainly'));
 });

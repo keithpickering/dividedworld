@@ -153,6 +153,11 @@ export interface World {
 }
 
 export const STEP = 1 / 120;
+/**
+ * The most steps one frame runs, whatever the clock owes (a step costs up to 0.12 ms on a desktop, several times that on a phone),
+ * so a slow frame adds at most MOST_STEPS * STEP to the clock (Effect.tsx). The e2e lid watchers count on the same cap.
+ */
+export const MOST_STEPS = 4;
 export const DEPTH = 40;
 
 /** The folded chair's half extents: 46 wide, 90 tall, 8 thick. */

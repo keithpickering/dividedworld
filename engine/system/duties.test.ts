@@ -5,7 +5,7 @@ import { DUTIES, DUTY_SPECS, staffFor } from './duties.ts';
 test('every duty has a mode and a default tier', () => {
   for (const d of DUTIES) assert.ok(DUTY_SPECS[d].mode === 'chat' || DUTY_SPECS[d].mode === 'completion', d);
   assert.equal(DUTY_SPECS.meeting.tier, 'strong');
-  assert.equal(DUTY_SPECS.standingOrderLine.mode, 'completion');
+  assert.deepEqual(DUTY_SPECS.standingOrderLine, { mode: 'chat', tier: 'light' });
 });
 
 test('the pool\'s chatter is a light-tier chat duty', () => {

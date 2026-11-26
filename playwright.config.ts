@@ -16,6 +16,10 @@ export default defineConfig({
   /* Tests, not files, are spread over the workers and over CI's shards (.github/workflows/web.yml), so a long spec (a11y) is split
      too. No spec shares state between its tests: none has a beforeAll or a module-level variable a test writes. The one serial block (e2e/shine.spec.ts's timing tests) shares nothing either; it only keeps those tests from slowing each other's frames. */
   fullyParallel: true,
+  /* On CI the log stays the dot reporter's, and each shard also writes every test's file, title, duration and outcome
+     (.github/workflows/web.yml uploads it), so a run says where the shards' time goes: shards are cut by count, and a
+     test's cost varies widely from spec to spec (issue #1166). */
+  reporter: process.env.CI ? [['dot'], ['json', { outputFile: 'e2e/report/timings/results.json' }]] : 'list',
   use: {
     baseURL: `http://localhost:${port}`,
     /*

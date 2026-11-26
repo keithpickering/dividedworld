@@ -7,6 +7,10 @@
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
+import { STOCK_LINE_KEYS } from '../../../../engine/system/stock.ts';
+
+/** Placeholder lines, one for every standing order: a fixture is never in the roster, so it says the same plain line everywhere. */
+const PLACEHOLDER_LINES = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'];
 
 const name = 'Hall Monitor (placeholder)';
 const title = 'Placeholder Mod Bot';
@@ -16,6 +20,7 @@ export const placeholderMonitor: Persona = {
   name,
   title,
   signature: 'Walk, do not post. (Placeholder Mod Bot.)',
+  stockLines: PLACEHOLDER_LINES,
   beats: ['general'],
   petRules: ['noAllCaps', 'noTag', 'repliesOnly'],
   strictness: { visitHours: { least: 3, most: 8 }, bands: ['minor', 'moderate'] },
