@@ -160,7 +160,7 @@ export const qualityControl: Persona = {
     ],
     // DRAFT for the owner's approval: this persona's line under a ban's entry in the Banlist.
     banEntry: [
-      'DECLINED, permanently, for now. {banned} is on the Banlist. The bar was full and I did not have a bigger form.',
+      'DECLINED. {banned} is on the Banlist. The warnings filled the form and I did not have a bigger form.',
       'Submission from {banned}: rejected. Status: banned. Gameplay: n/a. Replay Value: n/a. Credits: see the Banlist.',
       'Processed. {banned} is out. Submissions processed: 998. Wait. 997. I will recount after this one.',
       'Final notice on {banned}: the warnings were all logged, in order, with notes. The queue is now one name shorter, and I am tired.',

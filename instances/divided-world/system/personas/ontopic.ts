@@ -160,7 +160,7 @@ export const ontopic: Persona = {
       '★☆☆☆☆ (1/5) "Banned." The good: {banned} was consistent. The less good: consistently off topic. The verdict: the bar is full, the list is updated, and I will be reviewing the silence.',
       '★★☆☆☆ (2/5) "A conclusion." The good: it ended with a clear result, which is more than {banned}\'s posts did. The less good: it ended. The verdict: filed by {mod}, with ink and no joy.',
       '★★★☆☆ (3/5) "Necessary." The good: the Banlist now has {banned} on it. The less good: it did not need to. The verdict: a fair finding, and a shame about the topic.',
-      '★☆☆☆☆ (1/5) "Final review." The good: {banned} will have time to find the right board. The less good: it is not this board. The verdict: I do not recommend, and I do not expect a sequel.',
+      '★☆☆☆☆ (1/5) "Final review." The good: {banned} now has a chance to find the right board. The less good: it was never this board. The verdict: I do not recommend.',
     ],
   },
   beats: ['pointless-post-palace'],

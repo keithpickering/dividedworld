@@ -469,7 +469,8 @@ test('Divided World\'s copy is exactly the three thread titles, each with its se
 test('every persona, and the instance, carries banEntry lines of at most 280 characters using only {mod}, its forms and {banned}, and no persona repeats the instance\'s', () => {
   const sets: Array<[string, readonly string[]]> = [['instance', system.stockLines.banEntry ?? []], ...[ontopic, fangame, qualityControl].map((p): [string, readonly string[]] => [p.key, p.stockLines?.banEntry ?? []])];
   for (const [who, lines] of sets) {
-    assert.ok(lines.length >= 3 && lines.length <= 6, `${who}: three to six lines`);
+    if (who === 'instance') assert.equal(lines.length, 3, 'instance: three lines');
+    else assert.ok(lines.length >= 3 && lines.length <= 6, `${who}: three to six lines`);
     assert.equal(new Set(lines).size, lines.length, `${who}: no line twice`);
     for (const line of lines) {
       assert.ok(line.length <= 280, `${who}: ${line.length} characters`);
