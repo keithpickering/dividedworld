@@ -188,14 +188,16 @@ function poolRule(v: unknown): string | null {
  * The Mod Bots' settings (`Settings.modBots`): exactly the fields of ModBotSettings, each held as its own words say. Mirrors `setting_modbots`
  * in supabase/migrations/0103_orders.sql (as 0362_patrol_weights.sql wrote it again, with `patrolPool`), and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
-const MOD_BOTS_WHOLE = { allowanceMost: 1, ruleDaysMost: 1, patrolsPerDay: 0, reportPrice: 0, reportsPerDay: 1, judgmentsPerDay: 1, filingLinesPerDay: 1, appealPrice: 0, tailHours: 1, filingGraceMinutes: 1 } as const;
+const MOD_BOTS_WHOLE = { allowanceMost: 1, ruleDaysMost: 1, patrolsPerDay: 0, reportPrice: 0, reportsPerDay: 1, judgmentsPerDay: 1, filingLinesPerDay: 1, appealPrice: 0, tailHours: 1, filingGraceMinutes: 1, quizQuestionsPerDay: 0, quizWriteMinutes: 1 } as const;
+/** The most characters a quiz persona's `quizBrief` may be. */
+export const QUIZ_BRIEF_MOST = 300;
 /** The most a patrol's judgment reads: a bounded read. */
 export const PATROL_SAMPLE_MOST = 25;
 /** The most posts a patrol draws its sample from: a bounded read. */
 export const PATROL_POOL_MOST = 100;
 const MOD_BOTS_KEYS = [...Object.keys(MOD_BOTS_WHOLE), 'patrolSample', 'patrolPool', 'visitHours', 'cap', 'filingCron'].sort();
 function modBotsRule(v: unknown): string | null {
-  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours and filingGraceMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice and appealPrice (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), patrolPool (a whole number from patrolSample to ${PATROL_POOL_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
+  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours, filingGraceMinutes and quizWriteMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice, appealPrice and quizQuestionsPerDay (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), patrolPool (a whole number from patrolSample to ${PATROL_POOL_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
   const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
   if (!object(v)) return shape;
   const extra = Object.keys(v).find((k) => !MOD_BOTS_KEYS.includes(k));
@@ -1433,6 +1435,7 @@ function systemProblems(instance: Instance): string[] {
     }
     const w = p.weakness;
     if (w?.kind === 'quiz') {
+      if (w.quizBrief !== undefined && (typeof w.quizBrief !== 'string' || w.quizBrief.length > QUIZ_BRIEF_MOST)) out.push(`${who} has a quizBrief that is not text of at most ${QUIZ_BRIEF_MOST} characters`);
       if (!Array.isArray(w.questions) || !w.questions.length) out.push(`${who} has a quiz with no question; a quiz needs at least one question`);
       else w.questions.forEach((q: QuizQuestion, i: number) => {
         const at = `${who}'s quiz question ${i + 1}`;

@@ -99,6 +99,10 @@ const OVERCLAIM = /\b(?:nobody|no one|only you)(?:\s+[\w'’]+){0,2}?\s+(?:sees?
 
 /** Each phrase in `text` that claims more privacy than the game gives, as written; empty when there is none. Also read by the instance's own tests for copy outside the guide. */
 export function privacyOverclaims(text) {
+  /* A label that is "only you" and nothing else ("Who can see it: Only you", a badge) says the same as "only you can see it" with its verb left to the
+     reader (the owner, 2026-11-26, #1163). Only the whole text is refused, so "only you and your other masks" is a different claim and left alone. */
+  const bare = /^\s*(only you)[.!]?\s*$/iu.exec(String(text));
+  if (bare) return [bare[1]];
   return [...String(text).matchAll(OVERCLAIM)].map((m) => m[0]);
 }
 

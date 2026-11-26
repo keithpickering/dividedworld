@@ -93,7 +93,7 @@ const manifest: BoardManifest = {
     { id: 'panel', role: 'region', buildRole: 'tabpanel', name: 'Pipewrench', type: false, box: 'none' },
     { id: 'panel-selected', role: 'text', name: 'Selected', within: 'panel', origin: 'panel', box: 'height' },
     { id: 'panel-name', role: 'heading', name: 'Pipewrench', within: 'panel', origin: 'panel', box: 'height' },
-    /* The class's "only you" tag follows it on the build's line (web Task 9), so the chip stands left of the board's: its size is compared. */
+    /* The class's "no other player" tag (#1163) follows it on the build's line (web Task 9), so the chip stands left of the board's: its size is compared. */
     { id: 'panel-class', role: 'text', name: 'Face', within: 'panel', box: 'size' },
     { id: 'panel-was-label', role: 'text', name: 'Was', within: 'panel', origin: 'panel' },
     { id: 'panel-was', role: 'text', name: 'Heel, announced publicly', within: 'panel', origin: 'panel', box: 'height' },

@@ -164,6 +164,8 @@ export const ontopic: Persona = {
   // DRAFT for the owner: what a regular could work out from how she reviews.
   weakness: {
     kind: 'quiz',
+    // DRAFT for the owner: the question the Mod asks of a post when it writes this visit's quiz question.
+    quizBrief: 'A post is on topic or it is not: you judge only whether it belongs on the board it was posted on, by your own standard, never whether it is kind, true or fair. On the Pointless Post Palace, having no point is the topic. Ask what the post is about and whether that is where it belongs.',
     questions: [
       { question: 'In the Pointless Post Palace, what earns five stars?', choices: ['A helpful answer', 'A post with no point at all', 'A very long post', 'A post about the Palace'], answer: 'A post with no point at all' },
       { question: 'Two members are arguing in a thread. What does ONTOPIC 5.0 review?', choices: ['Who started it', 'Who is right', 'Whether the argument is on topic', 'Nothing; she locks it'], answer: 'Whether the argument is on topic' },

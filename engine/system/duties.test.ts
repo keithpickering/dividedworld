@@ -30,8 +30,13 @@ test('the Roster Report\'s commentary is a light-tier chat duty of its own, so t
   assert.ok((DUTIES as readonly string[]).includes('roster'));
 });
 
+test('a quiz visit\'s question is a light-tier chat duty of its own', () => {
+  assert.deepEqual(DUTY_SPECS.quizQuestion, { mode: 'chat', tier: 'light' });
+  assert.ok((DUTIES as readonly string[]).includes('quizQuestion'));
+});
+
 test('staffFor returns the staff key the instance assigns the duty', () => {
-  const instance = { system: { duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss' } as const } };
+  const instance = { system: { duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer' } as const } };
   assert.equal(staffFor('meeting', instance), 'boss');
   assert.equal(staffFor('appeal', instance), 'beat');
 });

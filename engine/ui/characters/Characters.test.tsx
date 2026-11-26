@@ -81,7 +81,7 @@ describe('My characters', () => {
     open(w);
     await ready();
     const r = row('Pipewrench');
-    expect(within(r).getByText('only you')).toBeInTheDocument();
+    expect(within(r).getByText('no other player')).toBeInTheDocument();
     expect(within(r).getByText(/Face/u)).toBeInTheDocument();
     expect(within(r).getByText(/since Oct 1/u)).toBeInTheDocument();
     expect(await within(r).findByText('14.20')).toBeInTheDocument();
@@ -1097,7 +1097,7 @@ describe('the Turn modal over My characters (the Turn board)', () => {
     expect(await within(who).findByText('14.20')).toBeInTheDocument();
     expect(within(who).getByText('Class now')).toBeInTheDocument();
     expect(within(who).getByText('Face')).toBeInTheDocument();
-    expect(within(who).getByText('Only you')).toBeInTheDocument();
+    expect(within(who).getByText('No other player')).toBeInTheDocument();
     expect(within(who).getByRole('img', { name: /^Rank \d of \d: / })).toBeInTheDocument();
   });
 });

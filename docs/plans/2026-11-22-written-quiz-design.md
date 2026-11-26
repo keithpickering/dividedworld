@@ -71,8 +71,13 @@ question is snapshotted into the row too, so a later reseed of the bank cannot c
 **The call.** Each staff run picks up the pending quiz visits, oldest first, and makes one chat call each, on the light
 tier, in the Mod's voice (`selfPrompt`), under the duty `quizQuestion`. The model reads only what is public:
 
-- the post **as it is shown now**: a redaction, a splat or an autocorrect stays as readers see it, so a question can
-  never quote words a card has hidden;
+- the post through the same staff read every other duty uses (`pool_read`, then `readOf`): the post's own words, an
+  admin-hidden version blanked, and each play's `seen` line saying what lies over the words (a black splat, partly
+  washed). A splat, a curtain and the rest can be uncovered by any reader, so the Mod knows the post's content and
+  what lies over it, as a reader using the Lens does. (The owner's answer of 2026-11-26 on #1173, replacing "the post
+  as it is shown now, so a question can never quote words a card has hidden": "It's more important that the mod knows
+  the content of the post and the fact that it has e.g. a 'black splat, partially washed'… the post content is what
+  it is, with some kind of extra flavor.")
 - the author **as shown**, so a veil holds;
 - the thread's title and the charge's rule;
 - the persona's optional `weakness.quizBrief` (the instance's own steer, such as "ask whether it is on topic"), else its

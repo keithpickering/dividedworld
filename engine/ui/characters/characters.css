@@ -388,6 +388,16 @@
   margin-bottom: 8px;
 }
 
+/* The Turn's facts stack from 125% too: "Who can see it" and "No other player" (#1163) do not both fit one line of its 300px column there. */
+:where(:root[data-kb-text-size='125']) .kb-turn-facts {
+  grid-template-columns: 1fr;
+  row-gap: 0;
+}
+:where(:root[data-kb-text-size='125']) .kb-turn-facts dd {
+  text-align: left;
+  margin-bottom: 8px;
+}
+
 .kb-roster-facts .kb-pips {
   vertical-align: middle;
 }
