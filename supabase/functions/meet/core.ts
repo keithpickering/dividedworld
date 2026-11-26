@@ -27,7 +27,7 @@
  * model names are checked against `characters_public`.
  */
 import type { Instance } from '../../../engine/rules/types.ts';
-import { shownBeats, type ArcRead } from '../../../engine/system/beats.ts';
+import { shownBeats, type ArcRead, type PlotRead } from '../../../engine/system/beats.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import { DIGEST_MOST, renderDigest, shownRequests, withPronouns, type RawDigest, type RequestLimits } from '../../../engine/system/digest.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName } from '../../../engine/rules/pronouns.ts';
@@ -122,6 +122,10 @@ interface Context {
   readonly machine?: readonly MachineSlotFacts[];
   /** The Boss's arc as the database reads it (0334, over arc_for_meeting): the beats unlocked and not yet played, with whether each is due, and the kinds held back. Absent from an older database, which holds nothing back. */
   readonly arc?: ArcRead;
+  /** The plot so far (0448): last season's Boss and recap and the season's announced initiatives. Absent from an older database. */
+  readonly plot?: PlotRead;
+  /** The lead-in beats live now (0448), by key: each one's brief reaches the Boss's prompt as a worry. Absent from an older database. */
+  readonly leadIns?: readonly string[];
   /**
    * What the code knows of the open season (0337), handed over only to a meeting within farewellWindowHours of the season's end, to write its handoff from; null or absent otherwise, and from an
    * older database, which keeps no handoff.
@@ -300,7 +304,8 @@ export async function runMeeting(
     const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
 
     // Only the beats the database calls unlocked and unplayed reach the prompt, found in the Boss's own file; the kinds it holds back are listed nowhere.
-    const beats = shownBeats(boss, context.arc);
+    // The roster's files are the aftermath beats' source: a predecessor's beat is read in its own file, and one no longer on the roster shows none.
+    const beats = shownBeats(boss, context.arc, tuned.system.roster);
     const heldBack = context.arc?.heldBack ?? [];
     const due = context.inheritanceDue ?? [];
     const successorAllowed = phase.phase === 'meltdown' && now >= context.season.endsAt - SUCCESSOR_WINDOW_MS;
@@ -327,6 +332,9 @@ export async function runMeeting(
       groups: { conferred: context.groups?.conferred ?? [] },
       beats,
       heldBack,
+      leadIns: context.leadIns ?? [],
+      ...(context.plot ? { plot: context.plot } : {}),
+      aftermathFiles: tuned.system.roster,
       ...(farewell ? { farewell } : {}),
       career,
       notes: bossNotes,
@@ -519,6 +527,10 @@ export async function runMeeting(
         // The Boss's last words, in character, and its note out of character (0337): present only from a meeting within the farewell window, trimmed, and stored as a row of their own.
         ...(repaired.farewell !== null ? { farewell: repaired.farewell } : {}),
         ...(repaired.handoff !== null ? { handoff: repaired.handoff } : {}),
+        // The announced beats played (the arc announcements design, section 3): each with the block's push, which the database keeps for the Boss's pool calls. The repair keeps only beats the answer played or defaulted.
+        ...(repaired.announcements.length ? { announcements: repaired.announcements.map((a) => ({ beat: a.beat, title: a.title, body: a.body, pitch: a.pitch, push: a.push })) } : {}),
+        // The season's recap (section 8): present only from a meeting within the farewell window.
+        ...(repaired.recap !== null ? { recap: repaired.recap } : {}),
         // The minutes (0439): posted by the database as the Boss, in the season's Staff Meetings thread, once with the meeting; absent where the answer gave none.
         ...(repaired.minutes !== null ? { minutes: repaired.minutes } : {}),
         // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.

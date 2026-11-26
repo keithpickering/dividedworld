@@ -95,7 +95,7 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
   assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
     const p = roster.find((r) => r.key === s.key)!;
-    assert.deepEqual(Object.keys(s).sort(), (p.weakness.kind === 'quiz' ? ['arc', 'beats', 'challenge', 'concessions', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'quiz', 'signature', 'title', 'visitHours'] : ['arc', 'beats', 'challenge', 'concessions', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'signature', 'title', 'visitHours']));
+    assert.deepEqual(Object.keys(s).sort(), (p.weakness.kind === 'quiz' ? ['aftermath', 'arc', 'beats', 'challenge', 'concessions', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'quiz', 'signature', 'title', 'visitHours'] : ['aftermath', 'arc', 'beats', 'challenge', 'concessions', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'signature', 'title', 'visitHours']));
     assert.deepEqual((s as { pronouns?: unknown }).pronouns, p.pronouns, 'a persona\'s pronouns travel on its roster entry');
     assert.deepEqual(s.beats, [...p.beats], 'the beat preferences travel, for beat_of (0103)');
     assert.deepEqual((s as { concessions?: unknown }).concessions, [...p.concessions], 'a persona\'s own concessions travel, for seed_instance to keep where no client can read them (the concession post, Task 1)');
@@ -239,6 +239,30 @@ test('the seed carries the conditions and each persona\'s arc as SQL checks it: 
   assert.ok(!JSON.stringify(p).includes('A secret') && !JSON.stringify(p).includes('Another'), 'a brief travelled in the seed');
   assert.deepEqual(seed.system.staff[1]!.arc, [], 'a persona with no arc has none');
   assert.equal(seed.system.staff[0]!.beats.length, first.beats.length, 'the patrol beats are as they were');
+});
+
+test('the seed carries a lead-in\'s unlock and the aftermath beats as SQL checks them, never a brief, a mood or an announcement (0447)', () => {
+  const first = instance.system.roster[0]!;
+  const announce = { titleHint: 'A hint.', defaultTitle: 'A title', defaultBody: 'A body.', defaultPitch: 'A pitch.', push: 'A push.' };
+  const arced: Persona = {
+    ...first,
+    arc: [{ key: 'one', unlock: [{ kind: 'phase', phase: 'reign' }], brief: 'A secret.', announce,
+      leadIn: { unlock: [{ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 7 }], brief: 'A worry.', mood: 'A mood.' } }],
+    miniArcs: [{ key: 'two', unlock: [{ kind: 'moveReversed' }], brief: 'Another.' }],
+    aftermath: [{ key: 'after', unlock: [{ kind: 'beatLanded', beat: 'one', of: 'predecessor' }], brief: 'A cleanup.', announce,
+      leadIn: { unlock: [{ kind: 'phase', phase: 'honeymoon' }], brief: 'A later worry.', mood: 'A later mood.' } }],
+  };
+  const seed = instanceSeed({ ...instance, system: { ...instance.system, roster: [arced, ...instance.system.roster.slice(1)] } }, conduct);
+  const p = seed.system.staff[0]!;
+  assert.deepEqual(p.arc, [
+    { key: 'one', mini: false, repeatable: false, unlock: [{ kind: 'phase', phase: 'reign' }], due: null, leadIn: { unlock: [{ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 7 }] } },
+    { key: 'two', mini: true, repeatable: false, unlock: [{ kind: 'moveReversed' }], due: null },
+  ]);
+  assert.deepEqual(p.aftermath, [
+    { key: 'after', mini: true, repeatable: false, unlock: [{ kind: 'beatLanded', beat: 'one', of: 'predecessor' }], leadIn: { unlock: [{ kind: 'phase', phase: 'honeymoon' }] } },
+  ]);
+  for (const words of ['secret', 'worry', 'mood', 'cleanup', 'A hint', 'A body', 'A pitch', 'A push']) assert.ok(!JSON.stringify(p).includes(words), `${words} travelled in the seed`);
+  assert.deepEqual(seed.system.staff[1]!.aftermath, [], 'a persona with no aftermath has none');
 });
 
 test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to the engine\'s cap (0333)', () => {

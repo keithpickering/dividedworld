@@ -32,7 +32,7 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
     const want = t.modes === 'both' ? ['light', 'dark'] : [t.modes];
     if (held.join() !== want.join()) out.push(`the theme "${t.key}" says it holds ${want.join(' and ')}, and its file holds ${held.join(' and ') || 'no mode'}`);
   }
-  for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag'] as const) {
+  for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag', 'stickyPrefix', 'adminStaffPins', 'adminUnpin', 'adminUnpinRefused'] as const) {
     const word: unknown = ui.copy?.[key];
     if (typeof word !== 'string' || word.trim() === '') out.push(`the copy has no ${key}`);
   }

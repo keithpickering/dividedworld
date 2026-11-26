@@ -49,6 +49,8 @@ interface Loaded {
   readonly characters: ReadonlyMap<Id, Character>;
   /** Page 1's pinned threads (Main Event's kind): drawn above its rows, taking none of its slots. Empty on every other page. */
   readonly pins: readonly PinnedThread[];
+  /** Page 1 of the staff board's pinned staff threads (an announcement's sticky): drawn first, taking none of its slots, and left out of the rows below. Empty on every other page. */
+  readonly stickies: readonly ThreadSummary[];
   /** The threads moved away within the instance's `movedStubDays`, drawn under the board's own rows on page one (the later pages have none). */
   readonly stubs: readonly BoardStub[];
 }
@@ -126,7 +128,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps -- the stores are this view's own and never change
   const state = useMemo<Loaded>(() => ({
     board: doc.board, threads: doc.threads, total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
-    characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins, stubs: doc.stubs,
+    characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins, stickies: doc.stickies, stubs: doc.stubs,
   }), [doc]);
   /* A page turn is a navigation to the next page's document: what a spin form held open belonged to the page before. */
   useEffect(() => setSpinOrigin(null), [doc]);
@@ -183,7 +185,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       {board.isSystem
         ? <p className="kb-board-readonly kb-small">Only {lowerFirst(ui.copy.staffWord)} post here. You can react to what they say, and spin a thread from it.</p>
         : <NewThread key={board.slug} board={board.slug} boardId={board.id} />}
-      {threads.length === 0 && state.pins.length === 0 && state.stubs.length === 0 ? (
+      {threads.length === 0 && state.pins.length === 0 && state.stickies.length === 0 && state.stubs.length === 0 ? (
         <p className="kb-board-empty">No threads here yet.</p>
       ) : (
         <>
@@ -200,9 +202,10 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
                 <th role="columnheader" scope="col">Last post</th>
               </tr>
             </thead>
+            <Stickies loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />
             <Pinned loaded={loaded} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} faceOf={faceOf} perPage={settings.postsPerPage} hot={settings.hotReplies} onSpin={setSpinOrigin} />
             <tbody role="rowgroup">
-              {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
+              {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id) && !state.stickies.some((k) => k.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
             </tbody>
             <Stubs stubs={state.stubs} />
           </table>
@@ -239,6 +242,21 @@ function BoardBanner({ board, plays, tallies, mine, nameOf, faceOf, heading, onS
           />
         </span>}
       </div>
+  );
+}
+
+/**
+ * The staff board's stickies: the threads an announcement pinned, oldest pin first, above the card pins and the rows, each a row like any other with "Sticky:" in bold before its title. Like the
+ * card pins they take none of the page's slots, and the rows below leave them out. A sticky's way out is the admin's Unpin on the Machine screen, or the end of its season.
+ */
+function Stickies({ loaded, perPage, hot }: { readonly loaded: Loaded; readonly perPage: number; readonly hot: number }) {
+  const { ui } = useKayfa();
+  if (loaded.stickies.length === 0) return null;
+  return (
+    <tbody role="rowgroup" className="kb-thread-pinned kb-thread-stickies" data-kb-stickies="">
+      {loaded.stickies.map((t) => <ThreadRow key={t.id} t={t} loaded={loaded} perPage={perPage} hot={hot} prefix={ui.copy.stickyPrefix} />)}
+      <tr role="presentation" aria-hidden="true" className="kb-thread-gap"><td role="presentation" colSpan={5} /></tr>
+    </tbody>
   );
 }
 
@@ -317,7 +335,7 @@ function Legend({ hot }: { readonly hot: number }) {
   );
 }
 
-function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: ThreadSummary; readonly loaded: Loaded; readonly perPage: number; readonly hot: number; readonly mark?: React.ReactNode }) {
+function ThreadRow({ t, loaded, perPage, hot, mark = null, prefix }: { readonly t: ThreadSummary; readonly loaded: Loaded; readonly perPage: number; readonly hot: number; readonly mark?: React.ReactNode; readonly prefix?: string }) {
   const { ui } = useKayfa();
   const { reading, views, characters } = loaded;
   const read = reading[t.id] ?? 0;
@@ -337,7 +355,7 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
         <span className="kb-visually-hidden">{folderState(isNew, isHot)}</span>
       </td>
       <td role="cell" className="kb-thread-main">
-        <Link to={threadHref(t.id, 1)} className="kb-thread-title"><b>{t.title}</b></Link>
+        <Link to={threadHref(t.id, 1)} className="kb-thread-title"><b>{prefix === undefined ? t.title : `${prefix} ${t.title}`}</b></Link>
         {mark && <span className="kb-thread-pin-mark">{mark}</span>}
         {t.originActId !== null && (
           <span className="kb-thread-spun kb-small">

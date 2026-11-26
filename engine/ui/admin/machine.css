@@ -240,3 +240,30 @@
 :where(:root[data-kb-layout='phone']) .kb-machine-field { min-height: 44px; }
 
 :where(:root[data-kb-layout='phone']) .kb-machine-table td.kb-machine-code { padding: 0; }
+
+/* The live staff pins under the slots (the arc announcements design, section 4): the admin pages' section heading (kb-queue-group-head), then one line per pin, its title, when it was pinned and its Unpin. */
+.kb-machine-pin-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-machine-pin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+}
+
+.kb-machine-pin-title {
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text);
+}
+
+.kb-machine-pins {
+  max-width: 900px;
+}

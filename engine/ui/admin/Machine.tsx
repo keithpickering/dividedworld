@@ -17,12 +17,15 @@
  * refusal saves nothing either, names the slot and why, and marks that slot's availability or price field invalid. Taking a pack off sale ends the Boss's
  * Pulls of cards that no pack on sale can still give; the status says how many.
  *
+ * Under the slots, "Pinned staff threads" lists the live pins an announcement put on the staff board, each with its title, when it was pinned and an Unpin button (`unpinStaffThread`);
+ * the row leaves when the pin is down, and a refusal (a pin another admin already took down) is shown in the server's words and the list is read again.
+ *
  * Plain, out-of-character text, like the queue ("The fiction may lie; the log never does"). An admin's alone: a player who opens it is told so and the machine
  * is not asked for.
  */
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { AdminSlot } from '../data/api.ts';
+import type { AdminSlot, StaffPin } from '../data/api.ts';
 import { cardNameOf } from '../../rules/card-names.ts';
 import { isFixed } from '../../rules/packs.ts';
 import { orbs } from '../cards/faces.ts';
@@ -69,6 +72,8 @@ export function MachineScreen() {
   const [admin, setAdmin] = useState<boolean | null>(null);
   const [slots, setSlots] = useState<readonly AdminSlot[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [pins, setPins] = useState<readonly StaffPin[] | null>(null);
+  const [pinsFailed, setPinsFailed] = useState(false);
   /* The order on the page: the slots' ids as the admin has moved them, or null while it is the saved one. Nothing is sent until Save changes. */
   const [order, setOrder] = useState<readonly string[] | null>(null);
   const [edits, setEdits] = useState<Readonly<Record<string, Edit>>>({});
@@ -85,6 +90,13 @@ export function MachineScreen() {
       setFailed(false);
     } catch {
       setFailed(true);
+    }
+    /* The pins are read on their own: a pins read that fails never blanks the slots. */
+    try {
+      setPins(await api.adminStaffPins());
+      setPinsFailed(false);
+    } catch {
+      setPinsFailed(true);
     }
   }, [api]);
 
@@ -260,7 +272,52 @@ export function MachineScreen() {
           </form>
         </CalmRegion>
       )}
+      {(pins || pinsFailed) && <StaffPins pins={pins ?? []} failed={pinsFailed} onChange={(p) => { setPins(p); setPinsFailed(false); }} />}
     </div>
+  );
+}
+
+/**
+ * The live pins on staff threads: plain words, an admin's alone. Unpin writes the unpin; the row leaves on success. A refusal is shown as the server words it (the glass's copy
+ * `adminUnpinRefused` where the server gave none), and the list is read again, since a refusal means it was out of date. Focus goes to the heading after a row leaves, so a keyboard never loses its place.
+ */
+function StaffPins({ pins, failed, onChange }: { readonly pins: readonly StaffPin[]; readonly failed: boolean; readonly onChange: (pins: readonly StaffPin[]) => void }) {
+  const { api, ui } = useKayfa();
+  const id = useId();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problem, setProblem] = useState('');
+  const heading = useRef<HTMLHeadingElement>(null);
+  const unpin = async (p: StaffPin) => {
+    if (busy) return;
+    setBusy(p.thread);
+    setProblem('');
+    try {
+      const a = await api.unpinStaffThread(p.thread);
+      if (!a.ok) setProblem(a.error || ui.copy.adminUnpinRefused);
+      onChange(await api.adminStaffPins());
+      heading.current?.focus();
+    } catch {
+      setProblem('No answer came back. Reload the page and look before you try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <CalmRegion as="section" aria-labelledby={`${id}-pins`} className="kb-machine-calm kb-machine-pins">
+      <h2 id={`${id}-pins`} ref={heading} tabIndex={-1} className="kb-queue-group-head kb-glass-display">{ui.copy.adminStaffPins}</h2>
+      {failed ? <p role="alert" className="kb-machine-problem">The pinned staff threads could not be read. Reload the page to try again.</p> : pins.length === 0 ? <p className="kb-machine-note">No staff thread is pinned.</p> : (
+        <ul className="kb-machine-pin-list">
+          {pins.map((p) => (
+            <li key={p.thread} className="kb-machine-pin">
+              <Link to={`/t/${p.thread}`} className="kb-machine-pin-title">{p.title}</Link>
+              <span className="kb-machine-note"> · pinned {shortDate(p.pinnedAt)}</span>
+              <GlassButton size="s" aria-label={`${ui.copy.adminUnpin}: ${p.title}`} disabled={busy !== null} onClick={() => void unpin(p)}>{ui.copy.adminUnpin}</GlassButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      {problem && <p role="alert" className="kb-machine-problem">{problem}</p>}
+    </CalmRegion>
   );
 }
 

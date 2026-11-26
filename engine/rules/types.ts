@@ -981,6 +981,27 @@ export interface Beat {
   readonly due?: Due & { readonly phase?: PhaseName };
   readonly bundle?: BundleTemplate;
   readonly repeatable?: boolean;
+  /**
+   * The beat announces itself (the arc announcements design, sections 2 and 3): the meeting that plays it opens a staff thread and writes a post in the Boss's voice. The hint guides the
+   * title, and the defaults and `push` are authored words, bounded by `ANNOUNCE_MOST`, `PITCH_MOST` and `PUSH_MOST` (engine/system/beats.ts). The default title is held to `titleMaxLength`.
+   * `push` is the line the Boss is given to push the initiative in its pool calls. A beat with no block changes nothing.
+   */
+  readonly announce?: {
+    readonly titleHint: string;
+    readonly defaultTitle: string;
+    readonly defaultBody: string;
+    readonly defaultPitch: string;
+    readonly push: string;
+  };
+  /**
+   * A worry shown before the beat unlocks (section 6): while every `unlock` condition holds and the beat has no event, the `brief` is at the Boss's meetings and the `mood` in its pool
+   * calls. It names the worry, never the idea.
+   */
+  readonly leadIn?: {
+    readonly unlock: readonly Condition[];
+    readonly brief: string;
+    readonly mood: string;
+  };
 }
 
 /**
@@ -1012,6 +1033,11 @@ export interface Persona extends StaffSeed {
   readonly arc?: readonly Beat[];
   /** Beats outside the arc's order, unlocked by their own conditions. */
   readonly miniArcs?: readonly Beat[];
+  /**
+   * Beats a successor plays (the arc announcements design, section 7): written so any persona plays them in its own voice, and unlocked by what this persona's own beats did
+   * (`beatLanded` with `of: 'predecessor'`). Never `due`, never `repeatable`; each lapses at the season's end.
+   */
+  readonly aftermath?: readonly Beat[];
   /** Move kinds it does not use until the named beat unlocks; until then the kind is not shown at its meetings and an answer naming it is dropped and recorded. */
   readonly holdsBack?: readonly { readonly kind: string; readonly until: string }[];
   /** The predicate keys it lobbies for. */

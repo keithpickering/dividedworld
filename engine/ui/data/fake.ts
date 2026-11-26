@@ -54,7 +54,7 @@ import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, EffectState, PlayMoment, Rewind, PageOrigin,
   Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, BoardRef, StaffPin, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   KindCount, KindPage, PostPlaysRead, PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
@@ -255,6 +255,8 @@ export interface Seed {
   career(key: string, career: Career): void;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
+  /** A staff thread pinned as a sticky (what an announcement writes, 0448), at `at` (default now): the staff board's page 1 lists it first, and the admin's Machine screen lists it with an Unpin. */
+  stickyPin(thread: Id, options?: { at?: number }): void;
   /** A staff character's post in a thread (The System's board for the Boss; any board for a persona's pool post, which presence lists it for). */
   staffPost(staff: Id, thread: Id, body: string, options?: { at?: number; ruling?: { readonly verdict: 'accepted' | 'rejected'; readonly apology: Id } }): Id;
   /**
@@ -562,7 +564,7 @@ type WriteName = { [K in keyof KayfaApi]: KayfaApi[K] extends (...a: never[]) =>
 const WRITES: ReadonlySet<string> = new Set(Object.keys({
   requestCode: true, verifyCode: true, verifyLink: true, openAccount: true, signOut: true, postUpdate: true, dismissHandoverTodo: true, setAdminContact: true,
   holdMove: true, reverseMove: true, reverseCard: true, replaceSuccessor: true, replaceQueuedDescription: true, describeBoard: true, setSlot: true,
-  moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
+  moveSlot: true, saveMachine: true, unpinStaffThread: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
   seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, castBallot: true, closePoll: true, closePollAsAdmin: true, pollBallots: true, spin: true,
   apologize: true, buyCard: true, buyPack: true, openPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
@@ -688,6 +690,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return found;
   };
   /** Where a landed `moveThread` took a thread from (thread_departures, 0326). */
+  /** The live pins on staff threads (staff_pin_events, 0448): a thread and when it was pinned; an unpin removes it. */
+  const staffPins: { thread: Id; at: number }[] = [];
   const departures: { thread: Id; origin: Id; to: Id; at: number }[] = [];
   /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0320). */
   const closedBoards = new Map<Id, { mergedInto: Id | null; fallback: Id | null }>();
@@ -4837,6 +4841,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...slotRetirement(r.item),
       }));
     },
+    adminStaffPins() {
+      if (!me()?.admin) throw new Error('only an admin reads the staff pins');
+      return [...staffPins].sort((x, y) => x.at - y.at).map((p): StaffPin => ({ thread: p.thread, title: core.thread(p.thread)?.title ?? '', pinnedAt: iso(p.at) }));
+    },
+    unpinStaffThread(thread) {
+      if (!me()?.admin) return refuse('only an admin unpins a staff thread');
+      const at = staffPins.findIndex((p) => p.thread === thread);
+      if (at < 0) return refuse('That thread has no live pin.');
+      staffPins.splice(at, 1);
+      return ok({ thread });
+    },
     setSlot(slot, availability, price) {
       if (!me()?.admin) return refuse('only an admin changes the machine');
       const words = slotWords(availability, price);
@@ -5120,7 +5135,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (gone) {
         const ref = (id: Id | null): BoardRef | null => { const b = boards.find((x) => x.id === id); return b ? { id: b.id, slug: b.slug, name: boardNow(b).name } : null; };
         return {
-          board, closed: { mergedInto: ref(gone.mergedInto), fallback: ref(gone.fallback), goesTo: ref(openEnd(board.id)) }, stubs: [], total: 0, page: 1, threads: [], pins: [], banner: [], states: {}, releases: [], tallies: {}, mine: [],
+          board, closed: { mergedInto: ref(gone.mergedInto), fallback: ref(gone.fallback), goesTo: ref(openEnd(board.id)) }, stubs: [], total: 0, page: 1, threads: [], pins: [], stickies: [], banner: [], states: {}, releases: [], tallies: {}, mine: [],
           reading: {}, views: {}, characters: [], presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
         };
       }
@@ -5133,7 +5148,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const banner = core.effectsAbove([], null, board.id);
       const marked = [...banner.map((p) => p.act), ...pins.map((p) => p.act)];
       const wanted = marked.filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
-      const threads = [...pins.map((p) => p.thread), ...listed.threads];
+      const stickies = shown !== 1 || !board.isSystem ? [] : [...staffPins].sort((x, y) => x.at - y.at).flatMap((p) => { const t = core.thread(p.thread); return t && t.board === board.id ? [t] : []; });
+      const threads = [...stickies, ...pins.map((p) => p.thread), ...listed.threads];
       const ids = [...new Set(threads.map((t) => t.id))];
       const people = [...new Set([...threads.flatMap((t) => [t.firstCharacter, t.lastCharacter]), ...marked.map((a) => a.character)].filter((c): c is Id => c !== null))];
       /* The threads moved away within movedStubDays, newest move first, each once (the latest move of it away from here) and only if it is not back: the stub says where it is now. */
@@ -5146,7 +5162,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           return { thread: d.thread, title: moved.title, movedTo: { id: here.id, slug: here.slug, name: boardNow(here).name }, movedAt: iso(d.at) };
         });
       return {
-        board, closed: null, stubs, total: listed.total, page: shown, threads: listed.threads, pins, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        board, closed: null, stubs, total: listed.total, page: shown, threads: listed.threads, pins, stickies, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
         tallies: core.tallies(marked.map((a) => a.id)), mine: core.myReactions(marked.map((a) => a.id)), reading: core.reading(ids), views: core.viewCounts(ids),
         characters: core.characters(people), presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
       };
@@ -6230,6 +6246,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     staffProfile(key, p) {
       staffId(key);
       staffProfiles.push({ key, at: p.at ?? now(), interests: [...(p.interests ?? [])], favorites: [...(p.favorites ?? [])], mood: p.mood ?? '', signature: p.signature ?? '' });
+    },
+    stickyPin(thread, o) {
+      if (!core.thread(thread)) throw new Error('no such thread');
+      /* The latest event wins: a thread pinned again has one entry, at the new time. */
+      const had = staffPins.findIndex((p) => p.thread === thread);
+      if (had >= 0) staffPins.splice(had, 1);
+      staffPins.push({ thread, at: o?.at ?? now() });
     },
     staffPost(staff, thread, body, o) {
       if (!threads.has(thread)) throw new Error(`no such thread ${thread}`);

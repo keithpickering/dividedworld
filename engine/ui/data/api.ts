@@ -2509,6 +2509,13 @@ export interface BoardClosed {
   readonly goesTo: BoardRef | null;
 }
 
+/** A live pin on a staff thread, as `admin_staff_pins()` (added by 0448) returns a row of it for the admin's Machine screen: the thread, its title and when it was pinned (ISO 8601), the live pins of the open season, oldest pin first. */
+export interface StaffPin {
+  readonly thread: Id;
+  readonly title: string;
+  readonly pinnedAt: string;
+}
+
 /** A board's page (board_page, 0095). `page` is the page shown, clamped to the board's last. */
 export interface BoardPage {
   readonly board: Board;
@@ -2520,6 +2527,8 @@ export interface BoardPage {
   readonly page: number;
   readonly threads: readonly ThreadSummary[];
   readonly pins: Awaited<ReturnType<KayfaApi['pinnedThreads']>>;
+  /** Page 1 of the staff board: the threads an announcement pinned (board_page's `stickies`, 0448), each as the page's own rows are, oldest pin first. Empty on every other page and board. Drawn first, taking none of the page's slots, and left out of the rows below. */
+  readonly stickies: readonly ThreadSummary[];
   /** The board's own live card plays (`effectsAbove([], null, board)`). */
   readonly banner: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
   readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
@@ -3071,6 +3080,10 @@ export interface KayfaApi {
   machine(): Promise<readonly Slot[]>;
   /** Every slot of the machine, hidden ones too, in grid order, as an admin sees them. An admin's alone; anyone else is refused (the call throws). */
   adminMachine(): Promise<readonly AdminSlot[]>;
+  /** The live pins on staff threads, oldest pin first, for the Machine screen (`admin_staff_pins`). An admin's alone; anyone else is refused (the call throws). */
+  adminStaffPins(): Promise<readonly StaffPin[]>;
+  /** An admin takes a staff thread's pin down (`unpin_staff_thread`, 0448). A thread with no live pin is refused in the server's words ("That thread has no live pin."). */
+  unpinStaffThread(thread: Id): Promise<Answer<{ readonly thread: Id }>>;
   /**
    * Saves a slot's availability and price (`set_slot`). A price is at least 1 (hundredths of an orb). Taking a pack off sale ends, as reversed by the admin, every
    * Pull whose card is then in no pack on sale; `ended` counts them. An admin's alone.

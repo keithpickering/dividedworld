@@ -933,3 +933,65 @@ test('a fulfill keeps the move\'s written line, cut and stripped as the others a
     for (const blank of [undefined, null, '', '   ']) assert.equal((repairRuling(rule('fulfill', { move: { ...moveThread, line: blank } }), ruling).request as any).move.line, null, `${office} ${JSON.stringify(blank)}`);
   }
 });
+
+/* ------------------------------------------------------------------------------- the plot so far ---- */
+
+const quietRecord = { moves: [], rules: [], order: null };
+const PLOT = {
+  last: { boss: 'old-boss', name: 'Old Boss', recap: 'I put everything in World -1.', facts: null },
+  initiatives: [{ beat: 'split', title: 'Improvement Initiative #1', pitch: 'World -1 opens soon.', thread: 'thread-9', boss: 'new-boss' }],
+};
+const plotRecord = { ...quietRecord, plot: PLOT };
+
+test('a Mod\'s prompt carries the initiatives and last season, and neither a push line nor a mood', () => {
+  const p = chatterPrompt({ ...base, office: 'mod', callerKey: 'a-mod', record: { ...plotRecord, push: ['PUSHLINE'], leadIns: ['MOODLINE'] } });
+  assert.ok(p.system.includes('The plot so far'));
+  assert.ok(p.system.includes('Improvement Initiative #1') && p.system.includes('World -1 opens soon.') && p.system.includes('thread-9'), 'each initiative with its thread');
+  assert.ok(p.system.includes('Last season Old Boss was the Boss. This is how they summed it up: I put everything in World -1.'), 'third person');
+  assert.ok(!p.system.includes('PUSHLINE') && !p.system.includes('MOODLINE') && !p.system.includes('What you are pushing'), 'no push or mood');
+});
+
+test('the Boss\'s prompt carries the plot, what it is pushing and how it has been feeling', () => {
+  const p = chatterPrompt({ ...base, office: 'boss', callerKey: 'new-boss', record: { ...plotRecord, push: ['You announced World -1.'], leadIns: ['Lately the off-topic threads bother you.'] } });
+  assert.ok(p.system.includes('Improvement Initiative #1'));
+  assert.ok(p.system.includes('What you are pushing') && p.system.includes('- You announced World -1.'));
+  assert.ok(p.system.includes('How you have been feeling lately') && p.system.includes('- Lately the off-topic threads bother you.'));
+  assert.ok(!p.system.includes('You announced this.'), 'the sitting Boss\'s push is its own, not the former Boss\'s line');
+});
+
+test('a member\'s prompt carries the plot so far and nothing of the Boss\'s', () => {
+  const p = chatterPrompt({ ...base, office: 'member', callerKey: 'a-member', record: { ...plotRecord, push: ['PUSHLINE'], leadIns: ['MOODLINE'] } });
+  assert.ok(p.system.includes('The plot so far') && p.system.includes('World -1 opens soon.'));
+  assert.ok(!p.system.includes('PUSHLINE') && !p.system.includes('MOODLINE'));
+});
+
+test('the former Boss, now a member, reads last season in the second person; its own initiative reads "You announced this" with no push', () => {
+  const rec = { ...quietRecord, plot: { last: PLOT.last, initiatives: [{ ...PLOT.initiatives[0]!, boss: 'old-boss' }] }, push: ['PUSHLINE'] };
+  const p = chatterPrompt({ ...base, office: 'member', callerKey: 'old-boss', record: rec });
+  assert.ok(p.system.includes('Last season you were the Boss. This is how you summed it up: I put everything in World -1.'));
+  assert.ok(!p.system.includes('Old Boss was the Boss'));
+  assert.ok(p.system.includes('You announced this.'));
+  assert.ok(!p.system.includes('PUSHLINE') && !p.system.includes('Your push'));
+});
+
+test('a record with no plot, or an empty one, has no plot section', () => {
+  assert.ok(!chatterPrompt({ ...base, record: quietRecord }).system.includes('The plot so far'));
+  assert.ok(!chatterPrompt({ ...base, record: { ...quietRecord, plot: { last: null, initiatives: [] } } }).system.includes('The plot so far'));
+});
+
+test('a long push or mood line is cut as the record\'s lines are, and only the latest twelve show', () => {
+  const push = Array.from({ length: 15 }, (_, n) => `push${n} ${'x'.repeat(500)}`);
+  const p = chatterPrompt({ ...base, office: 'boss', callerKey: 'b', record: { ...quietRecord, push } });
+  assert.ok(!p.system.includes('x'.repeat(400)), 'cut');
+  assert.ok(p.system.includes('push14') && p.system.includes('push3') && !p.system.includes('push2 '), 'the latest twelve');
+});
+
+test('the old voice\'s frame carries the plot so far as one line and nothing else of the record', () => {
+  const c = chatterCompletion({ name: 'Old Timer', key: 'a-member', plot: PLOT, title: base.title, read: base.read, limits: base.limits, fit: ROOMY });
+  const lines = c.prompt.split('\n');
+  assert.equal(lines.filter((l) => l.includes('The plot so far')).length, 1);
+  assert.ok(lines.find((l) => l.includes('The plot so far'))!.includes('World -1 opens soon.'));
+  const none = chatterCompletion({ name: 'Old Timer', title: base.title, read: base.read, limits: base.limits, fit: ROOMY });
+  assert.ok(!none.prompt.includes('The plot so far'));
+  assert.equal(lines.length, none.prompt.split('\n').length + 1, 'one line more');
+});
