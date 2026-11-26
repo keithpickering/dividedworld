@@ -233,7 +233,7 @@ describe('the HUD: the glass, docked at the bottom', () => {
     const h = await hud();
     await waitFor(() => expect(within(h).getByText('Pipewrench', { selector: '.kb-hud-name' })).toBeInTheDocument());
     expect(within(h).getByText('Heel')).toBeInTheDocument();
-    expect(within(h).getByText('Only you see this')).toBeInTheDocument();
+    expect(within(h).getByText('No other player sees this')).toBeInTheDocument();
   });
   test('a character with no avatar shows its letter inside the link named "My characters"', async () => {
     setup(true, [mine('a', 'Pipewrench')], <p>page</p>, 'invite', 240, (id) => ({ ...pub(id, id), avatarSquare: null }));
@@ -1048,7 +1048,7 @@ describe('search in the banner (the search plan, Task 6)', () => {
   });
 });
 
-/* The HUD's "Only you see this" opens the one Reveal (the HUD reveal plan, Task 4), on the thread the player is reading. */
+/* The HUD's "No other player sees this" opens the one Reveal (the HUD reveal plan, Task 4), on the thread the player is reading. */
 describe('the HUD opens the Reveal, and says when a class is public', () => {
   class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
   const RevealWorld = () => {
@@ -1072,7 +1072,7 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     renderIn(w.fake, <Frame><Refresh /><p>page</p></Frame>, { path: '/' });
     await screen.findByText('Pipewrench', { selector: '.kb-hud-name' });
   };
-  const lineButton = () => screen.findByRole('button', { name: 'Only you see this: reveal Pipewrench\'s class' });
+  const lineButton = () => screen.findByRole('button', { name: 'No other player sees this: reveal Pipewrench\'s class' });
   const generalId = async (w: RW) => (await w.fake.boards()).find((b) => b.slug === 'general')!.id;
 
   beforeEach(() => { vi.stubGlobal('IntersectionObserver', Observer); Element.prototype.scrollIntoView = vi.fn(); });
@@ -1081,7 +1081,7 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     const w = RevealWorld();
     await onThread(w);
     const button = await lineButton();
-    expect(button).toHaveTextContent('Only you see this');
+    expect(button).toHaveTextContent('No other player sees this');
     await userEvent.click(button);
     const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
     expect(within(dialog).getByText('Reveal')).toBeInTheDocument();
@@ -1135,9 +1135,9 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     await off(w);
     const h = await hud();
     await waitFor(() => expect(within(h).getByText('Revealed')).toBeInTheDocument());
-    expect(within(h).queryByRole('button', { name: /Only you see this/u })).toBeNull();
+    expect(within(h).queryByRole('button', { name: /No other player sees this/u })).toBeNull();
     expect(within(h).queryByRole('button', { name: /Revealed/u })).toBeNull();
-    expect(within(h).queryByText('Only you see this')).toBeNull();
+    expect(within(h).queryByText('No other player sees this')).toBeNull();
     expect(within(h).getByText('Revealed').closest('.kb-hud-secret')?.querySelector('path')?.getAttribute('d')).toContain('M3 5 V3.4 a2.5 2.5 0 0 1 5 0');
   });
 
@@ -1182,7 +1182,7 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
   test('Menu on a thread carries it to My characters, and Back to the thread does not open the overlay', async () => {
     const w = RevealWorld();
     await onThread(w);
-    await screen.findByRole('button', { name: 'Only you see this: reveal Pipewrench\'s class' });
+    await screen.findByRole('button', { name: 'No other player sees this: reveal Pipewrench\'s class' });
     await userEvent.click(screen.getByRole('button', { name: 'Menu' }));
     await waitFor(() => expect(window.location.pathname).toBe('/characters'));
     expect((window.history.state as { state: unknown }).state).toEqual({ thread: { id: w.thread, title: 'The tea thread', board: await generalId(w) } });

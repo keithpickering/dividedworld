@@ -107,7 +107,7 @@ export function Wardrobe() {
   }, [api, signedIn, ids, loadWardrobe]);
 
   if (player.sessionKnown && !signedIn) return <div className="kb-wardrobe"><SignInPrompt /></div>;
-  const head = <PageHead size="roster" title="The wardrobe" lead="Yours alone. Anyone can see what a mask wears; only you see what you hold." leadUnder />;
+  const head = <PageHead size="roster" title="The wardrobe" lead="Anyone can see what a mask wears; no other player sees what you hold." leadUnder />;
   if (!player.loaded || (signedIn && acting.length === 0 && player.characters.length === 0)) {
     return <div className="kb-wardrobe">{head}{player.loaded && <CalmRegion as="p" className="kb-notice">You have no characters yet, so there is nothing to dress. <GlassLink to="/characters/new">Make a character</GlassLink> first.</CalmRegion>}</div>;
   }

@@ -24,8 +24,8 @@ export const ui: CardUi = {
   art: { color: '#d24a2c', ink: '#0d0301', canvas: whodunnitCanvas, mark: whodunnitMark, credit: whodunnitArt.credit, tagline: 'Who wrote this?' },
   summary: 'Hides who wrote a post from everyone, for a while.',
   status: "Hiding this post's author",
-  hint: 'Nobody can see who wrote this post until the card ends.',
+  hint: 'No other player can see who wrote this post until the card ends.',
   describe: () =>
-    `A Pepperoni card, ${whodunnit.rarity}. For ${spanWords(whodunnit.lasts!)} nobody can see who wrote the post: its name, picture and profile are replaced by a stand-in everywhere on the forum, in search and in alerts too. Anyone who read it before remembers. The author is still paid for the post and still sees that it is theirs. When the card ends the name comes back, and the post says so. It is refused on a staff post and on a post a Mod Bot has been to, and no Mod Bot visits the post while its author is hidden. One fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    `A Pepperoni card, ${whodunnit.rarity}. For ${spanWords(whodunnit.lasts!)} no other player can see who wrote the post: its name, picture and profile are replaced by a stand-in everywhere on the forum, in search and in alerts too. Anyone who read it before remembers. The author is still paid for the post and still sees that it is theirs. When the card ends the name comes back, and the post says so. It is refused on a staff post and on a post a Mod Bot has been to, and no Mod Bot visits the post while its author is hidden. One fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
   logPlay: () => `It hides the post's author for ${spanWords(whodunnit.lasts!)}.`,
 };

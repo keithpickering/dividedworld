@@ -1,6 +1,6 @@
 /**
  * A reveal of a character's own class: the rules of one dialog, RevealOverlay.tsx, which has two
- * openers: the HUD's "Only you see this" (on a thread, so it opens ready) and My characters (a
+ * openers: the HUD's "No other player sees this" (on a thread, so it opens ready) and My characters (a
  * thread the player chooses). The board's reply box has no Reveal of its own. The server checks
  * the class and writes it; the dialog only asks.
  */

@@ -164,7 +164,7 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
         {done
           ? 'The final standings, as the season ended. A character that finished at 0 Aura or below takes no place. Your own characters are marked. A class shows only once its player had revealed it that season.'
           : <>The season's standings, as the last settlement left them. A character at 0 Aura or below takes no place. Your own characters are marked, with their classes, which
-            only you see here. Anyone else's class shows only once its player has revealed it.</>}
+            no other player sees here. Anyone else's class shows only once its player has revealed it.</>}
       </CalmRegion>
       {rows.length === 0
         ? <CalmRegion as="p" className="kb-rankings-empty">{count === 0 ? 'No character has debuted yet. The first settlement puts them here.' : 'Nothing on this page.'}</CalmRegion>

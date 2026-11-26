@@ -25,7 +25,7 @@ const seeded = (fake: Parameters<World>[0], instance: Parameters<World>[1]) => {
 };
 const full: World = (fake, instance) => { seeded(fake, instance); };
 
-/** The same player with Pipewrench's class public: the HUD line reads Revealed beside an open lock, where the hidden one reads "Only you see this". */
+/** The same player with Pipewrench's class public: the HUD line reads Revealed beside an open lock, where the hidden one reads "No other player sees this". */
 const revealed: World = (fake, instance) => {
   const { me, pipewrench } = seeded(fake, instance);
   const { thread } = fake.seed.thread('general', pipewrench, 'Who keeps reacting?', 'Somebody is.');

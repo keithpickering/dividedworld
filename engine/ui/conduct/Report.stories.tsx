@@ -155,7 +155,7 @@ export const QuotingAHiddenPostForAMoment: Story = {
   },
 };
 
-/** The author's own view of a post hidden until they edit it: the note, then "Only you see this" with their words and Edit. */
+/** The author's own view of a post hidden until they edit it: the note, then "No other player sees this" with their words and Edit. */
 export const AuthorHiddenUntilEdited: Story = {
   args: { title: TITLE },
   parameters: { world: ((fake, instance) => { const w = cast(fake, instance); fake.seed.hide(w.mineAct, 'hideUntilEdited'); }) satisfies World, path: '/t/x' },
