@@ -102,7 +102,20 @@ describe('Divided World\'s onboarding words', () => {
     }
   });
   test('the letter opens as Gabe\'s welcome does', () => {
-    expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);
+    expect(instanceUi.onboarding.letter).toMatch(/^## Hi\. I'm Gabe\./u);
+  });
+  test('the letter\'s first block is a heading, which the welcome page draws as its headline', () => {
+    expect(parse(instanceUi.onboarding.letter)[0]?.t).toBe('heading');
+  });
+  test('the letter holds no conditional and no marker', () => {
+    expect(instanceUi.onboarding.letter).not.toMatch(/<!--|\{\{|kayfabb/u);
+  });
+  test('no tip and no line of the front door\'s note says "The System" or "Administrator"', () => {
+    const lines = [
+      ...Object.values(instanceUi.onboarding.tips).flatMap((t) => [t.title, t.line]),
+      ...instanceUi.frontDoor.note.split('\n'),
+    ];
+    for (const line of lines) expect(line, line).not.toMatch(/The System|Administrator/u);
   });
 });
 
