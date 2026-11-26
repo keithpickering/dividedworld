@@ -77,7 +77,11 @@ declare
 begin
   if author_veil_covers.act is null then return false; end if;
   for pl in select c.play from post_veil_cover c where c.act = author_veil_covers.act loop
-    if author_veil_live(pl) then return true; end if;
+    if author_veil_live(pl) then
+      -- A secret ballot is no one's in acts_public, and a reader can call this: answering true for the veiled author's own secret ballot and false for every other would name its voter. acts_public's first two selects
+      -- show no secret ballot whatever this answers, so it answers false for each. Read by key, and only for an Act a live veil covers.
+      return not exists (select 1 from acts b where b.id = author_veil_covers.act and b.kind = 'ballot' and ballot_secret(b.target_act_id));
+    end if;
   end loop;
   return false;
 end $$;
@@ -178,7 +182,9 @@ begin
     for x in select c.act from post_veil_cover c where c.play between pl and pl order by c.play, c.act loop
       continue when x = any (seen);
       seen := seen || x;
-      select a.created_at, a.kind into r from acts a where a.id = x;
+      select a.created_at, a.kind, a.target_act_id into r from acts a where a.id = x;
+      -- never a secret ballot, which acts_public shows as no one's: listed here, the veiled author's alone would name its voter (author_veil_covers, above)
+      continue when r.kind = 'ballot' and ballot_secret(r.target_act_id);
       if r.kind = any (kinds) then ids := ids || x; ats := ats || r.created_at; end if;
     end loop;
   end loop;

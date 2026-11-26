@@ -4,6 +4,9 @@
 -- 1. the bound: one probe through acts_public, and one through pool_probe, under each statistics state (as planted, true, empty for `acts` with relallvisible 0, empty for the veil tables too, generic plans), with the card_end Acts
 --    few and then many, reads at most 5 rows;
 -- 2. the check is post_veils_live's rule: author_veil_covers answers as 0395's EXISTS did, for a live veil, one ended by a card_end, one refunded, one over by its time, a totals veil, and an Act no veil covers.
+-- 3. the security: each function an API role may call is a stable security definer pinned to public, pg_temp, anon calls none, and neither author_veil_covers nor stand_in_acts tells the veiled author's secret ballot from
+--    anyone else's (the final review of #1094);
+-- 4. the stand-in's profile and record read their Acts by the live veils, and list what the view read lists.
 
 create function pg_temp.acts_read() returns bigint language sql as $$
   select coalesce(sum(seq_tup_read + idx_tup_fetch), 0)::bigint from pg_stat_xact_all_tables where relname = 'acts'
@@ -216,4 +219,38 @@ begin
   end loop;
   -- card_end_written is the definers' own, called as their owner: no API role runs it
   if has_function_privilege('authenticated', 'card_end_written(uuid)', 'execute') or has_function_privilege('service_role', 'card_end_written(uuid)', 'execute') then raise exception 'an API role can call card_end_written'; end if;
+end $$;
+
+-- A secret ballot's character is hidden from every reader (acts_public's third select), and a live author veil covers the veiled author's own ballots on the post's polls (0395, section 9). So neither function a reader can call may
+-- tell the veiled author's secret ballot from anyone else's: author_veil_covers answers as it does for any secret ballot, and stand_in_acts lists none, whatever kinds it is asked for. The author's ballot on a public poll is
+-- the stand-in's, as acts_public shows it, and both still say so.
+do $$
+declare
+  ann uuid := tests.character(tests.account('rb-sec-ann'), 'Rb Sec Ann');
+  bob uuid := tests.character(tests.account('rb-sec-bob'), 'Rb Sec Bob');
+  t uuid := tests.thread('Rb secret ballots');
+  p uuid := tests.post(ann, t, 'Vote in secret.', now() - interval '3 hours');
+  sp uuid := tests.act(ann, 'poll', t, jsonb_build_object('question', 'Q', 'options', '["A", "B"]'::jsonb, 'pick', 1, 'secret', true, 'closes_at', now() + interval '1 day'), p, now() - interval '170 minutes');
+  op uuid := tests.act(ann, 'poll', t, jsonb_build_object('question', 'Q', 'options', '["A", "B"]'::jsonb, 'pick', 1, 'secret', false, 'closes_at', now() + interval '1 day'), p, now() - interval '170 minutes');
+  ann_secret uuid := tests.act(ann, 'ballot', t, '{"picks": [0]}', sp, now() - interval '160 minutes');
+  bob_secret uuid := tests.act(bob, 'ballot', t, '{"picks": [1]}', sp, now() - interval '160 minutes');
+  ann_open uuid := tests.act(ann, 'ballot', t, '{"picks": [0]}', op, now() - interval '160 minutes');
+  stand uuid := (select c.id from characters c where c.staff_kind = 'anonymous');
+  vp uuid := tests.act(bob, 'card', t, jsonb_build_object('card', 'pvveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p, now() - interval '150 minutes');
+  listed uuid[];
+begin
+  insert into post_veils (play, post, veil, author, ends_at) values (vp, p, 'author', ann, now() + interval '1 day');
+  if not exists (select 1 from post_veil_cover c where c.act = ann_secret and c.play = vp) then raise exception 'the fixture: the veil does not cover the author''s secret ballot'; end if;
+  perform tests.become((select u.id from auth.users u where u.email = 'rb-wil@test.invalid'));
+  if (select x."character" from acts_public x where x.id = ann_secret) is not null or (select x."character" from acts_public x where x.id = bob_secret) is not null then
+    raise exception 'the fixture: acts_public names a secret ballot''s character';
+  end if;
+  if author_veil_covers(ann_secret) is distinct from author_veil_covers(bob_secret) then
+    raise exception 'author_veil_covers tells the veiled author''s secret ballot (%) from another''s (%): a reader learns who cast it', author_veil_covers(ann_secret), author_veil_covers(bob_secret);
+  end if;
+  listed := stand_in_acts(stand, array['ballot', 'post', 'spin', 'card', 'poll', 'poll_close'], 0, 100);
+  if ann_secret = any (listed) then raise exception 'stand_in_acts lists the veiled author''s secret ballot: a reader learns who cast it'; end if;
+  if not ann_open = any (listed) or not author_veil_covers(ann_open) then raise exception 'the author''s ballot on a public poll is no longer the stand-in''s'; end if;
+  if (select x."character" from acts_public x where x.id = ann_open) is distinct from stand then raise exception 'the fixture: acts_public does not show the author''s public ballot under the stand-in'; end if;
+  perform tests.unbecome();
 end $$;
