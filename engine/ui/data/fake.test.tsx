@@ -8294,6 +8294,14 @@ describe('the jobs', () => {
     expect(page?.jobs.every((j) => j.lastRun?.status === 'succeeded' && j.lastRun.message === '1 row')).toBe(true);
   });
 
+  test('a page that reads its own clock (onPageClock replaces the api\'s now) still finds every job healthy', async () => {
+    const fake = createFake({ instance });
+    /* As web/src/data/fixtures/page-clock.ts does: the screens read the page's clock, a month past the fake's own. */
+    const page = fake.clock.now() + 30 * 24 * 60 * 60_000;
+    (fake as { now: () => number }).now = () => page;
+    expect(jobHealth(await fake.jobStatus(), {}, new Date(fake.now())).filter((h) => h.stopped).map((h) => h.job)).toEqual([]);
+  });
+
   test('seed.job overrides a row, null and noJob remove it, adminJobs gives an admin each last run, and a player no page', async () => {
     const fake = createFake({ instance });
     const admin = fake.seed.account('jobs-admin', { admin: true });

@@ -1408,7 +1408,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const o = jobOverrides.get(job) ?? {};
     const schedule = 'schedule' in o ? o.schedule! : jobDefaults[job] ?? '* * * * *';
     let due: string | null = null;
-    if (schedule !== null) { try { due = lastDue(schedule, new Date(now()))?.toISOString() ?? null; } catch { due = null; } }
+    /* Dated by the clock the api answers with, read at call time: the page's own where onPageClock (web/src/data/fixtures/page-clock.ts)
+       has replaced the api's `now`, since the screens judge these rows by that clock; a healthy job must read healthy on it. */
+    const at = (api as KayfaApi).now();
+    if (schedule !== null) { try { due = lastDue(schedule, new Date(at))?.toISOString() ?? null; } catch { due = null; } }
     return { job, schedule, active: o.active ?? true, firstSeen: 'firstSeen' in o ? o.firstSeen! : jobFirstSeen, lastOkAt: 'lastOkAt' in o ? o.lastOkAt! : due, grace: o.grace ?? null };
   };
   const jobRowsNow = (): JobRow[] => JOBS.filter((j) => !jobGone.has(j.name)).map((j) => jobRow(j.name));
