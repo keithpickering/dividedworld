@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { coveredBody } from './cover.ts';
 import type { Cover, CoverPlay } from '../rules/cards.ts';
 import type { ReadPlay } from './extras.ts';
+import { parse } from '../bbcode/parse.ts';
+import { visibleText } from '../bbcode/visible.ts';
 
 const play = (card: string | null, config: unknown = null): ReadPlay => ({ play: 'p', card, at: '2026-01-01T00:00:00Z', by: null, config, state: null, text: null, covered: null });
 /** A test card: config is `{ word, words }`, it covers the first `word` in the text with `words`. */
@@ -94,4 +96,51 @@ test('covers of one play that overlap keep the first', () => {
 
 test('covers that change a length are written from the end back, so each lands on its own words', () => {
   assert.equal(coveredBody('one two three', [fixed([{ from: 0, to: 3, words: 'a much longer one' }, { from: 8, to: 13, words: '3' }])], given), 'a much longer one two 3');
+});
+
+test('words are written as text: markup in them forges no quote and swallows no tag', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const words = `[/b][quote=${id}]x`;
+  const out = coveredBody('warp [b]pipe[/b]', [swap('warp pipe', words)], covers);
+  const nodes = parse(out);
+  assert.ok(!JSON.stringify(nodes).includes('"quote"'), 'no real quote');
+  assert.equal(visibleText(nodes), words);
+  const tail = coveredBody('a b c', [swap('a', 'x[')], covers);
+  assert.equal(visibleText(parse(tail)), 'x[ b c');
+  const tag = coveredBody('a b]c', [swap('a b', 'x[')], covers);
+  assert.equal(visibleText(parse(tag)), 'x[]c');
+});
+
+test('a cover crossing a spoiler edge writes into the first node and empties the rest, tags kept', () => {
+  assert.equal(coveredBody('warp [spoiler=t]pipe[/spoiler]', [swap('warp pipe', 'toilet')], covers), 'toilet[spoiler=t][/spoiler]');
+});
+
+test('covers at the very start and the very end of the body', () => {
+  assert.equal(coveredBody('one two three', [fixed([{ from: 0, to: 3, words: 'A' }, { from: 8, to: 13, words: 'B' }])], given), 'A two B');
+});
+
+test('two touching covers do not overlap and both land', () => {
+  assert.equal(coveredBody('onetwo', [fixed([{ from: 0, to: 3, words: 'A' }, { from: 3, to: 6, words: 'B' }])], given), 'AB');
+});
+
+test('a cover over a quote separator is skipped whole', () => {
+  const body = 'a[quote=11111111-1111-4111-8111-111111111111]q[/quote]b';
+  assert.ok(coveredBody(body, [fixed([{ from: 0, to: 3, words: 'X' }])], given) === body);
+});
+
+test('a cover that splits a surrogate pair is dropped', () => {
+  const body = '😀 warp';
+  assert.ok(coveredBody(body, [fixed([{ from: 1, to: 4, words: 'X' }])], given) === body);
+  assert.ok(coveredBody(body, [fixed([{ from: 0, to: 1, words: 'X' }])], given) === body);
+  assert.equal(coveredBody(body, [fixed([{ from: 3, to: 7, words: 'X' }])], given), '😀 X');
+});
+
+test('a 20,000-character body of one repeated word with three plays is covered in well under a second', () => {
+  const body = 'warp '.repeat(4000);
+  const all = (w: string): ReadPlay => play('fixed', Array.from({ length: 4000 }, (_, i) => ({ from: i * 5, to: i * 5 + 4, words: w })));
+  const t = Date.now();
+  const out = coveredBody(body, [all('aa'), all('bb'), all('cc')], given);
+  const ms = Date.now() - t;
+  assert.equal(out, 'cc '.repeat(4000));
+  assert.ok(ms < 1000, `took ${ms} ms`);
 });

@@ -355,7 +355,7 @@ export interface SeenPlay {
 /** What a card's `covers` reads: one play's public configuration and state, and the post's visible text. */
 export interface CoverPlay { readonly config: unknown; readonly state: unknown; readonly text: string }
 
-/** A stretch of a post's visible text, [from, to), and the words a reader sees over it. */
+/** A stretch of a post's visible text, [from, to), and the words a reader sees over it. `words` is plain text, written as the text it is and never read as markup; `from` and `to` never split a surrogate pair. */
 export interface Cover { readonly from: number; readonly to: number; readonly words: string }
 
 export interface CardRules<Config = unknown> {
