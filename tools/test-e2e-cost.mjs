@@ -1,0 +1,175 @@
+/**
+ * tools/e2e-cost.mjs's pure functions, driven red on purpose.
+ *
+ *   node tools/test-e2e-cost.mjs
+ *
+ * Every case builds its own small input. The packer's one property that matters, that every key
+ * lands in exactly one shard, is asserted by `exactlyOnce`, and the last cases hand that assertion
+ * two poison packers (one drops the last key, one puts a key in two shards) and require it to
+ * refuse both, so an assertion that has gone quiet fails here rather than reading as green.
+ */
+import {
+  keysOf, keyProblems, listProblems, price, pack, parseCostShard, compareRun, testList, WORKERS, BUDGET_MINUTES,
+} from './e2e-cost.mjs';
+
+let failures = 0;
+const ok = (name) => console.log(`ok    ${name}`);
+const fail = (name, why) => {
+  failures += 1;
+  console.error(`FAIL  ${name}`);
+  console.error(`      ${why}`);
+};
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** @param {string} name @param {unknown} got @param {unknown} want */
+function eq(name, got, want) {
+  if (same(got, want)) ok(name);
+  else fail(name, `expected ${JSON.stringify(want)}\n      got      ${JSON.stringify(got)}`);
+}
+/** @param {string} name @param {() => unknown} fn @param {RegExp} expected */
+function throws(name, fn, expected) {
+  try {
+    fn();
+  } catch (e) {
+    if (expected.test(String(e.message))) ok(name);
+    else fail(name, `threw "${e.message}", expected ${expected}`);
+    return;
+  }
+  fail(name, 'did not throw');
+}
+const test = (title) => ({ title, tests: [{ status: 'skipped' }] });
+
+/** A list JSON as Playwright prints it: a file suite, with a describe nested in a describe. */
+const LIST = {
+  suites: [
+    {
+      title: 'a.spec.ts', file: 'a.spec.ts',
+      specs: [test('top test')],
+      suites: [{
+        title: 'outer', file: 'a.spec.ts', specs: [test('one')],
+        suites: [{ title: 'inner', file: 'a.spec.ts', specs: [test('two'), test('three')] }],
+      }],
+    },
+    { title: 'dir/b.spec.ts', file: 'dir/b.spec.ts', specs: [test('b one')] },
+  ],
+};
+const KEYS = [
+  'a.spec.ts › top test',
+  'a.spec.ts › outer › one',
+  'a.spec.ts › outer › inner › two',
+  'a.spec.ts › outer › inner › three',
+  'dir/b.spec.ts › b one',
+];
+eq('keysOf walks specs then nested suites, file first and not repeated', keysOf(LIST), KEYS);
+eq('constants', [WORKERS, BUDGET_MINUTES], [2, 15]);
+
+/* ---- price: each of the four branches ---- */
+const MAN = {
+  measured: null,
+  specs: { 'a.spec.ts': { count: 2, mean: 10 }, 'c.spec.ts': { count: 2, mean: 20 } },
+  tests: { 'a.spec.ts › outer › one': 99 },
+};
+eq('price: the test\'s own entry', price('a.spec.ts › outer › one', MAN), 99);
+eq('price: else its spec\'s mean', price('a.spec.ts › top test', MAN), 10);
+eq('price: else the suite\'s mean (30 s... (2*10+2*20)/4)', price('zzz.spec.ts › new', MAN), 15);
+eq('price: else 1 with no specs at all', price('zzz.spec.ts › new', { measured: null, specs: {}, tests: {} }), 1);
+
+/* ---- pack ---- */
+const MIXED = Array.from({ length: 20 }, (_, i) => `m${String(i).padStart(2, '0')}.spec.ts › t`);
+const MIX_MAN = {
+  measured: null,
+  specs: Object.fromEntries(MIXED.map((k, i) => [k.split(' › ')[0], { count: 1, mean: ((i * 7) % 13) + 1 }])),
+  tests: {},
+};
+const biggest = (keys, man) => Math.max(...keys.map((k) => price(k, man)));
+
+/**
+ * The partition assertion: every key in exactly one shard, one total per shard that is the
+ * sum of its prices. Returns a complaint or ''.
+ * @param {string[]} keys @param {Record<string, any>} man @param {number} n
+ * @param {(keys: string[], man: any, n: number) => { shards: string[][], totals: number[] }} packer
+ */
+function exactlyOnce(keys, man, n, packer) {
+  const { shards, totals } = packer(keys, man, n);
+  if (shards.length !== n || totals.length !== n) return `expected ${n} shards and totals`;
+  const seen = new Map();
+  for (const shard of shards) for (const k of shard) seen.set(k, (seen.get(k) ?? 0) + 1);
+  const bad = keys.filter((k) => seen.get(k) !== 1);
+  if (bad.length) return `not exactly once: ${bad.join(', ')}`;
+  if (seen.size !== keys.length) return 'extra keys in the shards';
+  return '';
+}
+
+const packed = pack(MIXED, MIX_MAN, 3);
+const complaint = exactlyOnce(MIXED, MIX_MAN, 3, pack);
+if (complaint === '') ok('pack: every key in exactly one of 3 shards'); else fail('pack: partition', complaint);
+const spread = Math.max(...packed.totals) - Math.min(...packed.totals);
+if (spread <= biggest(MIXED, MIX_MAN)) ok(`pack: totals differ by ${spread}, no more than the largest price`);
+else fail('pack: balance', `totals ${packed.totals} differ by ${spread}`);
+eq('pack: totals are each shard\'s summed prices', packed.totals, packed.shards.map((s) => s.reduce((t, k) => t + price(k, MIX_MAN), 0)));
+eq('pack: run twice, the same shards', pack(MIXED, MIX_MAN, 3), packed);
+eq('pack: shuffled input, the same shards', pack([...MIXED].reverse(), MIX_MAN, 3).shards.map((s) => [...s].sort()), packed.shards.map((s) => [...s].sort()));
+eq('pack: shuffled input, the same order inside a shard too', pack([...MIXED].reverse(), MIX_MAN, 3), packed);
+eq('pack: a tie goes to the lowest index', pack(['x.spec.ts › a', 'x.spec.ts › b'], { measured: null, specs: {}, tests: {} }, 2).shards, [['x.spec.ts › a'], ['x.spec.ts › b']]);
+
+/* ---- the poison packers, driven red against the assertion ---- */
+const dropsLast = (keys, man, n) => {
+  const r = pack(keys, man, n);
+  const shards = r.shards.map((s) => [...s]);
+  const i = shards.findIndex((s) => s.includes(keys[keys.length - 1]));
+  shards[i] = shards[i].filter((k) => k !== keys[keys.length - 1]);
+  return { shards, totals: r.totals };
+};
+const doubles = (keys, man, n) => {
+  const r = pack(keys, man, n);
+  const shards = r.shards.map((s) => [...s]);
+  shards[1].push(shards[0][0]);
+  return { shards, totals: r.totals };
+};
+for (const [name, bad, want] of [['drops the last key', dropsLast, /not exactly once/], ['puts a key in two shards', doubles, /not exactly once/]]) {
+  const c = exactlyOnce(MIXED, MIX_MAN, 3, bad);
+  if (want.test(c)) ok(`the assertion refuses a packer that ${name}`);
+  else fail(`the assertion refuses a packer that ${name}`, `got "${c}"`);
+}
+
+/* ---- keyProblems ---- */
+eq('keyProblems: a clean list has none', keyProblems(KEYS), []);
+const stray = keyProblems(['a.spec.ts › foo›bar']);
+if (stray.length === 1 && /foo›bar/.test(stray[0])) ok('keyProblems names a title holding ›'); else fail('keyProblems: stray ›', JSON.stringify(stray));
+const pre = keyProblems(['a.spec.ts › x', 'a.spec.ts › x › y', 'b.spec.ts › x']);
+if (pre.length === 1 && /a\.spec\.ts › x\b/.test(pre[0]) && /prefix/.test(pre[0])) ok('keyProblems names a prefix pair in one file');
+else fail('keyProblems: prefix pair', JSON.stringify(pre));
+eq('keyProblems: the same prefix across files is fine', keyProblems(['a.spec.ts › x', 'b.spec.ts › x › y']), []);
+const spaced = listProblems({ suites: [{ title: 'a.spec.ts', file: 'a.spec.ts', specs: [test('left › right')] }] });
+if (spaced.length === 1 && /left › right/.test(spaced[0])) ok('listProblems sees a title holding " › " that a key cannot show'); else fail('listProblems', JSON.stringify(spaced));
+eq('listProblems: a clean list has none', listProblems(LIST), []);
+
+/* ---- parseCostShard ---- */
+eq('parseCostShard: 2/7', parseCostShard(['--cost-shard=2/7']), { k: 2, n: 7, rest: [] });
+eq('parseCostShard: other flags pass through in rest', parseCostShard(['--headed', '--cost-shard=1/3', '--retries=1']), { k: 1, n: 3, rest: ['--headed', '--retries=1'] });
+eq('parseCostShard: absent means null', parseCostShard(['--headed']), null);
+throws('parseCostShard: 0/7', () => parseCostShard(['--cost-shard=0/7']), /cost-shard/);
+throws('parseCostShard: 8/7', () => parseCostShard(['--cost-shard=8/7']), /cost-shard/);
+throws('parseCostShard: 2/x', () => parseCostShard(['--cost-shard=2/x']), /cost-shard/);
+throws('parseCostShard: 2.5/7', () => parseCostShard(['--cost-shard=2.5/7']), /cost-shard/);
+throws('parseCostShard: bare flag', () => parseCostShard(['--cost-shard']), /cost-shard/);
+throws('parseCostShard: two flags', () => parseCostShard(['--cost-shard=1/7', '--cost-shard=2/7']), /once|twice|two/);
+throws('parseCostShard: with --shard', () => parseCostShard(['--cost-shard=1/7', '--shard=1/7']), /--shard/);
+throws('parseCostShard: with --test-list', () => parseCostShard(['--cost-shard=1/7', '--test-list=x.txt']), /--test-list/);
+throws('parseCostShard: with a positional file filter', () => parseCostShard(['--cost-shard=1/7', 'e2e/x.spec.ts']), /positional|filter/);
+throws('parseCostShard: a flag value after a space reads as positional', () => parseCostShard(['--cost-shard=1/7', '--workers', '2']), /positional|filter/);
+eq('parseCostShard: positionals alone are not its business', parseCostShard(['e2e/x.spec.ts']), null);
+
+/* ---- compareRun ---- */
+const assigned = ['a.spec.ts › top test', 'a.spec.ts › outer › one'];
+const report = { suites: [{ title: 'a.spec.ts', file: 'a.spec.ts', specs: [test('top test'), test('surprise')] }] };
+eq('compareRun: one missing, one extra', compareRun(assigned, report), { missing: ['a.spec.ts › outer › one'], extra: ['a.spec.ts › surprise'] });
+eq('compareRun: an exact run has neither', compareRun(KEYS, LIST), { missing: [], extra: [] });
+
+/* ---- testList ---- */
+eq('testList: a line each and a final newline', testList(['a › b', 'c › d']), 'a › b\nc › d\n');
+
+if (failures) {
+  console.error(`\n${failures} case${failures === 1 ? '' : 's'} failed`);
+  process.exit(1);
+}
+console.log('\nall cases pass');
