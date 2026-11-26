@@ -54,16 +54,21 @@ export function shownView(item: GearShape, view: GearView | null): GearView {
 export function pieceShape(piece: Piece, item: GearShape): { w: number; aspect: number; px: number; py: number } {
   const shown = item.views[shownView(item, piece.view)] ?? item.views[item.default];
   const base = item.views[item.default];
+  /* The throw marks a broken art catalog: an item must ship the view its own default names, so this is a defect to fix there, not a case to render around. */
   if (shown === undefined || base === undefined) throw new Error(`gear has no ${item.default} view`);
   return { w: (piece.w * shown.width) / base.width, aspect: shown.height / shown.width, px: shown.pivot.x / shown.width, py: shown.pivot.y / shown.height };
 }
 
 type Shape = ReturnType<typeof pieceShape>;
 
+/** The unturned picture's edges relative to the pivot, in units of the box's width: left, right, top and bottom offsets. */
+function offsets(shape: Shape): { l: number; r: number; t: number; b: number } {
+  return { l: -shape.px * shape.w, r: (1 - shape.px) * shape.w, t: -shape.py * shape.w * shape.aspect, b: (1 - shape.py) * shape.w * shape.aspect };
+}
+
 /** The picture's four corners relative to the pivot, in units of the box's width, before any turn. */
 function corners(shape: Shape): [number, number][] {
-  const l = -shape.px * shape.w, r = (1 - shape.px) * shape.w;
-  const t = -shape.py * shape.w * shape.aspect, b = (1 - shape.py) * shape.w * shape.aspect;
+  const { l, r, t, b } = offsets(shape);
   return [[l, t], [r, t], [r, b], [l, b]];
 }
 
@@ -85,8 +90,7 @@ export function pieceHolds(piece: Piece, shape: Shape, height: number, qx: numbe
   const rad = (-piece.turn * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad);
   const dx = qx - piece.x, dy = qy - piece.y * height;
   const ux = dx * cos - dy * sin, uy = dx * sin + dy * cos;
-  const l = -shape.px * shape.w, r = (1 - shape.px) * shape.w;
-  const t = -shape.py * shape.w * shape.aspect, b = (1 - shape.py) * shape.w * shape.aspect;
+  const { l, r, t, b } = offsets(shape);
   return ux >= l && ux <= r && uy >= t && uy <= b;
 }
 

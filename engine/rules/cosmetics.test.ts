@@ -166,3 +166,54 @@ test('pieceProblem: a view must be null or one of the five', () => {
   assert.equal(pieceProblem(piece({ turn: 999, view: 'back' as never }), settings), 'turn');
   assert.equal(pieceProblem(piece({ layer: 99, view: 'back' as never }), settings), 'view');
 });
+
+test('pieceShape throws when the item has no view named by its default', () => {
+  const broken: GearShape = { default: 'front', views: { 'side-left': { width: 100, height: 100, pivot: { x: 50, y: 50 } } } };
+  assert.throws(() => pieceShape(piece(), broken), /no front view/);
+  assert.throws(() => pieceShape(piece({ view: 'side-left' }), broken), /no front view/);
+});
+
+test('pieceHolds: a turn other than a quarter about a pivot that is no corner', () => {
+  const shape = { w: 0.5, aspect: 0.5, px: 0.5, py: 0.5 };
+  /* Pivot (0.5, 1); the unturned picture reaches 0.25 either side across and 0.125 up and down. */
+  const at = (turn: number, dx: number, dy: number) => pieceHolds(piece({ x: 0.5, y: 0.5, turn }), shape, 2, 0.5 + dx, 1 + dy);
+  const c = Math.SQRT1_2;
+  /* Turned 45: the picture's long axis points down-right. */
+  assert.equal(at(45, 0.2 * c, 0.2 * c), true);
+  assert.equal(at(45, 0.3 * c, 0.3 * c), false);
+  assert.equal(at(45, -0.1 * c, 0.1 * c), true);
+  assert.equal(at(45, -0.15 * c, 0.15 * c), false);
+  /* Turned -90: the long axis points up and down, so it holds 0.2 above but not 0.2 beside, where unturned it would. */
+  assert.equal(at(-90, 0, -0.2), true);
+  assert.equal(at(-90, 0, -0.3), false);
+  assert.equal(at(-90, 0.2, 0), false);
+  assert.equal(at(0, 0.2, 0), true);
+});
+
+test('pieceHolds agrees with pieceExtent: nothing outside the bounds holds, and a corner nudged inward does', () => {
+  const shapes = [{ w: 0.5, aspect: 0.5, px: 0.5, py: 0.5 }, { w: 0.4, aspect: 1.5, px: 0.2, py: 0.9 }, { w: 0.5, aspect: 0.5, px: 0, py: 1 }];
+  for (const shape of shapes) for (const turn of [-135, -90, -30, 0, 45, 90, 180]) {
+    const p = piece({ x: 0.4, y: 0.3, turn });
+    const box = pieceExtent(p, shape, 2);
+    const what = `${JSON.stringify(shape)} turn ${turn}`;
+    for (let i = -10; i <= 40; i++) for (let j = -10; j <= 60; j++) {
+      const qx = i / 20 + 0.013, qy = j / 20 + 0.017;
+      if (qx < box.left || qx > box.right || qy < box.top || qy > box.bottom) assert.equal(pieceHolds(p, shape, 2, qx, qy), false, `${what} (${qx}, ${qy})`);
+    }
+    /* Each unturned corner, pulled 1% toward the pivot's picture center, turned about the pivot into place. */
+    const rad = (turn * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+    const l = -shape.px * shape.w, r = (1 - shape.px) * shape.w, t = -shape.py * shape.w * shape.aspect, b = (1 - shape.py) * shape.w * shape.aspect;
+    for (const [cx, cy] of [[l, t], [r, t], [r, b], [l, b]] as const) {
+      const dx = cx + ((l + r) / 2 - cx) * 0.01, dy = cy + ((t + b) / 2 - cy) * 0.01;
+      assert.equal(pieceHolds(p, shape, 2, p.x + dx * cos - dy * sin, p.y * 2 + dx * sin + dy * cos), true, `${what} corner (${cx}, ${cy})`);
+    }
+  }
+});
+
+test('outfitOverhang: turned half a circle, a band-pivot cap leaves only what was below the pivot above it', () => {
+  const cap: GearShape = { default: 'front', views: { front: { width: 100, height: 60, pivot: { x: 50, y: 50 } } } };
+  const shapeOf = (p: Piece) => pieceShape(p, cap);
+  /* w 0.5: 0.25 above the pivot and 0.05 below. Turned 180 the part above goes below and the part below goes above. */
+  near(outfitOverhang([piece({ gear: 'cap', y: 0, w: 0.5, turn: 180 })], shapeOf, 2, 0.4), 0.05, 'turned');
+  near(outfitOverhang([piece({ gear: 'cap', y: 0, w: 0.5, turn: 0 })], shapeOf, 2, 0.4), 0.25, 'unturned');
+});
