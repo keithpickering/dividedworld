@@ -1060,3 +1060,59 @@ describe('the notice about quotes nested too deep, in the new-thread form', () =
     await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
   });
 });
+
+describe('staff stickies', () => {
+  vi.setConfig({ testTimeout: 20_000 });
+  const sticky = () => document.querySelector('[data-kb-stickies]') as HTMLElement | null;
+
+  function openStaff(page = 1) {
+    return renderInWorld(<LoadedBoard slug="announcements" />, {
+      path: `/b/announcements${page === 1 ? '' : `?page=${page}`}`,
+      seed: (f) => {
+        const w = world(f);
+        /* Twenty-two staff threads, so the board has two pages; the two oldest are pinned, the later pin on the older thread. */
+        const staff: string[] = [];
+        for (let i = 0; i < 22; i++) staff.push(f.seed.thread('announcements', null, `Notice ${String(i + 1).padStart(3, '0')}`, 'x', { at: T0 + i * 60_000 }).thread);
+        f.seed.stickyPin(staff[1]!, { at: T0 + 1000 });
+        f.seed.stickyPin(staff[0]!, { at: T0 + 2000 });
+        return { ...w, staff };
+      },
+    });
+  }
+
+  test('page 1 draws the pinned threads first, oldest pin first, each with "Sticky:" in bold before its title, and not again in the rows', async () => {
+    openStaff();
+    await screen.findByRole('link', { name: 'Notice 022' });
+    await waitFor(() => expect(sticky()).not.toBeNull());
+    const rows = within(sticky()!).getAllByRole('row').filter((r) => r.classList.contains('kb-thread-row'));
+    expect(rows.map((r) => r.querySelector('.kb-thread-title')!.textContent)).toEqual(['Sticky: Notice 002', 'Sticky: Notice 001']);
+    expect(rows[0]!.querySelector('.kb-thread-title b')!.textContent).toBe('Sticky: Notice 002');
+    /* Once only, and the page's twenty slots are all still there. */
+    expect(screen.getAllByRole('link', { name: /Notice 002$/ })).toHaveLength(1);
+    const list = document.querySelector('.kb-thread-list tbody:not([data-kb-stickies]):not([data-kb-pinned])') as HTMLElement;
+    expect(within(list).getAllByRole('row')).toHaveLength(20);
+    expect(within(list).queryByRole('link', { name: 'Notice 001' })).toBeNull();
+  });
+
+  test('page 2 and other boards have none: a thread is in its bump place, with no prefix', async () => {
+    openStaff(2);
+    await screen.findByRole('link', { name: 'Notice 001' });
+    expect(sticky()).toBeNull();
+    expect(screen.queryByText(/^Sticky:/)).toBeNull();
+  });
+
+  test('a reader on the keyboard tabs to each sticky\'s title in turn, before the rows below', async () => {
+    openStaff();
+    await waitFor(() => expect(sticky()).not.toBeNull());
+    const links = within(sticky()!).getAllByRole('link', { name: /^Sticky: Notice/ });
+    expect(links).toHaveLength(2);
+    links[0]!.focus();
+    expect(links[0]).toHaveFocus();
+    for (const want of [links[1]!]) {
+      let guard = 0;
+      while (document.activeElement !== want && guard++ < 20) await userEvent.tab();
+      expect(want).toHaveFocus();
+    }
+    expect(links.every((l) => l.getAttribute('href')?.startsWith('/t/'))).toBe(true);
+  });
+});

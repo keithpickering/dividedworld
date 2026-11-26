@@ -318,3 +318,63 @@ describe('a price as typed', () => {
     expect(hundredths('9999999')).toBeNull();
   });
 });
+
+describe('the pinned staff threads', () => {
+  function openPins(as: 'admin' | 'player' = 'admin') {
+    const fake = buildWorld(undefined, instance);
+    const admin = fake.seed.account('pins-admin', { admin: true });
+    const player = fake.seed.account('pins-player');
+    const a = fake.seed.thread('announcements', null, 'Improvement Initiative #1', 'Hello.', { at: Date.UTC(2026, 10, 20, 12) });
+    const b = fake.seed.thread('announcements', null, 'Improvement Initiative #2', 'Again.', { at: Date.UTC(2026, 10, 21, 12) });
+    fake.seed.stickyPin(a.thread, { at: Date.UTC(2026, 10, 20, 13) });
+    fake.seed.stickyPin(b.thread, { at: Date.UTC(2026, 10, 21, 13) });
+    fake.signInAs(as === 'admin' ? admin : player);
+    renderIn(fake, <MachineScreen />, { path: '/admin/machine', instance, packs });
+    return { fake, a: a.thread, b: b.thread };
+  }
+
+  test('lists each live pin with its title and when it was pinned, oldest first, with an Unpin button', async () => {
+    openPins();
+    const section = await screen.findByRole('region', { name: 'Pinned staff threads' });
+    const items = within(section).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('Improvement Initiative #1');
+    expect(items[1]).toHaveTextContent('Improvement Initiative #2');
+    expect(within(items[0]!).getByText(/pinned/i)).toBeInTheDocument();
+    expect(within(section).getAllByRole('button', { name: /^Unpin/ })).toHaveLength(2);
+  });
+
+  test('Unpin takes the pin down and the row leaves the list; focus lands on the next Unpin', async () => {
+    const { fake, a } = openPins();
+    const first = await screen.findByRole('button', { name: 'Unpin: Improvement Initiative #1' });
+    await userEvent.click(first);
+    await waitFor(() => expect(screen.queryByText('Improvement Initiative #1')).toBeNull());
+    expect(screen.getByText('Improvement Initiative #2')).toBeInTheDocument();
+    expect(await fake.adminStaffPins()).toHaveLength(1);
+    expect(await fake.unpinStaffThread(a)).toMatchObject({ ok: false });
+  });
+
+  test('a refusal is shown in its own words, and the list is read again', async () => {
+    const { fake, a } = openPins();
+    const first = await screen.findByRole('button', { name: 'Unpin: Improvement Initiative #1' });
+    /* Another admin took it down first. */
+    await fake.unpinStaffThread(a);
+    await userEvent.click(first);
+    expect(await screen.findByRole('alert')).toHaveTextContent('That thread has no live pin.');
+    await waitFor(() => expect(screen.queryByText('Improvement Initiative #1')).toBeNull());
+  });
+
+  test('with no live pin the section says so, and a player is not asked for it', async () => {
+    const fake = buildWorld(undefined, instance);
+    fake.signInAs(fake.seed.account('pins-admin', { admin: true }));
+    renderIn(fake, <MachineScreen />, { path: '/admin/machine', instance, packs });
+    const section = await screen.findByRole('region', { name: 'Pinned staff threads' });
+    expect(section).toHaveTextContent('No staff thread is pinned.');
+    cleanup();
+    const spy = vi.spyOn(fake, 'adminStaffPins');
+    fake.signInAs(fake.seed.account('pins-player'));
+    renderIn(fake, <MachineScreen />, { path: '/admin/machine', instance, packs });
+    await screen.findByText(/for admins/);
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
