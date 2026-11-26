@@ -160,7 +160,7 @@ export function JobsScreen() {
             return (
               <tbody key={spec.name} data-kb-stopped={h.stopped ? '' : undefined}>
                 <tr>
-                  <th scope="row" className="kb-jobs-name">{short(spec.name)}<span className="kb-jobs-about">{spec.about}</span></th>
+                  <th scope="row">{short(spec.name)}<span className="kb-jobs-about">{spec.about}</span></th>
                   <td><span className="kb-jobs-col">Schedule </span>{scheduleWords(job?.schedule ?? null)}</td>
                   <td className="kb-jobs-state"><span className="kb-jobs-col">State </span>{stateWords(h, shown)}</td>
                 </tr>
