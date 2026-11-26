@@ -80,10 +80,15 @@ export async function armCard(page: Page, name: RegExp): Promise<void> {
     /* The row eases to the card, and names it the middle halfway there. The second press waits for the row to land: Playwright
        scrolls a target into view before it presses, and that scroll, landing mid-ease, stops the row where it began, so the press
        met the card the row had left and only brought this one back to the middle, arming nothing. */
-    await item.evaluate((li) => new Promise<void>((done) => {
+    await item.evaluate((li: HTMLElement) => new Promise<void>((done, fail) => {
       const row = li.parentElement!;
       const at = Math.min(Math.max(0, li.offsetLeft + li.offsetWidth / 2 - row.clientWidth / 2), row.scrollWidth - row.clientWidth);
-      const look = () => (Math.abs(row.scrollLeft - at) < 1 ? done() : requestAnimationFrame(look));
+      const until = performance.now() + 15_000;
+      const look = (): void => {
+        if (Math.abs(row.scrollLeft - at) < 1) done();
+        else if (performance.now() > until) fail(new Error(`the hand's row never landed on ${li.textContent?.trim().slice(0, 40)}: scrollLeft ${row.scrollLeft}, wanted ${at}`));
+        else requestAnimationFrame(look);
+      };
       look();
     }));
     await expect(item).toHaveAttribute('data-kb-middle', '');

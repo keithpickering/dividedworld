@@ -82,13 +82,15 @@ async function measure(page: Page, panel?: string): Promise<string[]> {
   const palette = paletteOf(glass, key);
   const facts = new Map<string, TextFact>();
   const seen = new Map<string, string>();
-  /* Every line a full read of the page finds (the first window's), and every line the windows reached: after the first window each read is `near`, which passes over nodes outside the window, so the two must come out the same set. */
+  /* Every line a full read of the page finds (the first window's), and every line the windows reached. After the first window each
+     read is `near`, which passes over nodes outside the window, so the two must come out the same set. */
   const full = new Map<string, string>();
   const reached = new Set<string>();
   const width = page.viewportSize()?.width ?? 0;
   /* A dialog that scrolls itself (an anchored popover has only the room above its post) is read a window at a time as well. */
   const readWindow = async () => {
-    /* The first window is read in full, so `seen` lists every line and a line that never lies wholly in a window is still found; later windows read only the nodes the window shows. */
+    /* Reads are full until one has found a line, so `seen` lists every line and a line that never lies wholly in a window is still
+       found; after that a window reads only the nodes it shows. */
     const first = seen.size === 0;
     const lines = await page.evaluate(([only, near]) => (globalThis as Bundled).kbGlassText.gather(only, near), [panel, !first] as const);
     for (const l of lines) {

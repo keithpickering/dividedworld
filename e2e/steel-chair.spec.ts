@@ -6,6 +6,10 @@ import { DENT_SCALE, dentHeight, dentShade, dentShape } from '../instances/divid
 import { pageViolations } from './axe.ts';
 import { watchPuff } from './puff-watch.ts';
 
+/** How much of the effect's own time a can is given to throw its lid before the watcher gives up: a lid flies as the can first
+    lands, a fraction of this. */
+const NO_LID_BY_S = 5;
+
 /** The room a post of chairs keeps: the stories' plays have ids that roll chairs. */
 const ROOM_HEIGHT = roomHeightOf([]);
 
@@ -1231,7 +1235,7 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
     await page.evaluate(() => document.fonts.ready);
     /* Centered, so that the lid has room above the post: at the top of the window it flies under the frame's header, which covers it. */
     await page.locator(areaSelector).first().evaluate((el) => el.scrollIntoView({ block: 'center' }));
-    const seen = await page.evaluate(([selector, frameMost, lidSeconds]) => new Promise<{
+    const seen = await page.evaluate(([selector, frameMost, lidSeconds, noLidBy]) => new Promise<{
       lids: number; frames: number; outside: number; visible: number; painted: number; clippers: string[]; gone: boolean; canPieces: number;
     }>((resolve) => {
       const area = document.querySelector<HTMLElement>(selector)!;
@@ -1243,7 +1247,7 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
         return s.overflowX !== 'visible' || s.overflowY !== 'visible' || /paint|strict|content/.test(s.contain) || s.clipPath !== 'none' || (s.clip !== 'auto' && s.clip !== '');
       };
       const tick = (t: number): void => {
-        clock += last ? Math.min(frameMost, (t - last) / 1000) : 0;
+        clock += last ? Math.min(frameMost, Math.max(0, (t - last) / 1000)) : 0;
         last = t;
         const lid = area.querySelector<HTMLElement>('.dw-chair-lid');
         if (lid && lidFrom < 0) lidFrom = clock;
@@ -1293,12 +1297,12 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
           return;
         }
         out.frames++;
-        /* Stop once the lid has had its whole arc and some frames over, or when none has appeared by 5 s of the effect's time. */
-        if (lidFrom < 0 ? clock > 5 : clock - lidFrom > lidSeconds + 3 * frameMost) { resolve(out); return; }
+        /* Stop once the lid has had its whole arc and some frames over, or when none has appeared by `noLidBy` of the effect's time. */
+        if (lidFrom < 0 ? clock > noLidBy : clock - lidFrom > lidSeconds + 3 * frameMost) { resolve(out); return; }
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
-    }), [areaSelector, MOST_STEPS * STEP, LID_SECONDS] as const);
+    }), [areaSelector, MOST_STEPS * STEP, LID_SECONDS, NO_LID_BY_S] as const);
     console.log(`${name}: ${seen.lids} frames with a lid, ${seen.outside} wholly outside the area, ${seen.visible} of them seen; clipping ancestors: ${seen.clippers.join(', ') || 'none'}`);
     expect(seen.lids, 'a lid group was drawn').toBeGreaterThan(0);
     expect(seen.outside, `the lid was wholly outside the content area at some frame (clipping ancestors on the way up: ${seen.clippers.join(', ') || 'none'})`).toBeGreaterThan(0);
