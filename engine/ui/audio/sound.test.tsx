@@ -92,6 +92,31 @@ describe('the page sound', () => {
     } finally { vi.useRealTimers(); }
   });
 
+  test('a play with a caption says that text with the slot\'s ink, skipped on the game bus', async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useSound(), { wrapper: wrap });
+      await act(async () => { await result.current.play('boo', { caption: 'A trash can bangs' }); });
+      expect(captions.lines().at(-1)).toMatchObject({ text: 'A trash can bangs', ink: 'red', held: false });
+      await act(async () => { await result.current.play('boo'); });
+      expect(captions.lines().at(-1)?.text, 'a play without one says the slot\'s').toBe('boo caption');
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('a play with a caption says that text with the slot\'s ink when it sounds', async () => {
+    vi.useFakeTimers();
+    try {
+      on('game');
+      await gesture();
+      const { result } = renderHook(() => useSound(), { wrapper: wrap });
+      await act(async () => { await result.current.play('boo', { caption: 'A ladder clangs' }); });
+      expect(fetchBytes, 'it sounded, so it was fetched').toHaveBeenCalled();
+      expect(captions.lines().at(-1)).toMatchObject({ text: 'A ladder clangs', ink: 'red' });
+      await act(async () => { await result.current.play('boo'); });
+      expect(captions.lines().at(-1)?.text).toBe('boo caption');
+    } finally { vi.useRealTimers(); }
+  });
+
   test('an interface sound that is skipped says nothing; one that sounds says its caption for its length', async () => {
     vi.useFakeTimers();
     try {
