@@ -180,7 +180,7 @@ $$;
 -- acts_surface_payload: a draw holds `groups` (an array) and `coats` (a coat string), or the old `strokes` and `cells`; a wash holds `cuts` (an array) and `takes` (an array of {draw, takes}), or the old `strokes` and
 -- `cells`; and the payload less the server's keys (`cells`, `coats`, `takes`, `uncovered`, `cut`) is at most 64 KiB as Postgres writes it.
 alter table acts drop constraint acts_surface_payload;
--- Added not valid and then validated, as 0361 does for acts_infraction_payload: the rows already there are checked by a scan that does not stop writes.
+-- Added not valid and then validated, as 0361 does for acts_infraction_payload. The migration is one transaction, so the ACCESS EXCLUSIVE lock the add takes is held until commit and the validating scan still runs under it; the split only helps where the two steps are applied apart.
 alter table acts add constraint acts_surface_payload check (kind not in ('draw', 'wash') or (
   octet_length((payload - 'cells' - 'coats' - 'takes' - 'uncovered' - 'cut')::text) <= 65536 and (
     (kind = 'draw' and jsonb_typeof(payload -> 'groups') = 'array' and surface_coat_string_ok(payload ->> 'coats'))
@@ -1736,7 +1736,7 @@ end $function$;
 -- edit_post (0395), also taking `surface_places`: the places of the post's live groups for the edit's own version, written in the edit's transaction ([{draw, grp, place}], place an attachment or JSON null). The four-argument
 -- function is dropped, so no stale signature stays callable. Everything else as 0395 wrote it. Any caller may send places, and the Edge Function sends them with the player's own session, so the list is bounded, not
 -- restricted (see the header, section 5): refused above 5,760 entries, for a place that is not an attachment of a known kind at most 2 KiB, and for a group number the draw does not have. An entry for a draw that is not live
--- on this post is left out. A direct call can misplace tags on the caller's own post only within those bounds.
+-- on this post is left out, though a malformed one is refused whether or not its draw is live. A direct call can misplace tags on the caller's own post only within those bounds.
 drop function edit_post(uuid, uuid, text, jsonb);
 CREATE FUNCTION public.edit_post(target uuid, through uuid, body text, poll jsonb DEFAULT NULL::jsonb, surface_places jsonb DEFAULT '[]'::jsonb)
  RETURNS jsonb
@@ -1769,9 +1769,13 @@ begin
       raise exception 'a closed poll cannot change' using hint = 'kayfabb.refusal', errcode = '55000';
     end if;
   end if;
+  -- A draw applies under its surface's row lock and reads the post's current version there (surface_apply). The post's surfaces are locked here, before the edit is inserted, so a draw either commits before the edit
+  -- (and its places are seen by the edit's insert below) or waits for the edit and is refused as stale. Ordered by play, and surface_apply holds one surfaces row and then writes Acts, as this does, so the two cannot deadlock.
+  perform 1 from surfaces s where s.post = target order by s.play for update;
   insert into acts (character, kind, thread, target_act_id, payload) values (through, 'edit', in_thread, target, jsonb_build_object('body', body)) returning id into edit_act;
-  -- Where each live group of the walls on this post sits in the new words, for the edit's own version: the Edge Function maps them (surface_groups_on gives it the groups). An entry that is not a live tag on this
-  -- post, or whose place is not an attachment or JSON null, is left out, and a group with no entry is at its box spot.
+  -- Where each live group of the walls on this post sits in the new words, for the edit's own version: the Edge Function maps them (surface_groups_on gives it the groups). A malformed entry, a place that is not an
+  -- attachment or JSON null, and a group the draw does not have are refused below, even for a draw that is not live; an entry that is well formed but names a draw that is not live on this post is left out, and a group
+  -- with no entry is at its box spot.
   if jsonb_typeof(surface_places) = 'array' then
     -- The list comes from the client's call, so it is bounded as a draw's is: at most 48 draws of 120 groups, each place an attachment of a known kind at most 2 KiB, and a group the draw has.
     if jsonb_array_length(surface_places) > 5760 then
