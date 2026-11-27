@@ -180,6 +180,7 @@ export const NOT_THOSE_WORDS = "That post's words aren't the ones you drew on. R
 /** A post's version as the wall reads it: its id, its words and its forged verdict (the list, as `forgedList` reads a payload's). */
 interface Version { readonly version: string; readonly body: string; readonly forged?: unknown }
 const contentAt = (v: Version) => contentOf(v.body, forgedSet(forgedList({ forged: v.forged })));
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isAttachment = (a: unknown): a is Attachment => typeof a === 'object' && a !== null && ['text', 'image', 'box'].includes((a as Row).kind as string);
 
 /**
@@ -195,21 +196,25 @@ async function placesOfDraw(service: Db, postOf: () => Promise<string | null>, p
     if (isAttachment(at) && at.kind !== 'box') anchored.push({ grp, at });
   });
   if (anchored.length === 0) return { ok: true, places: [] };
+  // A version that is no uuid is none of the post's: refused before any read, never as the database's cast error.
+  if (anchored.some((a) => typeof a.at.version !== 'string' || !UUID.test(a.at.version))) return { ok: false, why: NOT_THOSE_WORDS };
   const post = await postOf();
   if (!post) return { ok: false, why: NOT_THOSE_WORDS };
   const places: Row[] = [];
   for (const version of new Set(anchored.map((a) => a.at.version))) {
-    const pair = await service.rpc<{ current: Version; drawn: Version | null } | null>('surface_version_pair', { p_post: post, p_version: version });
-    if (!pair || !pair.drawn) return { ok: false, why: NOT_THOSE_WORDS };
+    const read = await service.rpc<{ current: Version | null; drawn: Version | null } | null>('surface_version_pair', { p_post: post, p_version: version });
+    // `current` is null when the post's current version is hidden (a hidden version is given to no one), and `drawn` when the draw's version is none of the post's.
+    if (!read || !read.current || !read.drawn) return { ok: false, why: NOT_THOSE_WORDS };
+    const { current, drawn } = read;
     const own = anchored.filter((a) => a.at.version === version);
-    const placed = pair.drawn.version === pair.current.version ? own.map((a) => a.at as Attachment | null)
-      : mapPlaces(contentAt(pair.drawn), contentAt(pair.current), own.map((a) => a.at));
-    own.forEach((a, i) => places.push({ grp: a.grp, version: pair.current.version, place: placed[i] ?? null }));
+    const placed = drawn.version === current.version ? own.map((a) => a.at as Attachment | null)
+      : mapPlaces(contentAt(drawn), contentAt(current), own.map((a) => a.at));
+    own.forEach((a, i) => places.push({ grp: a.grp, version: current.version, place: placed[i] ?? null }));
   }
   return { ok: true, places: places.sort((a, b) => (a.grp as number) - (b.grp as number)) };
 }
 
-/** Where each live group of the walls on a post sits in an edit's new words: `[{ draw, grp, place }]`. A group already fallen (null) stays fallen. */
+/** Where each live group of the walls on a post sits in an edit's new words: `[{ draw, grp, place }]`. A group already fallen (null) is not sent: with no row for the edit's version it stays at its box spot. */
 async function placesOfEdit(service: Db, post: string, body: string): Promise<Row[]> {
   const read = await service.rpc<{ version: string; body: string; forged?: unknown; groups: { draw: string; grp: number; place: Attachment | null }[] } | null>('surface_groups_on', { p_post: post });
   if (!read || !Array.isArray(read.groups) || read.groups.length === 0) return [];
@@ -218,7 +223,8 @@ async function placesOfEdit(service: Db, post: string, body: string): Promise<Ro
   const alive = read.groups.filter((g) => g.place !== null);
   const moved = mapPlaces(contentAt(read), contentOf(body, set), alive.map((g) => g.place!));
   const by = new Map(alive.map((g, i) => [g, moved[i] ?? null]));
-  return read.groups.map((g) => ({ draw: g.draw, grp: g.grp, place: g.place === null ? null : by.get(g) ?? null }));
+  // A group with no row for the edit's version is at its box spot (0455 edit_post, surface_acts), as one with a null place is: only the groups still placed are sent.
+  return alive.map((g) => ({ draw: g.draw, grp: g.grp, place: by.get(g) ?? null }));
 }
 
 export async function runAction(dbs: { player: Db; service: Db }, instance: Instance, request: unknown): Promise<ActionAnswer> {
@@ -340,9 +346,9 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         args = { ...rest, payload: drawn.value.payload, coats: drawn.value.coats, places: placed.places, most: drawn.value.most };
       } else {
         // The live draws' payloads, which a cut names its draw and group in (the card's own validateWash reads them); a draw not live is not among them.
-        const live = await dbs.service.rpc<{ acts: { id: string; kind: string; payload: unknown }[] } | null>('surface_acts', { play: decision.args.play });
-        if (!live) return refused('play', 'there is no wall on that post');
-        const draws = new Map(live.acts.filter((a) => a.kind === 'draw').map((a) => [a.id, a.payload] as const));
+        const wall = await dbs.service.rpc<{ acts: { id: string; kind: string; payload: unknown }[] } | null>('surface_acts', { play: decision.args.play });
+        if (!wall) return refused('play', 'there is no wall on that post');
+        const draws = new Map(wall.acts.filter((a) => a.kind === 'draw').map((a) => [a.id, a.payload] as const));
         const washed = decideWash(rules, tuned.settings, decision.args.input, draws);
         if (!washed.ok) return refused('input', washed.why);
         args = { ...rest, payload: washed.value.payload, takes: washed.value.takes };
