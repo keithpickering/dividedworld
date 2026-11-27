@@ -312,13 +312,14 @@ revoke execute on function post_stock_concession(uuid) from public, anon, authen
 -- ---------------------------------------------------------------------------------------- what the staff run reads ----
 
 -- pending_concessions (0449_concession_post.sql), now the talk-downs that owe a concession: owed rows with no outcome post, within `modBots.concessionWriteMinutes` of the talk-down (15 where the setting is missing), oldest first, each
--- with the visit and its end, its Mod's staff key, the visited post, thread, board and charges, the interceptor's name, `how`, for `answered` the quiz's question, choices and answer, for `paid` the price, for `distracted` the card's
--- key. A visit that carries no staff, and an answer to nobody, is not here: a row is a talk-down that happened. Service only.
+-- with the visit and its end, its Mod's staff key, the visited post, thread, board (its name and premise) and charges, the interceptor's id (the staff run reads the pronouns from character_faces) and name, `how`, for `answered` the quiz's question, choices and answer, for `paid` the price, for `distracted` the card's
+-- key. A visit whose concession call already has a record (staff_call_records, duty `concession`) is not here: a rejected, failed or unrepairable answer posts nothing and is not asked for again, so a talk-down
+-- costs one call, and the tick's stock follows at the window. A visit that carries no staff, and an answer to nobody, is not here: a row is a talk-down that happened. Service only.
 drop function pending_concessions(integer);
-create function pending_concessions(most integer) returns table (visit_act uuid, end_act uuid, staff text, post_act uuid, thread uuid, board uuid, board_name text, charges jsonb, interceptor_name text, how text,
+create function pending_concessions(most integer) returns table (visit_act uuid, end_act uuid, staff text, post_act uuid, thread uuid, board uuid, board_name text, board_premise text, charges jsonb, interceptor_id uuid, interceptor_name text, how text,
                                                                 question text, choices jsonb, answer text, price integer, card text, owed_at timestamptz)
 language sql stable security definer set search_path = public, pg_temp as $$
-  select c.visit_act, c.end_act, m.staff, v.target_act_id, v.thread, t.board, b.name, visit_charges(c.visit_act), i.name, c.how,
+  select c.visit_act, c.end_act, m.staff, v.target_act_id, v.thread, t.board, b.name, b.premise, visit_charges(c.visit_act), c.interceptor, i.name, c.how,
          q.question, q.choices, q.answer,
          case when c.how = 'paid' then (v.payload #>> '{challenge,price}')::integer end,
          case when c.how = 'distracted' then (select k.payload ->> 'card' from acts k where k.id = c.intercept_act) end,
@@ -332,6 +333,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   left join boards_now b on b.id = t.board
   left join visit_quizzes q on q.visit_act = c.visit_act and c.how = 'answered'
   where u.at > now() - make_interval(mins => coalesce((select (s.value ->> 'concessionWriteMinutes')::integer from settings s where s.key = 'modBots'), 15))
+    and not exists (select 1 from staff_call_records r where r.cause_act = c.visit_act and r.duty = 'concession')
   order by u.at, u.visit_act
   limit greatest(pending_concessions.most, 0)
 $$;
@@ -339,10 +341,11 @@ revoke execute on function pending_concessions(integer) from public, anon, authe
 grant execute on function pending_concessions(integer) to service_role;
 
 -- pending_ban_entries: the bans that owe an entry, within `owedLines.graceMinutes` of the ban (owed_grace_minutes), oldest first, at most `most`, each with the ban, its Mod's staff key, the banned character's name, the days, the
--- rule's words, the season (a number), and the post that tipped the bar (its id, thread and board). Service only.
-create function pending_ban_entries(most integer) returns table (ban_act uuid, staff text, banned text, days integer, rule text, season integer, post_act uuid, thread uuid, board uuid, board_name text, owed_at timestamptz)
+-- rule's words, the season (a number), and the post that tipped the bar (its id, thread and board's name and premise); the banned character's id too, for the staff run's pronouns (character_faces). A recorded call does not
+-- hide an entry here: the run pays the stock at once on a failure, so an entry stays owed past a recorded call only where `post_ban_entry` itself raised, and `perDay` and the grace bound that. Service only.
+create function pending_ban_entries(most integer) returns table (ban_act uuid, staff text, banned_id uuid, banned text, days integer, rule text, season integer, post_act uuid, thread uuid, board uuid, board_name text, board_premise text, owed_at timestamptz)
 language sql stable security definer set search_path = public, pg_temp as $$
-  select o.ban_act, o.staff, ch.name, (b.payload ->> 'days')::integer, punishment_words((b.payload ->> 'infraction_act')::uuid), o.season, p.id, p.thread, t.board, bn.name, o.at
+  select o.ban_act, o.staff, ch.id, ch.name, (b.payload ->> 'days')::integer, punishment_words((b.payload ->> 'infraction_act')::uuid), o.season, p.id, p.thread, t.board, bn.name, bn.premise, o.at
   from bans_owed_open u
   join bans_owed o on o.ban_act = u.ban_act
   join acts b on b.id = o.ban_act

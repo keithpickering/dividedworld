@@ -183,9 +183,11 @@ test('a fall lands on the caster, hearts take points and a ban off, a tattle wei
     let duty: string;
     let reply: unknown;
     if (part) { duty = 'meeting'; reply = partAnswer(scene.meeting as Record<string, unknown>, part); }
-    else if (last === 'Write the line you file.') { duty = 'filing'; reply = { words: 'Filed, as the post broke the rule.' }; }
+    else if (last === 'Write the post you file.') { duty = 'filing'; reply = { words: 'Filed, as the post broke the rule.' }; }
     else if (last === 'Give your ruling.') { duty = 'appeal'; reply = { verdict: scene.verdict, line: 'The filing stands.' }; }
     else if (last === 'Give your findings.') { duty = 'patrolJudge'; reply = { findings: [] }; }
+    else if (last === 'Write your concession.') { duty = 'concession'; reply = { concession: 'Fine, {who}. This time.' }; }
+    else if (last === 'Write your line.') { duty = 'banEntry'; reply = { line: 'Mind the rules next time, {banned}.' }; }
     else throw new Error(`the fake model does not know this call: ${last}`);
     log.push({ duty, staff: who });
     return new Response(JSON.stringify({ model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(reply) }], usage: { input_tokens: 1500, output_tokens: 80, service_tier: 'standard' } }), { status: 200 });

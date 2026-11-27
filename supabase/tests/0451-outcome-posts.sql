@@ -281,6 +281,8 @@ begin
   perform pg_temp.expect(pend.visit_act is not null and pend.end_act = e and pend.staff = 'op-m1' and pend.post_act = p and pend.thread = t and pend.interceptor_name = 'Op Ann A' and pend.how = 'paid' and pend.price = 50,
     'pending_concessions is wrong: ' || to_jsonb(pend)::text);
   perform pg_temp.expect(pend.charges is not null and jsonb_typeof(pend.charges) = 'array', 'the charges are not there');
+  -- The interceptor's id (for the staff run's pronouns) and the board's premise (for its prompt) are there.
+  perform pg_temp.expect(pend.interceptor_id = ann and pend.board_premise is not null and pend.board_premise = (select b.premise from boards_now b where b.id = pend.board), 'pending_concessions carries no interceptor id or premise: ' || to_jsonb(pend)::text);
   -- The staff write: {who} filled, once.
   r := post_visit_concession(v, 'Fine, {who}. You may pass.');
   perform pg_temp.expect((r ->> 'posted')::boolean, 'the concession was not posted: ' || r::text);
@@ -344,6 +346,34 @@ begin
   -- A second tick settles nothing again.
   tick := system_tick();
   perform pg_temp.expect((tick ->> 'concessionsLapsed')::integer = 0, 'a second tick settled concessions again: ' || tick::text);
+end $$;
+
+-- A concession call already recorded for a visit (a rejected, failed or unrepairable answer posts nothing) is not made again: the visit leaves pending_concessions, and the tick's stock follows at the window.
+do $$
+declare
+  author uuid := pg_temp.chr('Op Bob A');
+  ann uuid := pg_temp.chr('Op Ann A');
+  t uuid := tests.thread('Op recorded');
+  p1 uuid := tests.post(author, t, 'A concession whose call was rejected.');
+  v1 uuid := pg_temp.visit(p1, 'op-m1');
+  p2 uuid := tests.post(author, t, 'A concession not yet called.');
+  v2 uuid := pg_temp.visit(p2, 'op-m1');
+  o outcome_posts%rowtype;
+  n_posts bigint;
+begin
+  perform pg_temp.try(ann, v1);
+  perform pg_temp.try(ann, v2);
+  perform pg_temp.expect(exists (select 1 from pending_concessions(50) x where x.visit_act = v1), 'the visit was not pending before its call');
+  perform record_staff_call(v1, 'concession', 'op-m1', '{"source":"none","why":"the answer was rejected","trims":[],"calls":1}'::jsonb);
+  perform pg_temp.expect(not exists (select 1 from pending_concessions(50) x where x.visit_act = v1), 'a visit whose concession call was recorded is still pending, so the next run would bill it again');
+  perform pg_temp.expect(exists (select 1 from pending_concessions(50) x where x.visit_act = v2), 'a visit with no call recorded left the list');
+  perform pg_temp.expect(not exists (select 1 from outcome_posts where about_act = (pg_temp.end_of(v1)).id), 'a recorded call alone posted');
+  -- The tick's stock follows at the window.
+  perform pg_temp.age('concessions_owed', 'visit_act', v1, 16);
+  n_posts := (select count(*) from acts where kind = 'post');
+  perform system_tick();
+  select * into o from outcome_posts where about_act = (pg_temp.end_of(v1)).id;
+  perform pg_temp.expect(o.kind = 'intercepted' and o.source = 'stock' and o.post_act is not null, 'the tick did not post the stock past the window: ' || coalesce(to_jsonb(o)::text, 'no row'));
 end $$;
 
 -- A quiz answered right owes with the question; a wrong answer owes nothing; a card cast owes one for each visit.
@@ -598,6 +628,8 @@ begin
     select * into pend from pending_ban_entries(50) x where x.ban_act = ban;
     perform pg_temp.expect(pend.ban_act is not null and pend.staff = 'op-m1' and pend.banned = 'Op Banned One' and pend.days = 1 and pend.rule = 'Rule 1: no all-caps posts' and pend.season = 1 and pend.post_act = p and pend.thread = t,
       'pending_ban_entries is wrong: ' || to_jsonb(pend)::text);
+    perform pg_temp.expect(pend.banned_id = (select (a.payload ->> 'character')::uuid from acts a where a.id = ban) and pend.board_premise is not null and pend.board_premise = (select b.premise from boards_now b where b.id = pend.board),
+      'pending_ban_entries carries no banned id or premise: ' || to_jsonb(pend)::text);
   end;
   n_threads := (select count(*) from threads);
   n_posts := (select count(*) from acts where kind = 'post');

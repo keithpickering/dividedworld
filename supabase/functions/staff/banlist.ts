@@ -10,7 +10,7 @@
  * `standing_order_line_calls_today`), a thread that cannot be read, a call that failed, an answer rejected, a blank line. With The System off nothing is done: the tick's grace posts the stock.
  *
  * The thread is the post that tipped the bar's, read as the filing run reads it (`judgedRead`, that post the judged one), and the Mod is learned as a filing's is (`learnMod`). The banned character's name is the
- * ban's own, told with the instance's default pronouns: the row carries no other.
+ * ban's own, told with their own pronouns from `character_faces` (the instance's default where they have no profile row); the board's premise is the row's.
  *
  * Retries: a transport failure is retried inside models.chat; here one call is made. A transport or ledger failure stops the run (stopsTheRun); a database error on one entry is recorded and the run goes on, the
  * entry staying owed for the next run or the tick's grace.
@@ -32,12 +32,14 @@ import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { readContext } from '../_shared/pool-read.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { instanceSet, judgedRead, learnMod, OLD_VOICE_LINE_TOKENS, said, stopsTheRun, type Known } from './core.ts';
+import { instanceSet, judgedRead, learnMod, OLD_VOICE_LINE_TOKENS, pronounsOfCharacter, said, stopsTheRun, type Known } from './core.ts';
 
 /** A ban that owes an entry, as `pending_ban_entries` lists it. */
 export interface PendingBan {
   readonly ban_act: string;
   readonly staff: string;
+  /** The banned character's id: their pronouns are read from `character_faces`. */
+  readonly banned_id: string;
   readonly banned: string;
   readonly days: number;
   readonly rule: string;
@@ -46,6 +48,7 @@ export interface PendingBan {
   readonly thread: string;
   readonly board: string;
   readonly board_name: string;
+  readonly board_premise: string | null;
   readonly owed_at: string;
 }
 
@@ -87,12 +90,15 @@ export async function runBanEntries(db: Db, models: Models, instance: Instance, 
   const known = new Map<string, Known>();
   const rulesOf = new Map<string, readonly RuleLine[]>();
 
+  /** The model calls made for the entry in hand, so a failure after the call is billed still says so. */
+  let callsMade = 0;
   for (const b of pending) {
+    callsMade = 0;
     try {
       records.push(await oneEntry(b));
     } catch (e) {
       if (stopsTheRun(e)) throw e;
-      if (e instanceof DatabaseError) { records.push({ ban: b.ban_act, staff: b.staff, status: 'failed', why: said(e), trims: [], calls: 0 }); continue; }
+      if (e instanceof DatabaseError) { records.push({ ban: b.ban_act, staff: b.staff, status: 'failed', why: said(e), trims: [], calls: callsMade }); continue; }
       throw e;
     }
   }
@@ -125,11 +131,15 @@ export async function runBanEntries(db: Db, models: Models, instance: Instance, 
     const rules = rulesOf.get(b.board) ?? await db.rpc<RuleLine[]>('rules_in_force', { board: b.board });
     rulesOf.set(b.board, rules);
 
+    // A character with no profile row reads the instance's default. A database error here is the entry's, before any call is billed.
+    const pronouns = await pronounsOfCharacter(db, b.banned_id, instanceSet(settings));
+
     let line: string | null = null;
     let trims: readonly Trim[] = [];
     let failed: string | undefined;
     try {
       used++;
+      callsMade = 1;
       if (persona.voice === 'oldVoice') {
         const maxTokens = Math.min(OLD_VOICE_LINE_TOKENS, writeTokensMost(settings));
         const frame = banEntryCompletion({
@@ -142,10 +152,9 @@ export async function runBanEntries(db: Db, models: Models, instance: Instance, 
         const frame = banEntryPrompt({
           persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: mod.standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules,
           allowance: mod.standing.allowance, beat: mod.standing.beat, ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
-          // The row carries the board's name and no premise: the prompt names the board and the thread.
-          board: { name: b.board_name, premise: '' }, thread: b.thread, title: heard.title, read: heard.read,
+          board: { name: b.board_name, premise: b.board_premise ?? '' }, thread: b.thread, title: heard.title, read: heard.read,
           limits: { titleMaxLength: settings.titleMaxLength, postMaxLength: settings.postMaxLength },
-          banned: { name: b.banned, pronouns: instanceSet(settings) }, days: b.days, rule: b.rule, season: b.season,
+          banned: { name: b.banned, pronouns }, days: b.days, rule: b.rule, season: b.season,
         });
         const out = await models.chat({
           duty: 'banEntry', tier: DUTY_SPECS.banEntry.tier, staff: b.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }], schema: frame.schema, maxTokens: CHATTER_TOKENS,

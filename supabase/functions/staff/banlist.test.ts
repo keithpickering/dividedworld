@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runBanEntries } from './banlist.ts';
+import { runBanEntries, runBanEntriesAfterFilings } from './banlist.ts';
 import { OLD_VOICE_LINE_TOKENS } from './core.ts';
-import { DatabaseError, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { placeholderMonitor } from '../../../instances/divided-world/system/fixtures/placeholder-monitor.ts';
@@ -20,17 +20,19 @@ const B2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
 const P1 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
 const P2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
 const T1 = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1';
+const WALUIGI = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
+const HE = { subject: 'he', object: 'him', determiner: 'his', possessive: 'his', reflexive: 'himself', plural: false };
 const { perDay, perRun } = base.settings.owedLines;
 
 const oldVoice: Instance = { ...base, system: { ...base.system, roster: base.system.roster.map((p) => (p.key === MON ? { ...placeholderMonitor, voice: 'oldVoice' as const } : p)) } };
 
 const pend = (ban: string, post: string, staff = MON) => ({
-  ban_act: ban, staff, banned: 'Waluigi', days: 3, rule: 'Rule 2: no double posting (moderate)', season: 4, post_act: post, thread: T1, board: GAMES, board_name: 'Games', owed_at: '2026-11-07T09:00:00.000Z',
+  ban_act: ban, staff, banned_id: WALUIGI, banned: 'Waluigi', days: 3, rule: 'Rule 2: no double posting (moderate)', season: 4, post_act: post, thread: T1, board: GAMES, board_name: 'Games', board_premise: 'Talk about games, and only games.', owed_at: '2026-11-07T09:00:00.000Z',
 });
 
 interface World {
   enabled?: boolean; pending?: ReturnType<typeof pend>[]; today?: number; office?: string | null; body?: string;
-  posted?: Record<string, unknown>; failOn?: Record<string, 'always'>; failPostOn?: string;
+  faces?: unknown; omitsJudged?: boolean; failRecord?: 'database' | 'transport'; posted?: Record<string, unknown>; failOn?: Record<string, 'always'>; failPostOn?: string;
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -43,6 +45,7 @@ function fakeDb(w: World = {}) {
       switch (fn) {
         case 'instance_settings': return { economy: base.settings.economy, systemEnabled: w.enabled ?? true } as T;
         case 'pending_ban_entries': return pending.slice(0, Number(args.most)) as T;
+        case 'character_faces': return Object.fromEntries((args.ids as string[]).map((id) => [id, { name: 'Waluigi', pronouns: w.faces === undefined ? HE : w.faces }])) as T;
         case 'standing_order_line_calls_today': return (w.today ?? 0) as T;
         case 'mod_standing': return { office: w.office === undefined ? 'mod' : w.office, allowance: 1, order: null, beat: [{ id: GAMES, name: 'Games' }] } as T;
         case 'staff_career': return { led: [], offices: [] } as T;
@@ -50,12 +53,15 @@ function fakeDb(w: World = {}) {
         case 'staff_notes_recent': case 'rules_in_force': return [] as T;
         case 'pool_read': {
           const v = pending.find((x) => x.post_act === (args.named as string[])[0])!;
-          return { title: 'Best Mario game?', self: null, posts: [{ act: v.post_act, seq: 1, at: '2026-11-04T09:00:00.000Z', author: 'bob', name: 'Bob', pronouns: null, body: w.body ?? 'Odyssey. Odyssey.', replyTo: null, quotes: [] }] } as T;
+          return { title: 'Best Mario game?', self: null, posts: [{ act: w.omitsJudged ? 'ffffffff-ffff-4fff-8fff-fffffffffff9' : v.post_act, seq: 1, at: '2026-11-04T09:00:00.000Z', author: 'bob', name: 'Bob', pronouns: null, body: w.body ?? 'Odyssey. Odyssey.', replyTo: null, quotes: [] }] } as T;
         }
         case 'post_ban_entry':
           if (w.failPostOn === args.ban) throw new DatabaseError('post_ban_entry failed', '08006', 500);
           return (w.posted ?? { posted: true, existing: false, post: 'p-' + args.ban }) as T;
-        case 'record_staff_call': records.push({ cause_act: String(args.cause_act), duty: String(args.duty), staff: String(args.staff), record: args.record }); return { recorded: true } as T;
+        case 'record_staff_call':
+          if (w.failRecord === 'transport') throw new TransportError('no answer');
+          if (w.failRecord === 'database') throw new DatabaseError('record_staff_call failed', '08006', 500);
+          records.push({ cause_act: String(args.cause_act), duty: String(args.duty), staff: String(args.staff), record: args.record }); return { recorded: true } as T;
         default: throw new Error(`the fake database has no ${fn}`);
       }
     },
@@ -177,6 +183,14 @@ test('a failed read pays the stock with the reason; a post the read does not hol
   assert.equal(m.chats.length, 0);
   assert.deepEqual(d.of('post_ban_entry'), [{ ban: B1, line: null, source: 'stock' }]);
   assert.match(out.status === 'ok' ? out.entries[0]!.why! : '', /^the read failed: /);
+  // The read answers, but without the post that tipped the bar: the stock too, and no call is billed for a post the model did not see.
+  const e = fakeDb({ omitsJudged: true });
+  const n = fakeModels();
+  const held = await run(e, n);
+  assert.equal(n.chats.length, 0);
+  assert.deepEqual(e.of('post_ban_entry'), [{ ban: B1, line: null, source: 'stock' }]);
+  assert.equal(e.records.length, 0);
+  assert.match(held.status === 'ok' ? held.entries[0]!.why! : '', /cannot be read/);
 });
 
 test('a ledger failure stops the run; a database error on one entry is recorded and the run goes on', async () => {
@@ -201,4 +215,48 @@ test('nothing pending reads nothing else', async () => {
   assert.equal(out.status === 'ok' && out.due, 0);
   assert.deepEqual(d.calls.map((c) => c.fn).filter((f) => f !== 'instance_settings'), ['pending_ban_entries']);
   assert.equal(d.count('standing_order_line_calls_today'), 0);
+});
+
+test('the prompt carries the board\'s premise and the banned character\'s own pronouns, read from character_faces', async () => {
+  const d = fakeDb();
+  const m = fakeModels();
+  await run(d, m);
+  const message = m.chats[0]!.messages[0]!.content;
+  assert.match(message, /Talk about games, and only games\./);
+  assert.match(message, /Waluigi \(he\/him\)/);
+  assert.deepEqual(d.of('character_faces'), [{ ids: [WALUIGI] }]);
+  const n = fakeModels();
+  await run(fakeDb({ faces: null }), n);
+  assert.match(n.chats[0]!.messages[0]!.content, /Waluigi \(it\/its\)/);
+});
+
+test('the run beside the filings: its own failure is answered as failed, but an error that stops the run is rethrown', async () => {
+  const quiet = console.error;
+  console.error = () => {};
+  const after = (d: ReturnType<typeof fakeDb>, m: Models) => runBanEntriesAfterFilings(d.db, m, base, SLOT, () => Date.parse(SLOT));
+  try {
+    const soft = fakeDb({ failOn: { pending_ban_entries: 'always' } });
+    assert.deepEqual(await after(soft, fakeModels().models), { status: 'failed' });
+    await assert.rejects(after(fakeDb(), fakeModels(() => new LedgerWriteFailed('the ledger is down')).models), LedgerWriteFailed);
+    const wire: Db = { async rpc<T>(fn: string): Promise<T> { if (fn === 'instance_settings') throw new TransportError('no answer'); throw new Error('x'); } };
+    await assert.rejects(runBanEntriesAfterFilings(wire, fakeModels().models, base, SLOT, () => Date.parse(SLOT)), TransportError);
+    assert.equal((await after(fakeDb(), fakeModels().models)).status, 'ok');
+  } finally { console.error = quiet; }
+});
+
+test('a record_staff_call that fails with a database error leaves the entry owed and the run going; a transport failure stops the run', async () => {
+  const d = fakeDb({ pending: [pend(B1, P1), pend(B2, P2)], failRecord: 'database' });
+  const m = fakeModels();
+  const out = await run(d, m);
+  assert.equal(m.chats.length, 2, 'the run went on to the next entry');
+  assert.deepEqual(out.status === 'ok' && out.entries.map((e) => [e.status, e.calls]), [['failed', 1], ['failed', 1]]);
+  assert.equal(d.count('post_ban_entry'), 0, 'nothing is posted for a call that has no record: the entry stays owed');
+  await assert.rejects(run(fakeDb({ failRecord: 'transport' }), fakeModels()), TransportError);
+});
+
+test('a post that fails after the recorded call still counts the call made', async () => {
+  const d = fakeDb({ failPostOn: B1 });
+  const out = await run(d, fakeModels());
+  assert.deepEqual(out.status === 'ok' && out.entries.map((e) => [e.status, e.calls]), [['failed', 1]]);
+  assert.equal(d.records.length, 1);
 });

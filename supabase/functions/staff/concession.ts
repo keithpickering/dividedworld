@@ -8,7 +8,7 @@
  * nothing here and says why; the database's tick then posts a line from the persona's own `concessions` after `modBots.concessionWriteMinutes`.
  *
  * **The thread is read as the quiz run reads it** (core.ts `judgedRead`): as readers see it, a redaction or a veil included, the visited post the judged one. The Mod is learned as a filing's Mod is (`learnMod`): its
- * career, memory, notes and rules in force. The talker-down's name is the visit's own (`interceptor_name`), told with the instance's default pronouns: the row carries no other.
+ * career, memory, notes and rules in force. The talker-down's name is the visit's own (`interceptor_name`), told with their own pronouns from `character_faces` (the instance's default where they have no profile row); the board's premise is the row's.
  *
  * **Races.** `post_visit_concession` posts nothing where the concession stands or the visit owes none, and says so; the visit is then `existing`.
  *
@@ -27,7 +27,7 @@ import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { readContext } from '../_shared/pool-read.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { instanceSet, judgedRead, learnMod, OLD_VOICE_POST_TOKENS, said, stopsTheRun } from './core.ts';
+import { instanceSet, judgedRead, learnMod, OLD_VOICE_POST_TOKENS, pronounsOfCharacter, said, stopsTheRun } from './core.ts';
 
 /** The most visits one run writes a concession for. */
 export const CONCESSIONS_PER_RUN = 10;
@@ -41,7 +41,10 @@ export interface PendingConcession {
   readonly thread: string;
   readonly board: string;
   readonly board_name: string;
+  readonly board_premise: string | null;
   readonly charges: readonly { readonly rule?: string; readonly band: string; readonly cause: string }[];
+  /** The interceptor's character id: their pronouns are read from `character_faces`, as an appeal's appellant's are. */
+  readonly interceptor_id: string;
   readonly interceptor_name: string;
   readonly how: 'answered' | 'paid' | 'distracted';
   readonly question: string | null;
@@ -110,12 +113,15 @@ export async function runConcessions(db: Db, models: Models, instance: Instance,
     return full;
   };
 
+  /** The model calls made for the visit in hand, so a failure after the call is billed still says so. */
+  let callsMade = 0;
   for (const v of pending) {
+    callsMade = 0;
     try {
       records.push(await oneConcession(v));
     } catch (e) {
       if (stopsTheRun(e)) throw e;
-      if (e instanceof DatabaseError) { records.push({ visit: v.visit_act, staff: v.staff, status: 'left', why: said(e), trims: [], calls: 0 }); continue; }
+      if (e instanceof DatabaseError) { records.push({ visit: v.visit_act, staff: v.staff, status: 'left', why: said(e), trims: [], calls: callsMade }); continue; }
       throw e;
     }
   }
@@ -141,15 +147,18 @@ export async function runConcessions(db: Db, models: Models, instance: Instance,
     const rules = rulesOf.get(v.board) ?? await db.rpc<RuleLine[]>('rules_in_force', { board: v.board });
     rulesOf.set(v.board, rules);
 
+    // A character with no profile row reads the instance's default.
+    const pronouns = await pronounsOfCharacter(db, v.interceptor_id, instanceSet(settings));
+
     budget.take();
+    callsMade = 1;
     const made = await callConcession(models, settings, persona, {
       persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: mod.standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules,
       allowance: mod.standing.allowance, beat: mod.standing.beat, ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
-      // The row carries the board's name and no premise: the prompt names the board and the thread.
-      board: { name: v.board_name, premise: '' }, thread: v.thread, title: heard.title, read: heard.read,
+      board: { name: v.board_name, premise: v.board_premise ?? '' }, thread: v.thread, title: heard.title, read: heard.read,
       charges: v.charges.map((c) => ({ rule: c.rule ?? 'a breach of the rules', band: c.band, cause: c.cause })),
       limits: { titleMaxLength: settings.titleMaxLength, postMaxLength: settings.postMaxLength },
-      interceptor: { name: v.interceptor_name, pronouns: instanceSet(settings) }, talkDown: talkDownOf(v),
+      interceptor: { name: v.interceptor_name, pronouns }, talkDown: talkDownOf(v),
     });
     // The billed call has its record before anything that could fail after it.
     const trims = made.ok ? made.trims : [];

@@ -28,11 +28,13 @@ const bribe = worldOf({ weakness: { kind: 'bribe', price: 150 } });
 const distract = worldOf({ weakness: { kind: 'distraction' } });
 const oldVoice = worldOf({ weakness: { kind: 'bribe', price: 150 }, voice: 'oldVoice' });
 
+const WARIO = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
+const SHE = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
 const E1 = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1';
 const E2 = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2';
 
 const pend = (visit: string, post: string, staff = MON, over: Record<string, unknown> = {}) => ({
-  visit_act: visit, end_act: visit === V1 ? E1 : E2, staff, post_act: post, thread: T1, board: GAMES, board_name: 'Games', owed_at: '2026-11-07T09:00:00.000Z',
+  visit_act: visit, end_act: visit === V1 ? E1 : E2, staff, post_act: post, thread: T1, board: GAMES, board_name: 'Games', board_premise: 'Talk about games, and only games.', interceptor_id: WARIO, owed_at: '2026-11-07T09:00:00.000Z',
   charges: [{ rule: 'Rule 2: no double posting', rule_number: 2, board: GAMES, band: 'moderate', cause: 'rule', about_act: post }],
   interceptor_name: 'Wario', how: 'paid', question: null, choices: null, answer: null, price: 150, card: null, ...over,
 });
@@ -40,7 +42,7 @@ const pend = (visit: string, post: string, staff = MON, over: Record<string, unk
 interface World {
   enabled?: boolean; pending?: ReturnType<typeof pend>[]; today?: number; modBots?: Record<string, unknown>;
   office?: string | null; body?: string; name?: string; extras?: Record<string, unknown>;
-  posted?: Record<string, unknown>; failOn?: Record<string, 'always'>;
+  posted?: Record<string, unknown>; failOn?: Record<string, 'always'>; faces?: unknown;
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -54,6 +56,7 @@ function fakeDb(w: World = {}) {
       switch (fn) {
         case 'instance_settings': return { economy: base.settings.economy, systemEnabled: w.enabled ?? true, modBots: { ...base.settings.modBots, concessionsPerDay: 60, ...(w.modBots ?? {}) } } as T;
         case 'pending_concessions': return pending.filter((p) => !posted.has(p.visit_act)).slice(0, Number(args.most)) as T;
+        case 'character_faces': return Object.fromEntries((args.ids as string[]).map((id) => [id, { name: 'Wario', pronouns: w.faces === undefined ? SHE : w.faces }])) as T;
         case 'concession_calls_today': return (w.today ?? 0) as T;
         case 'mod_standing': return { office: w.office === undefined ? 'mod' : w.office, allowance: 1, order: null, beat: [{ id: GAMES, name: 'Games' }] } as T;
         case 'staff_career': return { led: [], offices: [] } as T;
@@ -213,4 +216,25 @@ test('nothing pending reads nothing else', async () => {
   const out = await run(d, fakeModels());
   assert.equal(out.due, 0);
   assert.deepEqual(d.calls.map((c) => c.fn), ['pending_concessions']);
+});
+
+test('the prompt carries the board\'s premise and the interceptor\'s own pronouns, read from character_faces', async () => {
+  const d = fakeDb();
+  const m = fakeModels();
+  await run(d, m);
+  const message = m.chats[0]!.messages[0]!.content;
+  assert.match(message, /Talk about games, and only games\./);
+  assert.match(message, /Wario \(she\/her\)/);
+  assert.deepEqual(d.of('character_faces'), [{ ids: [WARIO] }]);
+  // A character with no profile row reads null: the instance's default.
+  const n = fakeModels();
+  await run(fakeDb({ faces: null }), n);
+  assert.match(n.chats[0]!.messages[0]!.content, /Wario \(it\/its\)/);
+});
+
+test('a post that fails after the recorded call still counts the call made', async () => {
+  const d = fakeDb({ failOn: { post_visit_concession: 'always' } });
+  const out = await run(d, fakeModels());
+  assert.deepEqual(out.concessions.map((c) => [c.status, c.calls]), [['left', 1]]);
+  assert.equal(d.records.length, 1);
 });
