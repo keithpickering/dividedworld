@@ -8531,7 +8531,7 @@ describe('a clear that is final (lasting gags, section 2.4)', () => {
     const once: CardRules = { ...base, key: 'once', name: 'Once', drawsEffect: { cleared: forVersion }, canApply: (target, effects, _config, now) => landsOn(once, target, effects, now) };
     const other: CardRules = { ...base, key: 'other', name: 'Other', drawsEffect: {} };
     const afterClear = async (edited: boolean) => {
-      const fake = createFake({ instance: { ...instance, cards: [once, other] as unknown as Instance['cards'], machine: [] }, settings: { postEffects: 1 } });
+      const fake = createFake({ instance: { ...instance, cards: [once, other] as unknown as Instance['cards'], machine: [], settings: { ...instance.settings, postEffects: 1 } } });
       const ana = fake.seed.account('ana');
       const bo = fake.seed.account('bo');
       const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
