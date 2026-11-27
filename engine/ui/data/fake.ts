@@ -900,6 +900,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       for (const c of [at.payload['character'], params?.['character'], at.payload['locks']]) { const id = selfCharacter(c); if (id !== null) named.add(id); }
       if (hop === 0 && at.kind === 'unmask' && at.character !== null && characters.has(at.character)) named.add(at.character);
       for (const l of banLifts) if (l.play === at.id) { const id = selfCharacter(acts.get(l.ban)?.payload['character']); if (id !== null) named.add(id); }
+      /* Mirrors act_self_characters' two-hop limit; the kind cut (SELF_CHAIN) ends today's chains first. */
       if (hop >= 2 || !SELF_CHAIN.has(at.kind) || at.target === null) break;
       at = acts.get(at.target);
     }
@@ -6225,6 +6226,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const a = acts.get(act);
       if (!a || !(a.kind === 'card' || a.kind === 'set' || a.kind === 'spring')) throw new Error('only a play can keep a legacy place number');
       (a as { seq: number | null }).seq = threads.get(a.thread)!.nextSeq++;
+      /* The number is the thread's greatest, so the Act joins the placed index at its end, as write() does. */
+      const list = placedIndex.get(a.thread);
+      if (list === undefined) placedIndex.set(a.thread, [a]); else list.push(a);
+      lastPlacedAt.set(a.thread, Math.max(lastPlacedAt.get(a.thread) ?? -Infinity, a.at));
     },
     alert(account, a) {
       seeded(account);

@@ -1301,6 +1301,15 @@ describe('what a list row shows', () => {
     expect(await place(old)).toEqual({ kind: 'play', card: 'whoops', on: post, from: null, at: null, board });
   });
 
+  test('a play that kept a legacy place number counts in its thread summary: it is the last Act and moves lastAt', async () => {
+    const { fake, anaFace, opener, thread } = world();
+    const at = Date.now() + 5 * DAY;
+    const old = fake.seed.card(anaFace, opener, 'whoops', { at });
+    fake.seed.legacyNumber(old);
+    const row = await fake.thread(thread);
+    expect([row?.lastAct, row?.lastAt]).toEqual([old, new Date(at).toISOString()]);
+  });
+
   test('a play on a board names the board as it is called now: a rename in force shows, and its end gives the old name back (0152)', async () => {
     const { fake, anaFace, boFace } = world();
     const general = (await fake.boards()).find((b) => b.slug === 'general')!;
@@ -7087,9 +7096,9 @@ describe('discipline cards: hearts, the Unban and Take the Fall', () => {
       expect(await seen.count()).toEqual([0, 1]);
     });
 
-    test('a ruling on a ban pokes the banned owner alone, not the owner of the infraction the ban rests on (the chain ends at the ban)', async () => {
+    test('a ruling on a ban pokes the banned owner alone, not the owner of the infraction the ban rests on (the chain ends at the ban by kind)', async () => {
       const w = world();
-      /* Bo's ban rests on an infraction filed on Ana's character, the third hop from the ruling. */
+      /* Bo's ban rests on an infraction filed on Ana's character, a hop past the ban, where the chain ends by kind. */
       const ban = w.fake.seed.ban(w.boFace, w.now + 3 * DAY, { infraction: w.fake.seed.infraction(w.fake.seed.visit(w.mod, w.hers, { at: w.now - DAY }), { points: 7, at: w.now - DAY }), days: 3 });
       const appeal = w.fake.seed.appeal(w.boFace, ban, 'No.');
       const mod2 = w.fake.seed.staff('mod2', 'Mod Two', 'mod');
