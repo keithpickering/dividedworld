@@ -11,7 +11,12 @@ import { Frame } from '../frame/Frame.tsx';
 import { seedMoves } from './move-world.ts';
 import { testInstance } from '../test-world.tsx';
 import { LoadedBoard } from '../loaded.tsx';
+import { Routes } from '../routes.tsx';
+import { boardKey, loadBoard, type ScreenDoc } from '../screen-docs.ts';
+import { useKayfa } from '../context.tsx';
+import type { BoardPage } from '../data/api.ts';
 import { MAX_DEPTH } from '../../bbcode/parse.ts';
+import { axeViolations, describeViolations } from '../a11y.ts';
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 9, 20, 12);
@@ -1125,5 +1130,158 @@ describe('staff stickies', () => {
       expect(want).toHaveFocus();
     }
     expect(links.every((l) => l.getAttribute('href')?.startsWith('/t/'))).toBe(true);
+  });
+});
+
+/* The thread list goes live (docs/plans/2026-11-25-live-lists-and-self-design.md, section 2): a row on the page takes a post in place and never
+   moves; a thread the page cannot show where it belongs waits behind a polite bar, whose Show reads the page again. */
+describe('the thread list goes live', () => {
+  /* The status region is always drawn; the bar is it with words in it. */
+  /* The app's own board route (web/src/App.tsx): the router reads its document, so a Show that re-reads has a loader to call. */
+  function Routed() {
+    const { api, settings, ui } = useKayfa();
+    const env = { api, signedIn: () => true, postsPerPage: () => settings.postsPerPage, effects: [] as string[] };
+    return <Routes routes={[{ path: '/b/:slug', load: ({ params, query }) => loadBoard(env, params.slug!, query), key: (params, query) => boardKey(params.slug!, query), render: (params, doc) => <BoardScreen slug={params.slug!} doc={doc as ScreenDoc<BoardPage>} /> }]} />;
+  }
+  const bar = () => { const e = document.querySelector<HTMLElement>('.kb-board-new'); return e?.textContent ? e : null; };
+  /* A live post by one of the visitor's characters: the fake sends `row` on it, as the database does (a seeded Act sends nothing). */
+  const bump = async (fake: Fake, thread: string, by: string) => { await act(async () => { const r = await fake.post(thread, by, 'bump', null); expect(r.ok).toBe(true); }); };
+
+  test('a post to the top row updates its replies and Last post in place, with no bar and no move', async () => {
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 3 }) });
+    await screen.findByRole('link', { name: 'Thread 003' });
+    const order = () => [...document.querySelectorAll('.kb-thread-list tbody .kb-thread-title')].map((a) => a.textContent);
+    expect(order()).toEqual(['Thread 003', 'Thread 002', 'Thread 001']);
+    expect(rowOf('Thread 003')).toHaveTextContent('0 replies');
+    await bump(fake, seeded.ids[2]!, seeded.mine!);
+    await waitFor(() => expect(rowOf('Thread 003')).toHaveTextContent('1 reply'));
+    expect(order()).toEqual(['Thread 003', 'Thread 002', 'Thread 001']);
+    expect(bar()).toBeNull();
+  });
+
+  test('a row whose new Last post would put it above the row before it updates in place and shows the bar', async () => {
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 3 }) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await waitFor(() => expect(rowOf('Thread 001')).toHaveTextContent('1 reply'));
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(within(rows[2]!).getByRole('link', { name: 'Thread 001' })).toBeInTheDocument();
+    expect(bar()).toHaveTextContent('1 thread has new posts');
+  });
+
+  test('a row for a thread off the page shows "1 thread has new posts", a second makes it "2 threads", the same thread twice counts once', async () => {
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 25 }) });
+    await screen.findByRole('link', { name: 'Thread 025' });
+    expect(bar()).toBeNull();
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await waitFor(() => expect(bar()).toHaveTextContent('1 thread has new posts'));
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await bump(fake, seeded.ids[1]!, seeded.mine!);
+    await waitFor(() => expect(bar()).toHaveTextContent('2 threads have new posts'));
+    expect(screen.queryByRole('link', { name: 'Thread 001' })).toBeNull();
+  });
+
+  test('the bar is a polite status region inside the board, above the list, with a Show button', async () => {
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 25 }) });
+    await screen.findByRole('link', { name: 'Thread 025' });
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await waitFor(() => expect(bar()).not.toBeNull());
+    const status = screen.getByRole('status', { name: '' });
+    expect(status.getAttribute('aria-live') ?? 'polite').toBe('polite');
+    expect(within(status).getByRole('button', { name: 'Show' })).toBeInTheDocument();
+    expect(status.closest('.kb-board')).not.toBeNull();
+    expect(status.compareDocumentPosition(screen.getByRole('table')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('Show reads the page again: the bumped thread is at the top and the bar goes', async () => {
+    const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
+    await screen.findByRole('link', { name: 'Thread 025' });
+    const read = vi.spyOn(fake, 'boardPage');
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await userEvent.click(await screen.findByRole('button', { name: 'Show' }));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(within(screen.getAllByRole('row')[1]!).getByRole('link', { name: 'Thread 001' })).toBeInTheDocument();
+    expect(bar()).toBeNull();
+    expect(window.location.pathname).toBe('/b/general');
+  });
+
+  test('a thread on page 2 bumped above its neighbor counts on page 2, and Show keeps the reader on page 2', async () => {
+    const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general?page=2', seed: (f) => world(f, { threads: 25 }) });
+    await screen.findByRole('link', { name: 'Thread 005' });
+    const read = vi.spyOn(fake, 'boardPage');
+    await bump(fake, seeded.ids[2]!, seeded.mine!);
+    await waitFor(() => expect(bar()).toHaveTextContent('1 thread has new posts'));
+    await bump(fake, seeded.ids[20]!, seeded.mine!);
+    await waitFor(() => expect(bar()).toHaveTextContent('2 threads have new posts'));
+    await userEvent.click(screen.getByRole('button', { name: 'Show' }));
+    await waitFor(() => expect(bar()).toBeNull());
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read.mock.calls[0]![1]).toBe(2);
+    expect(window.location.search).toBe('?page=2');
+    expect(screen.getAllByText('Page 2 of 2').length).toBeGreaterThan(0);
+  });
+
+  test('a row for a pinned thread updates the pin\'s row and shows no bar', async () => {
+    const pinning = {
+      key: 'beacon', name: 'Beacon', alignment: 'sweet' as const, rarity: 'rare' as const, reaches: ['thread' as const], lasts: { unit: 'day' as const, count: 1 }, pins: true as const,
+      playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }),
+    };
+    const instance = { ...testInstance, cards: [...testInstance.cards, pinning] };
+    const fake = createFake({ instance, now: () => Date.now() });
+    const w = world(fake, { threads: 25 });
+    fake.seed.reach(w.spritey, 'thread', w.ids[0]!, 'beacon', { ends: Date.now() + DAY, message: 'Look here.' });
+    renderIn(fake, <LoadedBoard slug="general" />, { instance, path: '/b/general' });
+    await screen.findByRole('link', { name: 'Thread 025' });
+    const pinned = () => document.querySelector('[data-kb-pinned]') as HTMLElement;
+    await waitFor(() => expect(pinned()).not.toBeNull());
+    await bump(fake, w.ids[0]!, w.mine!);
+    await waitFor(() => expect(within(pinned()).getByRole('row')).toHaveTextContent('1 reply'));
+    expect(bar()).toBeNull();
+  });
+
+  test('NEW appears on a row whose new last post passes the reader\'s own reading', async () => {
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 1 }) });
+    fake.markRead(seeded.ids[0]!, 1, null);
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(within(rowOf('Thread 001')).queryByText('New')).toBeNull();
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await waitFor(() => expect(within(rowOf('Thread 001')).getByText(/^New\b/)).toBeInTheDocument());
+    expect(within(rowOf('Thread 001')).getByRole('link', { name: /^First unread post in / })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1#post-2`);
+  });
+
+  test('a character a row names and the page does not know is read once, by id', async () => {
+    const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 1 }) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const read = vi.spyOn(fake, 'characters');
+    const newcomer = fake.seed.character(seeded.me, 'Latecomer', 'face', { at: T0 });
+    await bump(fake, seeded.ids[0]!, newcomer);
+    await waitFor(() => expect(within(rowOf('Thread 001')).getAllByText('Latecomer').length).toBeGreaterThan(0));
+    await bump(fake, seeded.ids[0]!, newcomer);
+    await waitFor(() => expect(rowOf('Thread 001')).toHaveTextContent('2 replies'));
+    expect(read.mock.calls.filter(([ids]) => ids.includes(newcomer))).toHaveLength(1);
+  });
+
+  test('the board\'s subscription ends when the screen goes', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 2 });
+    const off = vi.fn();
+    const sub = vi.spyOn(fake, 'subscribeBoard').mockImplementation(() => off);
+    const { unmount } = renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(sub).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ onRow: expect.any(Function) }));
+    unmount();
+    expect(off).toHaveBeenCalled();
+    expect(w.ids).toHaveLength(2);
+  });
+
+  test('axe finds no violation with the bar shown', async () => {
+    const { seeded, fake, container } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 25 }) });
+    await screen.findByRole('link', { name: 'Thread 025' });
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await screen.findByRole('button', { name: 'Show' });
+    const found = await axeViolations(container);
+    expect(describeViolations(found), describeViolations(found)).toBe('');
   });
 });

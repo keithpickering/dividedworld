@@ -28,7 +28,7 @@ import type { SpinOrigin } from '../thread/Post.tsx';
 import { Ago, Byline, pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
 import { RandomEvent } from '../events/RandomEvent.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
-import { Link } from '../router.tsx';
+import { Link, useRouterInternals } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { MoveNotice } from './MoveNotice.tsx';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
@@ -126,10 +126,16 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
     hydrated.current = doc;
     hydrate1(doc);
   }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps -- the stores are this view's own and never change
-  const state = useMemo<Loaded>(() => ({
-    board: doc.board, threads: doc.threads, total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
-    characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins, stickies: doc.stickies, stubs: doc.stubs,
-  }), [doc]);
+  /* The rows the board's topic has sent since this document (`row`), by thread: a row the page shows takes the newer one in place. A new document starts over. */
+  const [live, setLive] = useState<{ readonly doc: BoardPage; readonly rows: ReadonlyMap<Id, ThreadSummary>; readonly waiting: ReadonlySet<Id> }>(() => ({ doc, rows: new Map(), waiting: new Set() }));
+  const fresh = live.doc === doc ? live : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>() };
+  const state = useMemo<Loaded>(() => {
+    const take = (t: ThreadSummary) => fresh.rows.get(t.id) ?? t;
+    return {
+      board: doc.board, threads: doc.threads.map(take), total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
+      characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins.map((p) => (fresh.rows.has(p.thread.id) ? { ...p, thread: take(p.thread) } : p)), stickies: doc.stickies.map(take), stubs: doc.stubs,
+    };
+  }, [doc, fresh.rows]);
   /* A page turn is a navigation to the next page's document: what a spin form held open belonged to the page before. */
   useEffect(() => setSpinOrigin(null), [doc]);
 
@@ -154,6 +160,54 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       })().catch(() => { /* the next read of the board shows it */ });
     },
   }), [api, boardId, plays, effects]);
+
+  /*
+   * The board's topic sends a thread's row as it is listed, on each post. A thread the page shows (a row, a pin or a sticky) takes it in
+   * place and never moves; one the page does not show, or one whose Last post is now later than the row shown before it, would sit
+   * elsewhere in a new read, so it waits behind the bar (a pin or a sticky never waits: it is drawn above the list wherever it falls).
+   * A row may come twice or out of order: the one with the later Last post is kept.
+   */
+  const asked = useRef<Set<Id>>(new Set());
+  useEffect(() => {
+    asked.current = new Set();
+    return api.subscribeBoard(boardId, {
+      onRow(row) {
+        setLive((cur) => {
+          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>() };
+          const held = base.rows.get(row.id) ?? [...doc.threads, ...doc.stickies, ...doc.pins.map((p) => p.thread)].find((t) => t.id === row.id);
+          if (held && (Date.parse(held.lastAt) > Date.parse(row.lastAt) || (held.lastAt === row.lastAt && held.lastSeq >= row.lastSeq))) return base;
+          const rows = new Map(base.rows);
+          const waiting = new Set(base.waiting);
+          const slot = doc.threads.findIndex((t) => t.id === row.id);
+          const fixed = doc.pins.some((p) => p.thread.id === row.id) || doc.stickies.some((t) => t.id === row.id);
+          if (fixed) rows.set(row.id, row);
+          else if (slot < 0) waiting.add(row.id);
+          else {
+            rows.set(row.id, row);
+            /* The row before it, as shown now; the first row of page 2 and after has the earlier pages above it. */
+            const above = slot > 0 ? base.rows.get(doc.threads[slot - 1]!.id) ?? doc.threads[slot - 1]! : null;
+            if (above ? Date.parse(row.lastAt) > Date.parse(above.lastAt) : doc.page > 1) waiting.add(row.id);
+          }
+          return { doc, rows, waiting };
+        });
+        /* A character the page does not know is read once by id, as a live play's is. */
+        const named = [row.firstCharacter, row.lastCharacter].filter((c): c is Id => c !== null && !asked.current.has(c) && !doc.characters.some((k) => k.id === c));
+        if (named.length === 0) return;
+        for (const c of named) asked.current.add(c);
+        void api.characters(named).then((who) => { if (who.length) setExtra((m) => new Map([...m, ...who.map((c) => [c.id, c] as const)])); }, () => { for (const c of named) asked.current.delete(c); });
+      },
+    });
+  }, [api, boardId, doc]);
+  const { retry } = useRouterInternals();
+  /*
+   * Show reads the shown address again, in place (the router's own re-read: a navigation to the address already shown moves nothing and reads
+   * nothing). The old page stays drawn until the new document lands, and that document starts the bar over; focus then lands on the heading,
+   * since the button it was on has gone. Page and address are kept, so a reader on page 2 stays on page 2.
+   */
+  const refocus = useRef(false);
+  const show = () => { refocus.current = true; retry(); };
+  useEffect(() => { if (refocus.current) { refocus.current = false; heading.current?.focus(); } }, [doc]);
+  const waiting = fresh.waiting.size;
 
   /* After a page turn, focus goes to the board's heading, so a keyboard starts the new page at its top, never on the page's body. */
   useEffect(() => {
@@ -185,6 +239,15 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       {board.isSystem
         ? <p className="kb-board-readonly kb-small">Only {lowerFirst(ui.copy.staffWord)} post here. You can react to what they say, and spin a thread from it.</p>
         : <NewThread key={board.slug} board={board.slug} boardId={board.id} />}
+      {/* Always drawn, so a screen reader hears the count when it is first filled. */}
+      <div className="kb-board-new" role="status">
+        {waiting > 0 && (
+          <>
+            <span>{waiting === 1 ? '1 thread has new posts' : `${waiting} threads have new posts`}</span>
+            <button type="button" className="kb-button" data-kb-size="small" onClick={show}>Show</button>
+          </>
+        )}
+      </div>
       {threads.length === 0 && state.pins.length === 0 && state.stickies.length === 0 && state.stubs.length === 0 ? (
         <p className="kb-board-empty">No threads here yet.</p>
       ) : (
