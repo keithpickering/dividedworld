@@ -766,9 +766,11 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
         out.push({ top: cursor, bottom, text: l.text });
         cursor = bottom;
       }
-      const tall = read.length > 0 ? read[read.length - 1]!.bottom * h - read[read.length - 1]!.top * h : 0;
+      /* A canvas row is one line pitch tall, as a text row is (bottom to bottom), so a px of empty canvas costs the sweep what a px of text does: the distance between the last two lines' bottoms, else the words' line height, else the glyph height, else 16. */
+      const last = all[all.length - 1], before = all[all.length - 2];
       const css = parseFloat(getComputedStyle(words).lineHeight);
-      const step = tall > 0 ? tall : css > 0 ? css : 16;
+      const tall = last ? last.bottom - last.top : 0;
+      const step = before && last && last.bottom - before.bottom > 0 ? last.bottom - before.bottom : css > 0 ? css : tall > 0 ? tall : 16;
       while (cursor < H - BAND_SLOP_PX) {
         const bottom = cursor + step > H - BAND_SLOP_PX ? H : cursor + step;
         out.push({ top: cursor, bottom, text: '' });
@@ -776,15 +778,14 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
       }
       return out;
     })();
-    const lines = rows;
     m.sweep = {
-      air: L.airing, startedAt: api.now(), lines: lines.map((l) => ({ top: l.top, bottom: l.bottom })), texts: lines.map((l) => l.text),
+      air: L.airing, startedAt: api.now(), lines: rows.map((l) => ({ top: l.top, bottom: l.bottom })), texts: rows.map((l) => l.text),
       x0: wx, y0: wy, width: w, height: h, per: (w / SWEEP_PX_S) * 1000, releasedAt: null,
     };
     m.said = 0;
     setSpoken('');
     refresh();
-  }, [api, refresh, queueSave]);
+  }, [api, refresh]);
 
   /** Catches a held sweep up to `t`: the lines it finished are read out, and one that reached the end makes the post waved from the moment its last line finished. */
   const settle = useCallback((t: number) => {
@@ -792,7 +793,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     if (!sw || sw.releasedAt !== null) return;
     const s = sweepAt(sw.lines, t - sw.startedAt, sw.width, SWEEP_PX_S);
     if (s.finished + 1 > m.said) {
-      const said = sw.texts.slice(m.said, s.finished + 1).filter((t) => t !== '').join(' ');
+      const said = sw.texts.slice(m.said, s.finished + 1).filter((row) => row !== '').join(' ');
       if (said !== '') setSpoken(said);
       m.said = s.finished + 1;
       /* The author's lines are saved as they finish: how far down the area the last of them reaches, or clean once there is no line left. */

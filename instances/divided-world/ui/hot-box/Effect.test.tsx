@@ -54,6 +54,13 @@ vi.mock('./fog.ts', async (orig) => {
   };
 });
 
+/* Three lines a pitch (60px) apart with a glyph as tall as the pitch, in a 600px area: the canvas below steps 60px a row. */
+const TIGHT = [
+  { top: 0.1, bottom: 0.2, text: 'First line of the post.' },
+  { top: 0.2, bottom: 0.3, text: 'Second line.' },
+  { top: 0.3, bottom: 0.4, text: 'Third line.' },
+];
+
 const DAY = 86_400_000;
 const NOW = Date.parse('2026-11-15T12:00:00Z');
 const ENDS = NOW + 3 * DAY;
@@ -2297,17 +2304,15 @@ describe('the author airs it out', () => {
     pass(2000);
     await settled();
     expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.8 }]);
-    pass(2000);
-    await settled();
-    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.9 }]);
     expect(save.mock.calls.some((c) => (c as unknown as [string, { clean?: boolean }])[1].clean), 'not clean before the row at the bottom border').toBe(false);
     pass(2000);
     await settled();
-    expect(save.mock.calls.at(-1)).toEqual(['h1', { clean: true }]);
-    expect(save).toHaveBeenCalledTimes(5);
+    expect(save.mock.calls.at(-1), 'the canvas below the words is one row, a line pitch (180px) tall and cut short by the bottom border').toEqual(['h1', { clean: true }]);
+    expect(save).toHaveBeenCalledTimes(4);
   });
 
   test('a short post in a tall area: the hold finishes the text, then keeps sweeping the canvas; letting go mid-canvas keeps the share', async () => {
+    read.lines = TIGHT;
     const save = accepted();
     const s = setup({ reader: AUTHOR, plays: [endless(30)], save });
     press(s);
@@ -2315,15 +2320,16 @@ describe('the author airs it out', () => {
     expect(last(s).state, 'the text is done and the hold goes on').toBe('Airing it out');
     pass(LINE_MS);
     await settled();
-    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.9 }]);
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.5 }]);
     release(s);
     pass(5000);
     await settled();
-    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.9 }]);
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.5 }]);
     expect(save.mock.calls.some((c) => (c as unknown as [string, { clean?: boolean }])[1].clean)).toBe(false);
   });
 
   test('a reload with a share below the words starts the sweep at the next canvas row, and the canvas rows read out nothing', async () => {
+    read.lines = TIGHT;
     const save = accepted();
     const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.85 }) });
     press(s);
@@ -2332,6 +2338,28 @@ describe('the author airs it out', () => {
     pass(LINE_MS * 2);
     await settled();
     expect(save.mock.calls.map((c) => (c as unknown[])[1]), 'the next canvas row is one line tall, the last one short').toEqual([{ aired: 0.95 }, { clean: true }]);
+  });
+
+  test('the canvas rows below the words step by the lines\' pitch, not by their glyph height, so a px of canvas costs a px of text', async () => {
+    read.lines = [{ top: 0, bottom: 20 / 600, text: 'One.' }, { top: 30 / 600, bottom: 50 / 600, text: 'Two.' }, { top: 60 / 600, bottom: 80 / 600, text: 'Three.' }];
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.2 }) });
+    press(s);
+    pass(3000);
+    await settled();
+    expect(save.mock.calls.map((c) => (c as unknown[])[1]), 'the first canvas row below the band ends one pitch (30px) on, not one glyph height (20px)').toEqual([{ aired: 0.25 }]);
+    pass(2000);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.3 }]);
+  });
+
+  test('a saved band within the slop of the bottom border has no row left, and pressing Air it out saves clean', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.9999 }) });
+    press(s);
+    pass(3000);
+    await settled();
+    expect(save.mock.calls.map((c) => (c as unknown[])[1])).toEqual([{ clean: true }]);
   });
 
   test('letting go keeps what was saved: a line not finished saves nothing', async () => {
