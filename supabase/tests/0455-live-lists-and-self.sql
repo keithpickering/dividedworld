@@ -175,6 +175,52 @@ begin
   if (select payload ->> 'replies' from broadcasts_due where topic = 'board:' || board) is distinct from '50' then raise exception 'the row of a bulk statement is not the state after it'; end if;
 end $$;
 
+-- 1c. A statement that places Acts in more than 50 threads of one board tells that board once: one `changed` {}, no `row`; the index still hears the board's entry once.
+-- A statement that places Acts in 3 threads keeps one `row` per thread, each equal to board_page's.
+do $$
+declare
+  ann uuid := tests.account('live-many');
+  a uuid := tests.character(ann, 'Live Many', 'alpha', now() - interval '60 days');
+  ts uuid[] := '{}';
+  t uuid;
+  board uuid;
+  got jsonb;
+  mine jsonb;
+begin
+  for i in 1..3 loop
+    t := tests.thread('Many ' || i);
+    perform tests.post(a, t, 'Opening ' || i);
+    ts := ts || t;
+  end loop;
+  select x.board into board from threads x where x.id = ts[1];
+  delete from broadcasts_due;
+  insert into acts (character, kind, thread, payload) select a, 'post', x, jsonb_build_object('body', 'Reply again') from unnest(ts) x;
+  got := pg_temp.queued('board:' || board);
+  if (select count(*) from jsonb_array_elements(got) e where e ->> 'event' = 'row') is distinct from 3 or jsonb_array_length(got) is distinct from 3 then
+    raise exception '3 threads in one statement should send 3 rows, queued %', got;
+  end if;
+  foreach t in array ts[1:3] loop
+    select e -> 'payload' into mine from jsonb_array_elements(got) e where e -> 'payload' ->> 'id' = t::text;
+    if mine is distinct from pg_temp.page_row(ann, t) then raise exception 'the row of % is not board_page''s: % against %', t, mine, pg_temp.page_row(ann, t); end if;
+  end loop;
+
+  for i in 4..51 loop
+    t := tests.thread('Many ' || i);
+    perform tests.post(a, t, 'Opening ' || i);
+    ts := ts || t;
+  end loop;
+  delete from broadcasts_due;
+  insert into acts (character, kind, thread, payload) select a, 'post', x, jsonb_build_object('body', 'Reply') from unnest(ts) x;
+  got := pg_temp.queued('board:' || board);
+  if jsonb_array_length(got) is distinct from 1 or got -> 0 is distinct from jsonb_build_object('event', 'changed', 'payload', '{}'::jsonb) then
+    raise exception '51 threads of one board in one statement should send one changed {} and no row, queued % events, first %', jsonb_array_length(got), got -> 0 ->> 'event';
+  end if;
+  if (select count(*) from broadcasts_due where topic = 'index' and event = 'board') is distinct from 1 then
+    raise exception 'the index should hear the board once, queued %', pg_temp.queued('index');
+  end if;
+
+end $$;
+
 -- 6. Only the trigger calls the two projections.
 do $$
 begin

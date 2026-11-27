@@ -12,6 +12,10 @@
 -- They are volatile on purpose: a trigger reads the Act it fires on, which a stable function's older snapshot would not show.
 -- A way out: nothing here holds a player in a state; a missed event is read again by the page's own reload.
 
+-- The one bulk limit (board_stubs' page size): a board that more threads than this change in one statement hears one `changed` {}, not a `row` for each. acts_live_lists and rebuild_thread_places (step 6) both read it here.
+create function live_bulk_threads() returns integer language sql immutable as $$ select 50 $$;
+revoke execute on function live_bulk_threads() from public, anon, authenticated;
+
 create function thread_rows(in_threads uuid[]) returns setof jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
@@ -48,21 +52,26 @@ revoke execute on function board_summary(uuid) from public, anon, authenticated;
 create function acts_live_lists() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  one record;
   listed jsonb;
   summary jsonb;
   boards uuid[] := '{}';
+  bulk uuid[];
   b uuid;
 begin
-  -- A board is sent only when a thread thread_list lists produced a row on it: an unlisted thread (the Updates thread) changes neither the list nor the board's entry.
-  for one in select distinct n.thread from new_acts n where n.thread is not null and n.seq is not null loop
-    listed := thread_row(one.thread);
-    if listed is not null then
-      perform broadcast_later('board:' || (listed ->> 'board'), 'row', listed);
-      boards := boards || (listed ->> 'board')::uuid;
-    end if;
+  -- A board that more than live_bulk_threads() of its threads got a placed Act in, in this statement, hears one `changed` and no per-thread `row` (5,000 rows to every reader, and 15 ms each to project).
+  select coalesce(array_agg(x.board), array[]::uuid[]) into bulk from (
+    select t.board from threads t where t.id in (select n.thread from new_acts n where n.thread is not null and n.seq is not null)
+    group by t.board having count(*) > live_bulk_threads()) x;
+  foreach b in array bulk loop
+    perform broadcast_later('board:' || b, 'changed', '{}'::jsonb);
   end loop;
-  for b in select distinct x from unnest(boards) x loop
+  -- A board is sent only when a thread thread_list lists produced a row on it: an unlisted thread (the Updates thread) changes neither the list nor the board's entry.
+  for listed in select r from thread_rows((select coalesce(array_agg(distinct n.thread), array[]::uuid[]) from new_acts n join threads t on t.id = n.thread
+                                           where n.seq is not null and t.board <> all (bulk))) r loop
+    perform broadcast_later('board:' || (listed ->> 'board'), 'row', listed);
+    boards := boards || (listed ->> 'board')::uuid;
+  end loop;
+  for b in select distinct x from unnest(boards || bulk) x loop
     summary := board_summary(b);
     if summary is not null then perform broadcast_later('index', 'board', summary); end if;
   end loop;
@@ -458,7 +467,7 @@ begin
   -- (`moved`) or, where it lists none (a merge, a reversal), `gone` with the thread's id, so its page drops the row; the index hears each board's entry once.
   -- One read of the moved threads' rows (of the threads headed for a small board), and a stub probe only for a thread that has a departure from the board it left (a merge's threads have none).
   select coalesce(array_agg(x.board), array[]::uuid[]) into bulk
-  from (select u.board from (select unnest(olds) as board union all select unnest(news)) u group by u.board having count(*) > 50) x;
+  from (select u.board from (select unnest(olds) as board union all select unnest(news)) u group by u.board having count(*) > live_bulk_threads()) x;
   foreach b in array bulk loop
     perform broadcast_later('board:' || b, 'changed', '{}'::jsonb);
   end loop;
