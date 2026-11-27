@@ -79,8 +79,9 @@ jobs:
       # runner image without it fails here, before anything is touched, with a plain message.
       - run: psql --version
       # `--yes` answers db push's confirmation prompt, which has no terminal to read it from here.
-      # Never --include-all: a migration older than the remote's newest that is missing remotely is
-      # a problem for the owner (the --before check names it), not something to apply unseen.
+      # Never --include-all here: a migration numbered below the remote's newest that the remote
+      # lacks fails the --before check, which names it and says to renumber it above the newest in a
+      # PR; it is not something to apply unseen.
       - env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
