@@ -1,4 +1,4 @@
--- A clear that is final holds no place in its stack (supabase/migrations/0453_final_clears.sql; docs/plans/2026-11-27-lasting-gags-plan.md, Task 2; design docs/plans/2026-11-27-lasting-gags-design.md, sections 2.4 and 4).
+-- A clear that is final holds no place in its stack (supabase/migrations/0454_final_clears.sql; docs/plans/2026-11-27-lasting-gags-plan.md, Task 2; design docs/plans/2026-11-27-lasting-gags-design.md, sections 2.4 and 4).
 -- A card that draws an effect and clears for good (card_kinds.clears_for_good), one deep in its stack, against a card that draws and does not:
 --   * the column exists; seed_instance writes it from the seed's clearsForGood.
 --   * A second cast of the final card is refused while the first is uncleared; once its author's save clears it for every version, a second lands and takes the next layer.
@@ -6,7 +6,7 @@
 --   * The same cleared play of the plain card still refuses a second.
 --   * A later save on the final card's cleared play is refused in the words; a save on the plain card's cleared play is kept.
 --   * spring_facts: a Move of the final card springs onto a post whose play of it is cleared for good (up is 0), and not onto one whose play is uncleared; the plain card does not spring there either.
--- The cards are this file's own (fg...). The race is 0453-final-clears-race.sql.
+-- The cards are this file's own (fg...). The race is 0454-final-clears-race.sql.
 
 create function pg_temp.hand(who uuid, variadic keys text[]) returns void language sql as $$
   insert into card_ledger (account, card, kind, price) select who, k, 'bought', 0 from unnest(keys) k, generate_series(1, 12)

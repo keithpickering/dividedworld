@@ -1,4 +1,4 @@
--- Two casts raced for the place a final clear gave up (supabase/migrations/0453_final_clears.sql; docs/plans/2026-11-27-lasting-gags-plan.md, Task 2).
+-- Two casts raced for the place a final clear gave up (supabase/migrations/0454_final_clears.sql; docs/plans/2026-11-27-lasting-gags-plan.md, Task 2).
 -- A card that clears for good, one deep in its stack: its play on a post has just been cleared for every version, so its place is free. place_cast counts the stack after taking the post's row, and the first cast's play
 -- is written inside its transaction, so the second cast, which waited on the row, counts it and is refused: exactly one of two casts of the card at the post lands, the other is refused in the words, and the post
 -- holds one play of it not cleared. Eight rounds, each of fresh characters, committed (tests.commit), since a racer is a session of its own. Every name is this file's (fgr...).

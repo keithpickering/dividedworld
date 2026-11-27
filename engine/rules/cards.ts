@@ -380,6 +380,11 @@ export interface CardRules<Config = unknown> {
    */
   readonly retired?: true;
   /**
+   * Found only through the Random Events that name it: never drawn by a pack's pull or an event that names no item, never sold by the machine, never in a fixed pack.
+   * An admin may still give it.
+   */
+  readonly eventOnly?: true;
+  /**
    * The keys and names this card went by before, when it is a renamed card: the old key is gone, and every copy of it is this card's.
    * It is one-way (a key that has been renamed away is never a card again), and a name here is how old log lines and cards still say it.
    */

@@ -6,6 +6,7 @@
  * numbers the server rolls with.
  */
 import { gemOf } from '../cards/faces.ts';
+import '../glass/gem.css';
 import { percent, type OddsGroup } from './machine-words.ts';
 
 export function PackOdds({ name, groups }: { readonly name: string; readonly groups: readonly OddsGroup[] }) {

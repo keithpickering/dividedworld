@@ -3,13 +3,13 @@
 -- card's stack on that post, so the same card can be played on it again, and no later save of that play is taken. Each object here is copied whole from its latest version on main, with only the change named.
 --
 --   1. card_kinds.clears_for_good  boolean not null default false, as draws_effect is (0411).
---   2. seed_instance               copied whole from 0449_concession_post.sql: `clears_for_good` joins the card insert's columns, values and on-conflict update, from the seed's `clearsForGood`.
+--   2. seed_instance               copied whole from 0453_event_rarity.sql: `clears_for_good` joins the card insert's columns, values and on-conflict update, from the seed's `clearsForGood`.
 --   3. place_cast                  copied whole from 0438_board_cards_on_their_board.sql: the post stack count leaves out a play of a kind that clears for good that effect_cleared(play, null) says is cleared. The layer and the count beyond a post are unchanged.
 --   4. spring_facts                copied whole from 0438_board_cards_on_their_board.sql: its subquery `l` gains `cleared_for_good`, and `up` and `quadrant_up` leave those plays out. `layer` is unchanged, so no layer is taken twice.
 --   5. save_effect_state           copied whole from 0411_post_effects.sql (no later migration redefines it): after the didn't-take refusal, a play of a kind that clears for good that is cleared for every version is refused
 --                                  in the words 'that effect was cleared for good, and stays cleared' (errcode 55000), unless the save repeats the kept state exactly (jsonb equality), which succeeds, writes nothing and returns the kept row. It sits after the author check, so only the post's author meets it. The post's row is locked for no key update
 --                                  as place_cast locks it, first, before that check, so two saves of one play cannot both pass it and a later save cannot overwrite the clear. Grants as 0411 gave them (service role only).
--- Grants and settings as each copied definition states them. No later migration redefines place_cast, spring_facts or save_effect_state, and seed_instance's latest is 0449.
+-- Grants and settings as each copied definition states them. No later migration redefines place_cast, spring_facts or save_effect_state, and seed_instance's latest is 0453_event_rarity.sql (which redefines none of the other three).
 --
 -- Ways out: the state is the author's own clear, which is the way out of the effect; once cleared for good it stays cleared, and the card can be played on the post again. Masks: every fact read is public (a play's card, its author's clear).
 -- Cost at a busy instance's scale: effect_cleared is one probe of effect_state's key for each play of the card on the post, which holds at most the card's stack of them.
@@ -147,7 +147,7 @@ begin
   end if;
   -- A card's stack, whether it is seeded and the economy numbers its rules read are the code's, as its name is; so
   -- are its rarity, its play, its trap (with its match), its gimmick, its discipline, how long a Use of it is up, where it reaches, whether it pins, whether it writes, whether it replies, whether it keeps, its skim, whether it scores as a class, what it draws, its drive and the words it refuses a blank message with.
-  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, refunds, discipline, lasts, reaches, pins, writes, replies, keeps, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface, from_seed, cuts, draws_effect, rewind, clears_for_good)
+  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, refunds, discipline, lasts, reaches, pins, writes, replies, keeps, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface, from_seed, cuts, draws_effect, rewind, event_only, clears_for_good)
   select e ->> 'key', e ->> 'name', e ->> 'alignment', coalesce((e ->> 'stack')::integer, 1), coalesce((e ->> 'seeded')::boolean, false),
     coalesce(array(select jsonb_array_elements_text(e -> 'reads')), '{}'),
     e ->> 'rarity', coalesce(e ->> 'play', 'cast'), nullif(e -> 'trap', 'null'), nullif(e -> 'gimmick', 'null'), nullif(e -> 'refunds', 'null'), nullif(e -> 'discipline', 'null'), span_interval(e -> 'lasts'),
@@ -155,13 +155,13 @@ begin
     coalesce((e ->> 'replies')::boolean, false), coalesce((e ->> 'keeps')::boolean, false),
     nullif(e -> 'skim', 'null'), coalesce((e ->> 'scoresAs')::boolean, false),
     case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', ''),
-    nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false), coalesce((e ->> 'surface')::boolean, false), true, nullif(e -> 'cuts', 'null'), coalesce((e ->> 'drawsEffect')::boolean, false), e #>> '{rewind,upTo}', coalesce((e ->> 'clearsForGood')::boolean, false)
+    nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false), coalesce((e ->> 'surface')::boolean, false), true, nullif(e -> 'cuts', 'null'), coalesce((e ->> 'drawsEffect')::boolean, false), e #>> '{rewind,upTo}', coalesce((e ->> 'eventOnly')::boolean, false), coalesce((e ->> 'clearsForGood')::boolean, false)
   from jsonb_array_elements(payload -> 'cards') e
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment,
     stack = excluded.stack, seeded = excluded.seeded, reads = excluded.reads,
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, refunds = excluded.refunds, discipline = excluded.discipline, lasts = excluded.lasts,
     reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, replies = excluded.replies, keeps = excluded.keeps, skim = excluded.skim, scores_as = excluded.scores_as,
-    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface, from_seed = true, cuts = excluded.cuts, draws_effect = excluded.draws_effect, rewind = excluded.rewind, clears_for_good = excluded.clears_for_good;
+    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface, from_seed = true, cuts = excluded.cuts, draws_effect = excluded.draws_effect, rewind = excluded.rewind, event_only = excluded.event_only, clears_for_good = excluded.clears_for_good;
   -- Out of print (0404): the flag sets retired_at, kept while it stays and cleared when it goes.
   update card_kinds k set retired_at = case when coalesce((e.c ->> 'retired')::boolean, false) then coalesce(k.retired_at, now()) end
   from jsonb_array_elements(payload -> 'cards') e(c)
@@ -196,15 +196,27 @@ begin
     where x.key = k.key and k.retired_at is distinct from x.want;
   end if;
   if payload ? 'gear' then
-    insert into gear_kinds (key, rarity) select e ->> 'key', e ->> 'rarity' from jsonb_array_elements(payload -> 'gear') e
-    on conflict (key) do update set rarity = excluded.rarity;
+    insert into gear_kinds (key, rarity, event_only) select e ->> 'key', e ->> 'rarity', coalesce((e ->> 'eventOnly')::boolean, false) from jsonb_array_elements(payload -> 'gear') e
+    on conflict (key) do update set rarity = excluded.rarity, event_only = excluded.event_only;
     delete from gear_kinds k where not exists (select 1 from jsonb_array_elements(payload -> 'gear') e where e ->> 'key' = k.key)
       and not exists (select 1 from gear_ledger l where l.gear = k.key) and not exists (select 1 from gear_worn w where w.gear = k.key);
   end if;
   if payload ? 'eventLines' then
-    insert into event_lines (key, outcome, text) select e ->> 'key', e ->> 'outcome', e ->> 'text' from jsonb_array_elements(payload -> 'eventLines') e
-    on conflict (key) do update set outcome = excluded.outcome, text = excluded.text;
+    insert into event_lines (key, outcome, text, rarity, item) select e ->> 'key', e ->> 'outcome', e ->> 'text', coalesce(e ->> 'rarity', 'common'), nullif(e ->> 'item', '') from jsonb_array_elements(payload -> 'eventLines') e
+    on conflict (key) do update set outcome = excluded.outcome, text = excluded.text, rarity = excluded.rarity, item = excluded.item;
     delete from event_lines l where not exists (select 1 from jsonb_array_elements(payload -> 'eventLines') e where e ->> 'key' = l.key);
+    -- A line that names an item names one the instance holds, of the kind its outcome gives, and is at least as rare as it (the design, sections 1 and 2), naming the first such line.
+    select format('the event line "%s" names %s "%s", which the instance does not hold', l.key, case l.outcome when 'gear' then 'gear' else 'a card' end, l.item) into unknown
+    from event_lines l left join gear_kinds g on l.outcome = 'gear' and g.key = l.item left join card_kinds ck on l.outcome = 'card' and ck.key = l.item
+    where l.item is not null and case l.outcome when 'gear' then g.key is null else ck.key is null end
+    order by l.key limit 1;
+    if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
+    select format('the event line "%s" is %s but the %s it names, "%s", is %s: an event is at least as rare as its item', l.key, l.rarity, case l.outcome when 'gear' then 'gear' else 'card' end, l.item, coalesce(g.rarity, ck.rarity)) into unknown
+    from event_lines l left join gear_kinds g on l.outcome = 'gear' and g.key = l.item left join card_kinds ck on l.outcome = 'card' and ck.key = l.item
+    where l.item is not null
+      and array_position(array['common', 'uncommon', 'rare', 'legendary'], l.rarity) < array_position(array['common', 'uncommon', 'rare', 'legendary'], coalesce(g.rarity, ck.rarity))
+    order by l.key limit 1;
+    if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
   end if;
   -- The instance's trophy kinds (0206): added and brought up to date, the places, the Boss's kinds and the met demand's set as the catalog names them, and a kind the instance
   -- dropped removed unless an award names it. An admin-made kind is never touched, and an instance key that begins `made-` is refused (those are the admin page's).

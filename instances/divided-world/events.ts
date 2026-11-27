@@ -1,6 +1,7 @@
 /**
  * What Divided World's Random Events say (`Instance.events`). An event is private, plain and never Aura; a gear or card line says `{item}`
  * where the found item's name goes. The lines are placeholders the owner approves in review.
+ * An event may say its rarity (common unless it says) and name the item it gives; an event is at least as rare as its item.
  */
 import type { EventLine } from '../../engine/rules/cosmetics.ts';
 import { deepFreeze } from '../../engine/rules/instance.ts';
@@ -19,6 +20,7 @@ export const events: { readonly lines: readonly EventLine[] } = deepFreeze<{ rea
     { key: 'park-bench', outcome: 'gear', text: 'You find a {item} under a park bench. The real question is what this park bench is doing on a message board.' },
     { key: 'lost-and-found', outcome: 'gear', text: 'Someone left a {item} in the lost and found. You decide you can make better use of it.' },
     { key: 'vending-slot', outcome: 'gear', text: 'A {item} falls out of a vending machine, and you didn\'t even have to pay.' },
+    { key: 'attic', outcome: 'gear', rarity: 'rare', item: 'nostalgic-hat', text: 'You find the {item} in the attic. Someone has written your name inside the brim, in your handwriting.' },
     { key: 'ground', outcome: 'card', text: 'You spot an opened booster pack on the ground. Whoever opened it left a card behind: {item}.' },
     { key: 'pocket', outcome: 'card', text: 'You find a loose {item} in a coat pocket. Someone\'s coat pocket, anyway.' },
     { key: 'mail', outcome: 'card', text: 'A {item} arrived in the mail, addressed to "Occupant".' },
