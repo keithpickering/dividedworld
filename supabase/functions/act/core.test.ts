@@ -4,6 +4,7 @@ import { NOT_THOSE_WORDS, REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, 
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 import { landsOn } from '../../../engine/rules/cards.ts';
+import { contentOf, mapPlaces } from '../../../engine/rules/anchor.ts';
 import { NOT_RUN } from '../../../engine/ui/data/api.ts';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -1322,11 +1323,31 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     assert.ok(calls.some((c) => c.startsWith('service:surface_groups_on:')), calls.join('\n'));
   });
 
+  test('an edit maps its places against the words the renderer will draw: the database\'s verdict on the new body, read for it, decides what a quote in it shows', async () => {
+    const act = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const OLD = 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen';
+    const NEW = `[quote=${act}]ten words said before[/quote] one two three four five six seven eight nine ten eleven twelve thirteen fourteen`;
+    const group = textAt(v1, 40, 10);
+    const sent = async (verdict: string[]) => {
+      const { dbs, calls } = pair({ whoami, surface_groups_on: { version: v1, body: OLD, forged: [], groups: [{ draw: d1, grp: 0, place: group }] }, quote_forged: verdict, edit_post: { id: post, kind: 'edit' } });
+      const out = await runAction(dbs, walled, { action: 'edit', post, character: id, body: NEW });
+      assert.equal(out.status, 200, JSON.stringify(out.body));
+      assert.ok(calls.some((c) => c.startsWith('service:quote_forged:')), 'the verdict is read for the new body');
+      assert.deepEqual(Object.keys(argsOf(calls, 'quote_forged')).sort(), ['at', 'body']);
+      return (sentTo(calls.map((c) => c.replace(/^player:/, 'service:')), 'edit_post').surface_places as { place: { at: number } | null }[])[0]!.place;
+    };
+    const expected = (forged?: Set<string>) => mapPlaces(contentOf(OLD), contentOf(NEW, forged), [group])[0] as { at: number } | null;
+    assert.notDeepEqual(expected(new Set([act])), expected(), 'the fixture: the verdict changes where the group sits');
+    assert.deepEqual(await sent([act]), expected(new Set([act])));
+    assert.deepEqual(await sent([]), expected());
+  });
+
   test('an edit on a post with no walls sends no places, and the reads of a wall are safe to repeat', async () => {
     const { dbs, calls } = pair({ whoami, surface_groups_on: null, edit_post: { id: post, kind: 'edit' } });
     await runAction(dbs, walled, { action: 'edit', post, character: id, body: WORDS2 });
     assert.ok(!calls.find((c) => c.startsWith('player:edit_post:'))!.includes('surface_places'));
-    for (const fn of ['surface_acts', 'surface_post_of', 'surface_version_pair', 'surface_groups_on']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
+    assert.ok(!calls.some((c) => c.includes('quote_forged')), 'no walls, no verdict read');
+    for (const fn of ['surface_acts', 'surface_post_of', 'surface_version_pair', 'surface_groups_on', 'quote_forged']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
   });
 
   test('a wash sends one takes entry for each draw it cuts, with the draws\' payloads read as the service', async () => {

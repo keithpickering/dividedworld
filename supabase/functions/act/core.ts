@@ -157,7 +157,9 @@ const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_
   // The hints' calls (0065): a read, and a write that finds its own earlier effect (a pattern already fired for an Act fires nothing).
   'act_window_counts', 'fire_hint',
   // A wall's reads (0455): the live draws, the post a wall is on, and a post's versions and groups. Each reads Acts and the post's words, never an owner.
-  'surface_acts', 'surface_post_of', 'surface_version_pair', 'surface_groups_on']);
+  'surface_acts', 'surface_post_of', 'surface_version_pair', 'surface_groups_on',
+  // The forged-quote verdict of a body (0393): a read of the posts' versions as they stand, which an edit's new words are mapped against.
+  'quote_forged']);
 export const SAFE_TO_REPEAT = (fn: string): boolean => REPEATABLE.has(fn);
 
 /** The act function's two connections: as the player, and as the service; each sends a write once. */
@@ -218,12 +220,12 @@ async function placesOfDraw(service: Db, postOf: () => Promise<string | null>, p
 async function placesOfEdit(service: Db, post: string, body: string): Promise<Row[]> {
   const read = await service.rpc<{ version: string; body: string; forged?: unknown; groups: { draw: string; grp: number; place: Attachment | null }[] } | null>('surface_groups_on', { p_post: post });
   if (!read || !Array.isArray(read.groups) || read.groups.length === 0) return [];
-  // The new words' verdict is written by the database as the edit is (0393); the version it replaces is the best the function can hold them to, so a quote counterfeit there stays one here.
-  const set = forgedSet(forgedList({ forged: read.forged }));
   const alive = read.groups.filter((g) => g.place !== null);
-  const moved = mapPlaces(contentAt(read), contentOf(body, set), alive.map((g) => g.place!));
+  if (alive.length === 0) return [];
+  // The new words' verdict is the one the database writes with the edit (acts_forged_quotes, 0393): quote_forged of the body at this instant, read only now that there are groups to place. A body with no quote has none.
+  const verdict = /\[quote=/i.test(body) ? await service.rpc<string[] | null>('quote_forged', { body, at: new Date().toISOString() }) : [];
+  const moved = mapPlaces(contentAt(read), contentOf(body, forgedSet(forgedList({ forged: verdict ?? [] }))), alive.map((g) => g.place!));
   const by = new Map(alive.map((g, i) => [g, moved[i] ?? null]));
-  // A group with no row for the edit's version is at its box spot (0455 edit_post, surface_acts), as one with a null place is: only the groups still placed are sent.
   return alive.map((g) => ({ draw: g.draw, grp: g.grp, place: by.get(g) ?? null }));
 }
 
