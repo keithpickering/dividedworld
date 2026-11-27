@@ -10,6 +10,12 @@
  * The page is `?page=N`; a page past the end shows the last. Twenty threads to a page is this
  * screen's own constant: `postsPerPage` counts posts inside a thread, and a list of threads is paged
  * for a different reason (the list's weight on a phone), so the two do not share a setting.
+ *
+ * The list is live but never reorders under the reader: `api.subscribeBoard` sends a thread's row
+ * whenever a placed Act lands in it. A row the page shows takes the new replies, Last post, HOT and
+ * NEW in place; a thread off the page, or one whose bump would put it above the row shown before it,
+ * counts toward the bar above the list ("N threads have new posts"), whose Show reads the page again.
+ * Pins, stickies and moved-thread stubs never count.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useKayfa } from '../context.tsx';
