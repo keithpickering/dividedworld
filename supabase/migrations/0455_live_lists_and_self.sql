@@ -12,14 +12,21 @@
 -- They are volatile on purpose: a trigger reads the Act it fires on, which a stable function's older snapshot would not show.
 -- A way out: nothing here holds a player in a state; a missed event is read again by the page's own reload.
 
-create function thread_row(in_thread uuid) returns jsonb
+create function thread_rows(in_threads uuid[]) returns setof jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   -- The keys of the select list below are pinned in supabase/tests/0455-live-lists-and-self.sql; editing the list means editing that pin.
-  return (select to_jsonb(l) from (
+  return query select to_jsonb(l) from (
     select t.id, t.board, t.title, t.origin_act_id, t.created_at, t.last_at, t.last_seq, t.replies, t.first_act, t.first_character, t.last_act, t.last_character,
            t.replies_this_week, t.origin_thread, t.origin_place
-    from thread_list t where t.id = in_thread) l);
+    from thread_list t where t.id = any (in_threads)) l;
+end $$;
+revoke execute on function thread_rows(uuid[]) from public, anon, authenticated;
+
+create function thread_row(in_thread uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  return (select r from thread_rows(array[in_thread]) r);
 end $$;
 revoke execute on function thread_row(uuid) from public, anon, authenticated;
 
@@ -445,9 +452,12 @@ begin
   update post_search p set board = m.place from unnest(ids, news) as m(id, place) where p.thread = m.id and p.board is distinct from m.place;
 
   -- 6. Tell the boards, after the move (live lists). The new board hears the thread's row, the old board hears the stub its next read would draw (when it lists one), and the index hears each board's entry once.
-  for d in select m.id, m.old_board, m.place from unnest(ids, olds, news) as m(id, old_board, place) loop
-    listed := thread_row(d.id);
-    if listed is not null then perform broadcast_later('board:' || d.place, 'row', listed); end if;
+  -- One read of the moved threads' rows, and a stub probe only for a thread that has a departure from the board it left (a merge's threads have none).
+  for listed in select r from thread_rows(ids) r loop
+    perform broadcast_later('board:' || (listed ->> 'board'), 'row', listed);
+  end loop;
+  for d in select m.id, m.old_board from unnest(ids, olds) as m(id, old_board)
+           where exists (select 1 from thread_departures x where x.thread = m.id and x.from_board = m.old_board) loop
     stub := thread_stub(d.id, d.old_board);
     if stub is not null then perform broadcast_later('board:' || d.old_board, 'moved', stub); end if;
   end loop;
