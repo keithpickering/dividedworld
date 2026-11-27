@@ -63,7 +63,7 @@ p { margin: 0 0 .8em; }
 .tile { display: inline-flex; gap: 4px; align-items: center; border: 1px solid var(--b-rule); background: var(--tile); color: var(--b-fg); font: 12px var(--font); padding: 2px 7px; border-radius: 3px; cursor: pointer; }
 
 /* A head: a live reaction tile, round, sized by its mass. */
-.head-btn { position: absolute; left: 0; top: 0; z-index: 3; border-radius: 50%; border: 1.5px solid var(--b-rule); background: var(--tile); color: var(--b-fg); display: grid; place-items: center; padding: 0; cursor: pointer; font-family: var(--font); line-height: 1; will-change: transform; touch-action: manipulation; user-select: none; }
+.head-btn { transform-origin: 50% 50%; position: absolute; left: 0; top: 0; z-index: 3; border-radius: 50%; border: 1.5px solid var(--b-rule); background: var(--tile); color: var(--b-fg); display: grid; place-items: center; padding: 0; cursor: pointer; font-family: var(--font); line-height: 1; will-change: transform; touch-action: manipulation; user-select: none; }
 .head-btn .e { display: block; }
 .head-btn .n { position: absolute; right: -4px; bottom: -4px; font: bold 10px var(--mono); background: var(--b-bg); border: 1px solid var(--b-rule); border-radius: 8px; padding: 0 4px; }
 .head-btn.over { border-color: var(--pepperoni); border-width: 2.5px; }
@@ -105,7 +105,9 @@ td.n { font-family: var(--mono); text-align: right; }
     <legend>Mode</legend>
     <label><input type="radio" name="mode" value="flat"> Flat: falling round each other</label>
     <label><input type="radio" name="mode" value="space" checked> Space: suns and orbits, from the side</label>
-    <label>Spin × rolling <input type="range" id="spin" min="0" max="3" step="0.1" value="1"><output for="spin"></output></label>
+    <label>Spin × rolling <input type="range" id="spin" min="0" max="3" step="0.1" value="0.6"><output for="spin"></output></label>
+    <label>Most turns/s <input type="range" id="maxturn" min="0.05" max="3" step="0.05" value="0.5"><output for="maxturn"></output></label>
+    <label>Pull to the middle <input type="range" id="home" min="0" max="3" step="0.05" value="0.8"><output for="home"></output></label>
     <label>Space backdrop <input type="checkbox" id="backdrop" checked></label>
   </fieldset>
   <fieldset>
@@ -203,7 +205,7 @@ td.n { font-family: var(--mono); text-align: right; }
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const knobs = ['g','soft','over','vmin','vmax','bounce','smin','sk','smax','rsize','balpha','rbase','rk','spin','tilt','persp','suns','drift','opace','ogap','owob'];
+  const knobs = ['maxturn','home','g','soft','over','vmin','vmax','bounce','smin','sk','smax','rsize','balpha','rbase','rk','spin','tilt','persp','suns','drift','opace','ogap','owob'];
   const K = {};
   const mode = () => document.querySelector('input[name=mode]:checked').value;
   const readKnobs = () => {
@@ -318,14 +320,15 @@ td.n { font-family: var(--mono); text-align: right; }
     const depth = Z * Math.cos(t) - Y * Math.sin(t);     // away from the camera
     const F = Math.max(B.w, B.d) * (K.persp > 0 ? 1 / K.persp : 1e6);
     const f = F / (F + depth);
-    // Fit: the box's projected extent fills the area's height, border to border, at the box's centre scale.
-    const extent = (B.h * Math.cos(t) + B.d * Math.sin(t)) / 2 + 0.0001;
-    const fit = Math.min(1, (H / 2 - 4) / extent);
-    // The near face of the box is drawn largest: fit it, so a near head reaches the side borders and no further.
-    const nearDepth = -((B.d / 2) * Math.cos(t) + (B.h / 2) * Math.sin(t));
-    const fNear = F / (F + nearDepth);
+    // Fit: every corner of the box, drawn at its own perspective, lands inside the content area with room for the largest head's
+    // half, so a head anywhere in the box stays inside the borders. Taken from the box alone, never from where heads are, so the view never zooms.
+    const fAt = (y, z) => F / (F + (z * Math.cos(t) - y * Math.sin(t)));
+    let fNear = 0, maxUp = 0.0001;
+    for (const y of [-B.h / 2, B.h / 2]) for (const z of [-B.d / 2, B.d / 2]) { const fc = fAt(y, z); fNear = Math.max(fNear, fc); maxUp = Math.max(maxUp, Math.abs((y * Math.cos(t) + z * Math.sin(t)) * fc)); }
     const fx = Math.min(1, 1 / fNear);
-    return { x: W / 2 + X * f * fx, y: H / 2 - up * f * fit * fx, f: f * fx };
+    const half = Math.max(...heads.map((h) => sizeOf(h))) / 2;
+    const fy = Math.min(fx, (H / 2 - half * fNear * fx - 2) / maxUp);
+    return { x: W / 2 + X * f * fx, y: H / 2 - up * f * fy, f: f * fx };
   }
 
   function stars() {
@@ -339,18 +342,20 @@ td.n { font-family: var(--mono); text-align: right; }
     area.classList.toggle('behind', document.querySelector('input[name=layer]:checked').value === 'behind');
     area.style.setProperty('--behind-alpha', K.balpha);
     for (const h of heads) {
-      const s = shownSize(h);
-      h.el.style.width = h.el.style.height = s + 'px';
-      h.el.style.fontSize = h.react ? Math.max(9, 11 * (h.scale ?? 1)) + 'px' : Math.max(10, s * 0.48) + 'px';
-      h.el.querySelector('.e').textContent = h.e;
-      h.el.querySelector('.e').style.transform = h.react ? '' : `rotate(${h.angle}rad)`;
-      const n = h.el.querySelector('.n'); if (n) n.textContent = h.n + (h.pending ? 1 : 0);
+      // The head is laid out once at its size in the box; perspective is a scale on top, so the glyph is never re-laid out each frame (which shimmered).
+      const s = sizeOf(h);
+      const size = s + 'px';
+      if (h.el.style.width !== size) { h.el.style.width = h.el.style.height = size; h.el.style.fontSize = h.react ? '11px' : Math.max(10, s * 0.48) + 'px'; }
+      const e = h.el.querySelector('.e'); if (e.textContent !== h.e) e.textContent = h.e;
+      e.style.transform = h.react ? '' : `rotate(${h.angle.toFixed(3)}rad)`;
+      const n = h.el.querySelector('.n'); const count = String(h.n + (h.pending ? 1 : 0)); if (n && n.textContent !== count) n.textContent = count;
       h.el.classList.toggle('mine', h.mine); h.el.classList.toggle('pending', !!h.pending);
       h.el.setAttribute('aria-label', h.react ? 'React: open the picker' : `${h.e} ${h.n}${h.over ? ', an Overreaction' : ''}${h.mine ? ', yours' : ''}. Press to catch.`);
-      h.el.style.transform = `translate(${h.sx - s / 2}px, ${h.sy - s / 2}px)`;
-      if (!h.react) h.el.style.zIndex = sp ? String(3 + Math.round(1000 - h.depth)) : '';
-      if (h.react && sp) h.el.style.zIndex = String(3 + Math.round(1000 - h.depth));
+      h.el.style.transform = `translate(${(h.sx - s / 2).toFixed(2)}px, ${(h.sy - s / 2).toFixed(2)}px) scale(${(h.scale ?? 1).toFixed(4)})`;
     }
+    // Far to near: each head's place in the stack, written only when the order changes.
+    if (sp) [...heads].sort((a, b) => b.depth - a.depth).forEach((h, i) => { const z = String(3 + i); if (h.el.style.zIndex !== z) h.el.style.zIndex = z; });
+    else for (const h of heads) if (h.el.style.zIndex !== '') h.el.style.zIndex = '';
   }
 
   function row() {
@@ -372,6 +377,8 @@ td.n { font-family: var(--mono); text-align: right; }
         const f = K.g * mb / r2;
         ax += f * dx / r; ay += f * dy / r;
       }
+      // The same pull home as Space's suns, so a head that bounces into a corner is drawn back out of it.
+      ax += -(a.x - W / 2) / (W / 2) * K.home * 180; ay += -(a.y - H / 2) / (H / 2) * K.home * 180;
       a.vx += ax * dt; a.vy += ay * dt;
       const v = Math.hypot(a.vx, a.vy);
       if (v > K.vmax) { a.vx *= K.vmax / v; a.vy *= K.vmax / v; }
@@ -404,16 +411,18 @@ td.n { font-family: var(--mono); text-align: right; }
       if (Math.abs(s.Y) > B.h / 2 - r) { s.Y = Math.sign(s.Y) * (B.h / 2 - r); s.vy *= -1; }
       if (Math.abs(s.Z) > Math.max(0, B.d / 2 - r)) { s.Z = Math.sign(s.Z) * Math.max(0, B.d / 2 - r); s.vz = -Math.sign(s.Z) * Math.abs(s.vz); }
     }
-    // Two systems never pass through each other: suns part where their outer rings would touch, as two balls would.
-    const reach = (s) => Math.max(sizeOf(s) / 2, ...heads.filter((h) => h.sun === s).map((h) => h.orbit.r + sizeOf(h) / 2));
+    // Suns steer: back toward the middle of the box, more the farther out they are, and away from another sun they come near. Their speed stays the drift,
+    // so a sun curves home rather than stopping, and two systems may pass one another at different depths (it is space), never sun through sun.
     const suns = heads.filter((h) => !h.sun);
-    for (let i = 0; i < suns.length; i++) for (let j = i + 1; j < suns.length; j++) {
-      const a = suns[i], b = suns[j], dx = b.X - a.X, dz = b.Z - a.Z, d = Math.hypot(dx, dz) || 0.01, min = reach(a) + reach(b);
-      if (d >= min) continue;
-      const nx = dx / d, nz = dz / d, push = (min - d) / 2;
-      a.X -= nx * push; a.Z -= nz * push; b.X += nx * push; b.Z += nz * push;
-      const rel = (b.vx - a.vx) * nx + (b.vz - a.vz) * nz;
-      if (rel < 0) { a.vx += rel * nx; a.vz += rel * nz; b.vx -= rel * nx; b.vz -= rel * nz; }
+    for (const a of suns) {
+      let ax = -a.X / (B.w / 2) * K.home, az = -a.Z / (B.d / 2) * K.home;
+      for (const b of suns) {
+        if (a === b) continue;
+        const dx = a.X - b.X, dz = a.Z - b.Z, d = Math.hypot(dx, dz) || 0.01, near = (sizeOf(a) + sizeOf(b)) * 1.6;
+        if (d < near) { const k = (near - d) / near * 3; ax += dx / d * k; az += dz / d * k; }
+      }
+      a.vx += ax * dt; a.vz += az * dt;
+      const v = Math.hypot(a.vx, a.vz) || 1; a.vx /= v; a.vz /= v;
     }
     // Satellites go round their sun: a circle in a plane wobbled off the horizontal, at a pace that follows the sun's mass and the radius.
     for (const h of heads) {
@@ -424,7 +433,8 @@ td.n { font-family: var(--mono); text-align: right; }
       const cx = Math.cos(o.phase) * o.r, cz = Math.sin(o.phase) * o.r;
       const wob = K.owob * Math.PI / 180 * o.tiltA;
       const cy = Math.sin(o.phase + o.tiltB) * Math.sin(wob) * o.r;
-      h.X = h.sun.X + cx; h.Y = h.sun.Y + cy; h.Z = h.sun.Z + cz;
+      const yRoom = Math.max(0, B.h / 2 - sizeOf(h) / 2);
+      h.X = h.sun.X + cx; h.Y = Math.max(-yRoom, Math.min(yRoom, h.sun.Y + cy)); h.Z = h.sun.Z + cz;
     }
     for (const h of heads) { const p = project(h.X, h.Y, h.Z); h.sx = p.x; h.sy = p.y; h.scale = p.f; h.depth = h.Z * Math.cos(K.tilt * Math.PI / 180) - h.Y * Math.sin(K.tilt * Math.PI / 180); }
   }
@@ -436,11 +446,15 @@ td.n { font-family: var(--mono); text-align: right; }
     else if (mode() === 'space') spaceStep(0, now / 1000);
     for (const h of heads) {
       // Roll: a head turns by the distance it moved on screen over its radius, so it rolls the way it travels.
-      if (h.psx !== null && !K.still) {
-        const dx = h.sx - h.psx, dy = h.sy - h.psy, d = Math.hypot(dx, dy), r = Math.max(6, shownSize(h) / 2);
-        const sign = Math.abs(dx) > Math.abs(dy) ? Math.sign(dx) : Math.sign(dy) || 1;
-        h.angle += sign * d / r * K.spin;
-        if (h.trialStart !== null) { h.travelled += d; h.ringed += dt; }
+      if (h.psx !== null && !K.still && dt > 0) {
+        // Rolling as a ball rolls along a floor: turned by its sideways travel over its radius, so it keeps one direction for as long as it heads that way.
+        // The turn is eased and capped, so an orbit's swing reads as a roll, never a buzz.
+        const dx = h.sx - h.psx, dy = h.sy - h.psy, r = Math.max(6, shownSize(h) / 2);
+        const cap = K.maxturn * 2 * Math.PI;
+        const want = Math.max(-cap, Math.min(cap, (dx / dt) / r * K.spin));
+        h.omega = (h.omega ?? 0) + (want - (h.omega ?? 0)) * Math.min(1, dt * 3);
+        h.angle += h.omega * dt;
+        if (h.trialStart !== null) { h.travelled += Math.hypot(dx, dy); h.ringed += dt; }
       }
       h.psx = h.sx; h.psy = h.sy;
       if (h.reel) {
