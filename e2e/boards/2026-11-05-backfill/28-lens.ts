@@ -87,7 +87,7 @@ export default manifest;
  * x = 20, 430 and 840; each screen's parts are held from a part of that screen (`origin`), so a screen's place on the page is never compared.
  *
  * By decision: the board is drawn in the desktop's sizes and the build sets a phone in the glass's phone tokens (as board 18's header says), so no phone type is compared and a part is
- * held by its place; the sheet's board has no role or name (its first screen is a `figure`), so its parts are found by their words and held from the WHOOPS! tab (on the build the tab button itself, role `tab`, since its label is a trimmed span inside it; the button's left edge and the icon put the headline and hold's `x` shifts at 9.9 and 7.7); the Lens's words
+ * held by its place; the sheet's board has no role or name (its first screen is a `figure`), so its parts are found by their words and held from the WHOOPS! tab; the Lens's words
  * are the build's (the state "33% washed for you" where the board's older "3 layers · top: Gloomba's yellow, 41% washed"; 33% and not the desktop's 32%, since the
  * share is of the post's body and a phone's body is the 22.5em min-height, engine/ui/thread/thread.css); the empty row's sentence is the one the desktop says, in the build's truer words
  * (the board's phone draws only its second half, which the build does not say, so the build's is found and not placed); the board's sheet is 420px tall, the build's 55% of the room above the HUD (the Float's SHEET_SHARE).
@@ -95,6 +95,11 @@ export default manifest;
  * 19px, and a tab's place is held from the first tab's left edge, so it carries the first tab's width. The shift is CI's measure (8.5px; 7.8px
  * here, and it did not go red here). A tab held from the previous tab's right edge would carry no shift, but an `originEdge` acts on y only
  * today: that is a follow-up, not this board's.
+ *
+ * On the board the WHOOPS! tab is found by its words; on the build it is the tab button itself (`buildRole: 'tab'`), since its label is a span
+ * trimmed to its caps inside it (#1248). The button's skewed box starts 18.9px left of where its words did (its 1px border, 14px padding and
+ * the skew's overhang), so the headline and hold's `x` shifts are 9.9 and 7.7 where they were -9 and -11.2; both tabs are held the same way, so
+ * STICK AROUND's shift is unchanged.
  */
 const PHONE = '2026-11-05-backfill/32-lens-log-phone';
 
