@@ -14,12 +14,18 @@
  * Quote, Spin, Edit, Report, permalink, Go to post or As it landed: a sample thread has nowhere for them to go.
  * A post wearing a card that folds the row (`CardUi.foldsRow`) folds it as a thread's does (`thread/fold.tsx`): a bar with the marks in it, the row behind,
  * the visitor's own press to open it. Its plays are live at the staged instant, since no clock is read.
+ *
+ * The door is also the first page's impact (docs/plans/2026-11-27-front-door-impact-design.md, section 1): for a visitor it stages bright effects
+ * (`stageEffects`, unless the device asks for more contrast or forced colors) and, when a staged play's card has sounds, the game bus
+ * (`stageSound`), both released when the door unmounts. The "Sound: on" toggle is the visitor's mute; its press is also the gesture that unlocks audio.
  */
-import { useCallback, useId, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
 import { BYTES, cellsOf, count, GRID, hasCell, union, type Cells } from '../../rules/surface.ts';
 import { BbCode } from '../bbcode/render.tsx';
+import { stageEffects } from '../appearance.ts';
+import { stageSound } from '../audio/sound.ts';
 import { PostEffects, WriteLateNote } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
@@ -102,6 +108,23 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
   );
 }
 
+const CONTRAST_QUERIES = ['(prefers-contrast: more)', '(forced-colors: active)'] as const;
+const mediaOf = (): MediaQueryList[] => (typeof window === 'undefined' ? [] : CONTRAST_QUERIES.flatMap((q) => window.matchMedia?.(q) ?? []));
+function subscribeContrast(onChange: () => void): () => void {
+  const queries = mediaOf();
+  for (const q of queries) q.addEventListener?.('change', onChange);
+  return () => { for (const q of queries) q.removeEventListener?.('change', onChange); };
+}
+/** Whether the device asks for more contrast or forced colors, kept current; without `matchMedia` it does not. */
+function useHighContrast(): boolean {
+  return useSyncExternalStore(subscribeContrast, () => mediaOf().some((q) => q.matches), () => false);
+}
+
+/** The visitor's own mute for the door's game sound; its press is the gesture that unlocks audio, so it needs no other code. */
+function SoundToggle({ on, set }: { readonly on: boolean; readonly set: (on: boolean) => void }) {
+  return <button type="button" className="kb-button kb-front-door-sound" aria-pressed={on} onClick={() => set(!on)}>Sound: {on ? 'on' : 'off'}</button>;
+}
+
 export function FrontDoor() {
   const { instance, ui, settings } = useKayfa();
   const { path } = useLocation();
@@ -175,6 +198,13 @@ export function FrontDoor() {
     return { plays, tallies, mine: createMine() };
   }, [door.posts, instance.cards]);
 
+  /* Whether a staged play's card has sounds: only then is there game sound to stage or to mute. */
+  const noisy = useMemo(() => door.posts.some((post) => (post.plays ?? []).some((p) => (ui.cards.find((c) => c.key === p.card)?.sounds?.length ?? 0) > 0)), [door.posts, ui.cards]);
+  const [soundOn, setSoundOn] = useState(true);
+  useEffect(() => (noisy ? stageSound({ gameSound: soundOn ? 'on' : 'off' }) : undefined), [noisy, soundOn]);
+  const highContrast = useHighContrast();
+  useEffect(() => stageEffects(highContrast ? 'standard' : 'bright'), [highContrast]);
+
   const note = useMemo(() => parse(door.note).filter((b) => b.t !== 'marker'), [door.note]);
   const noteFill: Fill = { settings, path, marker: () => null };
 
@@ -184,6 +214,7 @@ export function FrontDoor() {
         <div className="kb-front-door-top">
           <p className="kb-crumb">{ui.copy.siteName} » {door.title}</p>
           <span id={label} className="kb-front-door-label">{door.label}</span>
+          {noisy && <SoundToggle on={soundOn} set={setSoundOn} />}
         </div>
         <h1 className="kb-heading kb-thread-title">{door.title}</h1>
         <StagedCtx.Provider value={true}>

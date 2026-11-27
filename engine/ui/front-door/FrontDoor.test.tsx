@@ -1,7 +1,9 @@
 import { lazy, useEffect } from 'react';
 import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { resetSound } from '../audio/sound.ts';
+import type { MixerDeps } from '../audio/mixer.ts';
 import type { EffectProps, CardUi } from '../cards/types.ts';
 import { ok, refuse, type CardRules } from '../../rules/cards.ts';
 import { cellsOf, count, union, type SurfaceStroke } from '../../rules/surface.ts';
@@ -9,6 +11,23 @@ import { KayfaProvider, useKayfa } from '../context.tsx';
 import type { FrontDoorPost } from '../types.ts';
 import { buildWorld, renderIn, renderInWorld, testInstance } from '../test-world.tsx';
 import { FrontDoor } from './FrontDoor.tsx';
+
+/** Every mixer the page's sound makes, so a test reads the game bus the door left it. */
+const mixers = vi.hoisted(() => ({ calls: [] as { bus: string; on: boolean }[] }));
+vi.mock('../audio/mixer.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../audio/mixer.ts')>();
+  return {
+    ...real,
+    createMixer: (deps: Parameters<typeof real.createMixer>[0]) => {
+      const mixer = real.createMixer(deps);
+      const setBus = mixer.setBus.bind(mixer);
+      return { ...mixer, setBus: (bus: 'game' | 'interface', s: { on: boolean; volume: number }) => { mixers.calls.push({ bus, on: s.on }); setBus(bus, s); } };
+    },
+  };
+});
+const gameBus = () => mixers.calls.filter((c) => c.bus === 'game').at(-1)?.on;
+const fakeDeps = { makeContext: () => { throw new Error('no audio in a test'); }, fetchBytes: async () => new ArrayBuffer(8) } as unknown as MixerDeps;
+
 
 /* A card of the test's own with an effect: it wraps the words, says one control, and reports what save and release answer. */
 let seen: EffectProps | null = null;
@@ -47,6 +66,74 @@ function WithDoor({ posts, after = [] }: { readonly posts?: readonly FrontDoorPo
 }
 const drawWith = (posts: readonly FrontDoorPost[]) => renderInWorld(<WithDoor posts={posts} />, { cards: [test_card, notedUi, slabUi], instance: doorInstance });
 const draw = () => renderInWorld(<FrontDoor />, { cards: [test_card] });
+const noisy: CardUi = { ...test_card, sounds: ['thud'] };
+const sounds = { slots: [{ key: 'thud', src: '/thud.mp3', bus: 'game' as const, caption: 'A thud' }] };
+const drawNoisy = () => renderInWorld(<FrontDoor />, { cards: [noisy], sounds });
+
+/** A `matchMedia` whose two queries the test flips, telling the listeners as a browser does. */
+function fakeMedia(initial: readonly string[] = []) {
+  const on = new Set(initial);
+  const listeners = new Map<string, Set<() => void>>();
+  window.matchMedia = ((q: string) => ({
+    get matches() { return on.has(q); }, media: q,
+    addEventListener: (_t: string, l: () => void) => { (listeners.get(q) ?? listeners.set(q, new Set()).get(q)!).add(l); },
+    removeEventListener: (_t: string, l: () => void) => { listeners.get(q)?.delete(l); },
+  })) as unknown as typeof window.matchMedia;
+  return (q: string, matches: boolean) => { if (matches) on.add(q); else on.delete(q); act(() => { listeners.get(q)?.forEach((l) => l()); }); };
+}
+const original = window.matchMedia;
+beforeEach(() => { mixers.calls.length = 0; resetSound(fakeDeps); });
+afterEach(() => { window.matchMedia = original; resetSound(); document.documentElement.removeAttribute('data-kb-effects'); });
+
+describe('the front door\'s impact', () => {
+  test('mounting with a card that has sounds turns the game bus on, and unmounting puts it back to the preference', () => {
+    const { unmount } = drawNoisy();
+    expect(gameBus()).toBe(true);
+    unmount();
+    expect(gameBus()).toBe(false);
+  });
+
+  test('with no card that has sounds there is no toggle and the game bus is never turned on', () => {
+    const { unmount } = draw();
+    expect(screen.queryByRole('button', { name: /^Sound: (on|off)$/ })).toBeNull();
+    expect(mixers.calls.some((c) => c.bus === 'game' && c.on)).toBe(false);
+    expect(document.documentElement.getAttribute('data-kb-effects')).toBe('bright');
+    unmount();
+  });
+
+  test('the door stages bright effects, and the root loses them when it unmounts', () => {
+    fakeMedia();
+    const { unmount } = draw();
+    expect(document.documentElement.getAttribute('data-kb-effects')).toBe('bright');
+    unmount();
+    expect(document.documentElement.hasAttribute('data-kb-effects')).toBe(false);
+  });
+
+  test.each(['(prefers-contrast: more)', '(forced-colors: active)'])('with %s the door stages no bright effects, and a change moves it either way', (q) => {
+    const flip = fakeMedia([q]);
+    draw();
+    expect(document.documentElement.hasAttribute('data-kb-effects')).toBe(false);
+    flip(q, false);
+    expect(document.documentElement.getAttribute('data-kb-effects')).toBe('bright');
+    flip(q, true);
+    expect(document.documentElement.hasAttribute('data-kb-effects')).toBe(false);
+  });
+
+  test('the toggle is named by its visible text, reads "Sound: on", and a press turns the game bus off and on', async () => {
+    drawNoisy();
+    const button = screen.getByRole('button', { name: /^Sound: (on|off)$/ });
+    expect(button).toHaveTextContent('Sound: on');
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(button, 'the visible text is its name').not.toHaveAttribute('aria-label');
+    await userEvent.click(button);
+    expect(button).toHaveTextContent('Sound: off');
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    expect(gameBus()).toBe(false);
+    await userEvent.click(button);
+    expect(button).toHaveTextContent('Sound: on');
+    expect(gameBus()).toBe(true);
+  });
+});
 
 describe('the front door', () => {
   test('each post is drawn like a thread\'s: one .kb-act-grid under the article holds the postbit, meta and main', () => {
@@ -172,7 +259,7 @@ describe('the front door', () => {
       for (const [key, value] of Object.entries(fake)) {
         if (typeof value === 'function' && key !== 'now') (fake as unknown as Record<string, unknown>)[key] = (...a: unknown[]) => { names.add(key); return (value as (...x: unknown[]) => unknown)(...a); };
       }
-      const { unmount } = renderIn(fake, element, { cards: [test_card, slabUi] });
+      const { unmount } = renderIn(fake, element, { cards: [noisy, slabUi], sounds });
       await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
       await use();
       await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
@@ -182,6 +269,7 @@ describe('the front door', () => {
     const baseline = await called(<p>nothing</p>);
     const withDoor = await called(<WithDoor after={[wallPost([stroke(0.2), stroke(0.6)])]} />, async () => {
       /* A reaction, a pick and an open Lens with a reaction to the play in it: none of them asks anyone. */
+      await userEvent.click(screen.getByRole('button', { name: /^Sound: (on|off)$/ }));
       await userEvent.click(screen.getByRole('button', { name: 'Fire, 2. React' }));
       await userEvent.click(screen.getAllByRole('button', { name: 'React' })[1]!);
       await userEvent.click(within(screen.getByRole('dialog', { name: /^React to Bo/ })).getByRole('button', { name: /^Tea, / }));
