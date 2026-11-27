@@ -127,6 +127,11 @@ describe('the front door', () => {
     expect(seen!.nameOf(seen!.plays[0]!.caster)).toBe('Ann');
   });
 
+  test('a play the instance names keeps that id, under the door\'s own prefix, so a card that rolls from its play\'s id rolls what the instance chose', () => {
+    drawWith([{ by: 'ann', body: 'Named.', reactions: {}, plays: [{ id: 'pile-on-1', card: 'whoops', by: 'bo', config: { seed: 7 } }] }]);
+    expect(seen!.plays[0]!.id).toBe('front-door:play:pile-on-1');
+  });
+
   test('the card\'s controls are never drawn under the post', () => {
     draw();
     expect(screen.queryByRole('button', { name: 'Hold to scrub' })).toBeNull();

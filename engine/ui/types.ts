@@ -569,8 +569,11 @@ export interface FrontDoorPost {
   /**
    * Cards played on the post, each shown by its card's mark and drawn by its `CardUi.Effect`: its key, who cast it (a cast key), its
    * config (a seeded card's seed included), its layer where the card stacks (1 when none is given), and the counts its play starts with.
+   * `id` names the play, unique in the thread, where its card rolls something from the play's id and the instance wants a particular roll
+   * (front-door/ids.ts); none gives it its place in the thread.
    */
   readonly plays?: readonly {
+    readonly id?: string;
     readonly card: string; readonly by: string; readonly config: Readonly<Record<string, unknown>>;
     readonly layer?: number; readonly reactions?: Readonly<Record<string, number>>;
     readonly state?: Readonly<Record<string, unknown>>;

@@ -62,6 +62,16 @@
   },
   {
     "files": [
+      "ui/avatars/hotelmario_portrait.png",
+      "ui/avatars/hotelmario_square.png"
+    ],
+    "maker": "Keith Pickering",
+    "terms": "layer",
+    "work": "Hotel Mario",
+    "note": "Drawn by Keith Pickering for the source files of President Peach's Beautiful Border Wall. Mario is a character and trademark of Nintendo and is not licensed here."
+  },
+  {
+    "files": [
       "ui/avatars/gabe.png"
     ],
     "maker": "Keith Pickering",

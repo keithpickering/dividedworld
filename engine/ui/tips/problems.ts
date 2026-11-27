@@ -273,6 +273,14 @@ function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance
   const reactions = new Set(instance.reactions.map((r) => r.key));
   const cards = new Set(ui.cards.map((c) => c.key));
   if (!door.posts?.length) out.push('the front door has no posts');
+  /* A named play's id is its Act's: two of one name would be one play to the thread's stores (front-door/ids.ts). */
+  const named = new Map<string, string>();
+  (door.posts ?? []).forEach((post, i) => (post.plays ?? []).forEach((play, j) => {
+    if (play.id === undefined) return;
+    const first = named.get(play.id);
+    if (first !== undefined) out.push(`front door post ${i} play ${j} has the id "${play.id}", which ${first} already has`);
+    else named.set(play.id, `post ${i} play ${j}`);
+  }));
   (door.posts ?? []).forEach((post, i) => {
     if (!keys.has(post.by)) out.push(`front door post ${i} is by "${post.by}", who is not in the cast`);
     /* A reaction a `reaction` card's play adds is counted under its `localKey` (Reactions.tsx reads the tally by `localKindsOf`'s key). */
