@@ -545,7 +545,8 @@ end $$;
 -- M. A board move tells both boards (issue #1241): the new board hears the thread's `row`, the old board hears `moved` with the stub board_page lists for it, and the index hears each board's entry.
 -- M1. One moveThread queues one `row` on the new board equal to board_page's row there, one `moved` on the old board equal to board_page's stub there, and a `board` on `index` for each board.
 -- M2. The `moved` payload holds exactly the stub's keys, and neither event carries an owner, an account or a reader.
--- M3. A reversal queues a `row` on the board the thread is back on and no `moved` (that board lists none for it); an update of threads that moves nothing queues none.
+-- M3. A reversal queues a `row` on the board the thread is back on, and a `gone` {id} (no `moved`) on the board it leaves; an update of threads that moves nothing queues none.
+-- M5. A move of two threads gives each its own row and moved; a move of more than 50 threads off a board gives that board one `changed` {} and no row, moved or gone.
 -- M4. thread_stub is for the trigger alone.
 create function pg_temp.mv_board(slug text) returns uuid language sql as $$ select id from boards where slug = mv_board.slug $$;
 create function pg_temp.mv_queue(kind text, params jsonb) returns bigint language plpgsql as $$
@@ -654,7 +655,7 @@ begin
     end if;
   end loop;
 
-  -- M3. A reversal: the thread is back on the first board, which hears its row; the second lists no stub of it. A non-move update queues nothing.
+  -- M3. A reversal: the thread is back on the first board, which hears its row; the second lists no stub of it, so it hears `gone` with the id alone. A non-move update queues nothing.
   select id into mv from acts where kind = 'move' and thread is not null and payload ->> 'kind' = 'moveThread' order by created_at desc limit 1;
   delete from broadcasts_due;
   perform end_move(mv, 'reversed', 'admin');
@@ -663,12 +664,66 @@ begin
     raise exception 'a reversal should queue the thread''s row on the board it is back on, queued %', pg_temp.queued('board:' || one);
   end if;
   if exists (select 1 from broadcasts_due where event = 'moved') then raise exception 'a reversal queued a moved: %', (select jsonb_agg(payload) from broadcasts_due where event = 'moved'); end if;
+  got := pg_temp.queued('board:' || two);
+  if (select count(*) from jsonb_array_elements(got) e where e ->> 'event' = 'gone') is distinct from 1
+     or (select e -> 'payload' from jsonb_array_elements(got) e where e ->> 'event' = 'gone') is distinct from jsonb_build_object('id', t) then
+    raise exception 'a reversal should queue one gone with the thread id alone on the board it leaves, queued %', got;
+  end if;
   delete from broadcasts_due;
   update threads set title = title where id = t;
   update threads set last_at = last_at where id = t;
   if exists (select 1 from broadcasts_due where event in ('row', 'moved', 'board')) then
     raise exception 'an update of threads that moves nothing queued %', (select jsonb_agg(topic || ':' || event) from broadcasts_due);
   end if;
+
+  -- M5. Several threads leave one board at once, as a rebuild finds them (stale rows put under replica role, which sends nothing): each gets its own events.
+  declare
+    ts uuid[] := array[]::uuid[];
+    i integer;
+    ks text[];
+  begin
+    for i in 1..3 loop
+      insert into threads (board, title) values (one, 'Batch ' || i) returning id into mv;
+      perform tests.post(a, mv, 'Batch post ' || i);
+      ts := ts || mv;
+    end loop;
+    perform set_config('session_replication_role', 'replica', true);
+    update threads set board = two where id = any (ts);
+    perform set_config('session_replication_role', 'origin', true);
+    delete from broadcasts_due;
+    if rebuild_thread_places(ts) is distinct from 3 then raise exception 'the rebuild did not move the three threads'; end if;
+    if (select count(*) from jsonb_array_elements(pg_temp.queued('board:' || one)) e where e ->> 'event' = 'row') is distinct from 3 then
+      raise exception 'three threads joining a board should send three rows, queued %', pg_temp.queued('board:' || one);
+    end if;
+    got := pg_temp.queued('board:' || two);
+    if (select count(*) from jsonb_array_elements(got) e where e ->> 'event' = 'gone') is distinct from 3
+       or exists (select 1 from jsonb_array_elements(got) e where e ->> 'event' not in ('gone')) then
+      raise exception 'three threads leaving a board should send three gone and nothing else, queued %', got;
+    end if;
+    select array_agg(k order by k) into ks from jsonb_array_elements(got) e, jsonb_object_keys(e -> 'payload') k;
+    if ks is distinct from array['id', 'id', 'id'] then raise exception 'a gone payload holds the id alone, keys %', ks; end if;
+
+    -- More than 50: the board they leave and the board they join each hear one `changed` with an empty payload, and nothing per thread.
+    ts := array[]::uuid[];
+    for i in 1..55 loop
+      insert into threads (board, title) values (one, 'Bulk ' || i) returning id into mv;
+      ts := ts || mv;
+    end loop;
+    perform set_config('session_replication_role', 'replica', true);
+    update threads set board = two where id = any (ts);
+    perform set_config('session_replication_role', 'origin', true);
+    delete from broadcasts_due;
+    if rebuild_thread_places(ts) is distinct from 55 then raise exception 'the rebuild did not move the 55 threads'; end if;
+    foreach mv in array array[one, two] loop
+      got := pg_temp.queued('board:' || mv);
+      if jsonb_array_length(got) is distinct from 1 or got -> 0 is distinct from jsonb_build_object('event', 'changed', 'payload', '{}'::jsonb) then
+        raise exception 'a board 55 threads leave or join should hear one changed {} and nothing else, queued %', got;
+      end if;
+    end loop;
+    if (select count(*) from broadcasts_due where topic = 'index' and event = 'board') is distinct from 2 then
+      raise exception 'the index should still hear each board once, queued %', pg_temp.queued('index');
+    end if;
+  end;
 end $$;
 
 do $$

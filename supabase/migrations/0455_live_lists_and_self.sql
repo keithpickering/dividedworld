@@ -369,9 +369,10 @@ grant execute on function write_roster_entry(timestamptz, uuid[], text[], jsonb)
 -- ---- A board move tells both boards (issue #1241; the design, section 2) ----
 --
 --   thread_stub(thread, board)  the stub board_stubs (0326) lists for one thread on one board, key for key: id, title, moved_to, moved_to_slug, moved_to_name, moved_at. Null where that board lists none (the thread
---                               never left it by a moveThread, the move was reversed or overturned, it is past movedStubDays, it is back, or the board is closed).
+--                               never left it by a moveThread, the move was reversed or overturned, it is past movedStubDays, or it is back). It joins boards_now, closed boards included, so a closed board lists the stub as board_stubs does.
+--                               It has no 50-row cap: it answers for one thread, and board_stubs' limit bounds a page, which rebuild_thread_places keeps by sending a board of more than 50 moved threads one `changed`.
 --   rebuild_thread_places       (0339) the one writer of threads.board (the guard trigger of 0339 refuses any other, and the import runs in replica role, which sends nothing), so the one place that hears a move. After its step 5 it queues,
---                               for the threads it moved: `row` (thread_row) on `board:<new>`; `moved` (thread_stub) on `board:<old>`, where that board lists a stub of it; and `board` (board_summary) on `index` once for each board that
+--                               for the threads it moved: `row` (thread_row) on `board:<new>`; `moved` (thread_stub) on `board:<old>`, where that board lists a stub of it, else `gone` {id}; one `changed` {} instead of all of that on a board more than 50 moved threads leave or join; and `board` (board_summary) on `index` once for each board that
 --                               gained or lost a thread. It is a statement of its own, after the move, so the projections read the state the page's next read would. It is no trigger on threads: a transition-table trigger cannot be limited to
 --                               a column (0339 measured what firing on every reply cost), and a row trigger would ask board_summary once for each thread of a merge of ten thousand.
 --   Nothing private: a thread, its boards, its title and the time it moved are what the page lists to every signed-in player. No owner, account, reader, class or view count is read.
@@ -406,6 +407,7 @@ declare
   stub jsonb;
   summary jsonb;
   b uuid;
+  bulk uuid[];
 begin
   -- 0. The one global key, before anything is read: what another writer committed is what this call computes from.
   perform lock_thread_places();
@@ -451,15 +453,27 @@ begin
   -- 5. The search rows a reply wrote in the meantime. It took its thread's row after step 2 and before step 4 and read the board the thread was leaving; step 4 waited for it, so it is visible now. Only stale rows.
   update post_search p set board = m.place from unnest(ids, news) as m(id, place) where p.thread = m.id and p.board is distinct from m.place;
 
-  -- 6. Tell the boards, after the move (live lists). The new board hears the thread's row, the old board hears the stub its next read would draw (when it lists one), and the index hears each board's entry once.
-  -- One read of the moved threads' rows, and a stub probe only for a thread that has a departure from the board it left (a merge's threads have none).
-  for listed in select r from thread_rows(ids) r loop
+  -- 6. Tell the boards, after the move (live lists). A board that more than 50 threads (board_stubs' limit) leave or join in this call hears one `changed` and no per-thread event: a merge of five thousand threads and its
+  -- reversal would otherwise send two events per thread to every reader and cost 0189 minutes. For every other board: the new board hears the thread's `row`; the old board hears the stub its next read would draw
+  -- (`moved`) or, where it lists none (a merge, a reversal), `gone` with the thread's id, so its page drops the row; the index hears each board's entry once.
+  -- One read of the moved threads' rows (of the threads headed for a small board), and a stub probe only for a thread that has a departure from the board it left (a merge's threads have none).
+  select coalesce(array_agg(x.board), array[]::uuid[]) into bulk
+  from (select u.board from (select unnest(olds) as board union all select unnest(news)) u group by u.board having count(*) > 50) x;
+  foreach b in array bulk loop
+    perform broadcast_later('board:' || b, 'changed', '{}'::jsonb);
+  end loop;
+  for listed in select r from thread_rows((select coalesce(array_agg(m.id), array[]::uuid[]) from unnest(ids, news) as m(id, place) where m.place <> all (bulk))) r loop
     perform broadcast_later('board:' || (listed ->> 'board'), 'row', listed);
   end loop;
-  for d in select m.id, m.old_board from unnest(ids, olds) as m(id, old_board)
-           where exists (select 1 from thread_departures x where x.thread = m.id and x.from_board = m.old_board) loop
-    stub := thread_stub(d.id, d.old_board);
-    if stub is not null then perform broadcast_later('board:' || d.old_board, 'moved', stub); end if;
+  for d in select m.id, m.old_board,
+                  exists (select 1 from thread_departures x where x.thread = m.id and x.from_board = m.old_board) as departed
+           from unnest(ids, olds) as m(id, old_board) where m.old_board <> all (bulk) loop
+    stub := case when d.departed then thread_stub(d.id, d.old_board) end;
+    if stub is not null then
+      perform broadcast_later('board:' || d.old_board, 'moved', stub);
+    else
+      perform broadcast_later('board:' || d.old_board, 'gone', jsonb_build_object('id', d.id));
+    end if;
   end loop;
   for b in select distinct x from (select unnest(olds) union all select unnest(news)) u(x) order by 1 loop
     summary := board_summary(b);
