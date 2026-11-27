@@ -1935,7 +1935,7 @@ describe('what it tells the Lens', () => {
     expect(view).toMatchObject({ progress: null, yours: false, notes: {} });
     expect(viewProblems(view, { holds: false, covers: false })).toEqual([]);
     if (n === 1) expect(view.ends).toMatch(/^Ends /u);
-    else expect(view.ends).toMatch(/^The first one is gone .*; each lasts 3 days\.$/u);
+    else expect(view.ends).toMatch(/^The first one is gone .*\.$/u);
     expect(view.controls.map((c) => [c.kind, c.label])).toEqual([['press', 'Throw again'], ['toggle', 'Game sounds']]);
     expect(view.controls[1]).toMatchObject({ on: false, set: hub.set });
   });
@@ -1944,6 +1944,14 @@ describe('what it tells the Lens', () => {
     mount({ plays: [play(1, '2026-11-03T12:00:00Z'), play(2, '2026-11-01T12:00:00Z')] });
     expect(lastView().ends).toContain('The first one is gone');
     mount({ plays: [play(3, '2026-11-01T12:00:00Z')] });
+    expect(lastView().ends).toMatch(/^Ends /u);
+  });
+
+  test('a play with no ends gives no ends line, alone or beside one that has an end', () => {
+    const { ends: _ends, ...bare } = play(1);
+    mount({ plays: [bare] });
+    expect(lastView().ends).toBeUndefined();
+    mount({ plays: [bare, play(2, '2026-11-03T12:00:00Z')] });
     expect(lastView().ends).toMatch(/^Ends /u);
   });
 

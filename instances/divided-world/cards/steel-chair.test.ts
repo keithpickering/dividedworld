@@ -1,5 +1,5 @@
 /**
- * Steel Chair's own rules: its facts, the three that stack on a post for three days each, that it is refused on a character,
+ * Steel Chair's own rules: its facts, the three that stack on a post and stay until an admin ends them, that it is refused on a character,
  * that it costs nothing more to play, and that it is never staffed.
  */
 import { test } from 'node:test';
@@ -12,12 +12,13 @@ import { decidePlay, decideSet, staffConfigOf } from '../../../engine/rules/card
 import { instanceProblems } from '../../../engine/rules/instance.ts';
 
 const now = new Date('2026-11-15T12:00:00Z');
-const live = (card = 'steel-chair') => ({ card, act: 'c1', reach: 'post' as const, ends: new Date(now.getTime() + 3 * 86_400_000).toISOString() });
+const live = (card = 'steel-chair') => ({ card, act: 'c1', reach: 'post' as const });
 const ended = () => ({ card: 'steel-chair', act: 'c0', reach: 'post' as const, ends: new Date(now.getTime() - 1000).toISOString() });
 
-test('Steel Chair is a common Salty Cast on a post, three to a post, that lasts three days; it costs 1.00 and nothing more to play', async () => {
+test('Steel Chair is a common Salty Cast on a post, three to a post, that stays until an admin ends it; it costs 1.00 and nothing more to play', async () => {
   const { steelChair, price } = await import('./steel-chair.ts');
-  assert.deepEqual([steelChair.key, steelChair.name, steelChair.alignment, steelChair.rarity, steelChair.play ?? 'cast', steelChair.reaches, steelChair.stack, steelChair.lasts], ['steel-chair', 'Steel Chair', 'salty', 'common', 'cast', undefined, 3, { unit: 'day', count: 3 }]);
+  assert.deepEqual([steelChair.key, steelChair.name, steelChair.alignment, steelChair.rarity, steelChair.play ?? 'cast', steelChair.reaches, steelChair.stack], ['steel-chair', 'Steel Chair', 'salty', 'common', 'cast', undefined, 3]);
+  assert.equal(steelChair.lasts, undefined, 'a chair has no span: it stays until an admin ends it');
   assert.equal(price, 100);
   assert.equal(instance.machine.find((m) => 'card' in m.item && m.item.card === 'steel-chair')!.price, 100);
   assert.ok(cards.some((c) => c.key === 'steel-chair'));

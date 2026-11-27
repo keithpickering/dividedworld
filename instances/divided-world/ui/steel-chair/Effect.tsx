@@ -91,7 +91,6 @@
  */
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
-import { spanWords } from '../../../../engine/ui/account/words.ts';
 import { useSound } from '../../../../engine/ui/audio/sound.ts';
 import { useGameSound } from '../../../../engine/ui/audio/useGameSound.ts';
 import { bodyBox, bodyOf, placeLayer, sameBox, setBend, wordsBoxOf, type Bend, type BodyBox } from '../../../../engine/ui/cards/body.ts';
@@ -100,7 +99,6 @@ import { useAt } from '../../../../engine/ui/cards/plays.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
-import { STEEL_CHAIR_LASTS } from '../../cards/steel-chair.ts';
 import {
   addThrow, bodies, createWorld, MOST_STEPS, remove, resize, rng, settle, SETTLE_S, SHAPES, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
@@ -860,7 +858,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   useLayoutEffect(() => { paintNow.current(); }, [chairs, dents]);
 
   /* The Lens: how many chairs, when the first is gone, and the two controls. */
-  const n = live.length;
+  const dated = live.filter((p) => p.ends !== undefined).length;
   const soonest = live.reduce<number | null>(
     (m, p) => (p.ends === undefined ? m : m === null ? Date.parse(p.ends) : Math.min(m, Date.parse(p.ends))),
     null,
@@ -869,8 +867,8 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   const view = useMemo<CardView>(() => {
     const at = soonest === null ? null : new Date(soonest).toISOString();
     const ends = at === null ? undefined
-      : n === 1 ? endsWords(at, now)
-      : `The first one is gone ${dayAndTime(at)}; each lasts ${spanWords(STEEL_CHAIR_LASTS)}.`;
+      : dated === 1 ? endsWords(at, now)
+      : `The first one is gone ${dayAndTime(at)}.`;
     return {
       progress: null,
       state: dentedBy(live),
@@ -883,7 +881,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       ],
       notes: {},
     };
-  }, [n, live, soonest, now, replay, covered, gameSound.on, gameSound.set]);
+  }, [dated, live, soonest, now, replay, covered, gameSound.on, gameSound.set]);
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 

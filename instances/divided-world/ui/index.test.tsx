@@ -43,7 +43,6 @@ import { ropeBreak } from '../cards/rope-break.ts';
 import { whoopeeCushion } from '../cards/whoopee-cushion.ts';
 import { payItForward } from '../cards/pay-it-forward.ts';
 import { kickMe } from '../cards/kick-me.ts';
-import { STEEL_CHAIR_LASTS } from '../cards/steel-chair.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
 import { WORDS as THIS_WORDS, thisCard } from '../cards/this.ts';
 import { HOT_BOX_LASTS, hotBox } from '../cards/hot-box.ts';
@@ -1644,8 +1643,7 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
   });
 
   test('its words read the stack and the span from its rules', () => {
-    expect(spanWords(STEEL_CHAIR_LASTS)).toBe('3 days');
-    expect(chair.describe(instance.settings)).toBe('A Salty card, common. Something is thrown at a post and dents it, usually a folding chair, sometimes a trash can, a step ladder or a fire extinguisher: the words bend into the dent, and the thing drops to the floor under them. A trash can\'s lid flies off, and a fire extinguisher fills the post with spray that clears by itself in a few seconds. Once it lands it covers none of the words, and it holds nobody. It plays again each time the post scrolls into view, somewhere else each time, and with Game sounds on it clangs each time, unless motion is reduced. Up to 3 can stack on one post, each with its own dent, and each is gone 3 days after it lands. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
+    expect(chair.describe(instance.settings)).toBe('A Salty card, common. Something is thrown at a post and dents it, usually a folding chair, sometimes a trash can, a step ladder or a fire extinguisher: the words bend into the dent, and the thing drops to the floor under them. A trash can\'s lid flies off, and a fire extinguisher fills the post with spray that clears by itself in a few seconds. Once it lands it covers none of the words, and it holds nobody. It plays again each time the post scrolls into view, somewhere else each time, and with Game sounds on it clangs each time, unless motion is reduced. Up to 3 can stack on one post, each with its own dent, and they stay. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
   });
 
   test('it has an effect and no form', () => {
