@@ -893,6 +893,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a set card has one`);
   if (play === 'set' && c.trap === undefined) out.push(`${who} is a set card with no trap`);
   if (c.drawsEffect !== undefined && !(c.reaches === undefined || (Array.isArray(c.reaches) && c.reaches.includes('post')))) out.push(`${who} draws an effect and reaches no post; an effect is drawn on a post`);
+  if (c.drawsEffect?.final === true && c.drawsEffect.cleared === undefined) out.push(`${who} says its clear is final and gives no cleared; a clear is read from cleared`);
   if (c.drawsEffect !== undefined && play === 'set') out.push(`${who} draws an effect and is a set card; a set card counts as a back and declares nothing`);
   const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
   const postAlone = !beyond;

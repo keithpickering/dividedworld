@@ -53,7 +53,7 @@ import { register, unregister, wake, SPAN_MARGIN } from '../../../../engine/ui/s
 import { seeded } from '../../ui/seeded.ts';
 import type { Stretch } from '../autocorrect.ts';
 import { economyNow } from '../../../../engine/ui/economy.ts';
-import { heldUntil } from '../autocorrect.ts';
+import { heldUntil, holdLeft } from '../hold.ts';
 import { dropRoll } from './drop.ts';
 import { Hands, type HandEvent, type HandSettings, type PieceSpec, type PieceView } from './hands.ts';
 import { drawPaper, PAPER, tearJag, type PaperContext } from './paper.ts';
@@ -95,14 +95,6 @@ export const LENS = Object.freeze({
   authorEnds: 'Drag a strip by one end to read under it; it lays back down. To peel it off for good, hold one end still until the corner lifts, then pull slowly. Pull too fast and it tears. Push a roll back to stick the tape down again.',
   authorHeld: (left: string) => `Stuck on for ${left}. Until then, drag a strip by one end to read under it. After that you can peel strips off for good: hold one end still until the corner lifts, then pull slowly.`,
 });
-
-/** How long a hold has left, rounded up to the minute: "5h 12m", "12m", or "less than a minute". */
-function left(ms: number): string {
-  if (ms < 60_000) return 'less than a minute';
-  const minutes = Math.ceil(ms / 60_000);
-  const h = Math.floor(minutes / 60);
-  return h > 0 ? `${h}h ${minutes % 60}m` : `${minutes}m`;
-}
 
 /** What a saved state names: the places peeled whole, the stretches still stuck of those half peeled, and where rolls fell on those. Anything else is none. */
 function savedOf(state: unknown): SavedTape {
@@ -639,13 +631,13 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
    */
   /* The economy as the server holds it now over the compiled one: a screen that has not read the server's holds the compiled hours. */
   const economy = useMemo(() => ({ economy: economyNow(instance.settings, settings.economy) }), [instance, settings.economy]);
-  const holds = useMemo(() => new Map(plays.map((p) => [p.id, heldUntil(economy, p.playedAt)?.getTime()] as const)), [plays, economy]);
+  const holds = useMemo(() => new Map(plays.map((p) => [p.id, heldUntil(economy, 'autocorrect.holdHours', p.playedAt)?.getTime()] as const)), [plays, economy]);
   const [clock, setClock] = useState(() => Date.now());
   const heldAt = (s: TapeStrip): number | undefined => {
     const until = author ? holds.get(s.play) : undefined;
     return until !== undefined && until > clock ? until : undefined;
   };
-  const heldLeft = (s: TapeStrip): string | undefined => { const until = heldAt(s); return until === undefined ? undefined : left(until - clock); };
+  const heldLeft = (s: TapeStrip): string | undefined => { const until = heldAt(s); return until === undefined ? undefined : holdLeft(until - clock); };
   const latestHold = live.reduce((m, s) => Math.max(m, heldAt(s) ?? 0), 0);
   useEffect(() => {
     if (!latestHold) return;
@@ -1261,7 +1253,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   const view: CardView = {
     progress: author && progress.current !== null ? Math.round(progress.current * 1000) / 1000 : null,
     state: all ? `${all} ${all === 1 ? 'strip' : 'strips'}, ${done} peeled${author && started > 0 ? `, ${started} started` : ''}` : 'Phrase not in this version',
-    ends: author ? (latestHold ? LENS.authorHeld(left(latestHold - clock)) : LENS.authorEnds) : LENS.readerEnds,
+    ends: author ? (latestHold ? LENS.authorHeld(holdLeft(latestHold - clock)) : LENS.authorEnds) : LENS.readerEnds,
     yours: live.length > 0,
     controls: [],
     notes: Object.fromEntries(configs.map((c) => {

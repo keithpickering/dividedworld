@@ -2554,6 +2554,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const movedPrice = (seen: SlotRec): boolean => seen.move?.kind === 'repriceSlot' && seen.price !== seen.move.was;
   const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
 
+  /** A value with every object's keys in order, so two equal JSON values stringify alike. */
+  const sortedKeys = (v: unknown): unknown => Array.isArray(v) ? v.map(sortedKeys) : v !== null && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, x]) => [k, sortedKeys(x)])) : v;
+
   function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
     const bad = request({ action: 'saveEffect', character, play, state });
     if (bad) return bad;
@@ -2569,6 +2572,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (acts.get(played.target!)?.character !== character) return refuse('only the post\'s author saves what is on it');
     if (reversedPlays.has(play)) return refuse('an admin ended that card');
     if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
+    /* A final clear stays: the card says its saved state clears the play for every version (drawsEffect.final), and nothing saves over it. */
+    const rule = instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.drawsEffect;
+    if (rule?.final === true && rule.cleared?.(effects.get(play)?.state) === true) {
+      /* An exact repeat of the kept state is a quiet success that changes nothing. */
+      const kept = effects.get(play)!;
+      if (JSON.stringify(sortedKeys(kept.state)) === JSON.stringify(sortedKeys(state))) return ok({ play, savedAt: iso(kept.at) });
+      return refuse('that effect was cleared for good, and stays cleared');
+    }
     const at = now();
     effects.set(play, { state, at });
     send(`thread:${played.thread}`, 'effect', () => { for (const l of [...(threadListeners.get(played.thread) ?? [])]) l.onEffect?.(play, iso(at)); });
@@ -3047,7 +3058,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const r = instance.cards.find((c) => c.key === a.payload.card);
         /* A skim play carries the quadrant it names, so its card's rules can refuse a second for the same one (card_target, 0151). */
         const named = r?.skim ? (a.payload.config as { quadrant?: unknown } | undefined)?.quadrant : undefined;
-        out.push({ card: String(a.payload.card), act: a.id, ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(r?.rewind ? { rewind: r.rewind, at: iso(a.at) } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}), ...(typeof named === 'string' ? { quadrant: named as Quadrant } : {}) });
+        /* A play whose card draws an effect says so, and says it is cleared where its saved state clears it for the post as it is now (effect_cleared, post_version). */
+        const answer = r?.drawsEffect?.cleared?.(effects.get(a.id)?.state);
+        const version = (): Id => { const e = edits(acts.get(target)!); return e.length > 0 ? e[e.length - 1]!.id : target; };
+        const cleared = answer === true || (typeof answer === 'object' && answer !== null && answer.version === version());
+        out.push({ card: String(a.payload.card), act: a.id, ...(r?.drawsEffect ? { drawing: true as const } : {}), ...(cleared ? { cleared: true as const } : {}), ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(r?.rewind ? { rewind: r.rewind, at: iso(a.at) } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}), ...(typeof named === 'string' ? { quadrant: named as Quadrant } : {}) });
       } else if (a.kind === 'set') {
         const f = faceDown.get(a.id);
         out.push({ card: null, act: a.id, faceDown: true, ends: iso(f?.sprung ? acts.get(f.sprung)!.at : f?.takenBack ? acts.get(f.takenBack)!.at : f?.endsAt ?? a.at) });

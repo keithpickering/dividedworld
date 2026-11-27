@@ -8578,3 +8578,82 @@ describe('the jobs', () => {
     expect(page?.jobs.find((j) => j.job === 'kayfabb-meet')?.lastRun).toBeNull();
   });
 });
+
+describe('a clear that is final (lasting gags, section 2.4)', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}), alignment: 'salty' as const, rarity: 'common' as const, reaches: ['post' as const], canApply: () => ok(undefined) };
+  const clean = (s: unknown) => (s as { clean?: boolean } | null)?.clean === true;
+  const forever: CardRules = { ...base, key: 'forever', name: 'Forever', drawsEffect: { cleared: clean, final: true }, canApply: (target, effects, _config, now) => landsOn(forever, target, effects, now) };
+  const passing: CardRules = { ...base, key: 'passing', name: 'Passing', drawsEffect: { cleared: clean }, canApply: (target, effects, _config, now) => landsOn(passing, target, effects, now) };
+  const cards = [forever, passing] as unknown as Instance['cards'];
+  function setup() {
+    const fake = createFake({ instance: { ...instance, cards, machine: [] } });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+    fake.signInAs(ana);
+    return { fake, anaFace, boFace, thread, opener };
+  }
+
+  test('a final card\'s cleared play refuses any later save; a card that is not final can still be saved', async () => {
+    const { fake, anaFace, boFace, opener } = setup();
+    const final = fake.seed.card(boFace, opener, 'forever');
+    const soft = fake.seed.card(boFace, opener, 'passing');
+    must(await fake.saveEffect(final, anaFace, { clean: false }));
+    const cleared = must(await fake.saveEffect(final, anaFace, { clean: true }));
+    expect(must(await fake.saveEffect(final, anaFace, { clean: true }))).toEqual(cleared);
+    expect(await fake.saveEffect(final, anaFace, { clean: false, aired: 0.5 })).toEqual(refused('that effect was cleared for good, and stays cleared'));
+    expect(await fake.saveEffect(final, anaFace, { clean: false })).toEqual(refused('that effect was cleared for good, and stays cleared'));
+    expect((await fake.effectStates([final]))[final]!.state).toEqual({ clean: true });
+    must(await fake.saveEffect(soft, anaFace, { clean: true }));
+    must(await fake.saveEffect(soft, anaFace, { clean: false }));
+  });
+
+  test('a cleared play of a final card takes no stack place on the post, and an uncleared or not-final one does', async () => {
+    const fake = createFake({ instance: { ...instance, cards, machine: [] } });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+    fake.seed.cards(bo, { forever: 3, passing: 3 });
+    fake.signInAs(bo);
+    const first = must(await fake.playCard('forever', boFace, opener, {}, ''));
+    const keep = must(await fake.playCard('passing', boFace, opener, {}, ''));
+    expect((await fake.playCard('forever', boFace, opener, {}, '')).ok).toBe(false);
+    expect((await fake.playCard('passing', boFace, opener, {}, '')).ok).toBe(false);
+    fake.signInAs(ana);
+    must(await fake.saveEffect(first.id, anaFace, { clean: true }));
+    must(await fake.saveEffect(keep.id, anaFace, { clean: true }));
+    fake.signInAs(bo);
+    expect((await fake.playCard('passing', boFace, opener, {}, '')).ok).toBe(false);
+    expect((await fake.playCard('forever', boFace, opener, {}, '')).ok).toBe(true);
+  });
+
+  test('a clear for one version of the post only frees its slot on that version, and the slot is taken again once the post is edited', async () => {
+    const forVersion = (s: unknown) => { const v = (s as { version?: string } | null)?.version; return v === undefined ? false : { version: v }; };
+    const once: CardRules = { ...base, key: 'once', name: 'Once', drawsEffect: { cleared: forVersion }, canApply: (target, effects, _config, now) => landsOn(once, target, effects, now) };
+    const other: CardRules = { ...base, key: 'other', name: 'Other', drawsEffect: {} };
+    const afterClear = async (edited: boolean) => {
+      const fake = createFake({ instance: { ...instance, cards: [once, other] as unknown as Instance['cards'], machine: [], settings: { ...instance.settings, postEffects: 1 } } });
+      const ana = fake.seed.account('ana');
+      const bo = fake.seed.account('bo');
+      const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+      const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+      const { act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+      fake.seed.cards(bo, { once: 1, other: 3 });
+      fake.signInAs(bo);
+      const play = must(await fake.playCard('once', boFace, opener, {}, ''));
+      expect((await fake.playCard('other', boFace, opener, {}, '')).ok).toBe(false);
+      fake.signInAs(ana);
+      must(await fake.saveEffect(play.id, anaFace, { version: opener }));
+      if (edited) must(await fake.edit(opener, anaFace, 'First post, edited'));
+      fake.signInAs(bo);
+      return (await fake.playCard('other', boFace, opener, {}, '')).ok;
+    };
+    expect(await afterClear(false)).toBe(true);
+    expect(await afterClear(true)).toBe(false);
+  });
+});

@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PEELS, autocorrect, heldUntil } from './autocorrect.ts';
+import { PEELS, autocorrect } from './autocorrect.ts';
 import { decidePlay, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
@@ -209,8 +209,6 @@ test('Autocorrect holds its author\'s saves for holdHours after the play lands; 
   assert.equal(autocorrect.stateHeldUntil!(settings, landed)?.toISOString(), '2026-11-17T10:00:00.000Z');
   const none = withOverrides(settings, { economy: { 'autocorrect.holdHours': 0 } });
   assert.equal(autocorrect.stateHeldUntil!(none, landed), undefined);
-  assert.equal(heldUntil(settings, '2026-11-16T10:00:00Z')?.toISOString(), '2026-11-17T10:00:00.000Z');
-  assert.equal(heldUntil(settings, 'not a time'), undefined);
   assert.match(autocorrect.stateHeldWords!('Nov 17, 10:00'), /^This tape is stuck on until Nov 17, 10:00\. It can be peeled after that\.$/);
 });
 

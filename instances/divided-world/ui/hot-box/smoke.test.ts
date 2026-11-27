@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SMOKE, covered, extendTrail, fogAlpha, hardDiscs, hardOpen, holeRadius, maskAlpha, openness, strength, sweepAt, trailOpenness, type Clearing, type TrailPoint } from './smoke.ts';
+import { SMOKE, airedTop, covered, extendTrail, fogAlpha, hardDiscs, hardOpen, holeRadius, maskAlpha, openness, strength, sweepAt, trailOpenness, type Clearing, type TrailPoint } from './smoke.ts';
 
 const near = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} is not ${b}`);
 
@@ -253,4 +253,21 @@ test('hardDiscs lists a clearing at least half open and a trail point younger th
     assert.equal(hardOpen(d.x + R - 1, 100, [whole, justOpen, justShut, gone], [young, old], R, now), listed, `inside the rim at ${d.x}`);
     assert.equal(hardOpen(d.x + R, 100, [whole, justOpen, justShut, gone], [young, old], R, now), false, `at the rim at ${d.x}`);
   }
+});
+
+test('airedTop: 0 for no share, the share of the box for a saved one, the whole box for clean, at three box heights', () => {
+  for (const h of [200, 600, 1234]) {
+    assert.equal(airedTop(undefined, h), 0);
+    assert.equal(airedTop({}, h), 0);
+    near(airedTop({ aired: 0.25 }, h), h * 0.25);
+    near(airedTop({ aired: 0.9999 }, h), h * 0.9999);
+    assert.equal(airedTop({ clean: true }, h), h);
+  }
+});
+
+test('airedTop takes only what the card keeps: a share out of 0 to 1, a clean that is not true, a state that is no object and a box that is no size give 0', () => {
+  for (const bad of [{ aired: 0 }, { aired: 1 }, { aired: -0.5 }, { aired: NaN }, { aired: '0.5' }, { clean: false }, { clean: 'yes' }, null, 7, 'clean', []]) assert.equal(airedTop(bad, 600), 0, JSON.stringify(bad));
+  assert.equal(airedTop({ aired: 0.5 }, NaN), 0);
+  assert.equal(airedTop({ aired: 0.5 }, -10), 0);
+  assert.equal(airedTop({ clean: true }, 0), 0);
 });

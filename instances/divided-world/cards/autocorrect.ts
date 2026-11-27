@@ -34,6 +34,7 @@
  */
 import { economyOf, landsOn, ok, refuse, type Cover, type CardRules } from '../../../engine/rules/cards.ts';
 import { occurrences, sameWords } from './autocorrect/match.ts';
+import { holdEnds } from './hold.ts';
 import { LINE_BREAK, boundedPhrase, characters } from './phrase-bound.ts';
 import type { Hundredths, Settings } from '../../../engine/rules/types.ts';
 import { field, textField, who } from './seen-words.ts';
@@ -192,20 +193,6 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     return ok({ peeled: kept, ...(clean === undefined ? {} : { clean }), ...(keptStuck ? { stuck: keptStuck } : {}), ...(keptDrops ? { drops: keptDrops } : {}) });
   },
 };
-
-/** When a hold of `hours` on a play that landed at `landed` ends; undefined for no hold (0). The server's rule and the screens' preview both read it. */
-function holdEnds(hours: number, landed: Date): Date | undefined {
-  return hours > 0 ? new Date(landed.getTime() + hours * 3_600_000) : undefined;
-}
-
-/**
- * When the author's hold on a play that landed at `playedAt` (an ISO time) ends, for the screens, which hold only the economy of the settings;
- * undefined for no hold, an unparsable time, or an economy without the setting (the screens only preview; the act function refuses the save).
- */
-export function heldUntil(settings: { readonly economy: Readonly<Record<string, number>> }, playedAt: string): Date | undefined {
-  const landed = new Date(playedAt), hours = settings.economy['autocorrect.holdHours'];
-  return Number.isNaN(landed.getTime()) || typeof hours !== 'number' || !Number.isFinite(hours) ? undefined : holdEnds(hours, landed);
-}
 
 /** What the Vending Machine sells it for, in hundredths of an orb. */
 export const price: Hundredths = 100;

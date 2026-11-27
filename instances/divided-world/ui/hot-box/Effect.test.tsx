@@ -24,8 +24,10 @@ import { createFake } from '../../../../engine/ui/data/fake.ts';
 import { makeTileLayer, mostTiles } from '../../../../engine/ui/cards/tiles.ts';
 import { renderIn, testInstance } from '../../../../engine/ui/test-world.tsx';
 import { SMOKE, fogAlpha, holeRadius, maskAlpha, strength } from './smoke.ts';
+import { HOT_BOX_THINS } from '../../cards/hot-box.ts';
+import { spanMs } from '../../../../engine/ui/cards/marks.ts';
 import { makeField, paintFog, stepField } from './fog.ts';
-import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, nextWake, forgetScratch, resetFogLadder } from './Effect.tsx';
+import { AIR_DESCRIBE, HotBoxEffect, smokedRestWay, smokedWay, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, nextWake, forgetScratch, resetFogLadder } from './Effect.tsx';
 
 /* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them; and what a painter's call costs, for the ladder. */
 const { LINES, read, cost } = vi.hoisted(() => {
@@ -51,6 +53,13 @@ vi.mock('./fog.ts', async (orig) => {
     paintFog: vi.fn((...a: Parameters<typeof real.paintFog>) => { cost.perf += cost.ms; return real.paintFog(...a); }),
   };
 });
+
+/* Three lines a pitch (60px) apart with a glyph as tall as the pitch, in a 600px area: the canvas below steps 60px a row. */
+const TIGHT = [
+  { top: 0.1, bottom: 0.2, text: 'First line of the post.' },
+  { top: 0.2, bottom: 0.3, text: 'Second line.' },
+  { top: 0.3, bottom: 0.4, text: 'Third line.' },
+];
 
 const DAY = 86_400_000;
 const NOW = Date.parse('2026-11-15T12:00:00Z');
@@ -89,6 +98,8 @@ let sizes = BOX;
 let AREA = BOX;
 /** The opening post's body around an ORIGIN box's area (`nested` in `setup`): the box is 900 by 700 there, the area is `AREA`. Null where the area is the post's own body. */
 let OUTER: typeof BOX | null = null;
+/** The economy's `hotBox.holdHours` on the screens: the hours the author's saves are held. */
+let HOLD_HOURS = 24;
 
 const recs = new WeakMap<HTMLCanvasElement, Rec>();
 const ctxs = new WeakMap<HTMLCanvasElement, unknown>();
@@ -169,10 +180,13 @@ const settle = (ms = 400) => pass(ms, 16);
  */
 /** Opens or shuts a curtain over the post set up last (the effect's `covered`), the way the engine does when a cover goes. */
 let cover: (covered: boolean) => void = () => {};
+let reword: (words: EffectProps['children']) => void = () => {};
 function Covering({ props }: { props: EffectProps }) {
   const [covered, setCovered] = useState(props.covered);
+  const [children, setChildren] = useState(props.children);
   cover = setCovered;
-  return <HotBoxEffect {...props} covered={covered} />;
+  reword = setChildren;
+  return <HotBoxEffect {...props} covered={covered} children={children} />;
 }
 function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, nested = false, inPost = false) {
   const show = vi.fn<(view: CardView | null) => void>();
@@ -194,7 +208,7 @@ function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, ne
   const page = inPost
     ? <div><article className="kb-act"><header><button type="button" className="kb-mark kb-meta-tile" data-kb-card="hot-box">Hot Box</button></header>{inArea}</article><button type="button" className="outside">Elsewhere</button></div>
     : inArea;
-  const out = renderIn(world, strict ? <StrictMode>{page}</StrictMode> : page);
+  const out = renderIn(world, strict ? <StrictMode>{page}</StrictMode> : page, { settings: { economy: { 'whoops.price': 100, 'hotBox.holdHours': HOLD_HOURS } } as never });
   return { show, met, save, release, props, ...out };
 }
 type Setup = ReturnType<typeof setup>;
@@ -298,7 +312,7 @@ const rectLayers = (s: Setup) => layers(s).filter((l) => l.kind === 'rect');
 const flat = (s: Setup) => layers(s).find((l) => l.kind === 'flat');
 
 beforeEach(() => {
-  observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX; OUTER = null;
+  observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX; OUTER = null; HOLD_HOURS = 24;
   watch = undefined; bandsWatch = undefined; bandEls = []; margins = []; watched = [];
   cost.ms = 0; cost.perf = 0;
   /* The painter's cost is read from `performance.now`; here it moves only when a test moves it (`cost.perf`, which a call of the fog adds `cost.ms` to), never with how loaded the run is. */
@@ -1066,8 +1080,8 @@ describe('the held sweep', () => {
 describe('the in-body line', () => {
   test('stands where the words are while they are smoked, hidden from sight and outside the inert words; gone in the waved window, and back after', () => {
     const s = setup();
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
-    expect(SMOKED_WAY).toBe('This post is under smoke. To read it, open Hot Box in the cards on this post and hold Wave the smoke.');
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
+    expect(smokedWay('Wave the smoke')).toBe('This post is under smoke. To read it, open Hot Box in the cards on this post and hold Wave the smoke.');
     expect(way(s)).toHaveClass('kb-visually-hidden');
     expect(way(s)!.closest('[inert]')).toBeNull();
     expect(words(s).contains(way(s))).toBe(false);
@@ -1079,12 +1093,12 @@ describe('the in-body line', () => {
     release(s);
     pass(SMOKE.waved);
     expect(inert(s)).toBe(true);
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
   });
 
   test('is drawn in a moment as it is live', () => {
     const s = setup({ moment });
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
   });
 });
 
@@ -1402,7 +1416,7 @@ describe('forced colors: a hard circular mask', () => {
   test('the words are inert, as on the canvas path, and the in-body line is not', () => {
     const s = setup();
     expect(inert(s)).toBe(true);
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
     expect(way(s)!.closest('[inert]')).toBeNull();
   });
 
@@ -2076,7 +2090,7 @@ describe('a moment', () => {
   test('the words are inert while smoked, with the way-line standing in them', () => {
     const s = past();
     expect(inert(s)).toBe(true);
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
     expect(s.container.querySelector('[aria-live]')).not.toBeNull();
     expect(last(s)).toMatchObject({ state: 'Smoke over the words' });
   });
@@ -2119,21 +2133,27 @@ describe('a moment', () => {
 });
 
 describe('nobody is special', () => {
-  test('two readers who differ only in reader.author and reader.caster get the same smoke', () => {
+  test('two readers who differ only in reader.caster get the same smoke, and the author\'s differs only in its own control and the words about it', () => {
     const a = setup({ reader: { author: false, caster: false } });
     const same = (html: string) => html.replace(/(id|aria-describedby)="[^"]*"/gu, '');
     const htmlA = same(a.container.innerHTML);
     const bytesA = recOf(canvas(a))!.draws.at(-1)!.put!.data.slice();
     a.unmount();
-    const b = setup({ reader: { author: true, caster: true } });
+    const b = setup({ reader: { author: false, caster: true } });
     expect(same(b.container.innerHTML)).toBe(htmlA);
     expect(Buffer.from(recOf(canvas(b))!.draws.at(-1)!.put!.data).equals(Buffer.from(bytesA))).toBe(true);
     /* The views are equal but for their controls' functions, which are each render's own. */
     const plain = (x: Setup) => views(x).map((v) => ({ ...v, controls: v.controls.map((c) => ({ kind: c.kind, label: c.label })) }));
     expect(plain(b)).toEqual(plain(a));
+    b.unmount();
+    /* The post's author sees the same smoke, the same words around it and the same control; only the Lens's way out names the hold, and nothing is sent for it. */
+    const c = setup({ reader: { author: true, caster: true } });
+    expect(same(c.container.innerHTML)).toBe(htmlA);
+    expect(Buffer.from(recOf(canvas(c))!.draws.at(-1)!.put!.data).equals(Buffer.from(bytesA))).toBe(true);
+    expect(plain(c).map((v) => ({ ...v, ends: '' }))).toEqual(plain(a).map((v) => ({ ...v, ends: '' })));
   });
 
-  test('it never reads who wrote the post or cast the card, and never saves, releases or holds the screen', () => {
+  test('it never reads who cast the card, and saves nothing, releases nothing and holds no screen while a reader or the author in the hold waves', () => {
     const reads: string[] = [];
     const reader = { get author() { reads.push('author'); return false; }, get caster() { reads.push('caster'); return false; } };
     const holdScreen = vi.fn();
@@ -2142,7 +2162,8 @@ describe('nobody is special', () => {
     press(s);
     pass(SWEEP_MS + 100);
     release(s);
-    expect(reads).toEqual([]);
+    /* Who wrote the post is the screen's own fact, read for the author's control and nothing else; who cast the card is never read. */
+    expect(reads.filter((r) => r === 'caster')).toEqual([]);
     expect(s.save).not.toHaveBeenCalled();
     expect(s.release).not.toHaveBeenCalled();
     expect(holdScreen).not.toHaveBeenCalled();
@@ -2205,5 +2226,385 @@ describe("in the ORIGIN box, inside the opening post's body", () => {
     pointer(inBox, 'pointermove', 100, 100);
     settle();
     expect(alphas(recOf(canvas(s))), 'the box is not this effect').toEqual(new Set([whole()]));
+  });
+});
+
+describe('the author airs it out', () => {
+  const HOUR = 3_600_000;
+  const AUTHOR = { author: true, caster: false };
+  /** A play with no `ends`, landed `hoursAgo` hours before now: the smoke that stays. */
+  const endless = (hoursAgo: number, over: Partial<CardPlay> = {}): CardPlay => ({ ...play({ playedAt: iso(NOW - hoursAgo * HOUR), ...over }), ends: undefined });
+  const kept = (state: unknown, id = 'h1') => ({ [id]: { state, savedAt: iso(NOW) } });
+  const accepted = () => vi.fn(async () => ({ ok: true as const, value: { play: 'h1', savedAt: iso(Date.now()) } }));
+  const settled = () => act(async () => { await Promise.resolve(); });
+  const label = (s: Setup) => wave(s).label;
+
+  test('a reader never sees Air it out, whatever the hold and however old the smoke', () => {
+    for (const hoursAgo of [0, 30, 100]) {
+      const s = setup({ plays: [endless(hoursAgo)] });
+      expect(label(s)).toBe('Wave the smoke');
+      expect(wave(s).describe).toBe(WAVE_DESCRIBE);
+      expect(last(s).ends).toBe('Point at the words, or hold Wave the smoke, to read.');
+      s.unmount();
+    }
+  });
+
+  test('the author sees Wave the smoke during the hold, with the countdown, then Air it out once the clock passes it, with no reload', () => {
+    const s = setup({ reader: AUTHOR, plays: [{ ...endless(0), playedAt: iso(NOW - (24 * 60 - 312) * 60_000) }] });
+    expect(label(s)).toBe('Wave the smoke');
+    expect(last(s).ends).toBe('You can air it out for good in 5h 12m. Until then, point at the words, or hold Wave the smoke, to read.');
+    pass(HOUR, 60_000);
+    expect(last(s).ends).toBe('You can air it out for good in 4h 12m. Until then, point at the words, or hold Wave the smoke, to read.');
+    pass(4 * HOUR + 11 * 60_000, 60_000);
+    expect(label(s)).toBe('Wave the smoke');
+    pass(2 * 60_000, 60_000);
+    expect(label(s)).toBe('Air it out');
+    expect(wave(s).describe).toBe(AIR_DESCRIBE);
+    expect(last(s).ends).toBe('Hold Air it out to clear the smoke line by line, for good and for everyone. Let go and you keep what you cleared.');
+  });
+
+  test('a hold of 0 hours has no countdown: the author airs it out from the first minute, and a moment is nobody\'s', () => {
+    HOLD_HOURS = 0;
+    const s = setup({ reader: AUTHOR, plays: [endless(0)] });
+    expect(label(s)).toBe('Air it out');
+    const inMoment = setup({ reader: AUTHOR, plays: [endless(0)], moment });
+    expect(label(inMoment)).toBe('Wave the smoke');
+  });
+
+  test('during the hold holding the control saves nothing', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(1)], save });
+    press(s);
+    pass(SWEEP_MS + 2000);
+    await settled();
+    expect(save).not.toHaveBeenCalled();
+    expect(s.container.querySelector('[data-kb-report]')).toBeEmptyDOMElement();
+  });
+
+  test('a reader\'s hold saves nothing either, once the hold is over', async () => {
+    const save = accepted();
+    const s = setup({ plays: [endless(30)], save });
+    press(s);
+    pass(SWEEP_MS + 2000);
+    await settled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  test('holding Air it out saves a share at each finished row (text lines, then the canvas below) and clean after the row that reaches the bottom border', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save });
+    press(s);
+    expect(last(s).state).toBe('Airing it out');
+    pass(3000);
+    await settled();
+    expect(save.mock.calls).toEqual([['h1', { aired: 0.2 }]]);
+    pass(2000);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.5 }]);
+    pass(2000);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.8 }]);
+    expect(save.mock.calls.some((c) => (c as unknown as [string, { clean?: boolean }])[1].clean), 'not clean before the row at the bottom border').toBe(false);
+    pass(2000);
+    await settled();
+    expect(save.mock.calls.at(-1), 'the canvas below the words is one row, a line pitch (180px) tall and cut short by the bottom border').toEqual(['h1', { clean: true }]);
+    expect(save).toHaveBeenCalledTimes(4);
+  });
+
+  test('a short post in a tall area: the hold finishes the text, then keeps sweeping the canvas; letting go mid-canvas keeps the share', async () => {
+    read.lines = TIGHT;
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save });
+    press(s);
+    pass(3 * LINE_MS + 200);
+    expect(last(s).state, 'the text is done and the hold goes on').toBe('Airing it out');
+    pass(LINE_MS);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.5 }]);
+    release(s);
+    pass(5000);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.5 }]);
+    expect(save.mock.calls.some((c) => (c as unknown as [string, { clean?: boolean }])[1].clean)).toBe(false);
+  });
+
+  test('a reload with a share below the words starts the sweep at the next canvas row, and the canvas rows read out nothing', async () => {
+    read.lines = TIGHT;
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.85 }) });
+    press(s);
+    pass(LINE_MS - 100);
+    expect(readout(s), 'no text line is left to read').toBe('');
+    pass(LINE_MS * 2);
+    await settled();
+    expect(save.mock.calls.map((c) => (c as unknown[])[1]), 'the next canvas row is one line tall, the last one short').toEqual([{ aired: 0.95 }, { clean: true }]);
+  });
+
+  test('the canvas rows below the words step by the lines\' pitch, not by their glyph height, so a px of canvas costs a px of text', async () => {
+    read.lines = [{ top: 0, bottom: 20 / 600, text: 'One.' }, { top: 30 / 600, bottom: 50 / 600, text: 'Two.' }, { top: 60 / 600, bottom: 80 / 600, text: 'Three.' }];
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.2 }) });
+    press(s);
+    pass(3000);
+    await settled();
+    expect(save.mock.calls.map((c) => (c as unknown[])[1]), 'the first canvas row below the band ends one pitch (30px) on, not one glyph height (20px)').toEqual([{ aired: 0.25 }]);
+    pass(2000);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.3 }]);
+  });
+
+  test('a saved band within the slop of the bottom border has no row left, and pressing Air it out saves clean', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.9999 }) });
+    press(s);
+    pass(3000);
+    await settled();
+    expect(save.mock.calls.map((c) => (c as unknown[])[1])).toEqual([{ clean: true }]);
+  });
+
+  test('letting go keeps what was saved: a line not finished saves nothing', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save });
+    press(s);
+    pass(LINE_MS + 500);
+    release(s);
+    pass(5000);
+    await settled();
+    expect(save.mock.calls).toEqual([['h1', { aired: 0.2 }]]);
+  });
+
+  test('one save is on its way at a time: the next goes after the answer, and only the latest state', async () => {
+    let answer: (v: { ok: true; value: { play: string; savedAt: string } }) => void = () => {};
+    const save = vi.fn(() => new Promise<{ ok: true; value: { play: string; savedAt: string } }>((r) => { answer = r; }));
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save: save as never });
+    press(s);
+    pass(3000);
+    await settled();
+    expect(save).toHaveBeenCalledTimes(1);
+    pass(4000);
+    await settled();
+    expect(save).toHaveBeenCalledTimes(1);
+    await act(async () => { answer({ ok: true, value: { play: 'h1', savedAt: iso(Date.now()) } }); await Promise.resolve(); });
+    pass(1000);
+    await settled();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[1]).toEqual(['h1', { aired: 0.8 }]);
+  });
+
+  test('a refused save shows the refusal where Whoops! shows one, and the band stays where the server has it', async () => {
+    const save = vi.fn(async () => ({ ok: false as const, error: 'The server said no.' }));
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.2 }) });
+    press(s);
+    pass(3000);
+    await settled();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(last(s).report).toBe('The server said no.');
+    expect(s.container.querySelector('[data-kb-report]')).toHaveTextContent('The server said no.');
+    release(s);
+    pass(SMOKE.roll + 1000);
+    expect(alphaAt(s, 400, 60), 'the saved band is clear').toBe(0);
+    expect(alphaAt(s, 400, 200), 'the line the refused save carried is smoke again').toBeGreaterThan(0);
+  });
+
+  test('a reload with a saved share draws no fog above it, and the sweep starts at the first line below it', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.5 }) });
+    settle();
+    expect(alphaAt(s, 400, 60)).toBe(0);
+    expect(alphaAt(s, 400, 290)).toBe(0);
+    expect(alphaAt(s, 400, 320)).toBeGreaterThan(0);
+    expect(alphaAt(s, 4, 599)).toBeGreaterThan(0);
+    expect(last(s).state).toBe('Smoke over part of the words');
+    press(s);
+    pass(LINE_MS + 200);
+    expect(readout(s)).toBe('Third line.');
+    pass(3 * LINE_MS);
+    await settled();
+    expect(save.mock.calls[0]).toEqual(['h1', { aired: 0.8 }]);
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { clean: true }]);
+  });
+
+  test('a share just under a line\'s bottom starts at the next line, and one above the first starts at the first', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.2 }) });
+    press(s);
+    pass(LINE_MS + 200);
+    expect(readout(s)).toBe('Second line.');
+    s.unmount();
+    const t = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.05 }) });
+    press(t);
+    pass(LINE_MS + 200);
+    expect(readout(t)).toBe('First line of the post.');
+  });
+
+  test('a play already aired out clean draws nothing and says Aired out', () => {
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], states: kept({ clean: true }) });
+    expect(canvas(s)).toBeNull();
+    expect(s.container.querySelector('[inert]')).toBeNull();
+    expect(s.container.querySelector('.dw-hotbox')).toBeNull();
+    expect(way(s)).toBeNull();
+    expect(last(s)).toMatchObject({ state: 'Aired out', ends: 'Its author aired it out for good.', controls: [] });
+    expect(s.container).toHaveTextContent('The words of the post.');
+  });
+
+  test('a clean play does not block a new one: the newest play not over and not clean is the one drawn', () => {
+    const s = setup({ plays: [endless(30, { id: 'old', config: { color: 'red' } }), endless(1, { id: 'new', layer: 2, config: { color: 'blue' } })], states: kept({ clean: true }, 'old') });
+    expect(rgbVar(s)).toBe('0 0 255');
+    expect(last(s).state).toBe('Smoke over the words');
+  });
+
+  test('a play with no ends keeps drawing a week on, at the floor\'s opacity', () => {
+    vi.setSystemTime(NOW + 7 * DAY);
+    const s = setup({ plays: [endless(0)] });
+    expect(canvas(s)).not.toBeNull();
+    expect(inert(s)).toBe(true);
+    settle();
+    expect(alphaAt(s, 400, 300)).toBe(Math.round(SMOKE.least * 255));
+    pass(3 * HOUR, 60_000);
+    expect(canvas(s)).not.toBeNull();
+    expect(alphaAt(s, 400, 300)).toBe(Math.round(SMOKE.least * 255));
+  });
+
+  test('a play with no ends thins over the span exactly as one with an ends of the same length', () => {
+    vi.setSystemTime(NOW + 1.5 * DAY);
+    const s = setup({ plays: [endless(0)] });
+    expect(alphaAt(s, 400, 300)).toBe(Math.round(fogAlpha(strength(NOW + 1.5 * DAY, NOW, NOW + spanMs(HOT_BOX_THINS))) * 255));
+  });
+
+  test('a play with an ends still ends there, and thins to it, not to the span', () => {
+    const end = NOW + DAY;
+    vi.setSystemTime(NOW + 0.5 * DAY);
+    const s = setup({ plays: [play({ ends: iso(end) })] });
+    expect(alphaAt(s, 400, 300)).toBe(Math.round(fogAlpha(strength(NOW + 0.5 * DAY, NOW, end)) * 255));
+    pass(0.5 * DAY + 1000, 60_000);
+    expect(canvas(s)).toBeNull();
+    expect(s.show).toHaveBeenLastCalledWith(null);
+  });
+
+  test('the smoke that stays wakes the screen no more once it is at its floor', () => {
+    const m = { mouse: null, touch: null, rest: [], trail: [], moves: [], mover: null, sweep: null, said: 0, wavedAt: null };
+    const span = spanMs(HOT_BOX_THINS);
+    const o = { reduced: false, animate: false, frames: true, fixed: false, playedAt: NOW, ends: NOW + span };
+    expect(nextWake(m, NOW + span / 2, o)).not.toBeNull();
+    expect(nextWake(m, NOW + span, o)).toBeNull();
+    expect(nextWake(m, NOW + span * 3, o)).toBeNull();
+  });
+
+  test('the Lens says part of the words aired for every reader, and the author\'s ends line adds the play\'s own end', () => {
+    const s = setup({ plays: [play()], states: kept({ aired: 0.5 }) });
+    expect(last(s).state).toBe('Smoke over part of the words');
+    expect(last(s).ends).toBe(`Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), NOW)}.`);
+    const t = setup({ reader: AUTHOR, plays: [play({ playedAt: iso(NOW - 30 * HOUR) })] });
+    expect(last(t).ends).toBe(`Hold Air it out to clear the smoke line by line, for good and for everyone. Let go and you keep what you cleared. ${endsWords(iso(ENDS), NOW)}.`);
+  });
+
+  test('a partly aired post gives a screen reader the aired lines, then the way to the rest; one with nothing aired keeps the whole-post line', () => {
+    const s = setup({ plays: [play()], states: kept({ aired: 0.5 }) });
+    expect(way(s)).toHaveTextContent(`First line of the post. Second line. ${smokedRestWay('Wave the smoke')}`);
+    expect(way(s)).not.toHaveTextContent('Third line.');
+    expect(way(s)).toHaveClass('kb-visually-hidden');
+    expect(way(s)!.closest('[inert]')).toBeNull();
+    expect(smokedRestWay('Wave the smoke')).toBe('The rest of this post is under smoke. To read it, open Hot Box in the cards on this post and hold Wave the smoke.');
+    const t = setup({ plays: [play()], states: kept({ aired: 0.05 }) });
+    expect(way(t)).toHaveTextContent(smokedWay('Wave the smoke'));
+    expect(way(t)).not.toHaveTextContent('First line');
+  });
+
+  test('the screen-reader line names the control the author holds: Air it out after the hold, Wave the smoke before it and for a reader', () => {
+    const after = setup({ reader: AUTHOR, plays: [endless(30)] });
+    expect(label(after)).toBe('Air it out');
+    expect(way(after)).toHaveTextContent('open Hot Box in the cards on this post and hold Air it out.');
+    expect(way(after)).not.toHaveTextContent('Wave the smoke');
+    const partly = setup({ reader: AUTHOR, plays: [endless(30)], states: kept({ aired: 0.5 }) });
+    expect(way(partly)).toHaveTextContent(`First line of the post. Second line. The rest of this post is under smoke. To read it, open Hot Box in the cards on this post and hold Air it out.`);
+    const during = setup({ reader: AUTHOR, plays: [endless(1)] });
+    expect(way(during)).toHaveTextContent(smokedWay('Wave the smoke'));
+  });
+
+  test('a partial save refused while the clean one is queued behind it: the clean state is still sent', async () => {
+    const save = vi.fn()
+      .mockImplementationOnce(async () => ({ ok: false as const, error: 'The server said no.' }))
+      .mockImplementation(async () => ({ ok: true as const, value: { play: 'h1', savedAt: iso(Date.now()) } }));
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save: save as never });
+    press(s);
+    pass(3000);
+    /* The first line's save is in flight (its answer not yet read) while the rest of the hold finishes and queues clean. */
+    pass(4000);
+    await settled();
+    await settled();
+    pass(SWEEP_MS);
+    await settled();
+    expect(save.mock.calls.map((c) => c[1]).at(-1)).toEqual({ clean: true });
+    expect(save.mock.calls[0]![1]).toEqual({ aired: 0.2 });
+  });
+
+  test('the aired lines read out follow the words when they change at the same size', () => {
+    const s = setup({ plays: [play()], states: kept({ aired: 0.5 }) });
+    expect(way(s)).toHaveTextContent('First line of the post. Second line.');
+    read.lines = LINES.map((l, i) => ({ ...l, text: ['Reworded first.', 'Reworded second.', 'Reworded third.'][i]! }));
+    act(() => { reword(<p>Different words, the same size.</p>); });
+    expect(way(s)).toHaveTextContent('Reworded first. Reworded second.');
+    expect(way(s)).not.toHaveTextContent('First line of the post.');
+  });
+
+  test('a post left mid-hold saves the line that finished since the last tick', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save });
+    press(s);
+    /* The clock passes the first line's end with no timer fired: the line is finished but not yet settled. */
+    vi.setSystemTime(Date.now() + LINE_MS + 200);
+    s.unmount();
+    await settled();
+    expect(save.mock.calls).toEqual([['h1', { aired: 0.2 }]]);
+  });
+
+  test('pressing Air it out with only empty canvas below the band runs the canvas rows, and saves clean at the bottom border', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.9 }) });
+    press(s);
+    expect(last(s).state, 'the hold began').toBe('Airing it out');
+    pass(1000);
+    await settled();
+    expect(save).not.toHaveBeenCalled();
+    pass(LINE_MS);
+    await settled();
+    expect(save.mock.calls).toEqual([['h1', { clean: true }]]);
+  });
+
+  test('every view the author is shown passes viewProblems', async () => {
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save: accepted(), states: kept({ aired: 0.2 }) });
+    press(s);
+    pass(SWEEP_MS + 2000);
+    await settled();
+    for (const v of views(s)) expect(viewProblems(v, { holds: false, covers: true })).toEqual([]);
+    expect(new Set(views(s).map((v) => v.state))).toEqual(new Set(['Smoke over part of the words', 'Airing it out', 'Waved clear for you']));
+  });
+
+  test('forced colors: the mask starts below the aired band, which is clear across the whole area', () => {
+    forced = true;
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], states: kept({ aired: 0.5 }) });
+    expect(rectLayers(s).some((r) => r.top === 0 && r.height === 300 && r.alpha === 1)).toBe(true);
+  });
+
+  test("in a spun thread's ORIGIN box the aired band starts at the area's top border and spans its width, in the fog and in the forced-colors mask", () => {
+    AREA = { left: 10, top: 40, width: 600, height: 300 }; OUTER = { left: 0, top: 0, width: 900, height: 700 };
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], states: kept({ aired: 0.5 }) }, false, false, true);
+    settle();
+    /* The canvas is the area; rows 0 to 150 of it are clear, across its whole width, and the rest is fog. */
+    expect(alphaAt(s, 5, 2), 'at the top border, left edge').toBe(0);
+    expect(alphaAt(s, 595, 2), 'at the top border, right edge').toBe(0);
+    expect(alphaAt(s, 300, 140)).toBe(0);
+    expect(alphaAt(s, 5, 200), 'below the band').toBeGreaterThan(0);
+    expect(alphaAt(s, 595, 290)).toBeGreaterThan(0);
+  });
+
+  test("in the ORIGIN box under forced colors the mask's aired rect starts at the area's top", () => {
+    forced = true;
+    AREA = { left: 10, top: 40, width: 600, height: 300 }; OUTER = { left: 0, top: 0, width: 900, height: 700 };
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], states: kept({ aired: 0.5 }) }, false, false, true);
+    /* The words stand 60 px below the area's top border (the words' box is at 100, the area's at 40), so the band's top, the border, is -60 in the words' own mask. */
+    expect(rectLayers(s).some((r) => r.height === 150 && r.alpha === 1)).toBe(true);
+    expect(words(s).style.maskPosition).toContain('0 -60px');
+    expect(words(s).style.maskSize).toContain('100% 150px');
   });
 });
