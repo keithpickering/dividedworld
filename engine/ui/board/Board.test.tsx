@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createFake, type Fake } from '../data/fake.ts';
-import type { ThreadSummary } from '../data/api.ts';
+import type { BoardListener, ThreadSummary } from '../data/api.ts';
 import { buildWorld, holdReads, renderIn, renderInWorld } from '../test-world.tsx';
 import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { useLocation, useRouterInternals } from '../router.tsx';
@@ -1315,6 +1315,58 @@ describe('the thread list goes live', () => {
     expect(screen.queryByRole('link', { name: 'Moved: Thread 002' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Thread 002' })).toBeNull();
     expect(bar()).toHaveTextContent('1 thread has new posts');
+  });
+
+  test('a gone event removes the thread\'s row from the page, and its waiting entry; a later row for it counts as a thread that came back', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 3 });
+    const heard: BoardListener[] = [];
+    const real = fake.subscribeBoard.bind(fake);
+    vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { heard.push(l); return real(b, l); });
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 002' });
+    await act(async () => { for (const l of heard) l.onGone?.(w.ids[1]!); });
+    expect(screen.queryByRole('link', { name: 'Thread 002' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Thread 001' })).toBeInTheDocument();
+    expect(bar()).toBeNull();
+    const back = (await fake.boardPage('general', 1, []))!.threads.find((t) => t.id === w.ids[1])!;
+    await act(async () => { for (const l of heard) l.onRow?.({ ...back, lastAt: new Date(Date.now() + DAY).toISOString(), lastSeq: back.lastSeq + 1 }); });
+    expect(screen.queryByRole('link', { name: 'Thread 002' })).toBeNull();
+    expect(bar()).toHaveTextContent('1 thread has new posts');
+  });
+
+  test('a gone event for a thread that waited behind the bar leaves the count, and one for a stub removes the stub', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 3 });
+    fake.seed.moveThread(w.ids[0]!, 'off-topic', { at: fake.clock.now() - DAY });
+    const elsewhere = fake.seed.thread('off-topic', w.mine!, 'Visitor', 'Hi').thread;
+    const heard: BoardListener[] = [];
+    const real = fake.subscribeBoard.bind(fake);
+    vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { heard.push(l); return real(b, l); });
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Moved: Thread 001' });
+    const visitor = (await fake.boardPage('off-topic', 1, []))!.threads.find((t) => t.id === elsewhere)!;
+    await act(async () => { for (const l of heard) l.onRow?.(visitor); });
+    expect(bar()).toHaveTextContent('1 thread has new posts');
+    await act(async () => { for (const l of heard) l.onGone?.(elsewhere); });
+    expect(bar()).toBeNull();
+    await act(async () => { for (const l of heard) l.onGone?.(w.ids[0]!); });
+    expect(screen.queryByRole('link', { name: 'Moved: Thread 001' })).toBeNull();
+  });
+
+  test('a changed event replaces the count with "This board has changed" and the same Show', async () => {
+    const fake = buildWorld();
+    world(fake, { threads: 3 });
+    const heard: BoardListener[] = [];
+    const real = fake.subscribeBoard.bind(fake);
+    vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { heard.push(l); return real(b, l); });
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 002' });
+    expect(bar()).toBeNull();
+    await act(async () => { for (const l of heard) l.onChanged?.(); });
+    expect(bar()).toHaveTextContent('This board has changed');
+    expect(bar()).not.toHaveTextContent('have new posts');
+    expect(within(bar()!).getByRole('button', { name: 'Show' })).toBeInTheDocument();
   });
 
   test('a thread of the page that moves away becomes its stub, and a thread from another board that moves here counts on the bar', async () => {

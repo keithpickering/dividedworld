@@ -2617,8 +2617,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       }, l.onJoined);
     },
     subscribeBoard(board, l) {
-      return join(`board:${board}`, ['row', 'moved'], (event, p) => {
-        if (event === 'moved') { for (const stub of toStub(p)) l.onMoved?.(stub); } else l.onRow?.(toThread(p));
+      return join(`board:${board}`, ['row', 'moved', 'gone', 'changed'], (event, p) => {
+        if (event === 'moved') { for (const stub of toStub(p)) l.onMoved?.(stub); }
+        else if (event === 'gone') { if (typeof p['id'] === 'string') l.onGone?.(p['id']); }
+        else if (event === 'changed') l.onChanged?.();
+        else l.onRow?.(toThread(p));
       });
     },
     /* The index's own topic, `index`: one `board` event per board that changed, shaped as index_page's entry. */

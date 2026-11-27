@@ -88,7 +88,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'row' | 'moved' | 'board' | 'self' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled' | 'poll';
+  readonly event: 'act' | 'tally' | 'row' | 'moved' | 'gone' | 'changed' | 'board' | 'self' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled' | 'poll';
 }
 
 export interface Seed {
@@ -891,7 +891,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (at >= now() - settings.movedStubDays * DAY) {
       const stub = stubOf({ thread: t.id, at });
       send(`board:${from}`, 'moved', () => { for (const l of [...(boardListeners.get(from) ?? [])]) l.onMoved?.(stub); });
-    }
+    } else send(`board:${from}`, 'gone', () => { for (const l of [...(boardListeners.get(from) ?? [])]) l.onGone?.(t.id); });
     for (const id of [from, t.board]) {
       const board = boards.find((b) => b.id === id);
       if (!board || isClosed(board)) continue;
@@ -6567,7 +6567,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const into = 'mergedInto' in how ? boards.find((x) => x.slug === how.mergedInto || x.id === how.mergedInto) : boards.find((x) => !x.isSystem && !isClosed(x) && x.id !== b.id && ('fallback' in how && how.fallback ? x.slug === how.fallback : true));
       if (!into) throw new Error('no board for its threads to go to');
       closedBoards.set(b.id, 'mergedInto' in how ? { mergedInto: into.id, fallback: null } : { mergedInto: null, fallback: into.id });
-      for (const t of threads.values()) if (t.board === b.id) t.board = into.id;
+      let moved = 0;
+      for (const t of threads.values()) if (t.board === b.id) { t.board = into.id; moved += 1; }
+      /* More than 50 threads at once: no per-thread events, only `changed` on each of the two boards (0455). */
+      if (moved > 50) for (const id of [b.id, into.id]) send(`board:${id}`, 'changed', () => { for (const l of [...(boardListeners.get(id) ?? [])]) l.onChanged?.(); });
     },
     queueMove(staff, m) {
       staffId(staff);

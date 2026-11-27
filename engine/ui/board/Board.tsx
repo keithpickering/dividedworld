@@ -23,6 +23,9 @@
  * reaches this board's topic after a stub the page shows (the document's, or a live `moved`) is newer, since one channel delivers in send
  * order: the thread was moved back, and the next read would draw it as a thread. So a row for its thread means the thread is back: the stub
  * goes, and the thread counts toward the bar as an off-page thread, drawn as a row from Show.
+ *
+ * `gone` (a thread left and this board lists no stub for it) takes its row, pin, sticky, stub and waiting entry off the page; `changed` (more than 50
+ * threads moved at once, so no per-thread events) makes the bar say "This board has changed" in place of the count, with the same Show.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useKayfa } from '../context.tsx';
@@ -140,19 +143,19 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
     hydrate1(doc);
   }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps -- the stores are this view's own and never change
   /* The rows the board's topic has sent since this document (`row`), by thread: a row the page shows takes the newer one in place. A new document starts over. */
-  const [live, setLive] = useState<{ readonly doc: BoardPage; readonly rows: ReadonlyMap<Id, ThreadSummary>; readonly waiting: ReadonlySet<Id>; readonly moved: ReadonlyMap<Id, BoardStub>; readonly back: ReadonlySet<Id> }>(() => ({ doc, rows: new Map(), waiting: new Set(), moved: new Map(), back: new Set() }));
-  const fresh = live.doc === doc ? live : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>(), back: new Set<Id>() };
+  const [live, setLive] = useState<{ readonly doc: BoardPage; readonly rows: ReadonlyMap<Id, ThreadSummary>; readonly waiting: ReadonlySet<Id>; readonly moved: ReadonlyMap<Id, BoardStub>; readonly back: ReadonlySet<Id>; readonly gone: ReadonlySet<Id>; readonly changed: boolean }>(() => ({ doc, rows: new Map(), waiting: new Set(), moved: new Map(), back: new Set(), gone: new Set(), changed: false }));
+  const fresh = live.doc === doc ? live : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>(), back: new Set<Id>(), gone: new Set<Id>(), changed: false };
   /* The document's characters by id: built when the document changes, not on each row. */
   const byId = useMemo(() => new Map(doc.characters.map((c) => [c.id, c] as const)), [doc]);
   const state = useMemo<Loaded>(() => {
     const take = (t: ThreadSummary) => fresh.rows.get(t.id) ?? t;
-    const here = (t: ThreadSummary) => !fresh.moved.has(t.id) && !fresh.back.has(t.id);
+    const here = (t: ThreadSummary) => !fresh.moved.has(t.id) && !fresh.back.has(t.id) && !fresh.gone.has(t.id);
     return {
       board: doc.board, threads: doc.threads.filter(here).map(take), total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
       characters: byId, pins: doc.pins.filter((p) => here(p.thread)).map((p) => (fresh.rows.has(p.thread.id) ? { ...p, thread: take(p.thread) } : p)), stickies: doc.stickies.filter(here).map(take),
-      stubs: fresh.moved.size === 0 && fresh.back.size === 0 ? doc.stubs : [...(doc.page === 1 ? [...fresh.moved.values()].reverse() : []), ...doc.stubs.filter((s) => !fresh.moved.has(s.thread) && !fresh.back.has(s.thread))],
+      stubs: fresh.moved.size === 0 && fresh.back.size === 0 && fresh.gone.size === 0 ? doc.stubs : [...(doc.page === 1 ? [...fresh.moved.values()].reverse() : []), ...doc.stubs.filter((s) => !fresh.moved.has(s.thread) && !fresh.back.has(s.thread) && !fresh.gone.has(s.thread))],
     };
-  }, [doc, byId, fresh.rows, fresh.moved, fresh.back]);
+  }, [doc, byId, fresh.rows, fresh.moved, fresh.back, fresh.gone]);
   /* A page turn is a navigation to the next page's document: what a spin form held open belonged to the page before. */
   useEffect(() => setSpinOrigin(null), [doc]);
 
@@ -196,14 +199,16 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       onRow(row) {
         const doc = docRef.current;
         setLive((cur) => {
-          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>(), back: new Set<Id>() };
+          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>(), back: new Set<Id>(), gone: new Set<Id>(), changed: false };
           /* A row after a stub, from the document's read or after a live `moved`, is newer (one channel delivers in send order): the thread was moved
              back, and the next read would draw it as a thread. The stub goes, and the thread counts on the bar as one off the page, whatever its Last post. */
           if (base.back.has(row.id)) return base;
-          if (base.moved.has(row.id) || doc.stubs.some((s) => s.thread === row.id)) {
+          if (base.moved.has(row.id) || base.gone.has(row.id) || doc.stubs.some((s) => s.thread === row.id)) {
             const moved = new Map(base.moved);
             moved.delete(row.id);
-            return { doc, rows: base.rows, waiting: new Set(base.waiting).add(row.id), moved, back: new Set(base.back).add(row.id) };
+            const gone = new Set(base.gone);
+            gone.delete(row.id);
+            return { ...base, doc, waiting: new Set(base.waiting).add(row.id), moved, gone, back: new Set(base.back).add(row.id) };
           }
           const held = base.rows.get(row.id) ?? [...doc.threads, ...doc.stickies, ...doc.pins.map((p) => p.thread)].find((t) => t.id === row.id);
           if (held && (Date.parse(held.lastAt) > Date.parse(row.lastAt) || (held.lastAt === row.lastAt && held.lastSeq > row.lastSeq))) return base;
@@ -220,7 +225,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
             const above = slot > 0 ? base.rows.get(doc.threads[slot - 1]!.id) ?? doc.threads[slot - 1]! : null;
             if (above ? Date.parse(row.lastAt) > Date.parse(above.lastAt) : doc.page > 1) waiting.add(row.id);
           }
-          return { doc, rows, waiting, moved: base.moved, back: base.back };
+          return { ...base, doc, rows, waiting };
         });
         /* A character the page does not know is read once by id, as a live play's is. */
         const named = [...new Set([row.firstCharacter, row.lastCharacter])].filter((c): c is Id => c !== null && !asked.current.has(c) && !doc.characters.some((k) => k.id === c) && !extraRef.current.has(c));
@@ -231,7 +236,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       onMoved(stub) {
         const doc = docRef.current;
         setLive((cur) => {
-          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>(), back: new Set<Id>() };
+          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>(), back: new Set<Id>(), gone: new Set<Id>(), changed: false };
           const waiting = new Set(base.waiting);
           waiting.delete(stub.thread);
           /* The stub is drawn on the first page only, where board_page lists them; a thread the page shows leaves its row, pin or sticky either way. */
@@ -240,8 +245,34 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
           moved.delete(stub.thread);
           const back = new Set(base.back);
           back.delete(stub.thread);
+          const gone = new Set(base.gone);
+          gone.delete(stub.thread);
           if (shown || [...doc.threads, ...doc.stickies, ...doc.pins.map((p) => p.thread)].some((t) => t.id === stub.thread)) moved.set(stub.thread, stub);
-          return { doc, rows: base.rows, waiting, moved, back };
+          return { ...base, doc, waiting, moved, back, gone };
+        });
+      },
+      /* The thread left this board and no stub of it is listed: its row, pin, sticky, stub and waiting entry go. A row for it later is a thread come back. */
+      onGone(id) {
+        const doc = docRef.current;
+        setLive((cur) => {
+          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>(), back: new Set<Id>(), gone: new Set<Id>(), changed: false };
+          const rows = new Map(base.rows);
+          rows.delete(id);
+          const waiting = new Set(base.waiting);
+          waiting.delete(id);
+          const moved = new Map(base.moved);
+          moved.delete(id);
+          const back = new Set(base.back);
+          back.delete(id);
+          return { ...base, doc, rows, waiting, moved, back, gone: new Set(base.gone).add(id) };
+        });
+      },
+      /* More than 50 threads moved at once and no per-thread event came: the page says so, and Show reads it again. */
+      onChanged() {
+        const doc = docRef.current;
+        setLive((cur) => {
+          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>(), back: new Set<Id>(), gone: new Set<Id>(), changed: false };
+          return base.changed ? base : { ...base, changed: true };
         });
       },
     });
@@ -265,6 +296,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
     if (at === null || at === document.body) heading.current?.focus({ preventScroll: true });
   }, [doc]);
   const waiting = fresh.waiting.size;
+  const changed = fresh.changed;
 
   /* After a page turn, focus goes to the board's heading, so a keyboard starts the new page at its top, never on the page's body. */
   useEffect(() => {
@@ -298,9 +330,9 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
         : <NewThread key={board.slug} board={board.slug} boardId={board.id} />}
       {/* Always drawn, so a screen reader hears the count when it is first filled. */}
       <div className="kb-board-new" role="status">
-        {waiting > 0 && (
+        {(changed || waiting > 0) && (
           <>
-            <span>{waiting === 1 ? '1 thread has new posts' : `${waiting} threads have new posts`}</span>
+            <span>{changed ? 'This board has changed' : waiting === 1 ? '1 thread has new posts' : `${waiting} threads have new posts`}</span>
             <button type="button" className="kb-button" data-kb-size="small" onClick={show}>Show</button>
           </>
         )}

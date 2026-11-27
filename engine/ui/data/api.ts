@@ -2364,6 +2364,10 @@ export interface BoardListener {
    * A page that shows the thread draws the stub in its place; one that does not shows it as the next read would. May come twice: key by thread.
    */
   readonly onMoved?: (stub: BoardStub) => void;
+  /** A thread left this board and this board lists no stub for it (a reversal's old board, or a move older than `movedStubDays`): the page drops its row, pin, sticky and stub. */
+  readonly onGone?: (thread: Id) => void;
+  /** More than 50 threads moved off or onto this board at once, so no per-thread events came: the page is out of date, and a read shows it. */
+  readonly onChanged?: () => void;
 }
 
 export interface IndexListener {

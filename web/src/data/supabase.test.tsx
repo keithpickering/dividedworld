@@ -1979,16 +1979,30 @@ describe('live', () => {
     expect(early.channels.filter((c) => c.subscribed)).toEqual([]);
   });
 
-  it('maps a board `moved` broadcast to the stub the old board lists, and joins the board topic for row and moved', async () => {
+  it('maps a board `moved` broadcast to the stub the old board lists, and joins the board topic for row, moved, gone and changed', async () => {
     const s = stub();
     const onMoved = vi.fn();
     s.api.subscribeBoard(C, { onMoved });
     await settle();
-    expect([...(s.channels[0]?.handlers.keys() ?? [])].sort()).toEqual(['moved', 'row']);
+    expect([...(s.channels[0]?.handlers.keys() ?? [])].sort()).toEqual(['changed', 'gone', 'moved', 'row']);
     s.channels[0]?.handlers.get('moved')?.({ payload: { id: T, title: 'A title', moved_to: 'b-2', moved_to_slug: 'side', moved_to_name: 'Side', moved_at: '2026-10-02T10:00:00+00:00' } });
     expect(onMoved).toHaveBeenCalledWith({ thread: T, title: 'A title', movedTo: { id: 'b-2', slug: 'side', name: 'Side' }, movedAt: '2026-10-02T10:00:00+00:00' });
     s.channels[0]?.handlers.get('moved')?.({ payload: { id: T, title: 'A title', moved_at: 'x' } });
     expect(onMoved).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps a board `gone` broadcast to the thread id and `changed` to a bare call', async () => {
+    const s = stub();
+    const onGone = vi.fn();
+    const onChanged = vi.fn();
+    s.api.subscribeBoard(C, { onGone, onChanged });
+    await settle();
+    s.channels[0]?.handlers.get('gone')?.({ payload: { id: T } });
+    expect(onGone).toHaveBeenCalledWith(T);
+    s.channels[0]?.handlers.get('gone')?.({ payload: {} });
+    expect(onGone).toHaveBeenCalledTimes(1);
+    s.channels[0]?.handlers.get('changed')?.({ payload: {} });
+    expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
   it('opens the index topic for board summaries', async () => {

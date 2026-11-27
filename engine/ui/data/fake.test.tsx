@@ -808,6 +808,30 @@ describe('live events', () => {
     await flush();
     expect(stubs).toEqual(['side Hello']);
   });
+  test('a move older than movedStubDays sends gone to the old board, since it lists no stub', async () => {
+    const { fake, thread } = world();
+    const old = await boardId(fake, 'general');
+    fake.seed.board('side', 'Side');
+    const gone: string[] = [];
+    fake.subscribeBoard(old, { onGone: (id) => gone.push(id) });
+    fake.seed.moveThread(thread, 'side', { at: Date.now() - 400 * DAY });
+    await flush();
+    expect(gone).toEqual([thread]);
+    expect(fake.broadcast.log.map((e) => e.topic + ' ' + e.event)).toContain(`board:${old} gone`);
+  });
+  test('a close that moves more than 50 threads sends changed to both boards', async () => {
+    const { fake, anaFace } = world();
+    const old = await boardId(fake, 'general');
+    fake.seed.board('side', 'Side');
+    const to = await boardId(fake, 'side');
+    for (let i = 0; i < 50; i++) fake.seed.thread('general', anaFace, `T${i}`, 'x');
+    const changed: string[] = [];
+    fake.subscribeBoard(old, { onChanged: () => changed.push('old') });
+    fake.subscribeBoard(to, { onChanged: () => changed.push('side') });
+    fake.seed.closeBoard('general', { mergedInto: 'side' });
+    await flush();
+    expect(changed.sort()).toEqual(['old', 'side']);
+  });
   test('a post reaches onRow with its new count and onBoard with the board\'s last post', async () => {
     const { fake, anaFace, thread } = world();
     const board = await boardId(fake, 'general');
@@ -2552,7 +2576,6 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     expect(anas.settlements.flatMap((s) => s.lines.map((l) => l.character))).toEqual([anaFace]);
     expect(anas.cards).toEqual([]);
     expect(anas.wallet.map((e) => e.kind)).toEqual(['settlement']);
-    void ana;
   });
 });
 
@@ -2760,7 +2783,6 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'snare' });
     fake.signInAs(bo);
     expect(await fake.myFaceDown([set.id])).toEqual({});
-    void ana;
   });
 
   test('a Move is set face down like a set card, and a Use is refused, in the card\'s words', async () => {
@@ -5125,7 +5147,6 @@ describe('a drive and its gifts, refused and split as the database does', () => 
     fake.seed.wallet(bo, 100);
     expect(must(await fake.donate(boFace, drive, 25)).balance).toBe(95);
     expect(await walletOf(fake, bo)).toBe(95);
-    void ana;
   });
 
   test('the wall holds the totals, the count and the latest gifts, newest first, and pages by a keyset cursor', async () => {
@@ -5358,8 +5379,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect((await returned(fake)).map((e) => e.act).sort()).toEqual(casts.slice(0, 3).map((c) => c.id).sort());
       expect((await returned(fake)).map((e) => e.price)).toEqual([0, 0, 0]);
       expect((await fake.postPlays([post])).plays.find((a) => a.id === (casts[0]!.id))?.payload).not.toHaveProperty('caught');
-      void ana;
-    });
+      });
 
     test('the own other mask of the sign\'s player is handed back exactly as a stranger is', async () => {
       const { fake, anaFace, anaHeel, posts } = rf();
