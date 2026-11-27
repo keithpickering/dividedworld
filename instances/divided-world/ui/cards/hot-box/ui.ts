@@ -9,6 +9,7 @@ import hotBoxCanvas from './art.webp?url';
 import hotBoxMark from './mark.svg?url';
 import hotBoxArt from './art.json';
 import { setMoveWords, spanWords } from '../words.ts';
+import type { Settings } from '../../../../../engine/rules/types.ts';
 
 /*
  * Each card's effect loads the first time a post wears it, so the board's first script holds none of them; the engine's effect
@@ -38,8 +39,12 @@ export const ui: CardUi = {
       return undefined;
     }
   },
-  describe: () =>
-    `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. It lasts ${spanWords(HOT_BOX_THINS)}, thinning as it goes, then clears by itself. One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+  describe: (settings: Settings) => {
+    const hours = settings.economy['hotBox.holdHours'];
+    const airs = `the post's author can hold Air it out to clear it line by line for good, and once it is all aired out the post can be smoked again.`;
+    const air = hours ? `${hours === 1 ? '1 hour' : `${hours} hours`} after it lands, ${airs}` : `The ${airs.slice(4)}`;
+    return `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. Over ${spanWords(HOT_BOX_THINS)} it thins to a haze, and the haze stays. ${air} One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`;
+  },
   /* A color the card cannot read says nothing, rather than the name `inkName` gives it ("ink"). */
   logPlay: (config) => {
     const smoke = (config as { color?: unknown }).color;
@@ -51,4 +56,6 @@ export const ui: CardUi = {
     }
     return `It smoked the post in ${inkName(smoke)}.`;
   },
+  /* Only the author's last save is a line of its own, as You Were Saying?'s "Tail erased" is: a share aired out says nothing. */
+  logSave: (state: unknown) => (typeof state === 'object' && state !== null && (state as { clean?: unknown }).clean === true ? { what: 'Smoke aired out', verb: 'aired out' } : undefined),
 };

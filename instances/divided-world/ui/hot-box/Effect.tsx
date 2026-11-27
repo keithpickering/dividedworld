@@ -2,13 +2,24 @@
  * Hot Box's effect on a post (docs/plans/2026-11-15-hot-box-plan.md, Task 4, reworked by docs/plans/2026-11-15-hot-box-fog-plan.md, Task 5; design
  * docs/plans/2026-11-15-hot-box-fog-design.md): smoke over the words, in the caster's color, for three days, thinning as it goes. It is an obstacle read
  * through by clearing it: a mouse or pen moves the fog aside where it points, a finger where it touches or drags, and a held control in the Lens ("Wave the
- * smoke") sweeps the post line by line at the pace of a hand. It is the same for every reader, the post's author and the caster included, and it is the
- * reader's own and on this screen only: nothing is saved, sent, counted or broadcast, so the effect reads neither who wrote the post nor who played the
- * card, and calls neither `save` nor `release`.
+ * smoke") sweeps the post line by line at the pace of a hand. It is the same for every reader, the post's author and the caster included, and what a reader
+ * clears is the reader's own and on this screen only: nothing is saved, sent, counted or broadcast, so the effect reads neither who wrote the post nor who played
+ * the card, and calls no `release`.
+ *
+ * The post's author alone can air it out for good (docs/plans/2026-11-27-lasting-gags-design.md, section 2): where `reader.author` is true, no moment is shown and the
+ * hold (`hotBox.holdHours` after the play landed, `hold.ts`) is over, the same held control reads "Air it out" and its sweep, at the same pace, starts at the first
+ * line below the band already aired. Each line it finishes is saved through `save` as `{ aired }`, the share of the content area's height cleared from its top (a
+ * ten-thousandth), and the last as `{ clean: true }`, debounced and one on its way at a time as Whoops!'s strokes are; a refusal is shown as Whoops!'s is and the
+ * band stays where the server holds it (`states`). The band is the content area's full width from its top border: no fog is painted in it, and the forced-colors
+ * mask starts below it. A play aired out clean draws nothing and says so. During the hold the author's control reads Wave the smoke, saves nothing, and a minute's
+ * timer moves the countdown and flips the label with no reload. Whether the reader is the author is the screen's own fact (`reader.author`); nothing is sent for it.
+ *
+ * A play that carries no `ends` is never over: its smoke thins over `HOT_BOX_THINS` to the floor (`SMOKE.least`) and stays; one that carries an `ends` (played before
+ * this shipped) thins to it and ends there.
  *
  * Which play. The engine goes on handing an ended play to an effect, so this decides for itself whether its play is still up, against the page's clock, or `moment.at` in a moment
- * (`useAt` redraws when the soonest end passes, as Whodunnit?'s does). The first play whose end is ahead is the one drawn, so a second Hot Box cast after
- * the first ended is the one that shows. With none, the words are drawn alone.
+ * (`useAt` redraws when the soonest end passes, as Whodunnit?'s does). The newest play not over (an `ends` ahead, or none) whose saved state is not clean is the one drawn, so a
+ * second Hot Box cast after the first ended or was aired out is the one that shows. With none, the words are drawn alone (a play aired out clean only says so).
  *
  * The container (the owner, 2026-11-15). The smoke fills the post's whole content area, border to border, as Feelin' Fab's foil and Whoops!'s ink do: the
  * post body (`.kb-act-main`) in the thread and the ORIGIN box's area (`.kb-origin-area`) in the box, found and measured with the engine's `bodyOf` and
@@ -60,18 +71,23 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import { bodyBox, bodyOf, liftedOver, type BodyBox } from '../../../../engine/ui/cards/body.ts';
-import { endsWords, markOf } from '../../../../engine/ui/cards/marks.ts';
+import { endsWords, markOf, spanMs } from '../../../../engine/ui/cards/marks.ts';
 import { TIMER_MOST, useAt } from '../../../../engine/ui/cards/plays.ts';
 import { makeTileLayer, type TileDraw, type TileLayer } from '../../../../engine/ui/cards/tiles.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
+import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
+import { economyNow } from '../../../../engine/ui/economy.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
+import { HOT_BOX_THINS } from '../../cards/hot-box.ts';
+import { heldUntil, holdLeft } from '../../cards/hold.ts';
+import { MAX_SAVE_RETRIES, RETRY_AFTER_MS } from '../../cards/wiping.ts';
 import { readLines } from '../../cards/whoops/lines.ts';
 import { SWEEP_PX_S } from '../../cards/whoops/scrub.ts';
 import { rgbOf } from '../../cards/whoops/splat.ts';
 import { forgetScratch, scratchFor, useForcedColors } from './paint.ts';
 import { FOG, cellOrigin, coverageOf, makeField, pageCloud, paintFog, rowsOf, stepField, type FogClearing, type FogField } from './fog.ts';
-import { SMOKE, extendTrail, fogAlpha, hardDiscs, holeRadius, maskAlpha, openness, strength, sweepAt, type Clearing, type SweepLine } from './smoke.ts';
+import { SMOKE, airedOut, airedTop, extendTrail, fogAlpha, hardDiscs, holeRadius, maskAlpha, openness, strength, sweepAt, type Clearing, type SweepLine } from './smoke.ts';
 import { FOG_BUDGET_MS, FOG_LEVEL_MOST, FOG_SHARE, RUNGS, forceFogLevel, forcedFogLevel, joinRest, ladder, nextPainterId, resetFogLadder, spend, type Rung } from './ladder.ts';
 import { IDLE_MS, emptyPointer, openClearings, prunePointer, usePointerClearings, velocityOf, type PointerModel } from './pointer.ts';
 import './hot-box.css';
@@ -85,9 +101,25 @@ export const WAVE_DESCRIBE = `Hold Space or Enter on this button to wave the smo
 /** The line that stands where the words are for a screen reader while they are under smoke: the glass's voice, plain and true. */
 export const SMOKED_WAY = `This post is under smoke. To read it, open Hot Box in the cards on this post and hold ${WAVE_LABEL}.`;
 
+/** The author's held control, once the hold is over, and its hidden description. */
+export const AIR_LABEL = 'Air it out';
+export const AIR_DESCRIBE = `Hold Space or Enter on this button to air the smoke out line by line, at the pace of a hand, for good and for everyone. Let go and you keep what you cleared. Hold to the end and the post is clear for good.`;
+
 const STATE_SMOKE = 'Smoke over the words';
+const STATE_PART = 'Smoke over part of the words';
 const STATE_WAVING = 'Waving it away';
+const STATE_AIRING = 'Airing it out';
 const STATE_WAVED = 'Waved clear for you';
+const STATE_AIRED = 'Aired out';
+const ENDS_READER = `Point at the words, or hold ${WAVE_LABEL}, to read.`;
+const ENDS_AUTHOR = `Hold ${AIR_LABEL} to clear the smoke line by line, for good and for everyone. Let go and you keep what you cleared.`;
+const ENDS_AIRED = 'Its author aired it out for good.';
+
+/** How long after the last line the author's save waits for another, ms (Whoops!'s). */
+const SAVE_AFTER_MS = 800;
+/** A line's bottom within this many px of the saved band is inside it (a share is kept to a ten-thousandth). */
+const BAND_SLOP_PX = 0.5;
+const round4 = (n: number): number => Math.round(n * 10_000) / 10_000;
 
 /** How far the words' offset or size may change mid-hold before the hold is let go, px. */
 const SHIFT_PX = 0.5;
@@ -106,6 +138,8 @@ const LIGHT_GRAY: readonly [number, number, number] = [211, 211, 211];
  * and `height` their height, which a reflow is told by.
  */
 interface Sweep {
+  /** The author's: each line it finishes is saved. */
+  readonly air: boolean;
   readonly startedAt: number;
   readonly lines: readonly SweepLine[];
   readonly texts: readonly string[];
@@ -290,18 +324,29 @@ function maskFor(discs: readonly { readonly x: number; readonly y: number }[], r
 /* -------------------------------------------------------------------------------- the effect ---- */
 
 export function HotBoxEffect(props: EffectProps) {
-  const { plays, moment, show, children } = props;
+  const { plays, states, moment, show, children } = props;
   /* A play an admin ended, or that did not take, or a trap caught, is no smoke. */
   const standing = plays.filter((p) => !p.reversed && !p.untaken && !p.caught && !p.faceDown);
   const endOf = (p: CardPlay): number => { const t = p.ends === undefined ? Number.NaN : Date.parse(p.ends); return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t; };
   const live = useAt(moment ? [] : standing.map(endOf).filter(Number.isFinite));
   /* A moment's time is fixed: the play drawn is the first whose end is after it, as at that time. */
   const now = moment ? moment.at : live;
-  const play = standing.find((p) => endOf(p) > now);
-  useEffect(() => { if (!play) show(null); }, [show, play]);
-  if (!play) return <>{children}</>;
+  /* The newest play not over: a play with no `ends` is never over, and one aired out clean is smoke no more, so a second cast after it draws its own. */
+  const up = standing.filter((p) => endOf(p) > now);
+  const play = up.filter((p) => !airedOut(states[p.id]?.state)).at(-1);
+  const aired = play ? undefined : up.at(-1);
+  useEffect(() => { if (!play && !aired) show(null); }, [show, play, aired]);
+  if (play) return <Smoke key={play.id} {...props} play={play} />;
   /* Keyed by the play: a second cast after the first ended starts with nothing cleared. */
-  return <Smoke key={play.id} {...props} play={play} />;
+  return aired ? <Aired show={show}>{children}</Aired> : <>{children}</>;
+}
+
+/** A play its author aired out for good: no smoke, and the Lens says so. */
+function Aired({ show, children }: Pick<EffectProps, 'show' | 'children'>) {
+  const view = useMemo<CardView>(() => ({ progress: 1, state: STATE_AIRED, ends: ENDS_AIRED, yours: false, controls: [], notes: {} }), []);
+  useEffect(() => { show(view); }, [show, view]);
+  useEffect(() => () => show(null), [show]);
+  return <>{children}</>;
 }
 
 /**
@@ -311,8 +356,8 @@ export function HotBoxEffect(props: EffectProps) {
  */
 interface Painter { field: FogField | null; level: number; steppedAt: number; stamp: number | null; seen: Set<number>; live: { readonly top: number; readonly bottom: number } | 'all' | null; paintedIn: number }
 
-function Smoke({ place, play, moment, show, met, covered, children }: EffectProps & { readonly play: CardPlay }) {
-  const { api } = useKayfa();
+function Smoke({ place, play, states, reader, moment, save, show, met, covered, children }: EffectProps & { readonly play: CardPlay }) {
+  const { api, settings, instance } = useKayfa();
   const reduced = useMotionReduced();
   const forced = useForcedColors();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -335,7 +380,25 @@ function Smoke({ place, play, moment, show, met, covered, children }: EffectProp
   const inView = areaSeen && !covered;
 
   const playedAt = Date.parse(play.playedAt);
-  const ends = play.ends === undefined ? Number.NaN : Date.parse(play.ends);
+  /* The end the smoke thins to: the play's own `ends` (a play from before this shipped), else the span, after which it holds at the floor. The play is over at `ends` only. */
+  const parsedEnds = play.ends === undefined ? Number.NaN : Date.parse(play.ends);
+  const ends = Number.isNaN(parsedEnds) ? playedAt + spanMs(HOT_BOX_THINS) : parsedEnds;
+  /* What the server holds of the play's state, which the aired band is drawn from; and whether this screen's reader is the author, in a live post only. */
+  const saved = states[play.id]?.state;
+  const savedKey = JSON.stringify(saved ?? null);
+  const author = reader.author && moment === null;
+  /* The economy as the server holds it now over the compiled one: a screen that has not read the server's holds the compiled hours. */
+  const economy = useMemo(() => ({ economy: economyNow(instance.settings, settings.economy) }), [instance, settings.economy]);
+  const until = author ? heldUntil(economy, 'hotBox.holdHours', play.playedAt)?.getTime() : undefined;
+  /* The author's clock moves on each minute while the hold runs, and once at the moment it ends; a reader's, and an author's with no hold running, sets no timer. */
+  const [clock, setClock] = useState(() => api.now());
+  useEffect(() => {
+    if (until === undefined || until <= clock) return;
+    const t = setTimeout(() => setClock(api.now()), Math.max(0, Math.min(60_000, until - api.now())));
+    return () => clearTimeout(t);
+  }, [until, clock, api]);
+  const holding = until !== undefined && until > clock;
+  const airing = author && !holding;
   const rgb = useMemo(() => readColor(play.config['color']), [play.config]);
   const seed = useMemo(() => seedOf(play.id), [play.id]);
 
@@ -344,8 +407,10 @@ function Smoke({ place, play, moment, show, met, covered, children }: EffectProp
   const loop = !reduced && !forced && !waved;
   /* The time the smoke's strength is taken at: a moment's, fixed, or null for the page's clock. */
   const fixedAt = moment ? moment.at : null;
-  const latest = useRef({ frame, reduced, forced, fixedAt, loop, rgb, seed, playedAt, ends, inView });
-  useLayoutEffect(() => { latest.current = { frame, reduced, forced, fixedAt, loop, rgb, seed, playedAt, ends, inView }; });
+  const latest = useRef({ frame, reduced, forced, fixedAt, loop, rgb, seed, playedAt, ends, inView, saved, airing, save, playId: play.id });
+  useLayoutEffect(() => { latest.current = { frame, reduced, forced, fixedAt, loop, rgb, seed, playedAt, ends, inView, saved, airing, save, playId: play.id }; });
+  /* The band the server holds changed (this screen's own save came back, or another reader's of the author heard of it): the tiles are drawn again. */
+  useLayoutEffect(() => { layerRef.current?.stale(); }, [savedKey]);
 
   /*
    * Time. One timer, set for the soonest thing the model needs looked at after the last time it was (`seen`): a line of the sweep finishing, the wave's end,
@@ -489,7 +554,10 @@ function Smoke({ place, play, moment, show, met, covered, children }: EffectProp
     p.seen.add(draw.index);
     const alpha = fogAlpha(s) * (1 - g);
     const [r, gr, b] = L.rgb;
-    const cuts: Cuts = cutsAt(m, t, L.reduced);
+    const swept: Cuts = cutsAt(m, t, L.reduced);
+    /* The band the author aired out is clear across the whole area from its top border: a band of its own, which the fog, a clearing's coverage and the picture's rows all start below. */
+    const band = airedTop(L.saved, h);
+    const cuts: Cuts = band > 0 ? { ...swept, rects: [{ top: 0, bottom: band, o: 1 }, ...swept.rects] } : swept;
     const trail = m.trail;
     const rows = rowsOf(field, draw.top, draw.top + draw.h), n = rows.y1 - rows.y0;
     const sc = scratchFor(field.gw, n);
@@ -627,6 +695,57 @@ function Smoke({ place, play, moment, show, met, covered, children }: EffectProp
     },
   });
 
+  /* ---- saving the author's band ---- */
+  /*
+   * Saved as Whoops!'s strokes are: debounced, one save on its way at a time, the latest state sent after it, a save that got no answer sent again a little later each
+   * time and given up on after a few, and a refusal shown and not retried (it would be the same again). Each save is the whole state, so sending it twice is the same as once.
+   */
+  const [report, setReport] = useState('');
+  const queue = useRef<{ want: Record<string, unknown> | null; sending: boolean; timer: ReturnType<typeof setTimeout> | undefined; gone: boolean }>({ want: null, sending: false, timer: undefined, gone: false });
+  const send = useCallback(async function run(attempt = 0): Promise<void> {
+    const q = queue.current;
+    if (q.sending || !q.want) return;
+    const state = q.want;
+    q.want = null;
+    q.sending = true;
+    let answer: Answer<unknown>;
+    try {
+      answer = await latest.current.save(latest.current.playId, state);
+    } catch {
+      answer = { ok: false, error: LOST_ANSWER, uncertain: true };
+    }
+    q.sending = false;
+    if (answer.ok) {
+      if (!q.gone) setReport('');
+      if (q.want) await run();
+      return;
+    }
+    if (!q.gone) setReport(answer.error);
+    if (answer.uncertain && attempt < MAX_SAVE_RETRIES && !q.gone) {
+      q.want ??= state;
+      q.timer = setTimeout(() => { void run(attempt + 1); }, RETRY_AFTER_MS * 2 ** attempt);
+      return;
+    }
+    /* The server's answer would be the same for what was made since: the band stays where it holds it, and the next line sends its own. */
+    q.want = null;
+  }, []);
+  const queueSave = useCallback((state: Record<string, unknown>) => {
+    const q = queue.current;
+    q.want = state;
+    clearTimeout(q.timer);
+    q.timer = setTimeout(() => { void send(); }, SAVE_AFTER_MS);
+  }, [send]);
+  /* The post has gone: nothing more is set and nothing retried, and what still waits on its debounce is sent at once. */
+  useEffect(() => {
+    const q = queue.current;
+    q.gone = false;
+    return () => {
+      q.gone = true;
+      clearTimeout(q.timer);
+      void send();
+    };
+  }, [send]);
+
   /* ---- the hold ---- */
   const start = useCallback(() => {
     const m = model.current, L = latest.current;
@@ -636,15 +755,19 @@ function Smoke({ place, play, moment, show, met, covered, children }: EffectProp
     if (!words || w <= 0 || h <= 0) return;
     /* The words' lines, read once: shares of the words' height, scaled to px and moved to where the words stand in the content area. A browser that cannot measure a range gives none, and the post is one block. */
     const read = readLines(words, { w, h });
-    const lines = read.length > 0 ? read : [{ top: 0, bottom: 1, text: words.textContent ?? '' }];
+    const all = (read.length > 0 ? read : [{ top: 0, bottom: 1, text: words.textContent ?? '' }]).map((l) => ({ top: px(l.top * h + wy), bottom: px(l.bottom * h + wy), text: l.text }));
+    /* The author's sweep starts at the first line whose bottom is below the band already aired. With none left (the words changed under the band) the post is aired out. */
+    const top = L.airing ? airedTop(L.saved, L.frame.h) : 0;
+    const lines = L.airing ? all.filter((l) => l.bottom > top + BAND_SLOP_PX) : all;
+    if (L.airing && lines.length === 0) { queueSave({ clean: true }); return; }
     m.sweep = {
-      startedAt: api.now(), lines: lines.map((l) => ({ top: px(l.top * h + wy), bottom: px(l.bottom * h + wy) })), texts: lines.map((l) => l.text),
+      air: L.airing, startedAt: api.now(), lines: lines.map((l) => ({ top: l.top, bottom: l.bottom })), texts: lines.map((l) => l.text),
       x0: wx, y0: wy, width: w, height: h, per: (w / SWEEP_PX_S) * 1000, releasedAt: null,
     };
     m.said = 0;
     setSpoken('');
     refresh();
-  }, [api, refresh]);
+  }, [api, refresh, queueSave]);
 
   /** Catches a held sweep up to `t`: the lines it finished are read out, and one that reached the end makes the post waved from the moment its last line finished. */
   const settle = useCallback((t: number) => {
@@ -654,12 +777,18 @@ function Smoke({ place, play, moment, show, met, covered, children }: EffectProp
     if (s.finished + 1 > m.said) {
       setSpoken(sw.texts.slice(m.said, s.finished + 1).join(' '));
       m.said = s.finished + 1;
+      /* The author's lines are saved as they finish: how far down the area the last of them reaches, or clean once there is no line left. */
+      if (sw.air && !s.done) {
+        const share = round4(sw.lines[s.finished]!.bottom / latest.current.frame.h);
+        if (share > 0 && share < 1) queueSave({ aired: share });
+      }
     }
+    if (s.done && sw.air) queueSave({ clean: true });
     if (s.done) {
       m.wavedAt = sw.startedAt + sw.lines.length * sw.per;
       m.sweep = null;
     }
-  }, []);
+  }, [queueSave]);
 
   const stop = useCallback(() => {
     const m = model.current;
@@ -712,14 +841,16 @@ function Smoke({ place, play, moment, show, met, covered, children }: EffectProp
   const held = m.sweep !== null && m.sweep.releasedAt === null;
   const s = strength(fixedAt ?? at, playedAt, ends);
   const g = waveFactor(m.wavedAt, at, reduced);
-  const state = waved ? STATE_WAVED : held ? STATE_WAVING : STATE_SMOKE;
-  const endsText = `Point at the words, or hold ${WAVE_LABEL}, to read.${play.ends === undefined ? '' : ` ${endsWords(play.ends, fixedAt ?? at)}.`}`;
+  const part = airedTop(saved, 1) > 0;
+  const state = waved ? STATE_WAVED : held ? (m.sweep?.air ? STATE_AIRING : STATE_WAVING) : part ? STATE_PART : STATE_SMOKE;
+  const endNote = play.ends === undefined ? '' : ` ${endsWords(play.ends, fixedAt ?? at)}.`;
+  const endsText = `${!author ? ENDS_READER : holding ? `You can air it out for good in ${holdLeft(until! - clock)}. Until then, point at the words, or hold ${WAVE_LABEL}, to read.` : ENDS_AUTHOR}${endNote}`;
   const progress = Math.round((1 - s) * 100) / 100;
   const view = useMemo<CardView>(() => ({
     progress, state, ends: endsText, yours: !waved,
-    controls: [{ kind: 'hold', label: WAVE_LABEL, describe: WAVE_DESCRIBE, start, stop }],
-    notes: {},
-  }), [progress, state, endsText, waved, start, stop]);
+    controls: [airing ? { kind: 'hold', label: AIR_LABEL, describe: AIR_DESCRIBE, start, stop } : { kind: 'hold', label: WAVE_LABEL, describe: WAVE_DESCRIBE, start, stop }],
+    notes: {}, ...(report ? { report } : null),
+  }), [progress, state, endsText, waved, airing, report, start, stop]);
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 
@@ -727,7 +858,9 @@ function Smoke({ place, play, moment, show, met, covered, children }: EffectProp
   const radius = holeRadius(frame.w);
   const cuts = forced ? cutsAt(m, at, reduced) : null;
   const discs = cuts ? hardDiscs(cuts.clearings, m.trail, at) : [];
-  const mask = cuts ? maskFor(discs, cuts.rects, s, g, radius, frame.wx, frame.wy) : undefined;
+  /* The aired band is a rect of the mask like a finished line, from the area's top border: the words above its bottom show, and the mask starts below it. */
+  const band = airedTop(saved, frame.h);
+  const mask = cuts ? maskFor(discs, band > 0 ? [{ top: 0, bottom: band, o: 1 }, ...cuts.rects] : cuts.rects, s, g, radius, frame.wx, frame.wy) : undefined;
 
   /* The fog's color and alpha, for the stand-in of a band whose tile is not yet painted (hot-box.css): the same alpha the painter uses. */
   const standIn = forced ? undefined : { '--dw-hotbox-rgb': rgb.join(' '), '--dw-hotbox-fog': a4(fogAlpha(s) * (1 - g)) } as CSSProperties;
@@ -745,6 +878,7 @@ function Smoke({ place, play, moment, show, met, covered, children }: EffectProp
         </div>
       )}
       <p className="kb-visually-hidden" aria-live="polite">{spoken}</p>
+      <p className="kb-visually-hidden" role="status" data-kb-report>{report}</p>
     </div>
   );
 }
