@@ -795,7 +795,6 @@ describe('live events', () => {
     await flush();
     expect(mine).not.toHaveBeenCalled();
     expect((await fake.log()).wallet.map((e) => e.kind)).toEqual(['settlement']);
-    void ana;
   });
   test('an edit is the post again under its own id; a reaction is a tally', async () => {
     const { fake, anaFace, boFace, thread, opener } = world();
@@ -2763,12 +2762,18 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     fake.signInAs(bo);
     const other = vi.fn();
     fake.subscribeAccount({ onSelf: other });
-    must(await fake.playCard('blot', boFace, opener, {}, ''));
     await flush();
     expect(set.kind).toBe('set');
-    expect(setter).toHaveBeenCalled();
-    expect(other).toHaveBeenCalled();
-    expect(fake.broadcast.log.filter((e) => e.event === 'self').map((e) => e.topic)).toEqual(expect.arrayContaining([`account:${ana}`, `account:${bo}`]));
+    const [setterBefore, otherBefore] = [setter.mock.calls.length, other.mock.calls.length];
+    fake.broadcast.log.length = 0;
+    must(await fake.playCard('blot', boFace, opener, {}, ''));
+    await flush();
+    /* Ana is poked for the caught ledger row (the spring Act names no character of hers), Bo for the card he played: one each. */
+    expect(setter.mock.calls.length - setterBefore).toBe(1);
+    expect(other.mock.calls.length - otherBefore).toBe(1);
+    const selfs = fake.broadcast.log.filter((e) => e.event === 'self').map((e) => e.topic);
+    expect(selfs.filter((t) => t === `account:${ana}`)).toHaveLength(1);
+    expect(selfs.filter((t) => t === `account:${bo}`)).toHaveLength(1);
   });
 
   test('a catching set card\'s catch is the setter\'s: a card in the hand, a ledger row and no payout', async () => {
@@ -5300,6 +5305,23 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect((await fake.log()).cards.filter((e) => e.kind === 'returned' || e.kind === 'caught')).toEqual([]);
     });
 
+    test('the spring that locks a character pokes that character\'s owner for the lock, beside the ledger row of the play', async () => {
+      const { fake, ana, bo, anaFace, boFace, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      const boPokes = vi.fn();
+      fake.subscribeAccount({ onSelf: boPokes });
+      fake.signInAs(ana);
+      const anaPokes = vi.fn();
+      fake.subscribeAccount({ onSelf: anaPokes });
+      await flush();
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      await flush();
+      /* Bo: the spring that names him in \`locks\` and the ledger row of the card he played. Ana: the caught-style ledger row is not written for a lockout, so none. */
+      expect([boPokes.mock.calls.length, anaPokes.mock.calls.length]).toEqual([2, 0]);
+    });
+
     test('the locked character is refused a post, a Move and a back in that thread in the SQL\'s words, until an admin ends it; its other mask and other threads are not held', async () => {
       const { fake, bo, root, anaFace, boFace, boHeel, thread, post, otherPost, otherThread } = lk();
       must(await fake.setCard('lkback', anaFace, post, {}));
@@ -7007,6 +7029,74 @@ describe('discipline cards: hearts, the Unban and Take the Fall', () => {
     fake.seed.ruling(appeal, fake.seed.staff('mod2', 'Mod Two', 'mod'), 'overturned', { until: now });
     await flush();
     expect(boPokes.mock.calls.length).toBe(before + 2);
+  });
+
+  describe('the self poke of what changes a character, named directly', () => {
+    /* Each test settles what the seeding wrote, counts a poke only after, and asks who of Ana and Bo was poked by the one call under test. */
+    async function pokes(w: ReturnType<typeof world>) {
+      await flush();
+      const bo = vi.fn();
+      const ana = vi.fn();
+      w.fake.signInAs(w.bo);
+      w.fake.subscribeAccount({ onSelf: bo });
+      w.fake.signInAs(w.ana);
+      w.fake.subscribeAccount({ onSelf: ana });
+      await flush();
+      return { count: async () => { await flush(); return [bo.mock.calls.length, ana.mock.calls.length]; } };
+    }
+
+    test('a seeded warn relief pokes the owner of the filed character alone', async () => {
+      const w = world();
+      const inf = w.file(4, DAY);
+      const play = must(await w.fake.playCard('t-fall', w.anaFace, w.opener, {}, ''));
+      const seen = await pokes(w);
+      w.fake.seed.relief(play.id, inf, 1);
+      expect(await seen.count()).toEqual([1, 0]);
+    });
+
+    test('a seeded ban lift pokes the owner of the banned character alone', async () => {
+      const w = world();
+      const ban = w.fake.seed.ban(w.boFace, w.now + 3 * DAY, { infraction: w.file(7, DAY), days: 3 });
+      const play = must(await w.fake.playCard('t-fall', w.anaFace, w.opener, {}, ''));
+      const seen = await pokes(w);
+      w.fake.seed.lift(play.id, ban);
+      expect(await seen.count()).toEqual([1, 0]);
+    });
+
+    test('a seeded end of a card play pokes the owner of the character the play named', async () => {
+      const w = world();
+      w.file(4, DAY);
+      const played = must(await w.fake.playCard('t-heart', w.anaFace, w.boFace, {}, '', 'character', w.opener));
+      const seen = await pokes(w);
+      w.fake.seed.cardEnd(played.id);
+      expect(await seen.count()).toEqual([1, 0]);
+    });
+
+    test('a seeded end of a move pokes the owner of the character the move named', async () => {
+      const w = world();
+      const move = w.fake.seed.move('mod', { board: 'general', name: 'Confer', lasting: { kind: 'conferGroup', params: { character: w.boFace, group: 'regulars' } } });
+      const seen = await pokes(w);
+      w.fake.seed.endMove(move, { why: 'expired' });
+      expect(await seen.count()).toEqual([1, 0]);
+    });
+
+    test('an unmask pokes the owner of the character that dropped its mask, and no other', async () => {
+      const w = world();
+      const seen = await pokes(w);
+      must(await w.fake.unmask(w.anaFace, w.thread, 'It was me.'));
+      expect(await seen.count()).toEqual([0, 1]);
+    });
+
+    test('a ruling on a ban pokes the banned owner alone, not the owner of the infraction the ban rests on (the chain ends at the ban)', async () => {
+      const w = world();
+      /* Bo's ban rests on an infraction filed on Ana's character, the third hop from the ruling. */
+      const ban = w.fake.seed.ban(w.boFace, w.now + 3 * DAY, { infraction: w.fake.seed.infraction(w.fake.seed.visit(w.mod, w.hers, { at: w.now - DAY }), { points: 7, at: w.now - DAY }), days: 3 });
+      const appeal = w.fake.seed.appeal(w.boFace, ban, 'No.');
+      const mod2 = w.fake.seed.staff('mod2', 'Mod Two', 'mod');
+      const seen = await pokes(w);
+      w.fake.seed.ruling(appeal, mod2, 'overturned', { until: w.now });
+      expect(await seen.count()).toEqual([1, 0]);
+    });
   });
 
   test('an Ultra Happy Heart lifts every running ban at once; the log says when and by which card', async () => {

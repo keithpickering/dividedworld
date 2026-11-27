@@ -1990,6 +1990,21 @@ describe('live', () => {
     expect(onBoard).toHaveBeenCalledWith({ id: C, slug: 'general', name: 'General', description: '', isSystem: false, moveAct: null, threadCount: 5, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T, lastTitle: 'A title' });
   });
 
+  it('maps a row with no last character and no origin, and an empty board entry, to nulls without throwing', async () => {
+    const s = stub();
+    const onRow = vi.fn();
+    const onBoard = vi.fn();
+    s.api.subscribeBoard(C, { onRow });
+    s.api.subscribeIndex({ onBoard });
+    await settle();
+    const rowChannel = s.channels.find((c) => c.topic === `board:${C}`)!;
+    const indexChannel = s.channels.find((c) => c.topic === 'index')!;
+    expect(() => rowChannel.handlers.get('row')?.({ payload: { ...THREAD_ROW, first_act: null, first_character: null, last_act: null, last_character: null, origin_act_id: null, origin_thread: null, origin_place: null } })).not.toThrow();
+    expect(onRow).toHaveBeenCalledWith(expect.objectContaining({ id: T, firstAct: null, firstCharacter: null, lastAct: null, lastCharacter: null, originActId: null, originThread: null, origin: null }));
+    expect(() => indexChannel.handlers.get('board')?.({ payload: { id: C, slug: 'general', name: 'General', description: '', is_system: false, move_act: null, thread_count: 0, last_at: null, last_character: null, last_thread: null, last_title: null } })).not.toThrow();
+    expect(onBoard).toHaveBeenCalledWith({ id: C, slug: 'general', name: 'General', description: '', isSystem: false, moveAct: null, threadCount: 0, lastAt: null, lastCharacter: null, lastThread: null, lastTitle: null });
+  });
+
   it('hears a self poke on the account channel, with no payload to read', async () => {
     const s = stub();
     const onSelf = vi.fn();

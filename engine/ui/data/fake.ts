@@ -649,6 +649,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** trophy_failure_resolutions: `${failure}:${character}` for each award an admin gave by hand. */
   const failureGiven = new Set<string>();
   const acts = new Map<Id, ActRec>();
+  const placedIndex = new Map<Id, ActRec[]>();
+  const lastPlacedAt = new Map<Id, number>();
   /** Moves whose demand the tick has not counted (SeedMove.uncounted). */
   const uncounted = new Set<Id>();
   const threads = new Map<Id, ThreadRec>();
@@ -1052,7 +1054,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const [visit, list] of outcomePosts) if (!out.has(visit) && list.some((o) => shown.has(o.post)) && acts.has(visit)) out.set(visit, visitOf(acts.get(visit)!, shown));
     return [...out.values()];
   };
-  const placed = (threadId: Id) => [...acts.values()].filter((a) => a.thread === threadId && a.seq !== null).sort((a, b) => a.seq! - b.seq!);
+  /** The placed Acts of each thread in seq order, and the greatest time of any of them, kept as Acts are written so a thread's row and its board's entry never scan every Act. */
+  const placed = (threadId: Id): ActRec[] => [...(placedIndex.get(threadId) ?? [])];
 
   /** The account's followed threads with posts past its place by characters it does not own, newest first, at most 50 (my_followed_threads, 0059). */
   function followedFor(account: AccountRec): FollowedThread[] {
@@ -1138,6 +1141,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return origin.seq !== null ? placeOf(origin) : null;
   }
 
+  const lastAtOf = (t: ThreadRec): number => lastPlacedAt.get(t.id) ?? t.at;
   function summary(t: ThreadRec): ThreadSummary {
     const all = placed(t.id);
     const first = all[0];
@@ -1146,7 +1150,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const origin = t.origin === null ? undefined : acts.get(t.origin);
     // The greatest time of any placed (non-edit) Act, as threads.last_at is; the creation time with none, since lastAt is not null here.
     return {
-      id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at), lastAt: iso(all.length ? Math.max(...all.map((a) => a.at)) : t.at), lastSeq: t.nextSeq - 1,
+      id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at), lastAt: iso(lastAtOf(t)), lastSeq: t.nextSeq - 1,
       replies: all.filter((a) => a.kind === 'post' && a.seq! > 1).length,
       firstAct: first?.id ?? null, firstCharacter: first ? shownAuthor(first, false) : null, lastAct: last?.id ?? null, lastCharacter: last ? shownAuthor(last, false) : null,
       // Capped at the hotReplies threshold, as thread_list counts it: a screen only compares it with that.
@@ -1164,8 +1168,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   /** A board's entry on the index (`index_page`, `board_summary`): its name, its thread count and its latest thread. */
   function boardEntry(b: Board): BoardSummary {
-    const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t)).map(summary);
-    const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
+    const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t));
+    const latestRec = [...mine].sort((x, y) => lastAtOf(y) - lastAtOf(x) || y.id.localeCompare(x.id))[0];
+    const latest = latestRec === undefined ? undefined : summary(latestRec);
     return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null, lastTitle: latest?.title ?? null };
   }
   const takesEffectAt = () => (nextSettlement === null ? null : iso(nextSettlement));
@@ -1633,6 +1638,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       at: a.at ?? stamp ?? now(), payload,
     };
     acts.set(rec.id, rec);
+    if (rec.seq !== null) {
+      const list = placedIndex.get(rec.thread);
+      if (list === undefined) placedIndex.set(rec.thread, [rec]); else list.push(rec);
+      lastPlacedAt.set(rec.thread, Math.max(lastPlacedAt.get(rec.thread) ?? -Infinity, rec.at));
+    }
     if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
     /* The landed card Acts that name a Gimmick they cut, by that play, in the order written (acts_cut_play): what cutBy reads. */
     if (rec.kind === 'card' && rec.payload.caught === undefined && rec.payload.cut !== undefined) {
