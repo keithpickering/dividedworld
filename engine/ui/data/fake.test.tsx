@@ -4773,6 +4773,97 @@ describe('gear, trophies and Random Events', () => {
   });
 });
 
+describe('Random Events by their own rarity', () => {
+  const mk = (key: string, rarity: 'common' | 'uncommon' | 'rare' | 'legendary', extra: object = {}) => ({
+    key, name: key, alignment: 'sweet' as const, rarity, stack: 3, playPrice: () => 0,
+    validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }), canApply: () => ({ ok: true as const, value: undefined }), ...extra,
+  });
+  const gear = [
+    { key: 'hat', name: 'Hat', line: 'A hat.', rarity: 'common' as const }, { key: 'crown', name: 'Crown', line: 'A crown.', rarity: 'rare' as const },
+    { key: 'secret', name: 'Secret', line: 'Hush.', rarity: 'common' as const, eventOnly: true as const },
+  ];
+  /* A world whose odds the test sets: every roll is its own window, and the day holds them all. */
+  function rolling(over: { outcomes?: Record<string, number>; eventRarity?: Record<string, number>; gearRarity?: Record<string, number>; lines: Instance['events']['lines']; cards?: Instance['cards'] }) {
+    /* The settings' own eventRarity is dropped unless the test gives one: an absent one reads as common alone. */
+    const { eventRarity: _own, ...events } = settings.cosmetics.events;
+    const inst: Instance = {
+      ...instance, gear, cards: over.cards ?? [], events: { lines: over.lines },
+      settings: { ...settings, cosmetics: { ...settings.cosmetics, events: { ...events, windowMinutes: 1, dayMost: 100000, outcomes: { line: 0, gear: 0, card: 0, ...over.outcomes } as never, gearRarity: (over.gearRarity ?? { common: 1 }) as never, cardRarity: { common: 1 }, ...(over.eventRarity ? { eventRarity: over.eventRarity as never } : {}) } as never } },
+    };
+    const fake = createFake({ instance: inst });
+    const ana = fake.seed.account('ana');
+    const a1 = fake.seed.character(ana, 'Ana One', 'face');
+    fake.signInAs(ana);
+    fake.seed.eventsOn();
+    const roll = async () => { fake.clock.advance(2 * MINUTE); return must(await fake.randomEvent(a1)); };
+    const rolls = async (n: number) => { const out = []; for (let i = 0; i < n; i++) out.push(await roll()); return out; };
+    return { fake, a1, roll, rolls };
+  }
+
+  test('the event\'s rarity is picked among the weighted rarities that hold an eligible line, and the answer says it', async () => {
+    const { rolls } = rolling({
+      outcomes: { line: 1 }, eventRarity: { common: 1, uncommon: 1, legendary: 0 },
+      lines: [{ key: 'c', outcome: 'line', text: 'C' }, { key: 'u', outcome: 'line', text: 'U', rarity: 'uncommon' }, { key: 'l', outcome: 'line', text: 'L', rarity: 'legendary' }],
+    });
+    const got = (await rolls(60)).map((e) => [e!.lineKey, e!.eventRarity]);
+    expect(new Set(got.map((g) => g[0]))).toEqual(new Set(['c', 'u']));
+    expect(got.every(([k, r]) => (k === 'c' ? r === 'common' : r === 'uncommon'))).toBe(true);
+  });
+
+  test('a weighted rarity with no eligible line is skipped, and an eventRarity absent from the settings is common alone', async () => {
+    const skipped = rolling({ outcomes: { line: 1 }, eventRarity: { common: 1, rare: 1000 }, lines: [{ key: 'c', outcome: 'line', text: 'C' }] });
+    expect((await skipped.rolls(20)).every((e) => e?.lineKey === 'c' && e.eventRarity === 'common')).toBe(true);
+    const absent = rolling({ outcomes: { line: 1 }, lines: [{ key: 'c', outcome: 'line', text: 'C' }, { key: 'r', outcome: 'line', text: 'R', rarity: 'rare' }] });
+    const answered = await absent.rolls(20);
+    expect(answered.every((e) => e?.lineKey === 'c' && e.eventRarity === 'common')).toBe(true);
+  });
+
+  test('an outcome with no eligible line at any weighted rarity answers null', async () => {
+    const { rolls } = rolling({ outcomes: { gear: 1 }, eventRarity: { rare: 1 }, lines: [{ key: 'g', outcome: 'gear', text: 'G' }] });
+    expect((await rolls(5)).every((e) => e === null)).toBe(true);
+  });
+
+  test('a line that names an item gives it with no draw, an eventOnly one included, and the answer keeps the item\'s rarity beside the event\'s', async () => {
+    const { rolls, fake } = rolling({ outcomes: { gear: 1 }, eventRarity: { rare: 1 }, lines: [{ key: 'g', outcome: 'gear', text: 'G {item}', rarity: 'rare', item: 'secret' }] });
+    const got = await rolls(10);
+    expect(got.every((e) => e?.item === 'secret' && e.rarity === 'common' && e.eventRarity === 'rare' && e.lineKey === 'g')).toBe(true);
+    expect(must(await fake.wardrobe()).find((w) => w.gear === 'secret')?.held).toBe(10);
+  });
+
+  test('an event naming no item never draws an eventOnly gear at random', async () => {
+    const { rolls } = rolling({ outcomes: { gear: 1 }, lines: [{ key: 'g', outcome: 'gear', text: 'G {item}' }] });
+    const items = new Set((await rolls(60)).map((e) => e!.item));
+    expect(items).toEqual(new Set(['hat']));
+  });
+
+  test('a gear event naming none is not eligible when no weighted gear rarity holds a drawable item', async () => {
+    /* gearRarity weighs legendary only, and no gear is legendary: the gear line is skipped, so the roll finds nothing. */
+    const { rolls } = rolling({ outcomes: { gear: 1 }, gearRarity: { legendary: 1 }, lines: [{ key: 'g', outcome: 'gear', text: 'G' }] });
+    expect((await rolls(10)).every((e) => e === null)).toBe(true);
+  });
+
+  test('an event naming a retired card is skipped, and a card event naming none draws only cards in print', async () => {
+    const cards = [mk('old', 'common', { retired: true }), mk('new', 'common')];
+    const named = rolling({ outcomes: { card: 1 }, eventRarity: { common: 1, rare: 1 }, cards, lines: [{ key: 'c', outcome: 'card', text: 'C' }, { key: 'r', outcome: 'card', text: 'R', rarity: 'rare', item: 'old' }] });
+    expect((await named.rolls(40)).every((e) => e?.lineKey === 'c' && e.eventRarity === 'common' && e.item === 'new')).toBe(true);
+    const only = rolling({ outcomes: { card: 1 }, cards: [mk('old', 'common', { retired: true })], lines: [{ key: 'c', outcome: 'card', text: 'C' }] });
+    expect((await only.rolls(5)).every((e) => e === null)).toBe(true);
+  });
+
+  test('a scripted event may give its eventRarity, defaults to its line\'s own, and else common', async () => {
+    const { fake, a1 } = rolling({ lines: [{ key: 'r', outcome: 'line', text: 'R', rarity: 'rare' }, { key: 'c', outcome: 'line', text: 'C' }] });
+    const next = async () => { fake.clock.advance(2 * MINUTE); return must(await fake.randomEvent(a1)); };
+    fake.seed.nextEvent({ outcome: 'line', line: 'r', eventRarity: 'legendary' });
+    expect((await next())?.eventRarity).toBe('legendary');
+    fake.seed.nextEvent({ outcome: 'line', line: 'r' });
+    expect((await next())?.eventRarity).toBe('rare');
+    fake.seed.nextEvent({ outcome: 'line', line: 'c' });
+    expect((await next())?.eventRarity).toBe('common');
+    fake.seed.nextEvent({ outcome: 'line' });
+    expect((await next())?.eventRarity).toBe('common');
+  });
+});
+
 describe('a drive and its gifts, refused and split as the database does', () => {
   /* A drive card: gifts of 0.10 and 0.25, of which The System keeps 20 percent, rounded up; a drive lasts 7 days from its latest play. */
   const appeal = {

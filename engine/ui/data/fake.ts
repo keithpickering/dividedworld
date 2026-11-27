@@ -24,8 +24,8 @@ import { pollHeard, type LogBallot, type LogPlace, type LogPollClose } from './a
 import { decide } from '../../rules/actions.ts';
 import { countedBallots, lastsHours, pickRefusal, pollCounts, pollDraftProblems, type PollDraft } from '../../rules/polls.ts';
 import { isFixed, rollPack } from '../../rules/packs.ts';
-import { beltHolder, GEAR_VIEWS, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
-import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
+import { beltHolder, eventRarity as lineRarity, GEAR_VIEWS, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
+import { fallsOn, inPrint, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { pointAt, rewindConfig, rewindPointProblem } from '../../rules/rewind.ts';
@@ -202,7 +202,7 @@ export interface Seed {
   /** A standing award of a trophy kind (the instance's or an admin's) for a character, dated `at` (else now), by the season unless `by` says; returns its id. A belt's holder is the latest. */
   award(character: Id, trophy: string, options?: { at?: number; by?: 'season' | 'boss' | 'demand' | 'admin'; line?: string; move?: Id }): Id;
   /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the weighted draw; null is a roll that finds nothing. */
-  nextEvent(event: { outcome: RandomEvent['outcome']; item?: string; line?: string } | null): void;
+  nextEvent(event: { outcome: RandomEvent['outcome']; item?: string; line?: string; eventRarity?: Rarity } | null): void;
   /** Turns on the weighted draw from the settings' odds for a roll nothing scripted; off at first, so an unscripted fake never opens a dialog over a page a test or story is about something else. */
   eventsOn(on?: boolean): void;
   /** An award that could not be written, as `trophyAwardFailures` lists it, for an admin to give by hand. */
@@ -644,7 +644,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const madeKinds: { key: string; name: string; line: string | null; belt: boolean; art: string | null }[] = [];
   /** The Random Events a test scripted (`Seed.nextEvent`), taken in order before the weighted draw; null is a roll that finds nothing. */
   let weightedEvents = false;
-  const scripted: (Pick<RandomEvent, 'outcome'> & { item?: string; line?: string } | null)[] = [];
+  const scripted: (Pick<RandomEvent, 'outcome'> & { item?: string; line?: string; eventRarity?: Rarity } | null)[] = [];
   const awardFailures: (Omit<TrophyAwardFailure, 'open' | 'characters'> & { characters: readonly { readonly id: Id; readonly name: string; readonly place?: number }[] | null })[] = [];
   /** trophy_failure_resolutions: `${failure}:${character}` for each award an admin gave by hand. */
   const failureGiven = new Set<string>();
@@ -3667,6 +3667,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { key: keys[Math.floor(random() * keys.length)]!.key, rarity };
   }
 
+  /** What a Random Event that names no item may draw: gear that is not `eventOnly`, cards in print, not withheld and not `eventOnly` (`draw_pool`). */
+  function drawable(outcome: 'gear' | 'card'): { key: string; rarity: Rarity }[] {
+    return outcome === 'gear'
+      ? instance.gear.filter((g) => g.eventOnly !== true)
+      : instance.cards.filter((k) => inPrint(k) && k.eventOnly !== true && !withheld(k, instance.settings)).map((k) => ({ key: k.key, rarity: k.rarity }));
+  }
+
+  /** `event_pool` (0453): a line naming an item is eligible when that item can be given now (`eventOnly` is fine); one naming none, when a weighted rarity holds a drawable item; a `line` line always. */
+  function lineEligible(l: { readonly outcome: 'line' | 'gear' | 'card'; readonly item?: string }, cfg: ReturnType<typeof cosmetics>['events']): boolean {
+    if (l.outcome === 'line') return true;
+    if (l.item !== undefined) {
+      if (l.outcome === 'gear') return instance.gear.some((g) => g.key === l.item);
+      const card = instance.cards.find((k) => k.key === l.item);
+      return card !== undefined && inPrint(card) && !withheld(card, instance.settings);
+    }
+    const weights = l.outcome === 'gear' ? cfg.gearRarity : cfg.cardRarity;
+    return drawable(l.outcome).some((x) => (weights[x.rarity] ?? 0) > 0);
+  }
+
   /** `random_event` (0207): null inside the window, at the day's most, or on a draw of nothing; a found item is the account's at once. */
   function randomEvent(character: Id): Answer<RandomEvent | null> {
     const c = acting(character);
@@ -3682,6 +3701,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     let item: string | null = null;
     let rarity: Rarity | null = null;
     let lineKey: string | null = null;
+    let eventRarity: Rarity = 'common';
     const next = scripted.shift();
     if (next === null) return ok(null);
     if (next !== undefined) {
@@ -3689,20 +3709,37 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       item = next.item ?? null;
       rarity = (outcome === 'gear' ? instance.gear.find((g) => g.key === item)?.rarity : outcome === 'card' ? instance.cards.find((k) => k.key === item)?.rarity : null) ?? null;
       lineKey = next.line ?? null;
+      /* A scripted event says its own rarity, else its line's, else common. */
+      const scriptedLine = lineKey === null ? undefined : instance.events.lines.find((l) => l.key === lineKey);
+      eventRarity = next.eventRarity ?? (scriptedLine ? lineRarity(scriptedLine) : 'common');
     } else {
+      /* `random_event`'s draw order (0453): the outcome; the event's rarity among the weighted rarities that hold an eligible line; a line of it by key; then the line's named item with no draw, else `drawByRarity`. */
       const o = { ...cfg.outcomes, none: cfg.outcomes.none ?? 0 };
       const total = o.line + o.gear + o.card + o.none;
       let at = random() * total;
       outcome = (['line', 'gear', 'card', 'none'] as const).find((k) => (at -= o[k]) < 0 && o[k] > 0) ?? 'none';
       if (outcome === 'none') return ok(null);
+      const eligible = instance.events.lines.filter((l) => l.outcome === outcome && lineEligible(l, cfg));
+      const weights = cfg.eventRarity ?? { common: 1 };
+      const live = RARITIES.filter((r) => (weights[r] ?? 0) > 0 && eligible.some((l) => lineRarity(l) === r));
+      const sum = live.reduce((n, r) => n + weights[r]!, 0);
+      if (sum === 0) return ok(null);
+      let pick = random() * sum;
+      eventRarity = live.find((r) => (pick -= weights[r]!) < 0) ?? live[live.length - 1]!;
+      const lines = eligible.filter((l) => lineRarity(l) === eventRarity).map((l) => l.key).sort();
+      lineKey = lines[Math.floor(random() * lines.length)]!;
       if (outcome !== 'line') {
-        const drawn = outcome === 'gear' ? drawByRarity(instance.gear, cfg.gearRarity) : drawByRarity(instance.cards.map((k) => ({ key: k.key, rarity: k.rarity })), cfg.cardRarity);
-        if (!drawn) return ok(null);
-        item = drawn.key;
-        rarity = drawn.rarity;
+        const named = instance.events.lines.find((l) => l.key === lineKey)!.item;
+        if (named !== undefined) {
+          item = named;
+          rarity = (outcome === 'gear' ? instance.gear.find((g) => g.key === named)?.rarity : instance.cards.find((k) => k.key === named)?.rarity) ?? null;
+        } else {
+          const drawn = drawByRarity(drawable(outcome), outcome === 'gear' ? cfg.gearRarity : cfg.cardRarity);
+          if (!drawn) return ok(null);
+          item = drawn.key;
+          rarity = drawn.rarity;
+        }
       }
-      const lines = instance.events.lines.filter((l) => l.outcome === outcome).map((l) => l.key).sort();
-      lineKey = lines.length > 0 ? lines[Math.floor(random() * lines.length)]! : null;
     }
     if (outcome === 'gear' && item) account.gear[item] = (account.gear[item] ?? 0) + 1;
     if (outcome === 'card' && item) account.cards[item] = (account.cards[item] ?? 0) + 1;
@@ -3711,7 +3748,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const said = lineKey === null ? undefined : instance.events.lines.find((l) => l.key === lineKey);
     const event = uuid();
     cosmeticEvents.push({ account: account.id, ms: now(), row: { ...NO_COSMETIC, kind: 'found', id: event, at: iso(now()), character, outcome, item, text: said?.text ?? null } });
-    return ok({ event, outcome, item, rarity, line: said?.text ?? null, ...(said ? { lineKey: said.key } : {}), character });
+    return ok({ event, outcome, item, rarity, eventRarity, line: said?.text ?? null, ...(said ? { lineKey: said.key } : {}), character });
   }
 
   /** The admin's hand over gear and trophies (0205, 0206): the words are `only_admins`'s and each function's own. */
