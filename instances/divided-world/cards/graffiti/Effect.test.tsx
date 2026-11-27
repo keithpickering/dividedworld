@@ -677,6 +677,31 @@ describe('a hold, and the order of a scrub', () => {
     expect(at()).toBeCloseTo(thinned, 1);
   });
 
+  test('a wash that lands in the acts before an answer with no id is the wash that was sent, and its presses are not made twice', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let land: (cuts: unknown[]) => void = () => {};
+    const landsFirst = async (_id: string, body: unknown) => {
+      land((body as { cuts: unknown[] }).cuts);
+      /* The wall is painted from the acts that hold the wash, with the answer still on its way. */
+      await new Promise((done) => requestAnimationFrame(() => done(null)));
+      return { ok: true as const, value: { kind: 'wash' } as unknown as SurfaceAct };
+    };
+    const { frame, setActs } = hosted({ author: true, wash: landsFirst as never });
+    land = (cuts) => setActs([...MIDDLE, { id: 'w9', kind: 'wash', character: 'c', createdAt: '2026-10-29T21:09:00.000Z', payload: { cuts } } as unknown as SurfaceAct]);
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    const at = () => lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h);
+    await act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+    const thinned = at(), made = lastWall().groups[0]!.log.length;
+    expect(thinned).toBeLessThan(COATS.line);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS + 10); });
+    expect(vi.mocked(lastSurface()!.wash)).toHaveBeenCalledTimes(1);
+    /* Once the answer is in, the wall is the saved wash alone, as thin as the press made it and no thinner. */
+    await act(async () => { await vi.mocked(lastSurface()!.wash).mock.results[0]!.value; });
+    await act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+    expect(at()).toBeCloseTo(thinned, 1);
+    expect(lastWall().groups[0]!.log.length, 'the presses replayed once, from the saved wash').toBe(made);
+  });
+
   test('a wash leaves the acts and a new one arrives: the answer had no id, and the new wash is not the old one', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const noId = async () => ({ ok: true as const, value: { kind: 'wash' } as unknown as SurfaceAct });

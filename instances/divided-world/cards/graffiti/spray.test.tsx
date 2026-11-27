@@ -4,14 +4,15 @@
  * destination-out, so a test reads the ink's alpha at a pixel, and it logs every arc.
  * The wall's own fields (coats, takes, placement, the press that goes to the top group) are read from `Wall` (docs/plans/2026-11-27-graffiti-everywhere-plan.md, Task 7).
  */
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { takesOf, GRID } from '../../../../engine/rules/surface.ts';
 import { CAPS, CAPS_EM, COATS, SPONGE, SPONGE_EM } from '../graffiti.ts';
 import { Wall, hitAt, paintWall, wallDensity, type GroupSrc, type Press, type WallAct, type Walker } from './spray.ts';
 import { MAX_CANVAS_PX } from '../whoops/paint.ts';
+import { ROW_PX } from '../whoops/scrub.ts';
 
 const realGetContext = HTMLCanvasElement.prototype.getContext;
-afterEach(() => { HTMLCanvasElement.prototype.getContext = realGetContext; });
+afterEach(() => { HTMLCanvasElement.prototype.getContext = realGetContext; vi.restoreAllMocks(); });
 
 interface Arc { readonly x: number; readonly y: number; readonly r: number; readonly alpha: number }
 interface Px { a: number; r: number; g: number; b: number }
@@ -469,6 +470,96 @@ describe('a wall built over the one before it', () => {
     expect(moved.groups[0]).toBe(before.groups[0]);
     const bigger = Wall.of(acts, layout({ emPx: 20 }), [], before);
     expect(bigger.groups[0]).not.toBe(before.groups[0]);
+  });
+});
+
+/** Every canvas made from now on, in order, until the mocks are restored. */
+function watchCanvases(): HTMLCanvasElement[] {
+  const made: HTMLCanvasElement[] = [];
+  const real = document.createElement.bind(document);
+  vi.spyOn(document, 'createElement').mockImplementation(((tag: string, o?: ElementCreationOptions) => {
+    const el = real(tag, o);
+    if (tag === 'canvas') made.push(el as HTMLCanvasElement);
+    return el;
+  }) as typeof document.createElement);
+  return made;
+}
+
+describe('the painter gives its bitmaps back', () => {
+  test('a field dropped on rebuild releases its bitmaps, and the one kept keeps them', () => {
+    fakeCanvases();
+    const target = canvasOf();
+    const two = [draw('a', group(SPAN, { at: [0.5, 0.2] }), group(SPAN, { at: [0.5, 0.7] }))];
+    const before = Wall.of(two, layout());
+    const made = watchCanvases();
+    paintWall(target.getContext('2d') as CanvasRenderingContext2D, BOX, 1, before);
+    expect(made).toHaveLength(4);
+    expect(made.every((c) => c.width > 0 && c.height > 0)).toBe(true);
+    /* Halos of both fields, then their cores: the second field's are the 2nd and the 4th. */
+    Wall.of([draw('a', group(SPAN, { at: [0.5, 0.2] }))], layout(), [], before);
+    expect([made[1]!.width, made[1]!.height, made[3]!.width, made[3]!.height], 'the dropped field').toEqual([0, 0, 0, 0]);
+    expect(made[0]!.width, 'the kept field').toBeGreaterThan(0);
+    expect(made[2]!.width, 'the kept field').toBeGreaterThan(0);
+  });
+
+  test('a draft\'s fields release their bitmaps when another draft replaces them and when there is none', () => {
+    fakeCanvases();
+    const target = canvasOf();
+    const ctx = target.getContext('2d') as CanvasRenderingContext2D;
+    const wall = wallOf([draw('a', group(SPAN))]);
+    paintWall(ctx, BOX, 1, wall);
+    const made = watchCanvases();
+    const one = draw('d1', group(SPAN, { at: [0.5, 0.8] })), two = draw('d2', group(SPAN, { at: [0.5, 0.1] }));
+    paintWall(ctx, BOX, 1, wall, one);
+    const first = [...made];
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.every((c) => c.width > 0)).toBe(true);
+    paintWall(ctx, BOX, 1, wall, two);
+    expect(first.every((c) => c.width === 0 && c.height === 0), 'the replaced draft').toBe(true);
+    const second = made.slice(first.length);
+    expect(second.every((c) => c.width > 0)).toBe(true);
+    paintWall(ctx, BOX, 1, wall, null);
+    expect(second.every((c) => c.width === 0 && c.height === 0), 'no draft').toBe(true);
+  });
+
+  test('a pass with no paint in it allocates no canvas (the overspray left beside the wash still has one)', () => {
+    fakeCanvases();
+    const target = canvasOf();
+    const wall = wallOf([draw('a', group(SPAN))]);
+    pass(wall, 200); pass(wall, 200); pass(wall, 200);
+    expect(wall.anyPaint()).toBe(false);
+    const made = watchCanvases();
+    paintWall(target.getContext('2d') as CanvasRenderingContext2D, BOX, 1, wall);
+    expect(made, 'the halo pass only; the clean cores have none').toHaveLength(1);
+  });
+});
+
+describe('the sweep\'s bands tile the box', () => {
+  /** Every y of the box lies within some band's reach (`half` either side of a band's center). */
+  const gaps = (centers: readonly number[], half: number, h: number): number[] => {
+    const bad: number[] = [];
+    for (let y = 0; y <= h; y += 0.25) if (!centers.some((c) => Math.abs(y - c * h) <= half + 1e-9)) bad.push(y);
+    return bad;
+  };
+
+  test('where a press reaches less than a row, the bands are shallower and still leave no gap', () => {
+    const wall = wallOf([draw('a', group(SPAN))], { emPx: 2 });
+    expect(wall.bandHalf()).toBeLessThan(ROW_PX / 2);
+    expect(gaps(wall.bands(BOX.h), wall.bandHalf(), BOX.h), 'y with no band').toEqual([]);
+  });
+
+  test('at the board\'s text size they tile the box, down to its last pixel', () => {
+    const wall = wallOf([draw('a', group(SPAN))]);
+    expect(gaps(wall.bands(BOX.h), wall.bandHalf(), BOX.h), 'y with no band').toEqual([]);
+  });
+});
+
+describe('a wall built over the one before: unit', () => {
+  test('a group that differs only in its unit is laid again, not reused', () => {
+    const em = [draw('a', group(SPAN))], image = [draw('a', group(SPAN, { unit: 'image' }))];
+    const before = Wall.of(em, layout());
+    const after = Wall.of(image, layout(), [], before);
+    expect(after.groups[0]).not.toBe(before.groups[0]);
   });
 });
 

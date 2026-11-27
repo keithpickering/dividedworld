@@ -427,10 +427,24 @@ export class Field {
     if (this.drawn[p] && sprite) ctx.drawImage(sprite, this.cx0 * CELL, this.cy0 * CELL, this.gw * CELL, this.gh * CELL);
   }
 
+  /** Gives back the bitmap of pass `p`, if it holds one: its canvas is zero-sized, so the browser can free the pixels. */
+  private free(p: number): void {
+    const cv = this.sprites[p];
+    if (cv) { cv.width = 0; cv.height = 0; }
+    this.sprites[p] = null;
+    this.stale[p] = true; this.drawn[p] = false;
+  }
+  /** Gives back both bitmaps, for a field that is dropped (a later paint would draw it again). */
+  release(): void { this.free(0); this.free(1); }
+
   /** Draws pass `p` into its bitmap, a cell to a pixel; whether it holds any paint. */
   private raster(halos: boolean, p: number): boolean {
     this.rasters += 1;
     if (this.gw === 0 || this.gh === 0) return false;
+    /* A pass with no paint in it draws nothing, and holds no bitmap (one it had is given back). */
+    let some = false;
+    for (let i = 0; i < this.gw * this.gh && !some; i++) some = (halos ? this.haloAlpha(i) : this.coreAlpha(i)) > 0.004;
+    if (!some) { this.free(p); return false; }
     const cv = (this.sprites[p] ??= document.createElement('canvas'));
     if (cv.width !== this.gw) cv.width = this.gw;
     if (cv.height !== this.gh) cv.height = this.gh;
@@ -494,7 +508,7 @@ function fingerprint(src: GroupSrc): string {
 /** What a field is laid from: the group, where it is placed, the box it is clipped to and the text size. A field with the same key and the same washes is the same field. */
 function keyOf(src: GroupSrc, spot: Spot, layout: Layout): string | null {
   if (src.draw === '') return null;
-  return [src.draw, src.index, src.act, src.legacy ? 1 : 0, spot.x, spot.y, spot.scale, spot.unitPx, layout.box.w, layout.box.h, layout.emPx, fingerprint(src)].join('|');
+  return [src.draw, src.index, src.act, src.legacy ? 1 : 0, spot.x, spot.y, spot.scale, spot.unitPx, src.unit, layout.box.w, layout.box.h, layout.emPx, fingerprint(src)].join('|');
 }
 
 /** The farthest a press reaches to find paint to take from, past its sponge's radius, in px: a band of the sweep and a cell it reports (`bandHalf`). */
@@ -510,7 +524,11 @@ export class Wall {
   /** A group's sponge radius, px: the screen's, or for a legacy group `SPONGE / 2` of the box's width, as the server takes it. */
   radiusOf(f: Field): number { return f.legacy ? (SPONGE / 2) * this.layout.box.w : this.spongePx; }
   /** How far from its center a press looks for paint to take from when there is none under it, px: the sponge's radius, or a little more where that is less than a sweep's band is deep (a legacy group on a narrow box), so every band the sweep reports has a press that reaches it. */
-  reachOf(f: Field): number { const r = this.radiusOf(f); return Math.max(r, Math.min(BAND_REACH, 1.5 * r)); }
+  reachOf(f: Field): number {
+    const r = this.radiusOf(f);
+    /* Never less than a press needs to reach the deepest cell of the shallowest band (`CELL` deep), so the floor in `bandHalf` is a band a press reaches. */
+    return Math.max(r, Math.min(BAND_REACH, 1.5 * r), Math.hypot(1.5 * CELL, r / (2 * PRESSES_PER_RADIUS) + CELL / 2));
+  }
   /** Half the depth of a sweep's band, px: `ROW_PX / 2`, or less where a press cannot reach the farthest cell `spanOf` reports in a band that deep. */
   bandHalf(): number {
     let half = ROW_PX / 2;
@@ -522,11 +540,23 @@ export class Wall {
     }
     return Math.max(CELL, half);
   }
+  /** The sweep's bands for a box `h` px tall: their centers, in shares of its height, top to bottom. Each is `2 * bandHalf()` deep or less (`ROW_PX` at most), and together they tile the box, so no paint lies between two. */
+  bands(h: number): number[] {
+    if (!(h > 0)) return [0.5];
+    const step = Math.min(ROW_PX, 2 * this.bandHalf());
+    if (h <= step) return [0.5];
+    const n = Math.ceil(h / step);
+    /* The last band is held inside the box (it overlaps the one before it) rather than reaching past the bottom. */
+    return Array.from({ length: n }, (_, k) => Math.min((k + 0.5) * step, h - step / 2) / h);
+  }
   private readonly byKey = new Map<string, Field>();
   private draft: { readonly act: WallAct; readonly fields: Field[] } | null = null;
 
-  private constructor(readonly layout: Layout, groups: Field[], private readonly keys: readonly (string | null)[]) {
+  private readonly at = new Map<string, number>();
+
+  private constructor(readonly layout: Layout, groups: Field[], keys: readonly (string | null)[]) {
     this.groups = groups;
+    keys.forEach((k, i) => { if (k !== null && !this.at.has(k)) this.at.set(k, i); });
     this.spongePx = (SPONGE_EM / 2) * layout.emPx;
     for (const f of groups) this.byKey.set(`${f.draw}/${f.group}`, f);
   }
@@ -584,13 +614,25 @@ export class Wall {
       f.apply(logs[i]!);
       return f;
     });
+    /* What the wall before had that this one does not keep gives its bitmaps back. */
+    if (prev) {
+      const kept = new Set<Field>(fields);
+      for (const f of prev.groups) if (!kept.has(f)) f.release();
+      prev.dropDraft();
+    }
     return new Wall(layout, fields, keys);
+  }
+
+  /** Gives back the bitmaps of the draft's fields, and forgets the draft. */
+  private dropDraft(): void {
+    if (this.draft) for (const f of this.draft.fields) f.release();
+    this.draft = null;
   }
 
   /** The field laid from a key, if this wall has one. */
   private fieldOf(key: string): Field | undefined {
-    const at = this.keys.indexOf(key);
-    return at < 0 ? undefined : this.groups[at];
+    const at = this.at.get(key);
+    return at === undefined ? undefined : this.groups[at];
   }
 
   /** The fields of a drawing painted but not part of the wall (a draft): placed like any, never hit and never pressed. */
@@ -648,12 +690,13 @@ export class Wall {
   /** Paints the wall's fields, and a draft's after them, onto `ctx` (density `q`, set by the caller): the halos of all, then the cores in wall order. Each field is drawn from its bitmap, laid again only if it changed. */
   paint(ctx: CanvasRenderingContext2D, q: number, draft: WallAct | null = null): void {
     const { box } = this.layout;
+    if (this.draft && this.draft.act !== draft) this.dropDraft();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     if (!validBox(box) || !(ctx.canvas.width > 0 && ctx.canvas.height > 0) || !(q > 0)) return;
-    if (draft && this.draft?.act !== draft) this.draft = { act: draft, fields: this.fieldsOf([draft]) };
+    if (draft && !this.draft) this.draft = { act: draft, fields: this.fieldsOf([draft]) };
     const fields = draft ? [...this.groups, ...this.draft!.fields] : this.groups;
     ctx.setTransform(q, 0, 0, q, 0, 0);
     ctx.imageSmoothingEnabled = true;

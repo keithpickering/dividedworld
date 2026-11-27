@@ -48,7 +48,7 @@ import { DrawMode, Marked } from './Compose.tsx';
 import { dockHostOf } from './Toolbar.tsx';
 import { lastCan } from './draft.ts';
 import { cursor } from '../whoops/cursor.ts';
-import { SWEEP_PX_S, bandsOf, sweepStep, type Sweep } from '../whoops/scrub.ts';
+import { SWEEP_PX_S, sweepStep, type Sweep } from '../whoops/scrub.ts';
 import * as suds from '../whoops/suds.ts';
 import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
 import { DEFAULT_EM_PX, Wall, groupsOf, hitAt, markKey, paintWall, wallDensity, type Box, type Chunk, type Walker, type WallAct } from './spray.ts';
@@ -388,6 +388,8 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
     }
     if (batch.length === 0) return;
     sending.current = true;
+    /* The washes the wall holds as the press is sent: one that lands while the request is out, before its answer, is news. */
+    const washIds = new Set((now.current.acts ?? EMPTY).flatMap((x) => (x.kind === 'wash' && x.id !== undefined ? [x.id] : [])));
     let answer: Answer<unknown>;
     try {
       const cuts = new Map<string, { draw: string; group: number; presses: [number, number][] }>();
@@ -407,8 +409,10 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
       return;
     }
     const id = (answer.value as { id?: unknown } | null)?.id;
-    const washIds = new Set((now.current.acts ?? EMPTY).flatMap((x) => (x.kind === 'wash' && x.id !== undefined ? [x.id] : [])));
     for (const c of batch) { c.sent = typeof id === 'string' ? id : true; c.sentWashIds = washIds; }
+    /* The wash may have landed in the acts while the request was out, and the wall been built with its presses twice: build it again, which drops what the wash holds. */
+    chunkRev.current += 1;
+    schedulePaint();
     failures.current = 0;
     say('');
     if (toSend().length > 0) queueWash(gone.current ? 0 : WASH_AFTER_MS);
@@ -726,7 +730,7 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
     const { size: sz } = now.current;
     if (now.current.still || sweeping.current || sz.box.w <= 0 || sz.box.h <= 0 || now.current.acts === null) return;
     const b = sz.box;
-    const rows = bandsOf(b);
+    const rows = wall().bands(b.h);
     /* Whoops!'s pace (scrub.ts `SWEEP_PX_S`, a hand's px a second on any box). */
     const speed = SWEEP_PX_S / b.w;
     const run = { raf: 0, last: performance.now(), sweep: { row: Math.min(sweepFrom.current, rows.length - 1), x: 0 } as Sweep };
