@@ -692,7 +692,14 @@ export function decideWash(rules: CardRules, _settings: Settings, input: unknown
   if (rules.surface === undefined) return noSurface(rules);
   const checked = rules.surface.validateWash(input, draws);
   if (!checked.ok) return checked;
-  return ok({ payload: checked.value.payload, takes: checked.value.cuts.map((c) => ({ draw: c.draw, takes: toCoatString(takesOf(c.presses, c.radius, c.aspect)) })) });
+  // A draw cut in several pieces (one per group) is taken in one go, so the server and every screen round its take once.
+  const byDraw = new Map<Id, { presses: (readonly [number, number])[]; radius: number; aspect: number }>();
+  for (const c of checked.value.cuts) {
+    const had = byDraw.get(c.draw);
+    if (had === undefined) byDraw.set(c.draw, { presses: [...c.presses], radius: c.radius, aspect: c.aspect });
+    else had.presses.push(...c.presses);
+  }
+  return ok({ payload: checked.value.payload, takes: [...byDraw].map(([draw, c]) => ({ draw, takes: toCoatString(takesOf(c.presses, c.radius, c.aspect)) })) });
 }
 
 /** A surface card's first draw, decided with its play: refused when it names none, so a play always starts with a tag on the surface. */

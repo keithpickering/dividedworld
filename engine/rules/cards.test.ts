@@ -695,6 +695,15 @@ test('a wash is refused with the card\'s own words, and names one entry per cut 
   assert.equal(washed.value.takes[1]!.takes.length, 10000);
 });
 
+test('a wash that cuts one draw in two pieces (two of its groups) gives that draw one entry, its presses taken together', () => {
+  const input = { cuts: [{ draw: 'd1', presses: [[0.3, 0.3]] }, { draw: 'd2', presses: [[0.2, 0.2]] }, { draw: 'd1', presses: [[0.305, 0.3]] }] };
+  const washed = decideWash(wall, walled, input, new Map());
+  assert.ok(washed.ok);
+  if (!washed.ok) return;
+  assert.deepEqual(washed.value.takes.map((t) => t.draw), ['d1', 'd2']);
+  assert.deepEqual(fromCoatString(washed.value.takes[0]!.takes), takesOf([[0.3, 0.3], [0.305, 0.3]], 0.03, 1));
+});
+
 test('a card with no surface takes no draw and no wash, and a limit the settings do not hold is a fault', () => {
   assert.equal(decideDraw(plain, walled, dab).ok, false);
   assert.equal(decideWash(plain, walled, dab, new Map()).ok, false);
