@@ -35,5 +35,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
+      # A migration this PR adds is numbered above the newest its base has (tools/check-migration-order.mjs). The base is
+      # fetched when the step runs, not when the PR was opened, so a base that moved since is compared as it is now; head
+      # is the PR's merge ref as checked out. A merge made after main moved is the case this step cannot see.
+      - if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+          node tools/check-migration-order.mjs --base FETCH_HEAD
       - run: npm run typecheck
       - run: npm run build:ci
