@@ -19,7 +19,17 @@ revoke execute on function live_bulk_threads() from public, anon, authenticated;
 create function thread_rows(in_threads uuid[]) returns setof jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  -- The keys of the select list below are pinned in supabase/tests/0455-live-lists-and-self.sql; editing the list means editing that pin.
+  -- The keys of the select lists below are pinned in supabase/tests/0455-live-lists-and-self.sql; editing a list means editing that pin, and the other.
+  -- Three statements, each with its own plan: none (a statement that placed no Act, which would otherwise plan and run the whole view for nothing), one (the equality the view's plan is pushed down by, which is what an Act costs in
+  -- supabase/tests/0321-veil-cover.sql), and many (one pass, `= any`, whose plan is made for several rows and reads more of each).
+  if coalesce(cardinality(in_threads), 0) = 0 then return; end if;
+  if cardinality(in_threads) = 1 then
+    return query select to_jsonb(l) from (
+      select t.id, t.board, t.title, t.origin_act_id, t.created_at, t.last_at, t.last_seq, t.replies, t.first_act, t.first_character, t.last_act, t.last_character,
+             t.replies_this_week, t.origin_thread, t.origin_place
+      from thread_list t where t.id = in_threads[1]) l;
+    return;
+  end if;
   return query select to_jsonb(l) from (
     select t.id, t.board, t.title, t.origin_act_id, t.created_at, t.last_at, t.last_seq, t.replies, t.first_act, t.first_character, t.last_act, t.last_character,
            t.replies_this_week, t.origin_thread, t.origin_place
