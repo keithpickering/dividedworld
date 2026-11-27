@@ -759,24 +759,47 @@ describe('live events', () => {
     const posted = must(await sent);
     await flush();
     expect(got).toEqual([posted]);
-    expect(fake.broadcast.log).toEqual([{ topic: `thread:${thread}`, event: 'act' }]);
+    expect(fake.broadcast.log.filter((e) => e.event === 'act')).toEqual([{ topic: `thread:${thread}`, event: 'act' }]);
   });
-  test('a thread started or spun is announced on its board, and its first Act on its own thread', async () => {
+  test('a thread started is a row on its board and a summary on the index, and its first Act on its own thread', async () => {
     const { fake, anaFace } = world();
     const board = await boardId(fake, 'general');
-    const threads: string[] = [];
-    fake.subscribeBoard(board, { onThread: (t) => threads.push(t.title) });
+    const rows: string[] = [];
+    const boards: string[] = [];
+    fake.subscribeBoard(board, { onRow: (r) => rows.push(`${r.title} ${r.replies}`) });
+    fake.subscribeIndex({ onBoard: (b) => boards.push(`${b.id === board} ${b.lastTitle} ${b.threadCount}`) });
     const started = must(await fake.startThread('general', anaFace, 'Fresh', 'body'));
     await flush();
-    expect(threads).toEqual(['Fresh']);
-    expect(fake.broadcast.log.map((e) => e.topic + ' ' + e.event)).toEqual([`board:${board} thread`, `thread:${started.thread.id} act`]);
+    expect(rows).toEqual(['Fresh 0']);
+    expect(boards).toEqual(['true Fresh 2']);
+    expect(fake.broadcast.log.map((e) => e.topic + ' ' + e.event)).toEqual([`thread:${started.thread.id} act`, `board:${board} row`, 'index board']);
+  });
+  test('a post reaches onRow with its new count and onBoard with the board\'s last post', async () => {
+    const { fake, anaFace, thread } = world();
+    const board = await boardId(fake, 'general');
+    const rows: number[] = [];
+    const boards: (string | null)[] = [];
+    fake.subscribeBoard(board, { onRow: (r) => rows.push(r.replies) });
+    fake.subscribeIndex({ onBoard: (b) => boards.push(b.lastThread) });
+    await fake.post(thread, anaFace, 'reply', null);
+    await flush();
+    expect(rows).toEqual([1]);
+    expect(boards).toEqual([thread]);
+  });
+  test('a settlement\'s wallet line is no poke, since a settlement is announced on reach', async () => {
+    const { fake, ana } = world();
+    const mine = vi.fn();
+    fake.subscribeAccount({ onSelf: mine });
+    fake.seed.wallet(ana, 100);
+    await flush();
+    expect(mine).not.toHaveBeenCalled();
   });
   test('an edit is the post again under its own id; a reaction is a tally', async () => {
     const { fake, anaFace, boFace, thread, opener } = world();
     const post = must(await fake.post(thread, anaFace, 'one', null));
     await fake.edit(post.id, anaFace, 'two');
     await fake.react(opener, anaFace, 'fire');
-    expect(fake.broadcast.log.map((e) => e.event)).toEqual(['act', 'act', 'tally']);
+    expect(fake.broadcast.log.map((e) => e.event).filter((e) => e === 'act' || e === 'tally')).toEqual(['act', 'act', 'tally']);
   });
   test('a Turn, a new character, an invite and a mark are not broadcast', async () => {
     const { fake, anaFace, thread } = world();
@@ -796,7 +819,7 @@ describe('live events', () => {
     await fake.post(thread, anaFace, 'three', null);
     await flush();
     expect(got).toEqual([]);
-    expect(fake.broadcast.flush({ reverse: true, twice: true })).toBe(2);
+    expect(fake.broadcast.flush({ reverse: true, twice: true })).toBe(6); // two Acts, each with its row and board entry
     await flush();
     expect(got).toEqual([3, 3, 2, 2]);
   });
@@ -1808,6 +1831,21 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     fake.signInAs(ana);
     return { fake, ana, anaFace, boFace, thread, opener };
   }
+
+  test('a purchase (a wallet move and a card ledger row) pokes its player alone with onSelf, and a settlement\'s wallet line does not', async () => {
+    const { fake, ana } = shopWorld(562, 1);
+    const mine = vi.fn();
+    const theirs = vi.fn();
+    fake.subscribeAccount({ onSelf: mine });
+    fake.signInAs(fake.seed.account('cy'));
+    fake.subscribeAccount({ onSelf: theirs });
+    fake.signInAs(ana);
+    must(await fake.buyCard(await slotOf(fake, 'splat')));
+    await flush();
+    expect(mine).toHaveBeenCalled();
+    expect(theirs).not.toHaveBeenCalled();
+    expect(fake.broadcast.log.filter((e) => e.event === 'self').map((e) => e.topic)).toEqual(expect.arrayContaining([`account:${ana}`]));
+  });
 
   test('buying takes the card\'s price from the settled wallet, and the count rises by one', async () => {
     const { fake } = shopWorld(562, 1);

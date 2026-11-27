@@ -55,7 +55,7 @@ import type {
   SurfaceLogRow,
   AdminReport, AdminReview, ConductLogRow, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
   AdminJob, AdminJobs, AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, EffectState, PlayMoment, Rewind, PageOrigin,
+  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, IndexListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, EffectState, PlayMoment, Rewind, PageOrigin,
   Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, StaffPin, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollEvent, PollVoter, PollWritten,
@@ -88,7 +88,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled' | 'poll';
+  readonly event: 'act' | 'tally' | 'row' | 'board' | 'self' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled' | 'poll';
 }
 
 export interface Seed {
@@ -589,7 +589,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   trophyAwardFailures: true, giveFailedAward: true, adminAwards: true, adminCharacterNamed: true,
 } satisfies Record<WriteName, true>));
 /** The methods that are not a promise of something: everything else is made one. */
-const NOT_PROMISED = new Set(['now', 'onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
+const NOT_PROMISED = new Set(['now', 'onSession', 'subscribeThread', 'subscribeBoard', 'subscribeIndex', 'subscribeAccount', 'subscribeReach']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
 
 /**
@@ -750,6 +750,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* ----------------------------------------------------------------------- live ---- */
   const threadListeners = new Map<Id, Set<ThreadListener>>();
   const boardListeners = new Map<Id, Set<BoardListener>>();
+  const indexListeners = new Set<IndexListener>();
   const accountListeners = new Map<Id, Set<AccountListener>>();
   const reachListeners = new Set<ReachListener>();
   /* A thread or reach listener sits in its set only while its channel is joined, as in Realtime a channel hears nothing until it is: it is
@@ -784,6 +785,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* The alert the write queued (write_alert, 0058), announced to the target's account alone: none for a staff or unowned target, or
        for the account that did it. */
     sendAlerts(act);
+    sendRows(act);
+    sendSelfFor(act);
   };
   const sendAlerts = (act: ActRec) => {
     for (const alert of derivedAlert(act)) {
@@ -859,9 +862,31 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const settled = { id: String(id), at: iso(at + APPLIED_AFTER) };
     send('reach', 'settled', () => { for (const l of [...reachListeners]) l.onSettled?.(settled); });
   };
-  const sendThread = (t: ThreadRec) => {
-    const shown = { id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at) };
-    send(`board:${t.board}`, 'thread', () => { for (const l of [...(boardListeners.get(t.board) ?? [])]) l.onThread?.(shown); });
+  /* A placed Act bumps its thread: the thread's row on its board (`row`) and the board's entry on the index (`board`), as thread_row and board_summary (0453) send them. */
+  const sendRows = (act: ActRec) => {
+    const t = threads.get(act.thread);
+    if (!t || act.seq === null || !listed(t)) return;
+    const board = boards.find((b) => b.id === t.board);
+    const row = summary(t);
+    send(`board:${t.board}`, 'row', () => { for (const l of [...(boardListeners.get(t.board) ?? [])]) l.onRow?.(row); });
+    if (!board || isClosed(board)) return;
+    const entry = boardEntry(board);
+    send('index', 'board', () => { for (const l of [...indexListeners]) l.onBoard?.(entry); });
+  };
+  /**
+   * The Act kinds the database pokes the owner's account about with `self` (`self_kinds()`, 0453), besides a `move` naming one of their characters. The wallet moves
+   * (any kind but a settlement's), the card ledger rows and the ban lifts and warn reliefs poke too, where the fake writes them. One list, so a kind added to the SQL is added here.
+   */
+  const SELF_KINDS: ReadonlySet<ActKind> = new Set<ActKind>(['appeal_ruling', 'ban', 'card_end', 'infraction', 'move_end', 'spring', 'unmask']);
+  const sendSelf = (account: Id | null | undefined) => {
+    if (account == null) return;
+    send(`account:${account}`, 'self', () => { for (const l of [...(accountListeners.get(account) ?? [])]) l.onSelf?.(); });
+  };
+  const sendSelfFor = (act: ActRec) => {
+    const params = act.payload['params'] as Record<string, unknown> | undefined;
+    const named = act.kind === 'move' ? params?.['character'] : act.kind === 'ban' || act.kind === 'infraction' ? act.payload['character'] ?? act.character : act.character;
+    if (!SELF_KINDS.has(act.kind) && act.kind !== 'move') return;
+    if (typeof named === 'string') sendSelf(characters.get(named)?.owner);
   };
 
   /* ---------------------------------------------------------------- projections ---- */
@@ -1117,6 +1142,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const at = lastTurn(c);
     return at === null || at + span(settings.turnCooldown) <= now() ? null : at + span(settings.turnCooldown);
   };
+  /** A board's entry on the index (`index_page`, `board_summary`): its name, its thread count and its latest thread. */
+  function boardEntry(b: Board): BoardSummary {
+    const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t)).map(summary);
+    const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
+    return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null, lastTitle: latest?.title ?? null };
+  }
   const takesEffectAt = () => (nextSettlement === null ? null : iso(nextSettlement));
 
   /** What the hearts took off an infraction and the bans they lifted (`warn_reliefs`, `ban_lifts`, 0361): rows of their own beside the Acts, each counting only while its play is not ended (`card_ended`). */
@@ -1977,7 +2008,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const t = openThread(board.id, title, null);
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
     if (poll) writePoll(written, character, poll);
-    sendThread(t);
     sendAct(written);
     writeForgedFramed(written, writeFramed(body, framing, written));
     return ok({ thread: summary(t), act: publicAct(written) });
@@ -2014,7 +2044,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, origin);
     const written = write({ character, kind: 'spin', thread: t.id, target: origin, payload: { title, body, ...(at === undefined ? {} : { at }) } });
-    sendThread(t);
     sendAct(written);
     writeForgedFramed(written, writeFramed(body, framing, written));
     return ok({ thread: summary(t), act: publicAct(written) });
@@ -2459,7 +2488,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const sealed = new Map<Id, { readonly account: Id; readonly contents: readonly string[] }>();
   const cardLedger: { readonly account: Id; readonly order: number; readonly event: CardEvent; readonly ms: number }[] = [];
   let logOrder = 0;
-  const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
+  const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); if (e.kind !== 'settlement') sendSelf(account); };
   /*
    * The Vending Machine's slots (machine_slots, 0139_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
    * database keeps an admin's choices. Their ids are their own count, so the ids of everything else are as they were. A pack is rolled with a
@@ -2552,7 +2581,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /** Whether a purchase is at a price the Boss moved: a Reprice in force whose result is not the admin's price (as buy_card and buy_pack, 0139, write it). */
   const movedPrice = (seen: SlotRec): boolean => seen.move?.kind === 'repriceSlot' && seen.price !== seen.move.was;
-  const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
+  const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); sendSelf(account); };
 
   function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
     const bad = request({ action: 'saveEffect', character, play, state });
@@ -4200,11 +4229,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     setAdminContact: (links) => (me()?.admin ? writeContact(links) : refuse('only an admin sets how players reach the admins')),
     settings: () => screen,
 
-    boards: () => boards.filter((b) => !isClosed(b)).map((b): BoardSummary => {
-      const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t)).map(summary);
-      const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
-      return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null, lastTitle: latest?.title ?? null };
-    }),
+    boards: () => boards.filter((b) => !isClosed(b)).map(boardEntry),
     board(slugOrId) {
       const found = boards.find((b) => b.slug === slugOrId || b.id === slugOrId);
       return found ? boardNow(found) : null;
@@ -4265,8 +4290,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const t = openThread(named.id, title, move);
       const written = write({ character, kind: 'spin', thread: t.id, target: move, payload: { title, body } });
       apologies.push({ move, apology: written.id, character, state: 'pending', at: written.at });
-      sendThread(t);
-      sendAct(written);
+        sendAct(written);
       writeFramed(body, framing, written);
       return ok({ thread: summary(t), act: publicAct(written) });
     },
@@ -5859,6 +5883,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const set = boardListeners.get(board) ?? new Set();
       boardListeners.set(board, set.add(listener));
       return () => { set.delete(listener); };
+    },
+    subscribeIndex(listener) {
+      indexListeners.add(listener);
+      return () => { indexListeners.delete(listener); };
     },
     subscribeAccount(listener) {
       // The private channel is the signed-in account's own; signed out, there is none to hear.
