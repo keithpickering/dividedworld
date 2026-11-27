@@ -304,6 +304,8 @@ export const defaults: Settings = deepFreeze<Settings>({
     'autocorrect.mostAdded': 200,
     /** Autocorrect's author cannot save a peel until 24 hours after the play lands; 0 holds none. */
     'autocorrect.holdHours': 24,
+    /** Hot Box's author cannot air it out until 24 hours after the play lands; 0 holds none. */
+    'hotBox.holdHours': 24,
     /** Laugh Track: playing it costs 0.05 for each cued place past the first five, at most 1.00 on top of its price at the machine. */
     'laughTrack.perPlace': 5,
     'laughTrack.freePlaces': 5,

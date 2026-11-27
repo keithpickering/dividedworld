@@ -1,7 +1,7 @@
 /** Hot Box's entry in the screens' card list (`InstanceUi.cards`): its face and its rules in words. */
 import { lazy } from 'react';
 import type { CardUi } from '../../../../../engine/ui/cards/types.ts';
-import { HOT_BOX_LASTS, hotBox } from '../../../cards/hot-box.ts';
+import { HOT_BOX_THINS, hotBox } from '../../../cards/hot-box.ts';
 import { inkName } from '../../../cards/whoops/names.ts';
 import { rgbOf } from '../../../cards/whoops/splat.ts';
 import { ConfigForm as HotBoxConfigForm } from '../../hot-box/ConfigForm.tsx';
@@ -39,7 +39,7 @@ export const ui: CardUi = {
     }
   },
   describe: () =>
-    `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. It lasts ${spanWords(HOT_BOX_LASTS)}, thinning as it goes, then clears by itself. One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. It lasts ${spanWords(HOT_BOX_THINS)}, thinning as it goes, then clears by itself. One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
   /* A color the card cannot read says nothing, rather than the name `inkName` gives it ("ink"). */
   logPlay: (config) => {
     const smoke = (config as { color?: unknown }).color;
