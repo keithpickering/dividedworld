@@ -8368,6 +8368,24 @@ describe('a Mod\'s outcome post quotes what it answers', () => {
     expect((await w.last()).payload['body']).toBe(`[quote=${bracket}][noparse]type [b] for bold[/noparse][/quote]\nFiled.`);
   });
 
+  test('the body never exceeds the post length at the edge, whatever markup the quote needs', async () => {
+    const line = 'Filed.';
+    for (const text of ['plain words that go on and on and on', 'type [noparse][b][/noparse] words that go on and on', 'close [noparse][/noparse] the cover ] again and again']) {
+      let quoted = 0;
+      for (let max = text.length; max <= text.length + 90; max++) {
+        const w = setup(max);
+        const post = w.fake.seed.post(w.thread, w.boFace, text);
+        const v = w.fake.seed.visit(w.mod, post, { challenge: { kind: 'bribe', price: 0 } });
+        w.fake.seed.visitEnd(v, { outcome: 'filed', line });
+        const body = (await w.last()).payload['body'] as string;
+        expect(body.length, `${text} at ${max}`).toBeLessThanOrEqual(max);
+        expect(body.endsWith(line)).toBe(true);
+        if (body.startsWith('[quote=')) quoted++;
+      }
+      expect(quoted).toBeGreaterThan(0);
+    }
+  });
+
   test('an edited post quotes its latest version', async () => {
     const w = setup();
     w.fake.seed.edit(w.opener, w.boFace, 'Second thoughts');

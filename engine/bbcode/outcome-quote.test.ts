@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { OUTCOME_QUOTE_MOST, outcomeQuote, withoutLeadingQuote } from './outcome-quote.ts';
-import { quoteNorm } from './quoted.ts';
+import { parse } from './parse.ts';
+import { holds, quoteHeld, quoteNorm, quoteSource } from './quoted.ts';
 
 test('a short post is quoted whole, its markup taken out and its whitespace collapsed', () => {
   assert.equal(outcomeQuote('a1', 'Hello  [b]big\nworld[/b]'), '[quote=a1]Hello big world[/quote]\n');
@@ -41,4 +42,26 @@ test('the leading quote is skipped, nested ones with it; a body with none, or an
   assert.equal(withoutLeadingQuote('Mine [quote=a1]x[/quote]'), 'Mine [quote=a1]x[/quote]');
   assert.equal(withoutLeadingQuote('[quote=a1]never closed'), '[quote=a1]never closed');
   assert.equal(withoutLeadingQuote(`${outcomeQuote('a1', 'Hello [x]')}Filed.`), 'Filed.');
+});
+
+test('the quote holds against the forged-quote check for every kind of body, its words the check own source', () => {
+  const uuid = '11111111-2222-3333-4444-555555555555';
+  const bodies = [
+    'plain words here',
+    '[b]bold[/b] words',
+    'see [url=https://example.com]this link[/url] now',
+    'a [code]x=1[/code] b',
+    'a [spoiler=Title]hidden[/spoiler] b',
+    `a [quote=${uuid}]inner[/quote] b`,
+    `${'word '.repeat(100)}end`,
+    '[noparse][b]hi[/b] and [i][/noparse] more',
+  ];
+  for (const body of bodies) {
+    const q = outcomeQuote(uuid, body);
+    assert.notEqual(q, '', body);
+    const held = quoteHeld(parse(q)).get(uuid);
+    assert.ok(held && held.length === 1, body);
+    assert.ok(holds(quoteSource(parse(body)), held[0]!), body);
+    assert.ok(!q.includes('\ufdd0'), body);
+  }
 });

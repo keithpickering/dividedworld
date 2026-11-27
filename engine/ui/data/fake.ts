@@ -1898,8 +1898,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* The post opens with a real quote of its target's current words, as post_outcome writes it (the outcome quotes plan); the Mod's words are never cut for it, and a post with no room for one word has none. */
     const target = acts.get(quote)!;
     const said = (edits(target).at(-1)?.payload ?? target.payload)['body'];
-    const room = settings.postMaxLength - line.length - `[quote=${quote}][/quote]\n[noparse][/noparse]`.length;
-    const opening = typeof said === 'string' ? outcomeQuote(quote, said, room) : '';
+    const fits = settings.postMaxLength - line.length;
+    let opening = '';
+    if (typeof said === 'string') {
+      /* The markup a quote uses is only known once its words are: start from the room the bare wrapper leaves and shrink by what the quote overshoots (a noparse cover, its escapes) until it fits. */
+      let room = fits - `[quote=${quote}][/quote]\n`.length;
+      for (let tries = 0; room >= 1 && tries < 64; tries += 1) {
+        opening = outcomeQuote(quote, said, room);
+        if (opening.length <= fits) break;
+        room -= opening.length - fits;
+        opening = '';
+      }
+    }
     const written = write({ character: mod.id, kind: 'post', thread: visit.thread, target: quote, payload: { body: `${opening}${line}` } });
     sendAct(written);
     outcomePosts.set(visit.id, [...(outcomePosts.get(visit.id) ?? []), { kind, about, post: written.id }]);

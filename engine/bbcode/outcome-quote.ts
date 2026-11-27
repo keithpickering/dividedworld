@@ -1,11 +1,11 @@
 /**
  * The quote a Mod's outcome post opens with (docs/plans/2026-11-27-outcome-quotes-plan.md, "Decided here"): a real `[quote=<act>]` of the target's opening words, then a line break, in the
- * form a player's quote is written (`quoteText`, engine/ui/composer/text.ts). The words are a selection's: the plain words of the target's current version with whitespace collapsed,
+ * form a player's quote is written (`quoteText`, engine/ui/composer/text.ts). The words are a selection's: the words the forged-quote check reads from the target's current version (`quoteSource`, quoted.ts: links, code, nested quotes and a spoiler's title included; normalized; the first run before any cut mark),
  * all of them when they fit and otherwise the first `OUTCOME_QUOTE_MOST` characters cut at a word, followed by `…` (which `quoteNorm` drops, so the forged-quote check holds). They are
  * wrapped in `[noparse]` when they hold a `[`, as a selection's are. The database's `outcome_quote` is this, in plain SQL; the fake's copy is this function, held to the same cases.
  */
 import { parse } from './parse.ts';
-import { visibleText } from './visible.ts';
+import { CUT, quoteSource } from './quoted.ts';
 
 /** The most words an outcome's quote holds before the cut mark. */
 export const OUTCOME_QUOTE_MOST = 280;
@@ -16,7 +16,7 @@ export const OUTCOME_QUOTE_MOST = 280;
  */
 export function outcomeQuote(target: string, body: string, room: number = OUTCOME_QUOTE_MOST): string {
   const most = Math.min(OUTCOME_QUOTE_MOST, Math.floor(room));
-  const plain = visibleText(parse(body)).replace(/\s+/gu, ' ').trim();
+  const plain = quoteSource(parse(body)).split(CUT).map((p) => p.trim()).find((p) => p !== '') ?? '';
   if (most < 1 || plain === '') return '';
   let words = plain;
   if (plain.length > most) {
