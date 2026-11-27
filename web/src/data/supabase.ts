@@ -2059,8 +2059,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         ? (async (): Promise<{ kind: 'filed' | 'intercepted' | 'ruling'; about: Id; post: Row }[]> => {
           const r = await read(() => client.rpc('visit_outcome_posts', { visit }));
           const named = (Array.isArray(r.data) ? r.data : []).filter((o): o is Row => isObject(o) && (o['kind'] === 'filed' || o['kind'] === 'intercepted' || o['kind'] === 'ruling') && typeof o['about'] === 'string' && typeof o['post'] === 'string' && idOk(o['post']));
-          const got = await Promise.all(named.map(async (o) => ({ o, act: (await list(() => client.from('acts_public').select('*').eq('id', o['post']).limit(1)))[0] })));
-          return got.flatMap(({ o, act }) => (act ? [{ kind: o['kind'] as 'filed' | 'intercepted' | 'ruling', about: String(o['about']), post: act }] : []));
+          if (named.length === 0) return [];
+          /* One read for all of them, as `actsById` makes it. */
+          const acts = new Map((await byChunks([...new Set(named.map((o) => String(o['post'])))], (part) => list(() => client.from('acts_public').select('*').in('id', part)))).map((a) => [String(a['id']), a]));
+          return named.flatMap((o) => { const act = acts.get(String(o['post'])); return act ? [{ kind: o['kind'] as 'filed' | 'intercepted' | 'ruling', about: String(o['about']), post: act }] : []; });
         })().catch(() => [])
         : Promise.resolve([]);
       const [reports, appeals, bar, posted] = await Promise.all([

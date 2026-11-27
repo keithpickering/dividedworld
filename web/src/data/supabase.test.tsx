@@ -3752,6 +3752,7 @@ describe('a visit\'s outcome posts', () => {
     if (!r.url.pathname.endsWith('/acts_public')) return undefined;
     let out = all;
     for (const [k, v] of r.url.searchParams) {
+      if (v.startsWith('in.(')) { const ids = v.slice(4, -1).split(',').map((x) => x.replace(/^"|"$/gu, '')); out = out.filter((a) => ids.includes(String((a as unknown as Record<string, unknown>)[k]))); continue; }
       if (!v.startsWith('eq.')) continue;
       const want = v.slice(3);
       out = out.filter((a) => (k.startsWith('payload->>') ? String((a.payload as Record<string, unknown>)[k.slice(10)]) : String((a as unknown as Record<string, unknown>)[k])) === want);
@@ -3768,6 +3769,16 @@ describe('a visit\'s outcome posts', () => {
     expect(call.body).toEqual({ visit: VISIT });
   });
 
+  it('reads the outcome posts of a visit in one acts_public read, however many the RPC names', async () => {
+    const OTHER = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const h = harness(router([end('filed'), row(OUTCOME, 'post'), row(OTHER, 'post')], [{ kind: 'filed', about: VISIT, post: OUTCOME }, { kind: 'ruling', about: VISIT, post: OTHER }]));
+    const story = await h.api.visitStory(T, VISIT, POST);
+    expect(story.outcomePosts.map((o) => [o.kind, o.post.id])).toEqual([['filed', OUTCOME], ['ruling', OTHER]]);
+    const byId = h.to('acts_public').filter((r) => (r.url.searchParams.get('id') ?? '').startsWith('in.'));
+    expect(byId).toHaveLength(1);
+    expect(h.to('acts_public').filter((r) => (r.url.searchParams.get('id') ?? '').startsWith('eq.'))).toHaveLength(0);
+  });
+
   it('is asked for every ended visit, a talked-down one too, and not for one still open', async () => {
     const down = harness(router([end('intercepted'), row(OUTCOME, 'post')], [{ kind: 'intercepted', about: VISIT, post: OUTCOME }]));
     expect((await down.api.visitStory(T, VISIT, POST)).outcomePosts.map((o) => o.kind)).toEqual(['intercepted']);
@@ -3778,7 +3789,7 @@ describe('a visit\'s outcome posts', () => {
 
   it('a post that cannot be read after the RPC named it leaves the story whole, with no post', async () => {
     const good = router([end('filed')], [{ kind: 'filed', about: VISIT, post: OUTCOME }]);
-    const h = harness((r, n) => (r.url.pathname.endsWith('/acts_public') && r.url.searchParams.get('id') === `eq.${OUTCOME}` ? json({ message: 'boom' }, 500) : good(r, n)));
+    const h = harness((r, n) => (r.url.pathname.endsWith('/acts_public') && (r.url.searchParams.get('id') ?? '').includes(OUTCOME) ? json({ message: 'boom' }, 500) : good(r, n)));
     const story = await h.api.visitStory(T, VISIT, POST);
     expect(story.outcomePosts).toEqual([]);
     expect(story.end?.outcome).toBe('filed');

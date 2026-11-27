@@ -27,6 +27,23 @@ function world() {
   fake.signInAs(me);
   return { fake, thread, visit, second };
 }
+/** A talked-down visit to post 2 (page 1 at two a page), answered by the Mod's own post 4 on page 2: the Lens says whom nothing landed on. */
+function talkedDown() {
+  const fake = buildWorld();
+  const me = fake.seed.account('me');
+  const other = fake.seed.account('other');
+  fake.seed.character(me, 'Pipewrench', 'heel');
+  const spritey = fake.seed.character(other, 'Spritey', 'face');
+  const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+  const second = fake.seed.post(thread, spritey, 'post 2');
+  fake.seed.post(thread, spritey, 'post 3');
+  const clerk = fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.they });
+  const visit = fake.seed.visit(clerk, second, { at: Date.now(), endsInMs: 60_000 });
+  fake.seed.visitEnd(visit, { outcome: 'intercepted', line: 'Talked down.', unposted: true });
+  fake.seed.outcomePost(visit, fake.seed.staffPost(clerk, thread, 'Talked down.'));
+  fake.signInAs(me);
+  return { fake, thread, visit, second };
+}
 const marksOf = (post: HTMLElement) => within(post).queryAllByRole('button', { name: /Opens the visit\.$/u });
 
 describe('the mark on an outcome post', () => {
@@ -37,7 +54,7 @@ describe('the mark on an outcome post', () => {
     const mark = await within(answer).findByRole('button', { name: /Opens the visit\.$/u });
     expect(mark).toHaveAccessibleName('The Clerk filed their visit to the post this answers. Opens the visit.');
     expect(mark).toHaveAttribute('aria-haspopup', 'dialog');
-    expect(within(answer).queryByText(/was found in violation/u)).toBeNull();
+    expect(answer.querySelector('.kb-violation')).toBeNull();
     /* The visited post is on page 1, so page 2 has no second mark. */
     expect(screen.queryByRole('article', { name: /^Post 2 /u })).toBeNull();
     expect(marksOf(answer)).toHaveLength(1);
@@ -67,5 +84,44 @@ describe('the mark on an outcome post', () => {
       'The Clerk filed their visit to the post this answers. Opens the visit.',
     ]);
     expect(all[0]!.compareDocumentPosition(all[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('the visited post is on another page: the answer mark\'s Lens names the visited post\'s author, from one read for the page', async () => {
+    const w = talkedDown();
+    const byId = vi.spyOn(w.fake, 'actsById');
+    const single = vi.spyOn(w.fake, 'act');
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}?page=2`, settings: { postsPerPage: 2 } });
+    const answer = await screen.findByRole('article', { name: /^Post 4 /u });
+    await userEvent.click(await within(answer).findByRole('button', { name: /Opens the visit\.$/u }));
+    const lens = await screen.findByRole('dialog', { name: /^Visit/u });
+    await waitFor(() => expect(lens).toHaveTextContent(/Nothing landed on Spritey\./u));
+    expect(byId.mock.calls.filter(([ids]) => ids.includes(w.second))).toHaveLength(1);
+    expect(single).not.toHaveBeenCalledWith(w.second);
+  });
+
+  test('the answer mark and the visited post\'s mark open the same visit', async () => {
+    const w = world();
+    const story = vi.spyOn(w.fake, 'visitStory');
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}` });
+    await screen.findByRole('article', { name: /^Post 4 /u });
+    for (const mark of screen.getAllByRole('button', { name: /Opens the visit\.$/u })) {
+      await userEvent.click(mark);
+      await screen.findByRole('dialog', { name: /^Visit/u });
+      await userEvent.click(mark);
+    }
+    const seen = new Set(story.mock.calls.map((c) => c[1]));
+    expect([...seen]).toEqual([w.visit]);
+  });
+
+  test('a page read that adds an answer to a visit whose end is unchanged shows the new answer\'s mark in the same frame', async () => {
+    const w = talkedDown();
+    const aide = w.fake.seed.staff('aide', 'The Aide', 'mod');
+    w.fake.seed.outcomePost(w.visit, w.fake.seed.staffPost(aide, w.thread, 'Late word.'), 'intercepted', w.visit);
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}?page=2`, settings: { postsPerPage: 2 } });
+    await within(await screen.findByRole('article', { name: /^Post 4 /u })).findByRole('button', { name: /Opens the visit\.$/u });
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 3' })[0]!);
+    const late = await screen.findByRole('article', { name: /^Post 5 /u });
+    /* No waiting: the mark is on the post the frame it is drawn. */
+    expect(marksOf(late)).toHaveLength(1);
   });
 });

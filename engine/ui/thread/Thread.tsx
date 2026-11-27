@@ -230,9 +230,20 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const visitsHeld = useRef(new Map<Id, Visit>());
   /* The same visits by the outcome posts that answer them (`Visit.answers`): an outcome post on this page carries the mark of a visit whose post may be on another. */
   const answersHeld = useRef(new Map<Id, Visit>());
+  /* The author of the post each outcome post answers, by the outcome post's id: the visited post may be on another page, and the mark's Lens names whom the visit landed on. */
+  const authorsHeld = useRef(new Map<Id, Id | null>());
+  /* The visited posts whose author is known, and those asked for (a page read again does not ask again for one in flight). */
+  const visitedAuthors = useRef(new Map<Id, Id | null>());
+  const authorsAsked = useRef(new Set<Id>());
   const [visitTick, setVisitTick] = useState(0);
   const mounted = useRef(false);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  /* An author read that landed before the screen mounted is shown when it does. */
+  const unshownAuthors = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    if (unshownAuthors.current) { unshownAuthors.current = false; setVisitTick((n) => n + 1); }
+    return () => { mounted.current = false; };
+  }, []);
 
   /*
    * The replies a play in force draws under a post (a card that replies), by the post's id: beside the feed and never in it, since each takes a number of
@@ -378,17 +389,40 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     if (tookOrigin && page.thread.originActId) takeInOrigin(tookOrigin, page.thread.originActId, originPlays, tallies, spun, over, originPolls, ticket);
     for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
     let moved = false;
+    /* The visited posts' authors for the page's outcome posts: from the page's own Acts where the visited post is on it, and the rest in one read for the whole page. */
+    const shown = new Map([...page.acts, ...under].map((a) => [a.id, a] as const));
+    const missing = new Set<Id>();
+    const authored = (answers: readonly Id[], author: Id | null) => {
+      for (const a of answers) if (!authorsHeld.current.has(a) || authorsHeld.current.get(a) !== author) { authorsHeld.current.set(a, author); moved = true; }
+    };
     for (const v of page.visits) {
       const was = visitsHeld.current.get(v.post);
-      if (!was || was.id !== v.id || was.end?.act !== v.end?.act) moved = true;
+      if (!was || was.id !== v.id || was.end?.act !== v.end?.act || was.answers.join() !== v.answers.join()) moved = true;
       visitsHeld.current.set(v.post, v);
       for (const a of v.answers) {
         const held = answersHeld.current.get(a);
-        if (!held || held.id !== v.id || held.end?.act !== v.end?.act) moved = true;
+        if (!held || held.id !== v.id || held.end?.act !== v.end?.act || held.answers.join() !== v.answers.join()) moved = true;
         answersHeld.current.set(a, v);
       }
+      if (v.answers.length === 0) continue;
+      const visited = shown.get(v.post);
+      if (visited) visitedAuthors.current.set(v.post, visited.character);
+      const known = visitedAuthors.current.get(v.post);
+      if (known !== undefined) authored(v.answers, known);
+      else if (!authorsAsked.current.has(v.post)) missing.add(v.post);
     }
     if (moved && mounted.current) setVisitTick((n) => n + 1);
+    if (missing.size > 0) {
+      const wanted = [...missing];
+      for (const id of wanted) authorsAsked.current.add(id);
+      void (async () => {
+        const got = await api.actsById(wanted);
+        await ensurePeople(got.map((a) => a.character));
+        moved = false;
+        for (const a of got) { visitedAuthors.current.set(a.id, a.character); authored(visitsHeld.current.get(a.id)?.answers ?? [], a.character); }
+        if (moved) { if (mounted.current) setVisitTick((n) => n + 1); else unshownAuthors.current = true; }
+      })().catch(() => { for (const id of wanted) authorsAsked.current.delete(id); /* the author stays unnamed: "The author" */ });
+    }
     /* The page says which of its posts are the reader's own under a veil; what it says of the posts it holds replaces what was held of them. */
     let veilMoved = false;
     const own = new Map<Id, Veiled>(page.veiled.map((v) => [v.post, { character: v.character, play: v.play, endsAt: v.endsAt }]));
@@ -412,7 +446,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     if (back.size === 0) return page;
     const acts = [...page.acts, ...[...back.values()].filter((a) => !onPage.has(a.id))].sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0));
     return { ...page, acts, cut: page.cut.filter((c) => !back.has(c.seq)) };
-  }, [api, instance.cards, tallies, mine, plays, polls, originPlays, originPolls, veils, putNested, dropNested, latestLock]);
+  }, [api, instance.cards, tallies, mine, plays, polls, originPlays, originPolls, veils, putNested, dropNested, latestLock, ensurePeople]);
 
   /* The first page: from the document, before the first render, so the first frame is whole. */
   /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first page only. */
@@ -996,10 +1030,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   useShowOpenThread(systemBoard === false && feed.summary ? { id: thread, title: feed.summary.title, board: feed.summary.board } : null);
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const answered = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(answersHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const authorOf = useMemo<ReadonlyMap<Id, Id | null>>(() => new Map(authorsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const veiled = useMemo<ReadonlyMap<Id, Veiled>>(() => new Map(veiledHeld.current), [veilTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, answered, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, catchUp, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, answered, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, catchUp, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, answered, authorOf, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, catchUp, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, answered, authorOf, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, catchUp, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   /* Each board card goes under the newest shown Act written before it (the first, for one older than every Act shown). */
