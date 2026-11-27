@@ -30,6 +30,16 @@ test('an economy the rows hold without laughTrack makes the seed 422, naming lau
   assert.ok(body.problems.every((p) => !p.includes('; the settings rows')), 'each problem is its own entry');
 });
 
+test('rows with a field the seeding code does not know make the seed 422: the seed reports it, never drops it (2026-11-27, D4)', async () => {
+  const modBots = { ...instance.settings.modBots, aFieldFromANewerRelease: 15 };
+  const { db } = fake(() => COUNTS, () => ({ economy: instance.settings.economy, modBots }));
+  const r = await runSeed(db, instance);
+  assert.equal(r.status, 422);
+  const body = r.body as { error: string; problems: string[] };
+  assert.equal(body.error, 'the seeded instance is not whole');
+  assert.ok(body.problems.some((p) => p.includes('aFieldFromANewerRelease')), JSON.stringify(body.problems));
+});
+
 test('a seed_instance refusal is a 422 with its message, and the settings are never read', async () => {
   const { db, calls } = fake(() => { throw new DatabaseError('seed_instance: a reaction kind is in use', 'P0001', 400); });
   const r = await runSeed(db, instance);

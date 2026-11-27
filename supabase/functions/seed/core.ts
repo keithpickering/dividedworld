@@ -22,7 +22,7 @@ export async function runSeed(db: Db, instance: Instance): Promise<{ status: num
     if (e instanceof DatabaseError && e.status < 500 && e.status !== 408 && e.status !== 429) return { status: 422, body: { error: e.reason } };
     throw e;
   }
-  const { problems } = await databaseSettingsProblems(instance, db);
+  const { problems } = await databaseSettingsProblems(instance, db, { unknownFields: 'report' });
   if (problems.length) return { status: 422, body: { error: 'the seeded instance is not whole', problems } };
   return { status: 200, body: counts };
 }

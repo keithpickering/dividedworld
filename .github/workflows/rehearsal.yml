@@ -38,6 +38,11 @@ jobs:
       - run: npm run test:rehearse
         env:
           DATABASE_URL: postgres://postgres:pg@localhost:5432/postgres
+      # The release's seed tool (tools/release/seed-database.ts) against a scratch database built from the migrations: it needs
+      # this job's Postgres service, which build.yml lacks, and it fails, never skips, without one.
+      - run: npm run test:release-db
+        env:
+          DATABASE_URL: postgres://postgres:pg@localhost:5432/postgres
       - run: npm run rehearse -- small-circle-reign --stub --days 2
       - uses: actions/upload-artifact@v4
         if: always()
