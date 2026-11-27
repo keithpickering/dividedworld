@@ -76,12 +76,14 @@ async function cooldown(w: World) {
 }
 
 describe('My characters', () => {
-  test('lists each mask with its class marked "only you", its standing and pips, and a Turn button', async () => {
+  test('lists each mask with its class marked Secret (the HUD\'s lock line), its standing and pips, and a Turn button', async () => {
     const w = world();
     open(w);
     await ready();
     const r = row('Pipewrench');
-    expect(within(r).getByText('no other player')).toBeInTheDocument();
+    expect(within(r).getByText('Secret')).toHaveClass('kb-roster-secret');
+    expect(within(r).getByText('Secret')).toHaveTextContent('Secret: no other player sees this');
+    expect(within(r).queryByText('no other player')).toBeNull();
     expect(within(r).getByText(/Face/u)).toBeInTheDocument();
     expect(within(r).getByText(/since Oct 1/u)).toBeInTheDocument();
     expect(await within(r).findByText('14.20')).toBeInTheDocument();
@@ -1461,7 +1463,7 @@ describe('the Reveal carried from a thread (the HUD reveal plan, Task 4)', () =>
     expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toHaveValue('');
   });
 
-  test('a revealed character shows "Revealed" in place of "Reveal…", and one not yet revealed keeps the button', async () => {
+  test('a revealed character\'s class line reads "Revealed" in place of "Secret", with no Reveal…, and one not yet revealed keeps the button', async () => {
     const w = world();
     const thread = await generalThread(w);
     expect((await w.fake.unmask(w.pipe, thread.id, '')).ok).toBe(true);
@@ -1469,7 +1471,10 @@ describe('the Reveal carried from a thread (the HUD reveal plan, Task 4)', () =>
     await ready();
     const panel = row('Pipewrench');
     expect(within(panel).queryByRole('button', { name: /^Reveal/u })).toBeNull();
-    expect(within(panel).getByText('Revealed')).toHaveClass('kb-roster-line');
+    expect(within(panel).getByText('Revealed')).toHaveClass('kb-roster-secret');
+    expect(within(panel).getByText('Revealed').closest('dd')).toHaveTextContent(/Face/u);
+    expect(within(panel).queryByText('Secret')).toBeNull();
+    expect(within(row('Mrs. Hooligan')).getByText('Secret')).toBeInTheDocument();
     expect(within(row('Mrs. Hooligan')).getByRole('button', { name: 'Reveal Mrs. Hooligan\'s class' })).toBeInTheDocument();
   });
 

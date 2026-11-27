@@ -426,18 +426,21 @@
   gap: 8px;
 }
 
-/* "only you": a tag on the class, dashed, in the neon's text. */
-.kb-glass .kb-private {
-  display: inline-block;
+/* The class's privacy, as the HUD's line marks it (frame.css `.kb-hud-secret`): a lock, shut beside "Secret", open beside "Revealed". */
+.kb-roster-secret {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-left: 6px;
-  padding: 0 6px;
-  font-size: var(--kb-glass-size-label);
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  border: 1px dashed var(--kb-glass-neon-text);
-  color: var(--kb-glass-neon-text);
+  vertical-align: middle;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-roster-secret svg {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
 }
 
 /* ---- the class: a chip, and the class cards ---- */
@@ -1541,7 +1544,7 @@
   font-size: var(--kb-glass-size-phone-body);
 }
 
-:where(:root[data-kb-layout='phone']) :is(.kb-class-chip, .kb-private, .kb-roster-selected, .kb-roster-slots, .kb-class-now, .kb-class-mark) {
+:where(:root[data-kb-layout='phone']) :is(.kb-class-chip, .kb-roster-selected, .kb-roster-slots, .kb-class-now, .kb-class-mark) {
   font-size: var(--kb-glass-size-phone-small);
 }
 
