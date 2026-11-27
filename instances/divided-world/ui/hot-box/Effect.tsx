@@ -8,8 +8,9 @@
  *
  * The post's author alone can air it out for good (docs/plans/2026-11-27-lasting-gags-design.md, section 2): where `reader.author` is true, no moment is shown and the
  * hold (`hotBox.holdHours` after the play landed, `hold.ts`) is over, the same held control reads "Air it out" and its sweep, at the same pace, starts at the first
- * line below the band already aired. Each line it finishes is saved through `save` as `{ aired }`, the share of the content area's height cleared from its top (a
- * ten-thousandth), and the last as `{ clean: true }`, debounced and one on its way at a time as Whoops!'s strokes are; a refusal is shown as Whoops!'s is and the
+ * row below the band already aired. The sweep covers the whole content area, as a canvas (rows at the words' lines, then rows one line tall over the empty canvas
+ * below them, to the bottom border). Each row it finishes is saved through `save` as `{ aired }`, the share of the content area's height cleared from its top (a
+ * ten-thousandth), and the row that reaches the bottom border as `{ clean: true }`, debounced and one on its way at a time as Whoops!'s strokes are; a refusal is shown as Whoops!'s is and the
  * band stays where the server holds it (`states`). The band is the content area's full width from its top border: no fog is painted in it, and the forced-colors
  * mask starts below it. A play aired out clean draws nothing and says so. During the hold the author's control reads Wave the smoke, saves nothing, and a minute's
  * timer moves the countdown and flips the label with no reload. Whether the reader is the author is the screen's own fact (`reader.author`); nothing is sent for it.
@@ -105,7 +106,7 @@ export const smokedRestWay = (label: string): string => `The rest of this post i
 
 /** The author's held control, once the hold is over, and its hidden description. */
 export const AIR_LABEL = 'Air it out';
-export const AIR_DESCRIBE = `Hold Space or Enter on this button to air the smoke out line by line, at the pace of a hand, for good and for everyone. Let go and you keep what you cleared. Hold to the end and the post is clear for good.`;
+export const AIR_DESCRIBE = `Hold Space or Enter on this button to air the smoke out line by line. Let go and you keep what you cleared. Hold to the end and the post is clear for good.`;
 
 const STATE_SMOKE = 'Smoke over the words';
 const STATE_PART = 'Smoke over part of the words';
@@ -750,10 +751,32 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     /* The words' lines, read once: shares of the words' height, scaled to px and moved to where the words stand in the content area. A browser that cannot measure a range gives none, and the post is one block. */
     const read = readLines(words, { w, h });
     const all = (read.length > 0 ? read : [{ top: 0, bottom: 1, text: words.textContent ?? '' }]).map((l) => ({ top: px(l.top * h + wy), bottom: px(l.bottom * h + wy), text: l.text }));
-    /* The author's sweep starts at the first line whose bottom is below the band already aired. With none left (the words changed under the band) the post is aired out. */
-    const top = L.airing ? airedTop(L.saved, L.frame.h) : 0;
-    const lines = L.airing ? all.filter((l) => l.bottom > top + BAND_SLOP_PX) : all;
-    if (L.airing && lines.length === 0) { queueSave({ clean: true }); return; }
+    /* The author's sweep covers the content area from the band already aired down to its bottom border, a row at a time: each text line below the band ends a
+       row (the first starts at the band, so it takes in the padding above the first line), and below the last line rows one line tall go on until the last one
+       ends exactly at the bottom border, so a short post in a tall area is cleared across all of it. A row that is empty canvas has no words to read out. */
+    const rows = (() => {
+      if (!L.airing) return all.map((l) => ({ top: l.top, bottom: l.bottom, text: l.text }));
+      const H = L.frame.h, top = airedTop(L.saved, H);
+      const out: { top: number; bottom: number; text: string }[] = [];
+      let cursor = top;
+      for (const l of all) {
+        if (l.bottom <= top + BAND_SLOP_PX) continue;
+        const bottom = l.bottom >= H - BAND_SLOP_PX ? H : l.bottom;
+        if (bottom <= cursor) continue;
+        out.push({ top: cursor, bottom, text: l.text });
+        cursor = bottom;
+      }
+      const tall = read.length > 0 ? read[read.length - 1]!.bottom * h - read[read.length - 1]!.top * h : 0;
+      const css = parseFloat(getComputedStyle(words).lineHeight);
+      const step = tall > 0 ? tall : css > 0 ? css : 16;
+      while (cursor < H - BAND_SLOP_PX) {
+        const bottom = cursor + step > H - BAND_SLOP_PX ? H : cursor + step;
+        out.push({ top: cursor, bottom, text: '' });
+        cursor = bottom;
+      }
+      return out;
+    })();
+    const lines = rows;
     m.sweep = {
       air: L.airing, startedAt: api.now(), lines: lines.map((l) => ({ top: l.top, bottom: l.bottom })), texts: lines.map((l) => l.text),
       x0: wx, y0: wy, width: w, height: h, per: (w / SWEEP_PX_S) * 1000, releasedAt: null,
@@ -769,7 +792,8 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     if (!sw || sw.releasedAt !== null) return;
     const s = sweepAt(sw.lines, t - sw.startedAt, sw.width, SWEEP_PX_S);
     if (s.finished + 1 > m.said) {
-      setSpoken(sw.texts.slice(m.said, s.finished + 1).join(' '));
+      const said = sw.texts.slice(m.said, s.finished + 1).filter((t) => t !== '').join(' ');
+      if (said !== '') setSpoken(said);
       m.said = s.finished + 1;
       /* The author's lines are saved as they finish: how far down the area the last of them reaches, or clean once there is no line left. */
       if (sw.air && !s.done) {

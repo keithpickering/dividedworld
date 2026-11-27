@@ -2283,7 +2283,7 @@ describe('the author airs it out', () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  test('holding Air it out saves a share at each finished line and clean after the last', async () => {
+  test('holding Air it out saves a share at each finished row (text lines, then the canvas below) and clean after the row that reaches the bottom border', async () => {
     const save = accepted();
     const s = setup({ reader: AUTHOR, plays: [endless(30)], save });
     press(s);
@@ -2296,8 +2296,42 @@ describe('the author airs it out', () => {
     expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.5 }]);
     pass(2000);
     await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.8 }]);
+    pass(2000);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.9 }]);
+    expect(save.mock.calls.some((c) => (c as unknown as [string, { clean?: boolean }])[1].clean), 'not clean before the row at the bottom border').toBe(false);
+    pass(2000);
+    await settled();
     expect(save.mock.calls.at(-1)).toEqual(['h1', { clean: true }]);
-    expect(save).toHaveBeenCalledTimes(3);
+    expect(save).toHaveBeenCalledTimes(5);
+  });
+
+  test('a short post in a tall area: the hold finishes the text, then keeps sweeping the canvas; letting go mid-canvas keeps the share', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save });
+    press(s);
+    pass(3 * LINE_MS + 200);
+    expect(last(s).state, 'the text is done and the hold goes on').toBe('Airing it out');
+    pass(LINE_MS);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.9 }]);
+    release(s);
+    pass(5000);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.9 }]);
+    expect(save.mock.calls.some((c) => (c as unknown as [string, { clean?: boolean }])[1].clean)).toBe(false);
+  });
+
+  test('a reload with a share below the words starts the sweep at the next canvas row, and the canvas rows read out nothing', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.85 }) });
+    press(s);
+    pass(LINE_MS - 100);
+    expect(readout(s), 'no text line is left to read').toBe('');
+    pass(LINE_MS * 2);
+    await settled();
+    expect(save.mock.calls.map((c) => (c as unknown[])[1]), 'the next canvas row is one line tall, the last one short').toEqual([{ aired: 0.95 }, { clean: true }]);
   });
 
   test('letting go keeps what was saved: a line not finished saves nothing', async () => {
@@ -2326,7 +2360,7 @@ describe('the author airs it out', () => {
     pass(1000);
     await settled();
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save.mock.calls[1]).toEqual(['h1', { clean: true }]);
+    expect(save.mock.calls[1]).toEqual(['h1', { aired: 0.8 }]);
   });
 
   test('a refused save shows the refusal where Whoops! shows one, and the band stays where the server has it', async () => {
@@ -2356,9 +2390,10 @@ describe('the author airs it out', () => {
     press(s);
     pass(LINE_MS + 200);
     expect(readout(s)).toBe('Third line.');
-    pass(1000);
+    pass(3 * LINE_MS);
     await settled();
-    expect(save.mock.calls).toEqual([['h1', { clean: true }]]);
+    expect(save.mock.calls[0]).toEqual(['h1', { aired: 0.8 }]);
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { clean: true }]);
   });
 
   test('a share just under a line\'s bottom starts at the next line, and one above the first starts at the first', async () => {
@@ -2471,7 +2506,8 @@ describe('the author airs it out', () => {
     await settled();
     pass(SWEEP_MS);
     await settled();
-    expect(save.mock.calls.map((c) => c[1])).toEqual([{ aired: 0.2 }, { clean: true }]);
+    expect(save.mock.calls.map((c) => c[1]).at(-1)).toEqual({ clean: true });
+    expect(save.mock.calls[0]![1]).toEqual({ aired: 0.2 });
   });
 
   test('the aired lines read out follow the words when they change at the same size', () => {
@@ -2494,12 +2530,15 @@ describe('the author airs it out', () => {
     expect(save.mock.calls).toEqual([['h1', { aired: 0.2 }]]);
   });
 
-  test('pressing Air it out with no line left below the band saves clean, and starts no sweep', async () => {
+  test('pressing Air it out with only empty canvas below the band runs the canvas rows, and saves clean at the bottom border', async () => {
     const save = accepted();
     const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.9 }) });
     press(s);
-    expect(last(s).state, 'no hold began').toBe('Smoke over part of the words');
+    expect(last(s).state, 'the hold began').toBe('Airing it out');
     pass(1000);
+    await settled();
+    expect(save).not.toHaveBeenCalled();
+    pass(LINE_MS);
     await settled();
     expect(save.mock.calls).toEqual([['h1', { clean: true }]]);
   });
