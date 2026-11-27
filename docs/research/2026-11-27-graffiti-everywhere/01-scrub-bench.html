@@ -1,0 +1,525 @@
+<!--
+  Record, written 2026-11-27. The Graffiti scrub bench: the design session's interactive prototype for how tough a wall's
+  paint is to wash (the design that follows docs/plans/2026-11-11-graffiti-design.md and borrows the per-pass wash of
+  docs/plans/2026-11-12-whoops-ink-field-design.md). Its defaults are the owner's choices (2 coats a line, stacking to
+  two lines' worth, the top tag first, see-through when thinned); its other settings are the alternatives. A standalone page: open it in a browser. It is a reference for how
+  the wash feels, not code to copy. Strokes are kept in CSS px here; the design keeps them in each group's own units.
+-->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graffiti Scrub Bench</title>
+<style>
+/* The 2003 board's own post with a bench of controls above it, as the Whoops! benches. One deliberate light look: the board is black on white. */
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --rule: #000000;
+  --muted: #555555;
+  --shade: #f1f1ef;
+  --font: Verdana, Geneva, sans-serif;
+  --mono: "Courier New", Courier, monospace;
+  --size-body: 15px;
+  --size-small: 13.75px;
+  --size-fine: 12.5px;
+  --size-title: 22.5px;
+  color-scheme: light;
+}
+body {
+  background: var(--paper); color: var(--ink);
+  font: var(--size-body)/1.45 var(--font);
+  margin: 0; padding: 20px max(16px, env(safe-area-inset-right, 0px)) 56px max(16px, env(safe-area-inset-left, 0px));
+}
+h1 { font-size: var(--size-title); margin: 0; text-wrap: balance; }
+p { margin: 0 0 .8em; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.wrap { max-width: 900px; }
+.head { display: grid; gap: .4em; margin-bottom: 16px; }
+.head p { color: var(--muted); margin: 0; max-width: 70ch; font-size: var(--size-small); }
+
+.bench { border: 1px solid var(--rule); display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 18px; }
+.bench fieldset {
+  border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  margin: 0 -1px -1px 0; padding: 10px 12px 12px; min-width: 0;
+  display: grid; gap: 6px; align-content: start; font-size: var(--size-fine);
+}
+.bench fieldset:disabled { color: var(--muted); }
+.bench legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold; font-size: var(--size-fine); letter-spacing: .06em; text-transform: uppercase; }
+.bench label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.bench .hint { color: var(--muted); }
+select { font: inherit; }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--rule); width: fit-content; }
+.seg label { padding: 3px 10px; gap: 0; position: relative; }
+.seg label + label { border-left: 1px solid var(--rule); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--ink); color: var(--paper); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatches input { appearance: none; margin: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--sw); border: 1px solid var(--rule); cursor: pointer; }
+.swatches input:checked { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+button.b { font: inherit; font-size: var(--size-fine); padding: 4px 10px; background: var(--paper); color: var(--ink); border: 1px solid var(--rule); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+button.b:hover { background: var(--shade); }
+button.b[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+.act { display: grid; grid-template-columns: minmax(7em, 16%) minmax(0, 1fr); grid-template-areas: "bit meta" "bit main"; border: 1px solid var(--rule); }
+.bit { grid-area: bit; padding: .5em 8%; border-right: 1px solid var(--rule); display: flex; flex-direction: column; gap: .3em; font-size: var(--size-fine); min-width: 0; }
+.bit b { font-size: var(--size-small); overflow-wrap: anywhere; }
+.meta { grid-area: meta; border-bottom: 1px solid var(--rule); padding: .25em .6em; font-size: var(--size-fine); display: flex; justify-content: space-between; gap: 1em; }
+.meta .mode { font-weight: bold; letter-spacing: .06em; text-transform: uppercase; }
+.main { grid-area: main; position: relative; min-width: 0; overflow: hidden; }
+.body { padding: .6em .8em; min-height: 440px; }
+.body p { margin: 0 0 .9em; }
+#wall { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+@media (max-width: 560px) {
+  .act { grid-template-columns: minmax(0, 1fr); grid-template-areas: "bit" "meta" "main"; }
+  .bit { border-right: 0; border-bottom: 1px solid var(--rule); flex-direction: row; flex-wrap: wrap; gap: .2em 1em; }
+}
+.readout { font: var(--size-fine)/1.5 var(--mono); color: var(--muted); margin: 8px 0 20px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; white-space: pre-line; }
+.look { max-width: 70ch; font-size: var(--size-small); }
+.look h2 { font-size: var(--size-body); margin: 1em 0 .4em; }
+.look ul { margin: 0; padding-left: 1.2em; display: grid; gap: .35em; }
+</style>
+</head><body>
+
+<div class="wrap">
+  <header class="head">
+    <h1>Graffiti Scrub Bench</h1>
+    <p>How tough a wall's paint is to wash. <b>Today</b> takes every coat under the sponge in one pass. <b>Coats</b> gives paint depth: a fresh line is laid a few coats thick, your own strokes that cross stack more, and each pass of the sponge takes one coat, thinning the paint to see-through before the post shows. Load the sample wall, switch to the sponge, and scrub.</p>
+  </header>
+
+  <form class="bench" id="bench" onsubmit="return false">
+    <fieldset>
+      <legend>Washing</legend>
+      <div class="seg" role="radiogroup" aria-label="Washing">
+        <label><input type="radio" name="mode" value="today">Today</label>
+        <label><input type="radio" name="mode" value="coats" checked>Coats</label>
+      </div>
+      <div class="buttons"><button type="button" class="b" id="hold">Hold to scrub</button></div>
+      <span class="hint">Takes the same per pass as a hand, at Whoops!'s pace (0.55 of the box's width a second). Or hold S.</span>
+    </fieldset>
+    <fieldset>
+      <legend>Tool</legend>
+      <div class="seg" role="radiogroup" aria-label="Tool">
+        <label><input type="radio" name="tool" value="spray" checked>Spray</label>
+        <label><input type="radio" name="tool" value="sponge">Sponge</label>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Cap">
+        <label><input type="radio" name="cap" value="skinny">Skinny</label>
+        <label><input type="radio" name="cap" value="stock" checked>Stock</label>
+        <label><input type="radio" name="cap" value="fat">Fat</label>
+      </div>
+      <div class="swatches" id="swatches" role="radiogroup" aria-label="Can"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Wall</legend>
+      <div class="buttons">
+        <button type="button" class="b" id="newtag">New tag</button>
+        <button type="button" class="b" id="sample">Sample wall</button>
+        <button type="button" class="b" id="restore">Unwash</button>
+        <button type="button" class="b" id="clear">Clear</button>
+      </div>
+      <span class="hint">Strokes join the current tag until New tag. Unwash takes back every wash and keeps the tags.</span>
+    </fieldset>
+    <fieldset id="coat-opts">
+      <legend>Coats</legend>
+      <label>A fresh line <select id="coats">
+        <option value="1">1 coat (one pass)</option>
+        <option value="1.5">1.5 coats</option>
+        <option value="2" selected>2 coats (chosen)</option>
+        <option value="3">3 coats</option>
+      </select></label>
+      <label>Own strokes crossing <select id="stack">
+        <option value="1">Don't stack</option>
+        <option value="2" selected>Stack to 2 lines' worth (chosen)</option>
+        <option value="3">Stack to 3 lines' worth</option>
+      </select></label>
+      <label>Through tags <select id="layers">
+        <option value="top" selected>Top tag first (chosen)</option>
+        <option value="all">Every tag at once</option>
+      </select></label>
+      <label>Thinned paint <select id="thin">
+        <option value="see" selected>Turns see-through (chosen)</option>
+        <option value="solid">Solid until gone</option>
+      </select></label>
+    </fieldset>
+  </form>
+
+  <article class="act" aria-label="A post that is a wall">
+    <aside class="bit"><b>Snuckles</b><span>Jabroni</span><span>Posts: 2817</span></aside>
+    <div class="meta"><span>Look At My Wiggler Sprites</span><span class="mode" id="mode-label">Coats</span></div>
+    <div class="main" id="main">
+      <div class="body">
+        <p>Hi divided world, it's ya boy Snuckles here with my first ever sprite sheet. He's an original character I invented after I saw him in a Mario game.</p>
+        <p>I did the walk cycle frame by frame and the shading by hand, which took a whole weekend. The colors are from the original palette, mostly. The flower on his head is my own idea.</p>
+        <p>This sheet was made by me, Snuckles. If you use it without credit, you'll wake up hideously mangled. Have a nice day!!!</p>
+        <p>Let me know what you think!</p>
+      </div>
+      <canvas id="wall" aria-label="The wall over the post. Drag to spray or to scrub."></canvas>
+    </div>
+  </article>
+
+  <div class="readout" id="readout" aria-live="off">…</div>
+
+  <section class="look">
+    <h2>What to try</h2>
+    <ul>
+      <li><b>Sample wall</b>, then <b>Sponge</b>. The red quick line is one stroke. The black block is three Fat strokes crossing, so its middle is stacked. "HELLO" is Stock. The pink heart is a second tag sprayed over the O.</li>
+      <li>Scrub the red line and count your passes, then scrub the black block. That difference is the "heavily worked tag takes more" rule.</li>
+      <li>Scrub the heart where it crosses the O. With <b>Top tag first</b>, the heart goes before HELLO shows any wear. With <b>Every tag at once</b>, both wear together.</li>
+      <li>Switch <b>Washing</b> to <b>Today</b> and back. Every setting replays the same strokes and washes, so you compare like for like. <b>Unwash</b> puts the paint back to try again.</li>
+      <li><b>Hold to scrub</b> is the accessible path: it sweeps the box in bands and keeps going round until the wall is clean, taking a coat a pass as a hand does.</li>
+    </ul>
+    <h2>What the readout counts</h2>
+    <ul>
+      <li><b>Budget</b> is section 4's rule: each tag's own paint, summed, against the 40% limit. A cell counts until its last coat is gone.</li>
+      <li><b>Scrubbing</b> is the time the sponge spent moving over the wall, by hand or held.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+'use strict';
+// ---- Constants. Sizes are CSS px at the board's 15px type: the caps are today's desktop sizes (CAPS x 988px), the sponge is 0.06 of it.
+const CELL = 2;
+const CAPS = { skinny: 6, stock: 16, fat: 40 };
+const SPONGE = 60;
+const CANS = { black: '#111111', red: '#e8202a', cyan: '#22c7f0', pink: '#ff3d9a', lime: '#7ed321', purple: '#7c3aed' };
+const CAN_KEYS = Object.keys(CANS);
+const CAN_RGB = CAN_KEYS.map((k) => { const h = CANS[k]; return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; });
+const T = 0.12;            // under this many coats a cell is clean, and stops counting
+const CORE_A = 0.92, HALO_A = 0.35, REACH = 1.9, SPECKLE_FAR = 1.2;
+const SWEEP = 0.55;        // Hold to scrub's pace, in box widths a second
+
+// ---- State
+const $ = (id) => document.getElementById(id);
+const main = $('main'), canvas = $('wall'), ctx = canvas.getContext('2d');
+const off = document.createElement('canvas'), octx = off.getContext('2d');
+let W = 0, H = 0, gw = 0, gh = 0, dpr = 1;
+let ops = [];              // { k: 'draw', tag, can, cap, pts } | { k: 'wash', pts }
+let tags = [];             // per tag: core (coats), halo (coats), color (can index), touched
+let curTag = null;
+let sprayed = 0;           // coats laid in all, for "paint left"
+let scrubMs = 0;
+let dirty = true;
+
+const S = () => ({
+  mode: document.querySelector('input[name=mode]:checked').value,
+  coats: Number($('coats').value),
+  stack: Number($('stack').value),
+  layers: $('layers').value,
+  thin: $('thin').value,
+});
+let set = S();
+const C = () => (set.mode === 'today' ? 1 : set.coats);
+const CAP = () => (set.mode === 'today' ? 1 : set.coats * set.stack);
+
+function mulberry32(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+function newTag() { const n = gw * gh; return { core: new Float32Array(n), halo: new Float32Array(n), color: new Uint8Array(n), touched: new Uint8Array(n) }; }
+function tagAt(i) { while (tags.length <= i) tags.push(newTag()); return tags[i]; }
+
+// ---- Spraying: a stroke lays C coats on each cell its core covers, once per stroke; strokes of one tag that cross stack up to CAP.
+function strokeState(op, index) { return { mask: new Uint8Array(gw * gh), r: CAPS[op.cap] / 2, ci: CAN_KEYS.indexOf(op.can), rng: mulberry32(index * 7919 + 17), tag: tagAt(op.tag) }; }
+function spraySeg(st, ax, ay, bx, by) {
+  const { r, tag, ci } = st, c = C(), cap = CAP(), reach = r * REACH;
+  const x0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach) / CELL)), x1 = Math.min(gw - 1, Math.ceil((Math.max(ax, bx) + reach) / CELL));
+  const y0 = Math.max(0, Math.floor((Math.min(ay, by) - reach) / CELL)), y1 = Math.min(gh - 1, Math.ceil((Math.max(ay, by) + reach) / CELL));
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+    const px = (gx + 0.5) * CELL, py = (gy + 0.5) * CELL;
+    let t = L2 ? ((px - ax) * dx + (py - ay) * dy) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const d = Math.hypot(ax + t * dx - px, ay + t * dy - py), i = gy * gw + gx;
+    if (d <= r) {
+      if (!st.mask[i]) { st.mask[i] = 1; const was = tag.core[i]; tag.core[i] = Math.min(cap, was + c); sprayed += tag.core[i] - was; tag.color[i] = ci; tag.touched[i] = 0; }
+    } else if (d < reach) {
+      const f = 1 - (d - r) / (reach - r), hv = c * f * f;
+      if (hv > tag.halo[i]) { tag.halo[i] = hv; if (tag.core[i] < T) tag.color[i] = ci; }
+    }
+  }
+  // Speckle: dots past the overspray, seeded by the stroke, so a replay draws the same.
+  const len = Math.sqrt(L2), n = len * r * 0.004;
+  let count = Math.floor(n) + (st.rng() < n - Math.floor(n) ? 1 : 0);
+  while (count-- > 0) {
+    const t = st.rng(), side = st.rng() < 0.5 ? -1 : 1, far = r * (REACH + st.rng() * SPECKLE_FAR);
+    const nx = len ? -dy / len : 0, ny = len ? dx / len : 1;
+    const gx = Math.floor((ax + t * dx + nx * far * side) / CELL), gy = Math.floor((ay + t * dy + ny * far * side) / CELL);
+    if (gx < 0 || gy < 0 || gx >= gw || gy >= gh) continue;
+    const i = gy * gw + gx;
+    if (c * 0.9 > tag.halo[i]) { tag.halo[i] = c * 0.9; if (tag.core[i] < T) tag.color[i] = ci; }
+  }
+}
+
+// ---- Washing. Coats: the sponge presses a disc every third of its radius, each taking a share of one coat that falls off as
+// (1 - d^2/R^2)^3 within R = 2r, so one straight pass takes one coat under its center (the Whoops! ink field's rule). Today: every
+// coat within the sponge's radius goes in one pass.
+const WR = SPONGE / 2, WRR = 2 * WR, STEP = WR / 3, PER = STEP / (WRR * 32 / 35);
+function washState() { return { started: false, left: 0 }; }
+function take(i, amount) {
+  if (set.layers === 'top') {
+    for (let k = tags.length - 1; k >= 0 && amount > 0; k--) {
+      const tg = tags[k], v = tg.core[i];
+      if (tg.halo[i] > 0) tg.halo[i] = Math.max(0, tg.halo[i] - amount);
+      if (v <= 0) continue;
+      const t = Math.min(v, amount);
+      tg.core[i] = v - t < T ? 0 : v - t; tg.touched[i] = 1; amount -= t;
+    }
+  } else {
+    for (const tg of tags) {
+      if (tg.halo[i] > 0) tg.halo[i] = Math.max(0, tg.halo[i] - amount);
+      const v = tg.core[i]; if (v <= 0) continue;
+      tg.core[i] = v - amount < T ? 0 : v - amount; tg.touched[i] = 1;
+    }
+  }
+}
+function disc(cx, cy) {
+  const x0 = Math.max(0, Math.floor((cx - WRR) / CELL)), x1 = Math.min(gw - 1, Math.ceil((cx + WRR) / CELL));
+  const y0 = Math.max(0, Math.floor((cy - WRR) / CELL)), y1 = Math.min(gh - 1, Math.ceil((cy + WRR) / CELL));
+  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+    const px = (gx + 0.5) * CELL - cx, py = (gy + 0.5) * CELL - cy, q = 1 - (px * px + py * py) / (WRR * WRR);
+    if (q <= 0) continue;
+    take(gy * gw + gx, PER * q * q * q);
+  }
+}
+function cut(ax, ay, bx, by) {
+  const reach = WR + 1.9 * CAPS.fat;
+  const x0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach) / CELL)), x1 = Math.min(gw - 1, Math.ceil((Math.max(ax, bx) + reach) / CELL));
+  const y0 = Math.max(0, Math.floor((Math.min(ay, by) - reach) / CELL)), y1 = Math.min(gh - 1, Math.ceil((Math.max(ay, by) + reach) / CELL));
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+    const px = (gx + 0.5) * CELL, py = (gy + 0.5) * CELL;
+    let t = L2 ? ((px - ax) * dx + (py - ay) * dy) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const d = Math.hypot(ax + t * dx - px, ay + t * dy - py), i = gy * gw + gx;
+    if (d <= WR) for (const tg of tags) { tg.core[i] = 0; tg.halo[i] = 0; }
+    else if (d <= reach) for (const tg of tags) if (tg.core[i] < T) tg.halo[i] = 0;
+  }
+}
+function washSeg(ws, ax, ay, bx, by) {
+  if (set.mode === 'today') { cut(ax, ay, bx, by); return; }
+  if (!ws.started) { ws.started = true; disc(ax, ay); ws.left = STEP; }
+  const len = Math.hypot(bx - ax, by - ay);
+  let d = ws.left;
+  while (d <= len) { const t = d / len; disc(ax + t * (bx - ax), ay + t * (by - ay)); d += STEP; }
+  ws.left = d - len;
+}
+
+// ---- Replay: every setting and every resize redraws the same ops from nothing.
+function replay() {
+  tags = []; sprayed = 0;
+  ops.forEach((op, index) => {
+    if (op.k === 'draw') { const st = strokeState(op, index); for (let j = 0; j < op.pts.length; j++) { const a = op.pts[Math.max(0, j - 1)], b = op.pts[j]; spraySeg(st, a[0], a[1], b[0], b[1]); } }
+    else { const ws = washState(); for (let j = 0; j < op.pts.length; j++) { const a = op.pts[Math.max(0, j - 1)], b = op.pts[j]; washSeg(ws, a[0], a[1], b[0], b[1]); } }
+  });
+  dirty = true;
+}
+
+// ---- Painting: overspray and speckle under every core, then the cores in order, as spray.ts does.
+function render() {
+  if (!gw || !gh) return;
+  const img = octx.createImageData(gw, gh), out = img.data, n = gw * gh, c = C();
+  for (let i = 0; i < n; i++) {
+    let r = 0, g = 0, b = 0, a = 0;
+    for (const tg of tags) {
+      const h = tg.halo[i]; if (h <= 0.01 || tg.core[i] >= T) continue;
+      const al = HALO_A * Math.min(1, h / c), col = CAN_RGB[tg.color[i]];
+      r = col[0] * al + r * (1 - al); g = col[1] * al + g * (1 - al); b = col[2] * al + b * (1 - al); a = al + a * (1 - al);
+    }
+    for (const tg of tags) {
+      const v = tg.core[i]; if (v < T) continue;
+      const al = !tg.touched[i] || set.thin === 'solid' ? CORE_A : CORE_A * Math.min(1, 0.35 + 0.65 * (v - T) / 1);
+      const col = CAN_RGB[tg.color[i]];
+      r = col[0] * al + r * (1 - al); g = col[1] * al + g * (1 - al); b = col[2] * al + b * (1 - al); a = al + a * (1 - al);
+    }
+    if (a > 0) { const o = i * 4; out[o] = r / a; out[o + 1] = g / a; out[o + 2] = b / a; out[o + 3] = a * 255; }
+  }
+  octx.putImageData(img, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(off, 0, 0, gw * CELL, gh * CELL);
+  readout();
+}
+function frame() { if (dirty) { dirty = false; render(); } requestAnimationFrame(frame); }
+
+function bandHasPaint(row, band) {
+  const y0 = Math.max(0, Math.floor((row * band - WR * 0.5) / CELL)), y1 = Math.min(gh - 1, Math.ceil(((row + 1) * band + WR * 0.5) / CELL));
+  for (const tg of tags) for (let gy = y0; gy <= y1; gy++) for (let gx = 0; gx < gw; gx++) if (tg.core[gy * gw + gx] >= T) return true;
+  return false;
+}
+function painted() { for (const tg of tags) for (let i = 0; i < tg.core.length; i++) if (tg.core[i] >= T) return true; return false; }
+function readout() {
+  const n = gw * gh; let budget = 0, left = 0;
+  const lines = tags.map((tg, k) => {
+    let own = 0, deep = 0, col = null;
+    for (let i = 0; i < n; i++) { const v = tg.core[i]; if (v >= T) { own++; left += v; if (v > deep) deep = v; if (col === null) col = tg.color[i]; } }
+    budget += own;
+    return `Tag ${k + 1}${col === null ? '' : ' (' + CAN_KEYS[col] + ')'}: ${own ? (100 * own / n).toFixed(1) + '% of the post, ' + deep.toFixed(1) + ' coats at its thickest' : 'washed clean'}`;
+  });
+  $('readout').textContent = [
+    `Budget: ${(100 * budget / n).toFixed(1)}% of 40% (each tag's own paint, summed)`,
+    `Paint left: ${sprayed ? Math.round(100 * left / sprayed) : 0}% of what was sprayed · Scrubbing: ${(scrubMs / 1000).toFixed(1)} s`,
+    ...lines,
+  ].join('\n');
+}
+
+// ---- Size
+function resize() {
+  const r = main.getBoundingClientRect();
+  W = Math.max(1, Math.round(r.width)); H = Math.max(1, Math.round(r.height)); dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  gw = Math.ceil(W / CELL); gh = Math.ceil(H / CELL); off.width = gw; off.height = gh;
+  replay();
+}
+new ResizeObserver(resize).observe(main);
+
+// ---- Pointer
+const tool = () => document.querySelector('input[name=tool]:checked').value;
+const can = () => document.querySelector('input[name=can]:checked').value;
+const cap = () => document.querySelector('input[name=cap]:checked').value;
+let live = null; // { op, st | ws, last, t }
+function at(e) { const r = canvas.getBoundingClientRect(); return [Math.round((e.clientX - r.left) * 10) / 10, Math.round((e.clientY - r.top) * 10) / 10]; }
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  canvas.setPointerCapture(e.pointerId);
+  const p = at(e);
+  if (tool() === 'spray') {
+    if (curTag === null) curTag = tags.length;
+    const op = { k: 'draw', tag: curTag, can: can(), cap: cap(), pts: [p] };
+    ops.push(op);
+    const st = strokeState(op, ops.length - 1);
+    spraySeg(st, p[0], p[1], p[0], p[1]);
+    live = { op, st, last: p, t: performance.now() };
+  } else {
+    const op = { k: 'wash', pts: [p] }; ops.push(op);
+    const ws = washState(); washSeg(ws, p[0], p[1], p[0], p[1]);
+    live = { op, ws, last: p, t: performance.now() };
+  }
+  dirty = true;
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!live) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  for (const ev of evs.length ? evs : [e]) {
+    const p = at(ev), a = live.last;
+    if (Math.hypot(p[0] - a[0], p[1] - a[1]) < 1.5) continue;
+    live.op.pts.push(p);
+    if (live.st) spraySeg(live.st, a[0], a[1], p[0], p[1]); else washSeg(live.ws, a[0], a[1], p[0], p[1]);
+    live.last = p;
+  }
+  const now = performance.now();
+  if (live.ws && now - live.t < 120) scrubMs += now - live.t;
+  live.t = now; dirty = true;
+});
+const end = () => { live = null; };
+canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+
+// ---- Hold to scrub: bands across the box at Whoops!'s pace, round and round until no paint is left.
+let hold = null;
+function holdStart() {
+  if (hold) return;
+  const band = SPONGE * 0.8, rows = Math.max(1, Math.ceil(H / band));
+  let row = 0;
+  while (row < rows - 1 && !bandHasPaint(row, band)) row++;
+  const y = Math.min(H - 1, row * band + band / 2);
+  const op = { k: 'wash', pts: [[0, y]] }; ops.push(op);
+  hold = { op, ws: washState(), row, rows, band, x: 0, dir: 1, t: performance.now(), raf: 0 };
+  washSeg(hold.ws, 0, y, 0, y);
+  $('hold').setAttribute('aria-pressed', 'true');
+  const step = (now) => {
+    if (!hold) return;
+    const dt = Math.min(64, now - hold.t); hold.t = now;
+    if (!painted()) { $('hold').textContent = 'Clean'; holdEnd(); return; }
+    scrubMs += dt;
+    let move = SWEEP * W * dt / 1000;
+    while (move > 0) {
+      const y = Math.min(H - 1, hold.row * hold.band + hold.band / 2);
+      const goal = hold.dir > 0 ? W : 0, room = Math.abs(goal - hold.x), d = Math.min(room, move);
+      const nx = hold.x + d * hold.dir, a = hold.op.pts[hold.op.pts.length - 1];
+      hold.op.pts.push([nx, y]); washSeg(hold.ws, a[0], a[1], nx, y);
+      hold.x = nx; move -= d;
+      if (d === room) {
+        // The next band with paint in it, as Whoops!'s sweep goes round: a band of bare post is skipped, not scrubbed.
+        hold.dir *= -1;
+        for (let k = 1; k <= hold.rows; k++) { const r = (hold.row + k) % hold.rows; if (bandHasPaint(r, hold.band)) { hold.row = r; break; } }
+        const ny = Math.min(H - 1, hold.row * hold.band + hold.band / 2), b = hold.op.pts[hold.op.pts.length - 1];
+        hold.op.pts.push([hold.x, ny]); washSeg(hold.ws, b[0], b[1], hold.x, ny);
+      }
+    }
+    dirty = true;
+    hold.raf = requestAnimationFrame(step);
+  };
+  hold.raf = requestAnimationFrame(step);
+}
+function holdEnd() { if (!hold) return; cancelAnimationFrame(hold.raf); hold = null; $('hold').setAttribute('aria-pressed', 'false'); }
+$('hold').addEventListener('pointerdown', (e) => { e.preventDefault(); $('hold').textContent = 'Hold to scrub'; holdStart(); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach((t) => $('hold').addEventListener(t, holdEnd));
+$('hold').addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); holdStart(); } });
+$('hold').addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') holdEnd(); });
+document.addEventListener('keydown', (e) => { if ((e.key === 's' || e.key === 'S') && !e.repeat && !(e.target instanceof HTMLSelectElement)) holdStart(); });
+document.addEventListener('keyup', (e) => { if (e.key === 's' || e.key === 'S') holdEnd(); });
+
+// ---- The sample wall, placed by the box's size so it fits a phone and a desktop.
+function sample() {
+  ops = []; curTag = null; scrubMs = 0;
+  const w = W, h = H, u = Math.min(w, 900) / 900;
+  const add = (tag, canKey, capKey, strokes) => strokes.forEach((pts) => ops.push({ k: 'draw', tag, can: canKey, cap: capKey, pts }));
+  const line = (a, b, n = 24, wob = 0) => Array.from({ length: n + 1 }, (_, i) => { const t = i / n; return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t + Math.sin(t * Math.PI) * wob]; });
+  const zig = (x0, y0, x1, y1, rows, vertical) => {
+    const pts = [];
+    for (let k = 0; k <= rows; k++) {
+      const f = k / rows;
+      if (vertical) { const x = x0 + (x1 - x0) * f; pts.push(k % 2 ? [x, y1] : [x, y0]); }
+      else { const y = y0 + (y1 - y0) * f; pts.push(k % 2 ? [x1, y] : [x0, y]); }
+    }
+    const dense = [];
+    for (let j = 1; j < pts.length; j++) dense.push(...line(pts[j - 1], pts[j], 16).slice(j === 1 ? 0 : 1));
+    return dense;
+  };
+  // 1: a quick red line, one stroke.
+  add(0, 'red', 'stock', [line([0.05 * w, 0.14 * h], [0.5 * w, 0.2 * h], 40, -10 * u)]);
+  // 2: a worked black block: three Fat strokes over the same patch, so its middle stacks.
+  const bx0 = 0.6 * w, by0 = 0.08 * h, bx1 = Math.min(w - 20, bx0 + 260 * u), by1 = by0 + 110 * u;
+  add(1, 'black', 'fat', [zig(bx0, by0, bx1, by1, 5, false), zig(bx0, by0, bx1, by1, 6, true), line([bx0, by0], [bx1, by1], 30)]);
+  // 3: HELLO in cyan Stock, one tag of several figures.
+  // Letters keep a Stock cap's proportions on a phone: they shrink only as far as the box needs, never below what the cap can write.
+  const gap = 22, L = Math.max(48, Math.min(70, (w * 0.88 - 4 * gap) / 2.59)), x = 0.06 * w, y = 0.42 * h, s = [];
+  let cx = x;
+  s.push(line([cx, y], [cx, y + L]), line([cx + L * 0.55, y], [cx + L * 0.55, y + L]), line([cx, y + L / 2], [cx + L * 0.55, y + L / 2])); cx += L * 0.55 + gap;
+  s.push(line([cx, y], [cx, y + L]), line([cx, y], [cx + L * 0.5, y]), line([cx, y + L / 2], [cx + L * 0.4, y + L / 2]), line([cx, y + L], [cx + L * 0.5, y + L])); cx += L * 0.5 + gap;
+  s.push(line([cx, y], [cx, y + L]), line([cx, y + L], [cx + L * 0.45, y + L])); cx += L * 0.45 + gap;
+  s.push(line([cx, y], [cx, y + L]), line([cx, y + L], [cx + L * 0.45, y + L])); cx += L * 0.45 + gap;
+  const ox = cx + L * 0.32, oy = y + L / 2;
+  s.push(Array.from({ length: 49 }, (_, i) => { const t = (i / 48) * Math.PI * 2.1; return [ox + Math.cos(t) * L * 0.32, oy + Math.sin(t) * L * 0.5]; }));
+  add(2, 'cyan', 'stock', s);
+  // 4: a pink heart, a second tag sprayed over the O.
+  const hx = ox + L * 0.15, hy = oy + L * 0.05, hs = L * 0.5;
+  add(3, 'pink', 'stock', [Array.from({ length: 61 }, (_, i) => { const t = (i / 60) * Math.PI * 2; return [hx + hs * 0.06 * 16 * Math.sin(t) ** 3, hy - hs * 0.06 * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t))]; })]);
+  curTag = null;
+  replay();
+}
+
+// ---- Controls
+const sw = $('swatches');
+CAN_KEYS.forEach((k, i) => {
+  const input = document.createElement('input');
+  input.type = 'radio'; input.name = 'can'; input.value = k; input.checked = i === 1;
+  input.style.setProperty('--sw', CANS[k]); input.setAttribute('aria-label', k);
+  sw.append(input);
+});
+$('bench').addEventListener('change', (e) => {
+  if (['mode', 'coats', 'stack', 'layers', 'thin'].includes(e.target.name || e.target.id)) {
+    set = S();
+    $('coat-opts').disabled = set.mode === 'today';
+    $('mode-label').textContent = set.mode === 'today' ? 'Today' : 'Coats';
+    replay();
+  }
+});
+$('newtag').addEventListener('click', () => { curTag = null; });
+$('sample').addEventListener('click', sample);
+$('restore').addEventListener('click', () => { ops = ops.filter((o) => o.k === 'draw'); scrubMs = 0; $('hold').textContent = 'Hold to scrub'; replay(); });
+$('clear').addEventListener('click', () => { ops = []; curTag = null; scrubMs = 0; $('hold').textContent = 'Hold to scrub'; replay(); });
+
+resize();
+sample();
+requestAnimationFrame(frame);
+</script>
+</body></html>
