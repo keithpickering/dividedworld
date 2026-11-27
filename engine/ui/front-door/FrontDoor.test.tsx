@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, test } from 'vitest';
 import type { EffectProps, CardUi } from '../cards/types.ts';
 import { ok, refuse, type CardRules } from '../../rules/cards.ts';
-import { cellsOf, count, union, type SurfaceStroke } from '../../rules/surface.ts';
+import { cellsOf, count, type SurfaceStroke } from '../../rules/surface.ts';
 import { KayfaProvider, useKayfa } from '../context.tsx';
 import type { FrontDoorPost } from '../types.ts';
 import { buildWorld, renderIn, renderInWorld, testInstance } from '../test-world.tsx';
@@ -30,7 +30,8 @@ const stroke = (y: number): SurfaceStroke => ({ width: 0.1, aspect: 1, points: [
 const checkDraw = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
   ? ok({ strokes: (input as { strokes: SurfaceStroke[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('strokes'));
 const noted = rulesOf('noted', { validateState: (s: unknown) => ok(s) });
-const slab = rulesOf('slab', { surface: { limitKey: 'slab.limit', mostLive: 48, validateDraw: checkDraw, validateWash: checkDraw } } as Partial<CardRules>);
+const noWash = () => refuse('a staged wall is never washed');
+const slab = rulesOf('slab', { surface: { limitKey: 'slab.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: checkDraw, validateWash: noWash } });
 const doorInstance = { ...testInstance, cards: [...testInstance.cards, noted, slab], settings: { ...testInstance.settings, cardSettings: { 'slab.limit': 40 } } };
 let notedSeen: EffectProps | null = null;
 let wallSeen: EffectProps | null = null;
@@ -224,35 +225,40 @@ describe('the front door\'s saved states and surface draws', () => {
     expect(s.acts![0]!.character).toBe('front-door:ann');
     expect(s.acts![1]!.character).toBe('front-door:bo');
     expect(s.acts![0]!.payload).toEqual({ strokes: [stroke(0.2)] });
-    expect(s.covered).toBe(count(union(cellsOf([stroke(0.2)]), cellsOf([stroke(0.6)]))));
+    expect(s.covered).toBe(count(cellsOf([stroke(0.2)])) + count(cellsOf([stroke(0.6)])));
     expect(s.covered).toBeGreaterThan(0);
   });
 
-  test('overlapping draws each carry the cells they own, a later draw taking cells from an earlier one, and the shares sum to the cells covered', () => {
+  test('overlapping draws each carry the cells they paint (ink over ink is paid for again, as a thread\'s wall counts it), and the shares sum to the cells covered', () => {
     drawWith([wallPost([stroke(0.2), stroke(0.25), stroke(0.6)])]);
     const s = wallSeen!.surface!;
     const [a, b, c] = [cellsOf([stroke(0.2)]), cellsOf([stroke(0.25)]), cellsOf([stroke(0.6)])];
     const shares = s.acts!.map((x) => (x as { share: number }).share);
-    expect(count(a) + count(b)).toBeGreaterThan(count(union(a, b)));
-    expect(shares).toEqual([count(a) - (count(a) + count(b) - count(union(a, b))), count(b), count(c)]);
-    expect(shares[0]).toBeGreaterThan(0);
+    expect(shares).toEqual([count(a), count(b), count(c)]);
     expect(shares.reduce((x, y) => x + y, 0)).toBe(s.covered);
+    expect(s.acts!.map((x) => (x as { places?: unknown }).places)).toEqual([[], [], []]);
   });
 
-  test('a draw a later one paints over entirely owns nothing, so the wall does not list it, as a live thread\'s would not', () => {
+  test('a draw painted over wholly by a later one stays live, as a thread\'s would: only a wash takes a tag off', () => {
     const wide: SurfaceStroke = { width: 0.4, aspect: 1, points: [[0.0, 0.2], [1.0, 0.2]] };
     drawWith([wallPost([stroke(0.2), wide])]);
     const s = wallSeen!.surface!;
+    expect(s.acts).toHaveLength(2);
+    expect(s.covered).toBe(count(cellsOf([stroke(0.2)])) + count(cellsOf([wide])));
+  });
+
+  test('a draw that paints nothing is not staged as a live Act, and costs the wall nothing', () => {
+    drawWith([wallPost([stroke(0.2)], [{ by: 'bo', draw: { strokes: [] } }])]);
+    const s = wallSeen!.surface!;
     expect(s.acts).toHaveLength(1);
-    expect(s.acts![0]!.character).toBe('front-door:bo');
-    expect((s.acts![0] as { share: number }).share).toBe(s.covered);
+    expect(s.covered).toBe(count(cellsOf([stroke(0.2)])));
   });
 
   test('a draw the card\'s rules refuse is not staged, and the others are', () => {
     drawWith([wallPost([stroke(0.2)], [{ by: 'bo', draw: 'not a draw' }, { by: 'bo', draw: { strokes: [stroke(0.6)] } }])]);
     const s = wallSeen!.surface!;
     expect(s.acts).toHaveLength(2);
-    expect(s.covered).toBe(count(union(cellsOf([stroke(0.2)]), cellsOf([stroke(0.6)]))));
+    expect(s.covered).toBe(count(cellsOf([stroke(0.2)])) + count(cellsOf([stroke(0.6)])));
   });
 });
 

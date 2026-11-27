@@ -5,6 +5,7 @@ import { TextLayer, type TextRun } from './layers.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { RouterProvider } from '../router.tsx';
 import { MAX_DEPTH } from '../../bbcode/parse.ts';
+import { contentOf } from '../../rules/anchor.ts';
 
 const show = (text: string, quoteHead?: (q: QuoteOf) => React.ReactNode, forged?: readonly string[]) =>
   render(<RouterProvider><div data-testid="out"><BbCode text={text} quoteHead={quoteHead} forged={forged} /></div></RouterProvider>);
@@ -61,6 +62,19 @@ describe('the BBCode renderer', () => {
     expect(img).toHaveAttribute('loading', 'lazy');
     expect(img).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(img.getAttribute('alt')).toBeTruthy();
+  });
+
+  test('three images, one in a quote, carry data-kb-img 0, 1 and 2 in tree order', () => {
+    show(`[img]https://a.example/one.png[/img] and [quote=11111111-1111-4111-8111-111111111111][img]https://a.example/two.png[/img][/quote] and [b][img]https://a.example/three.png[/img][/b]`);
+    expect([...out().querySelectorAll('img')].map((i) => [i.getAttribute('src')!.split('/').pop(), i.getAttribute('data-kb-img')])).toEqual([['one.png', '0'], ['two.png', '1'], ['three.png', '2']]);
+    expect(out().querySelector('blockquote img')?.getAttribute('data-kb-img')).toBe('1');
+  });
+
+  test('an http: image is drawn as a link and takes no number, so the count matches the images contentOf counts', () => {
+    const body = '[img]https://a.example/one.png[/img] [img]http://a.example/plain.png[/img] [list][*][img]https://a.example/two.png[/img][/list]';
+    show(body);
+    expect([...out().querySelectorAll('img')].map((i) => i.getAttribute('data-kb-img'))).toEqual(['0', '1']);
+    expect(contentOf(body).images.map((i) => i.src)).toEqual(['https://a.example/one.png', 'https://a.example/two.png']);
   });
 
   test('an http: image is a plain link to it, never an <img> (the page loads images over https only)', () => {

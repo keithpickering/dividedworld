@@ -13,7 +13,7 @@ import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import { wordsProblems } from '../cards/lens-words.ts';
 import { surfaceMost } from '../../rules/cards.ts';
-import { cellsOf, count, union, type Cells } from '../../rules/surface.ts';
+import { coatsOf, paintedCount } from '../../rules/surface.ts';
 import { localKey, singleEmoji } from '../../rules/emoji.ts';
 import { CONDUCT_TEMPLATES, TEMPLATES } from '../../mail/conduct.ts';
 
@@ -316,12 +316,13 @@ function playRulesProblems(who: string, at: string, play: NonNullable<FrontDoorP
   const draws = play.draws ?? [];
   if (draws.length === 0) return out;
   if (rules.surface === undefined) return [...out, `${who} has draws, and the card has no surface`];
-  let covered: Cells | null = null;
+  /* A wall's draws are each their own coats, and its covered is the sum of their painted cells (ink over ink is paid for again): the sum is what the limit is held against. */
+  let covered: number | null = null;
   for (const [k, d] of draws.entries()) {
     if (!cast.has(d.by)) out.push(`${at} draw ${k} is by "${d.by}", who is not in the cast`);
     const checked = rules.surface.validateDraw(d.draw);
     if (!checked.ok) out.push(`${at} draw ${k} is one the card refuses: ${checked.why}`);
-    else { const cells = cellsOf(checked.value.strokes); covered = covered === null ? cells : union(covered, cells); }
+    else covered = (covered ?? 0) + paintedCount(coatsOf(checked.value.strokes, rules.surface.coats));
   }
   if (draws.length > rules.surface.mostLive) out.push(`${at} has ${draws.length} draws, over the ${rules.surface.mostLive} the card holds live`);
   const { limitKey } = rules.surface;
@@ -329,8 +330,7 @@ function playRulesProblems(who: string, at: string, play: NonNullable<FrontDoorP
   if (typeof limit !== 'number' || !Number.isFinite(limit)) out.push(`${at} reads a limit "${limitKey}" the settings do not hold`);
   else if (covered !== null) {
     const most = surfaceMost(rules.key, limitKey, settings);
-    const n = count(covered);
-    if (n > most) out.push(`${at} draws cover ${n} cells, over the ${most} its surface holds`);
+    if (covered > most) out.push(`${at} draws cover ${covered} cells, over the ${most} its surface holds`);
   }
   return out;
 }

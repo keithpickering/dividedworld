@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { BbCode } from './render.tsx';
 import { TextLayer, stretchesOf, type TextRun } from './layers.tsx';
@@ -17,6 +17,17 @@ const strip = (start: number, end: number, said: string, z = 0): TextRun => ({
 const band = (start: number, end: number, z = 0): TextRun => ({
   start, end, key: `b${start}-${end}-${z}`, z, mode: 'wrap',
   render: ({ text, key }) => <i key={key} data-band="">{text}</i>,
+});
+
+/** A mark run: nothing at all in the words, an empty element at one offset. */
+const mark = (start: number, id: string, z = 0): TextRun => ({
+  start, end: start, key: `m${start}-${id}`, z, mode: 'mark',
+  render: ({ key }) => <span key={key} data-mark={id} />,
+});
+/** A wrap run that stands a trail after its words. */
+const trailing = (start: number, end: number, id: string): TextRun => ({
+  ...band(start, end), key: `t${start}-${end}-${id}`, stands: true,
+  trail: (key) => <b key={key} data-trail={id} />,
 });
 
 const show = (text: string, runs: readonly TextRun[]) =>
@@ -116,5 +127,63 @@ describe('text layers', () => {
     const top = strip(3, 5, 'T', 1);
     expect(stretchesOf(12, [low, top]).map((s) => [s.start, s.end, s.run?.key ?? null]))
       .toEqual([[0, 3, low.key], [3, 5, top.key], [5, 10, low.key], [10, 12, null]]);
+  });
+
+  describe('a mark run', () => {
+    /** The element names and texts of what `out` holds, in order, flattened: a marker is written as `|id|`. */
+    const flat = (el: Element): string => [...el.childNodes].map((n) => (n.nodeType === 3 ? n.textContent : (n as Element).hasAttribute('data-mark') ? `|${(n as Element).getAttribute('data-mark')}|` : (n as Element).hasAttribute('data-trail') ? `<${(n as Element).getAttribute('data-trail')}>` : `(${(n as Element).tagName.toLowerCase()} ${flat(n as Element)})`)).join('');
+
+    test('at an offset inside a bold word draws an element between the right characters, inside the bold, and the words are as they were', () => {
+      const text = 'my [b]cats[/b] here';
+      const o = at(text, 'cats') + 2;
+      show(text, [mark(o, 'm')]);
+      expect(out().querySelector('strong')!.innerHTML).toBe('ca<span data-mark="m"></span>ts');
+      expect(out().textContent).toBe('my cats here');
+      expect(out().querySelectorAll('[data-mark]')).toHaveLength(1);
+    });
+
+    test('does not change which run draws the words: a wrap run still draws each piece, split at the mark', () => {
+      const text = 'my cats here';
+      const from = at(text, 'cats');
+      show(text, [band(from, from + 4), mark(from + 2, 'm')]);
+      expect([...out().querySelectorAll('[data-band]')].map((b) => b.textContent)).toEqual(['ca', 'ts']);
+      expect(flat(out().firstElementChild!)).toBe('my (i ca)|m|(i ts) here');
+    });
+
+    test('at an offset a replace run covers is still drawn, and the run still draws its words once', () => {
+      const text = 'my cats here';
+      const from = at(text, 'cats');
+      show(text, [strip(from, from + 4, 'dogs'), mark(from + 2, 'm')]);
+      expect(out().querySelectorAll('[data-strip]')).toHaveLength(1);
+      expect(out().querySelectorAll('[data-mark]')).toHaveLength(1);
+      expect(out().textContent).toBe('my dogs here');
+    });
+
+    test('at the start of the words, at their end, and in a gap the walk puts for a quote, each draws once', () => {
+      const text = `one [quote=${ACT}]quoted[/quote] two`;
+      const seen = visibleText(parse(text));
+      show(text, [mark(0, 'start'), mark(seen.length, 'end'), mark(seen.indexOf('two') - 1, 'gap')]);
+      expect([...out().querySelectorAll('[data-mark]')].map((m) => m.getAttribute('data-mark')).sort()).toEqual(['end', 'gap', 'start']);
+    });
+
+    test('at an offset where a standing trail is drawn comes after that trail, and marks at one offset go by z then list order', () => {
+      const text = 'my cats here';
+      const from = at(text, 'cats');
+      show(text, [mark(from + 4, 'late', 1), mark(from + 4, 'early', 0), trailing(from, from + 4, 'T')]);
+      expect(flat(out().firstElementChild!)).toBe('my (i cats)<T>|early||late| here');
+    });
+
+    test('a mark never changes the stretches: stretchesOf ignores it', () => {
+      const low = band(0, 10);
+      expect(stretchesOf(12, [low, mark(3, 'm'), mark(0, 'z')]).map((s) => [s.start, s.end, s.run?.key ?? null])).toEqual([[0, 10, low.key], [10, 12, null]]);
+    });
+
+    test('a post with a mark and no other run draws the same words as one with none', () => {
+      const text = 'plain [b]bold[/b] words';
+      const plain = show(text, []).container.textContent;
+      cleanup();
+      const marked = show(text, [mark(8, 'm')]).container.textContent;
+      expect(marked).toBe(plain);
+    });
   });
 });

@@ -237,7 +237,7 @@ describe('a card whose canApply reads its configuration, as a screen offers it',
 describe('a surface card, as a screen offers it', () => {
   const wall: CardRules = {
     key: 'wall', name: 'Wall', alignment: 'salty', rarity: 'rare', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }),
-    surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) },
+    surface: { limitKey: 'wall.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) },
     canApply: (t, e, _c, now) => landsOn({ key: 'wall', surface: {} }, t, e, now),
   };
   test('it is offered on a post with no draw made yet, face up and face down, and not where a wall already is', () => {
@@ -292,7 +292,7 @@ describe('the ways a card lands on a post', () => {
   });
 
   test('a card that is drawn on lands only cast too, though landing\'s lenient reading would set it', () => {
-    const wall: CardRules = { ...base, key: 'wall', name: 'Wall', surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) } };
+    const wall: CardRules = { ...base, key: 'wall', name: 'Wall', surface: { limitKey: 'wall.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) } };
     expect(waysOn(wall, post('hi'), [], { postEffects: 8, cards: [wall], own: true, now: 0 })).toEqual({ cast: true, set: false });
   });
 

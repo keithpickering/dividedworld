@@ -5618,16 +5618,31 @@ describe('a surface, as the server keeps it', () => {
 
   const stroke = (y: number, width: number, aspect = 1) => ({ width, aspect, points: [[0, y], [1, y]] as [number, number][] });
   const dab = (x: number, y = 0.5, width = 0.04) => ({ width, aspect: 1, points: [[x, y]] as [number, number][] });
+  /** A card whose draws are a list of strokes (and groups, to be placed) and whose washes name the draws they cut, with the presses of each, as Graffiti's do. */
+  const isList = (v: unknown): v is unknown[] => Array.isArray(v);
   const slab: CardRules<unknown> = {
     key: 'slab', name: 'Slab', alignment: 'salty', rarity: 'common', stack: 1, reaches: ['post'], playPrice: () => 0,
     canApply: (target, effects, _config, now) => landsOn({ key: 'slab', reaches: ['post'] }, target, effects, now),
     validateConfig: (c) => ok(c),
     surface: {
-      limitKey: 'slab.limit', mostLive: 2,
-      validateDraw: (input) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes) ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('a drawing holds its strokes as a list')),
-      validateWash: (input) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes) ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('a drawing holds its strokes as a list')),
+      limitKey: 'slab.limit', mostLive: 2, coats: { line: 20, most: 40 },
+      validateDraw: (input) => {
+        const i = input as { strokes?: unknown; groups?: unknown; legacy?: unknown };
+        if (typeof input !== 'object' || input === null || !isList(i.strokes)) return refuse('a drawing holds its strokes as a list');
+        const strokes = i.strokes as never[];
+        return ok({ strokes, payload: i.legacy === true ? { strokes } : { box: { w: 60, h: 40 }, groups: isList(i.groups) ? i.groups : [], strokes } });
+      },
+      validateWash: (input, draws) => {
+        const cuts = typeof input === 'object' && input !== null ? (input as { cuts?: unknown }).cuts : undefined;
+        if (!isList(cuts)) return refuse('a wash holds its cuts as a list');
+        const named = cuts as { draw: string; presses: [number, number][]; radius: number }[];
+        for (const c of named) if (!draws.has(c.draw)) return refuse('that tag is not live');
+        return ok({ cuts: named.map((c) => ({ draw: c.draw, presses: c.presses, radius: c.radius, aspect: 1 })), payload: { cuts: named } });
+      },
     },
   };
+  /** One straight pass of the sponge along `y`: presses every third of its radius, which takes one coat (10 tenths) under their path, whatever lies within a hundredth of it. */
+  const pass = (draw: string, y = 0.5, radius = 0.5) => ({ cuts: [{ draw, presses: Array.from({ length: 13 }, (_, k): [number, number] => [-0.5 + (k * radius) / 3, y]), radius }] });
   const surfaced: Instance = { ...instance, cards: [slab as unknown as CardRules], settings: { ...settings, cardSettings: { 'slab.limit': 40 } } };
   function wall() {
     const fake = createFake({ instance: surfaced });
@@ -5701,13 +5716,14 @@ describe('a surface, as the server keeps it', () => {
   });
 
   test('a wash tells nobody, the author\'s own and the caster\'s alike', async () => {
-    const { fake, ana, bo, anaFace, play } = wall();
+    const { fake, ana, bo, anaFace, boFace, play } = wall();
+    fake.signInAs(bo);
+    const tag = must(await fake.draw(play, boFace, { strokes: [dab(0.5)] }));
     const heard: { kind: string; sub: string | null }[] = [];
     fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
-    fake.signInAs(bo);
-    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
     fake.signInAs(ana);
-    const washed = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    const washed = must(await fake.wash(play, anaFace, pass(tag.id)));
     await flush();
     expect(heard).toEqual([]);
     expect((await fake.alerts()).filter((a) => a.act === washed.id)).toEqual([]);
@@ -5715,17 +5731,20 @@ describe('a surface, as the server keeps it', () => {
     expect((await fake.alerts()).filter((a) => a.act === washed.id)).toEqual([]);
   });
 
-  test('the limit\'s refusal says what the database says, with the same numbers', async () => {
+  test('the limit\'s refusal says what the database says, with the same numbers (a draw over another\'s ink is paid for again)', async () => {
     const { fake, anaHeel, play } = wall();
     const first = [stroke(0.5, 0.25)];
     const before = count(cellsOf(first));
     expect(await fake.draw(play, anaHeel, { strokes: first })).toMatchObject({ ok: true });
     const second = [stroke(0.1, 0.25)];
-    const together = count(cellsOf([...first, ...second]));
+    const together = before + count(cellsOf(second));
     expect(together).toBeGreaterThan(4000);
     const refusal = await fake.draw(play, anaHeel, { strokes: second });
     expect(refusal).toEqual(refused(said(sayings.limit, Math.floor(before / 100), 40, Math.ceil(together / 100))));
     expect(sayings.limit).toBe('this wall is %s%% covered, and its limit is %s%%; this tag would take it to %s%%');
+    /* The same cells again cost the same again: the sum is over draws, not over cells. */
+    const again = await fake.draw(play, anaHeel, { strokes: [stroke(0.5, 0.25), stroke(0.5, 0.25)] });
+    expect(again).toEqual(refused(said(sayings.limit, Math.floor(before / 100), 40, Math.ceil(2 * before / 100))));
   });
 
   test('a limit that is not a whole percent is shown rounded down, as the database shows it (4060 cells say 40%), and the figure after the tag is rounded up', async () => {
@@ -5739,44 +5758,96 @@ describe('a surface, as the server keeps it', () => {
     const before = count(cellsOf(first));
     expect(await fake.draw(play, face, { strokes: first })).toMatchObject({ ok: true });
     const second = [stroke(0.1, 0.25)];
-    const together = count(cellsOf([...first, ...second]));
+    const together = before + count(cellsOf(second));
     expect(together).toBeGreaterThan(4060);
     expect(await fake.draw(play, face, { strokes: second })).toEqual(refused(said(sayings.limit, Math.floor(before / 100), Math.floor(4060 / 100.0), Math.ceil(together / 100))));
   });
 
-  test('the live count\'s refusal says what the database says, and painting over a tag is the way out', async () => {
-    const { fake, anaFace, anaHeel, play } = wall();
-    expect(await fake.draw(play, anaHeel, { strokes: [dab(0.1)] })).toMatchObject({ ok: true });
+  test('the live count\'s refusal says what the database says, and washing a tag off is the way out (painting over one is not)', async () => {
+    const { fake, ana, anaFace, anaHeel, play } = wall();
+    const first = must(await fake.draw(play, anaHeel, { strokes: [dab(0.1)] }));
     expect(await fake.draw(play, anaFace, { strokes: [dab(0.5)] })).toMatchObject({ ok: true });
     expect(await fake.draw(play, anaFace, { strokes: [dab(0.9)] })).toEqual(refused(said(sayings.live, 2)));
-    /* A draw over the first tag leaves two tags live. */
-    expect(await fake.draw(play, anaFace, { strokes: [dab(0.1, 0.5, 0.2)] })).toMatchObject({ ok: true });
+    /* A draw over the first tag leaves it live: ink over ink is another tag. */
+    expect(await fake.draw(play, anaFace, { strokes: [dab(0.1, 0.5, 0.2)] })).toEqual(refused(said(sayings.live, 2)));
+    fake.signInAs(ana);
+    must(await fake.wash(play, anaFace, pass(first.id)));
+    must(await fake.wash(play, anaFace, pass(first.id)));
+    expect(await fake.draw(play, anaHeel, { strokes: [dab(0.9)] })).toMatchObject({ ok: true });
     const held = (await fake.surfaceActs(play))!;
-    expect(held.acts).toHaveLength(2);
+    expect(held.acts.map((a) => a.kind)).toEqual(['draw', 'draw']);
     expect(held.older).toBe(1);
   });
 
-  test('a draw answers with the cells covered and the live list, and the surface reads them back, oldest first, with each draw\'s share', async () => {
+  test('a draw answers with the cells covered and the live list, and the surface reads them back, oldest first, with each draw\'s share and places', async () => {
     const { fake, anaHeel, play, thread } = wall();
     const written = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)] }));
     const cells = count(cellsOf([dab(0.5)]));
     expect(cells).toBeGreaterThan(0);
     expect(written).toMatchObject({ kind: 'draw', character: anaHeel, targetActId: play, covered: cells, live: [written.id] });
     expect(written.seq).toBeNull();
+    expect(JSON.stringify(written.payload)).not.toMatch(/"(coats|cells|takes)"/u);
     const held = (await fake.surfaceActs(play))!;
     expect(held.covered).toBe(cells);
-    expect(held.acts.map((a) => [a.id, a.kind, a.share])).toEqual([[written.id, 'draw', cells]]);
+    expect(held.acts.map((a) => [a.id, a.kind, a.share, a.places])).toEqual([[written.id, 'draw', cells, []]]);
     const page = (await fake.threadPage(thread, {}, null, []))!;
     expect(page.surfaces).toEqual({ [play]: { covered: cells, live: [written.id] } });
   });
 
-  test('a draw nobody draws over keeps its share, and one painted over wholly is no longer live', async () => {
+  test('a draw over another keeps its own share (overlap is paid), and the one beneath stays live until a wash clears it', async () => {
     const { fake, anaHeel, play } = wall();
     const a = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)] }));
     const b = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5, 0.5, 0.1)] }));
-    expect(b.live).toEqual([b.id]);
-    expect((await fake.surfaceActs(play))!.older).toBe(1);
-    expect(a.id).not.toBe(b.id);
+    const [under, over] = [count(cellsOf([dab(0.5)])), count(cellsOf([dab(0.5, 0.5, 0.1)]))];
+    expect(b.live).toEqual([a.id, b.id]);
+    expect(b.covered).toBe(under + over);
+    const held = (await fake.surfaceActs(play))!;
+    expect(held.acts.map((x) => x.share)).toEqual([under, over]);
+    expect(held.older).toBe(0);
+  });
+
+  test('a draw then two one-pass washes: the first leaves it see-through and covering as before, the second clears it, and the draw leaves with its washes (supabase/tests/0455-surface-coats.sql, section 4)', async () => {
+    const { fake, ana, anaFace, boFace, play } = wall();
+    const bo = fake.seed.account('bo2');
+    fake.seed.character(bo, 'Bo Two', 'heel');
+    const d = must(await fake.draw(play, anaFace, { strokes: [stroke(0.5, 0.1)] }));
+    const keep = must(await fake.draw(play, anaFace, { strokes: [dab(0.5, 0.2)] }));
+    const [whole, small] = [count(cellsOf([stroke(0.5, 0.1)])), count(cellsOf([dab(0.5, 0.2)]))];
+    fake.signInAs(ana);
+    const one = must(await fake.wash(play, anaFace, pass(d.id)));
+    expect(one.covered).toBe(whole + small);
+    expect(one.live).toEqual([d.id, keep.id, one.id]);
+    expect(one.payload).toMatchObject({ uncovered: 0, cut: [] });
+    expect((await fake.surfaceActs(play))!.acts.find((a) => a.id === d.id)).toMatchObject({ share: whole });
+    const two = must(await fake.wash(play, anaFace, pass(d.id)));
+    expect(two.covered).toBe(small);
+    expect(two.live).toEqual([keep.id]);
+    expect(two.payload).toMatchObject({ uncovered: whole, cut: [{ draw: d.id, took: whole }] });
+    const held = (await fake.surfaceActs(play))!;
+    expect(held.acts.map((a) => a.id)).toEqual([keep.id]);
+    expect(held.covered).toBe(small);
+    expect(held.older).toBe(1);
+    expect(boFace).toBeTruthy();
+  });
+
+  test('a wash that changes nothing is written and never live, and one that names a draw not live is refused in the card\'s words', async () => {
+    const { fake, anaFace, play } = wall();
+    const tag = must(await fake.draw(play, anaFace, { strokes: [dab(0.5)] }));
+    const missed = must(await fake.wash(play, anaFace, { cuts: [{ draw: tag.id, presses: [[0.5, 0.95]], radius: 0.02 }] }));
+    expect(missed.live).toEqual([tag.id]);
+    expect(missed.covered).toBe(count(cellsOf([dab(0.5)])));
+    expect(missed.payload).toMatchObject({ uncovered: 0, cut: [] });
+    expect(await fake.wash(play, anaFace, pass('not-a-draw'))).toEqual(refused('that tag is not live'));
+  });
+
+  test('a draw of the old shape lays 20 tenths on each cell it set, so one pass thins it and a second clears it', async () => {
+    const { fake, ana, anaFace, play } = wall();
+    const old = must(await fake.draw(play, anaFace, { strokes: [dab(0.5)], legacy: true }));
+    const cells = count(cellsOf([dab(0.5)]));
+    expect(old.covered).toBe(cells);
+    fake.signInAs(ana);
+    expect(must(await fake.wash(play, anaFace, pass(old.id))).covered).toBe(cells);
+    expect(must(await fake.wash(play, anaFace, pass(old.id))).covered).toBe(0);
   });
 
   test('the log reads a surface as the views do: the drawer\'s draw and the wash that cut it, the author\'s walls and washes, and nothing for a third player', async () => {
@@ -5784,42 +5855,41 @@ describe('a surface, as the server keeps it', () => {
     const cy = fake.seed.account('cy');
     fake.seed.character(cy, 'Cy Face', 'face');
     fake.signInAs(bo);
-    must(await fake.draw(play, boFace, { strokes: [dab(0.5)] }));
+    const theirs = must(await fake.draw(play, boFace, { strokes: [dab(0.5)] }));
     fake.signInAs(ana);
     must(await fake.draw(play, anaHeel, { strokes: [dab(0.2)] }));
-    const washed = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
-    must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    must(await fake.wash(play, anaFace, pass(theirs.id)));
+    const washed = must(await fake.wash(play, anaFace, pass(theirs.id)));
     const whole = count(cellsOf([dab(0.5)]));
-    const took = count(cellsOf([dab(0.5, 0.5, 0.02)]));
     const row = (act: string, kind: string, character: string, mine: string, cells: number) => expect.objectContaining({ act, kind, play, post, character, mine, cells });
-    /* The author: the other player's draw on their post, then their own two washes (the second over bare cells took none); their own other mask's draw is the drawer's line. */
+    /* The author: the other player's draw on their post, then their own two washes (the first took no cell clean); their own other mask's draw is the drawer's line. */
     const own = await fake.log();
-    expect(own.wallsDrawn!.map((r) => [r.kind, r.character, r.cells])).toEqual([['wash', anaFace, 0], ['wash', anaFace, took], ['draw', boFace, whole]]);
+    expect(own.wallsDrawn!.map((r) => [r.kind, r.character, r.cells])).toEqual([['wash', anaFace, whole], ['wash', anaFace, 0], ['draw', boFace, whole]]);
     expect(own.wallsDrawn!.every((r) => r.mine === anaFace && r.post === post && r.play === play)).toBe(true);
-    expect(own.wallsDrawn![1]).toEqual(row(washed.id, 'wash', anaFace, anaFace, took));
+    expect(own.wallsDrawn![0]).toEqual(row(washed.id, 'wash', anaFace, anaFace, whole));
     expect(own.draws!.map((r) => [r.kind, r.mine, r.cells])).toEqual([['draw', anaHeel, count(cellsOf([dab(0.2)]))]]);
-    /* The drawer: the draw, and the wash that cut it (the author's own cut nothing of the draw's twice: the second wash took none). */
+    /* The drawer: the draw, and the wash that cleared it (the first pass cleared nothing of it, so it has no line). */
     fake.signInAs(bo);
     const drawer = await fake.log();
-    expect(drawer.draws!.map((r) => [r.kind, r.character, r.mine, r.cells])).toEqual([['cut', anaFace, boFace, took], ['draw', boFace, boFace, whole]]);
+    expect(drawer.draws!.map((r) => [r.kind, r.character, r.mine, r.cells])).toEqual([['cut', anaFace, boFace, whole], ['draw', boFace, boFace, whole]]);
     expect(drawer.wallsDrawn).toEqual([]);
     fake.signInAs(cy);
     const third = await fake.log();
     expect([third.draws, third.wallsDrawn]).toEqual([[], []]);
   });
 
-  test('only the post\'s own character washes, in the database\'s words; a wash takes cells off, and a full wash leaves nothing live', async () => {
+  test('only the post\'s own character washes, in the database\'s words; a pass thins a tag, and the second clears it and leaves nothing live', async () => {
     const { fake, anaFace, anaHeel, boFace, play } = wall();
     const ink = { strokes: [dab(0.5)] };
-    must(await fake.draw(play, anaHeel, ink));
-    expect(await fake.wash(play, anaHeel, ink)).toEqual(refused(sayings.author));
-    expect(await fake.wash(play, boFace, ink)).toEqual(refused('you do not play that character'));
+    const tag = must(await fake.draw(play, anaHeel, ink));
+    expect(await fake.wash(play, anaHeel, pass(tag.id))).toEqual(refused(sayings.author));
+    expect(await fake.wash(play, boFace, pass(tag.id))).toEqual(refused('you do not play that character'));
     expect(sayings.author).toBe('only the post\'s author washes what is on it');
-    const half = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
-    expect(half).toMatchObject({ kind: 'wash', character: anaFace });
-    expect(half.covered).toBe(count(cellsOf([dab(0.5)])) - count(cellsOf([dab(0.5, 0.5, 0.02)])));
-    expect(half.live).toHaveLength(2);
-    const all = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.1)] }));
+    const thinned = must(await fake.wash(play, anaFace, pass(tag.id)));
+    expect(thinned).toMatchObject({ kind: 'wash', character: anaFace });
+    expect(thinned.covered).toBe(count(cellsOf([dab(0.5)])));
+    expect(thinned.live).toHaveLength(2);
+    const all = must(await fake.wash(play, anaFace, pass(tag.id)));
     expect(all.covered).toBe(0);
     expect(all.live).toEqual([]);
   });
@@ -5840,21 +5910,24 @@ describe('a surface, as the server keeps it', () => {
     const post = fake.seed.post(thread, anaFace, 'a post of Ana\'s');
     const play = fake.seed.card(boFace, post, 'slab');
     fake.signInAs(bo);
-    must(await fake.draw(play, boFace, { strokes: [dab(0.5)] }));
+    const gone = must(await fake.draw(play, boFace, { strokes: [dab(0.2)] }));
+    const kept = must(await fake.draw(play, boFace, { strokes: [dab(0.8)] }));
     fake.signInAs(ana);
-    const washed = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
-    expect((await fake.surfaceActs(play))!.acts.find((a) => a.id === washed.id)).toMatchObject({ character: anaFace });
+    must(await fake.wash(play, anaFace, pass(gone.id)));
+    must(await fake.wash(play, anaFace, pass(gone.id)));
+    const thinned = must(await fake.wash(play, anaFace, pass(kept.id)));
+    expect((await fake.surfaceActs(play))!.acts.find((a) => a.id === thinned.id)).toMatchObject({ character: anaFace });
     fake.seed.cards(bo, { whodunnit: 1 });
     fake.signInAs(bo);
     must(await fake.playCard('whodunnit', boFace, post, {}, ''));
     const stand = (await fake.act(post))!.character!;
     expect(stand).not.toBe(anaFace);
     const held = (await fake.surfaceActs(play))!;
-    expect(held.acts.find((a) => a.id === washed.id)).toMatchObject({ kind: 'wash', character: stand });
-    expect(held.acts.find((a) => a.kind === 'draw')).toMatchObject({ character: boFace });
+    expect(held.acts.find((a) => a.id === thinned.id)).toMatchObject({ kind: 'wash', character: stand });
+    expect(held.acts.find((a) => a.id === kept.id)).toMatchObject({ kind: 'draw', character: boFace });
     expect((await fake.log()).draws!.filter((r) => r.kind === 'cut').map((r) => r.character)).toEqual([stand]);
     fake.signInAs(ana);
-    expect((await fake.log()).wallsDrawn!.filter((r) => r.kind === 'wash').map((r) => r.character)).toEqual([anaFace]);
+    expect((await fake.log()).wallsDrawn!.filter((r) => r.kind === 'wash').map((r) => r.character)).toEqual([anaFace, anaFace, anaFace]);
   });
 
   test('a draw or a wash on a play that is no surface, or that an admin ended, is refused', async () => {
@@ -5877,6 +5950,70 @@ describe('a surface, as the server keeps it', () => {
     const written = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)] }));
     await flush();
     expect(heard).toEqual([[play, written.covered]]);
+  });
+
+  /* Where a draw's groups are attached, and how an edit moves them (act/core.ts's placesOfDraw and placesOfEdit; 0455's surface_places). */
+  describe('places', () => {
+    const BODY = 'The quick brown fox jumps over the lazy dog';
+    const FOX = BODY.indexOf('fox');
+    const THE = BODY.indexOf('the');
+    const text = (version: string, at = FOX, len = 3) => ({ kind: 'text' as const, version, at, len, dx: 1, dy: 0.5 });
+    const placed = () => {
+      const w = wall();
+      const post = w.fake.seed.post(w.thread, w.anaFace, BODY);
+      const play = w.fake.seed.card(w.boFace, post, 'slab');
+      return { ...w, post, play };
+    };
+    const group = (anchor: unknown) => ({ at: [0.5, 0.5], anchor, unit: 'em', strokes: [] });
+    const placesOf = async (fake: ReturnType<typeof createFake>, play: string) => (await fake.surfaceActs(play))!.acts.filter((a) => a.kind === 'draw').map((a) => a.places);
+
+    test('a draw on the current version has its own attachments as its places, and a box group has none', async () => {
+      const { fake, anaHeel, post, play } = placed();
+      must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], groups: [group(text(post)), group({ kind: 'box' }), group({ kind: 'text', version: post, at: 4, len: 5, dx: 0, dy: 0 })] }));
+      expect(await placesOf(fake, play)).toEqual([[{ grp: 0, place: text(post) }, { grp: 2, place: { kind: 'text', version: post, at: 4, len: 5, dx: 0, dy: 0 } }]]);
+    });
+
+    test('a draw on an older version has its places mapped to the current one, and null where its words were touched', async () => {
+      const { fake, post, play, anaFace, anaHeel } = placed();
+      const edit = fake.seed.edit(post, anaFace, `Oh. ${BODY.replace('fox', 'cat')}`);
+      const kept = { kind: 'text' as const, version: post, at: THE, len: 3, dx: 0, dy: 0 };
+      must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], groups: [group(text(post)), group(kept)] }));
+      const [places] = await placesOf(fake, play);
+      expect(places).toEqual([{ grp: 0, place: null }, { grp: 1, place: { ...kept, at: kept.at + 4 } }]);
+      expect(edit).toBeTruthy();
+    });
+
+    test('a draw naming a version the post never had is refused in the act function\'s words', async () => {
+      const { fake, anaHeel, play } = placed();
+      expect(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], groups: [group(text('11111111-1111-4111-8111-111111111111'))] }))
+        .toEqual(refused('That post\'s words aren\'t the ones you drew on. Reload it and tag again.'));
+      expect((await fake.surfaceActs(play))!.acts).toHaveLength(0);
+    });
+
+    test('an edit moves each live group with its words, writes the places against the edit, and a group already fallen stays fallen', async () => {
+      const { fake, post, play, anaFace, anaHeel } = placed();
+      must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], groups: [group(text(post)), group(text(post, THE)), group({ kind: 'box' })] }));
+      fake.seed.edit(post, anaFace, `Oh. ${BODY}`);
+      let [places] = await placesOf(fake, play);
+      expect(places).toEqual([{ grp: 0, place: { ...text(post), at: FOX + 4 } }, { grp: 1, place: { ...text(post, THE), at: THE + 4 } }]);
+      /* A second edit touches the fox: that group falls to its box spot (null), and the other follows its words. */
+      fake.seed.edit(post, anaFace, `Oh. ${BODY.replace('fox', 'cat')}`);
+      [places] = await placesOf(fake, play);
+      expect(places).toEqual([{ grp: 0, place: null }, { grp: 1, place: { ...text(post, THE), at: THE + 4 } }]);
+      /* A third edit puts the fox back, and the fallen group does not come back with it. */
+      fake.seed.edit(post, anaFace, `Oh. ${BODY}`);
+      [places] = await placesOf(fake, play);
+      expect(places).toEqual([{ grp: 1, place: { ...text(post, THE), at: THE + 4 } }]);
+    });
+
+    test('a wash and a later draw leave an earlier draw\'s places as they were', async () => {
+      const { fake, ana, post, play, anaFace, anaHeel } = placed();
+      const tag = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], groups: [group(text(post))] }));
+      must(await fake.draw(play, anaHeel, { strokes: [dab(0.2)], groups: [group(text(post, THE))] }));
+      fake.signInAs(ana);
+      must(await fake.wash(play, anaFace, pass(tag.id)));
+      expect(await placesOf(fake, play)).toEqual([[{ grp: 0, place: text(post) }], [{ grp: 0, place: text(post, THE) }]]);
+    });
   });
 });
 

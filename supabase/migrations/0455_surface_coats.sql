@@ -7,7 +7,7 @@
 --                         surface_coats (play, draw, coats smallint[10000], painted): one row for each live draw, RLS on and no grant, as surface_marks. surface_places (draw, grp, version, place): where each group of a draw is
 --                         attached for each version of the post, the attachment or JSON null for its box spot; the same grants as `surfaces` (authenticated select).
 --   2. coats              tenths of a coat, 0 to 40 for each cell, in a coat string of 10,000 characters over `0123456789abcdefghijklmnopqrstuvwxyzABCDE` (the index of a character is its tenths; engine/rules/surface.ts).
---                         A cell is painted while it holds 2 tenths or more; at 1 or less it is clean and is kept at 0. coat_cells decodes a string (immutable), surface_take subtracts, surface_painted counts.
+--                         A cell is painted while it holds 2 tenths or more; at 1 or less it is clean and is kept at 0, a draw's own grid included (surface_lay). coat_cells decodes a string (immutable), surface_lay lays a draw's grid, surface_take subtracts, surface_painted counts.
 --   3. the payload check  acts_surface_payload: a draw holds `groups` and `coats`, or the old `strokes` and `cells`; a wash holds `cuts` and `takes` ([{draw, takes}]), or the old `strokes` and `cells`; the payload less `cells`,
 --                         `coats`, `takes`, `uncovered` and `cut` is at most 64 KiB, so the coat strings the server keeps are not the drawer's to spend.
 --   4. the count          surface_apply(play, character, kind, payload, coats, takes, places, most) replaces 0423's, under the same lock and with the same refusals in the same words. A draw is refused on covered + its painted cells
@@ -42,6 +42,17 @@
 -- them: the whole payload of a 48-draw wash (48 takes of 10,000 characters, 483,024 in all) is 9,823 to 9,824 bytes as stored (pg_column_size of the Act's payload), and a grid of one draw is about 320 bytes. A takes string of
 -- random characters, which no sponge makes, does not compress: 487,184 bytes stored, still one row. The 64 KiB bound leaves the server's keys out. An edit writes at most one surface_places row for each live group (at most 48 draws of at
 -- most 120 groups), against the edit's id, and the dead draws' rows are not read again.
+--
+-- The one-time rebuild at the end of this migration (section 8) replays every wall from its Acts: the cost is paid once, on the migrating transaction, and grows with the legacy walls' washes and live draws, not with players. Measured on
+-- local Postgres 16, one legacy wall of 48 draws (1,000 cells each) and 200 washes (300 cells each), replayed by surface_store (two runs each): before this migration's replay was tightened (a legacy wash's takes decoded once for each
+-- live draw, each draw found by a scan of the rows, each take a visit to all 10,000 cells) 7.5 and 8.3 s; after (a legacy wash's takes decoded once for the wash, the draw found by array_position over a parallel list of ids, and the
+-- take visiting only the cells the pass touched, surface_take_at) 1.3 s, to the same row (9,850 covered, 19 live). A wall's replay at a later repair or import is the same figure; nothing at play time replays a wall.
+--
+-- What a client may send. edit_post is granted to signed-in players, and the Edge Function calls it with the player's own session, so its `surface_places` is a client's input and is bounded, not restricted: at most 5,760 entries
+-- (48 draws of 120 groups), each place an attachment of a kind engine/rules/anchor.ts defines (text, image, box) or JSON null and at most 2 KiB as Postgres writes it, and a `grp` the draw has (below its payload's `groups`). An entry
+-- for a draw that is not live on the post is left out, as before. A direct call can misplace tags on the caller's own post only within those bounds, and a misplaced tag has its way out in the sponge and a new tag. A draw's places
+-- (surface_apply) take the same bounds, and must be for the post's current version, so an edit that lands between the Edge Function's read and the call refuses the draw ("That post's words aren't the ones you drew on. Reload it and
+-- tag again.") rather than leaving tags with no place for the version a reader sees.
 --
 -- Ways out. A wall never closes; its way out is the author's wash (a coat a pass, and Hold to scrub on a reader's screen), a reader's scrub on their own screen, and an admin's End this card (card_ended refuses every later draw
 -- and wash). A group an edit took its words from falls to its box spot; the way out of a misplaced tag is the sponge, and a new tag. Tougher paint makes washing slower and never impossible: every pass takes paint.
@@ -117,6 +128,31 @@ language sql immutable parallel safe set search_path = public, pg_temp as $$
 $$;
 revoke execute on function surface_take(smallint[], smallint[]) from public, anon, authenticated, service_role;
 
+-- surface_take_at(coats, takes, at): surface_take for takes that touch few cells, which is what a wash of the old shape is (a sponge's pass): `at` lists the positions (1-based) where `takes` is above 0, and only those cells are
+-- visited. Same answer as surface_take on a grid already laid (no cell at 1 tenth), which every stored grid is; 20 times faster for the 300 cells of a pass, and no slower at all 10,000.
+create function surface_take_at(c smallint[], t smallint[], at integer[]) returns smallint[]
+language plpgsql immutable parallel safe set search_path = public, pg_temp as $$
+declare
+  i integer;
+  v integer;
+  out smallint[] := c;
+begin
+  foreach i in array at loop
+    v := out[i] - t[i];
+    out[i] := case when v <= 1 then 0 else v end;
+  end loop;
+  return out;
+end $$;
+revoke execute on function surface_take_at(smallint[], smallint[], integer[]) from public, anon, authenticated, service_role;
+
+-- surface_lay(s): the grid a draw's coat string lays: coat_cells with a cell held at 1 tenth kept at 0, as the wash path keeps one. Without it a draw's grid would differ from what a wash of it leaves, and a later wash that names
+-- the draw would count as changing it and stay live for nothing.
+create function surface_lay(s text) returns smallint[]
+language sql immutable parallel safe set search_path = public, pg_temp as $$
+  select array(select (case when u.c <= 1 then 0 else u.c end)::smallint from unnest(coat_cells(s)) with ordinality as u(c, i) order by u.i)
+$$;
+revoke execute on function surface_lay(text) from public, anon, authenticated, service_role;
+
 -- A drawing stored before this migration says which cells it inked (`cells`, 10,000 characters of 0 and 1); it is laid at 20 tenths, 2 coats, on each. A wash stored before it takes every coat (40 tenths) of each draw
 -- older than it on its set cells. 'k' and 'E' are the coat alphabet's 20th and 40th characters.
 create function surface_legacy_coats(cells text) returns smallint[]
@@ -144,11 +180,13 @@ $$;
 -- acts_surface_payload: a draw holds `groups` (an array) and `coats` (a coat string), or the old `strokes` and `cells`; a wash holds `cuts` (an array) and `takes` (an array of {draw, takes}), or the old `strokes` and
 -- `cells`; and the payload less the server's keys (`cells`, `coats`, `takes`, `uncovered`, `cut`) is at most 64 KiB as Postgres writes it.
 alter table acts drop constraint acts_surface_payload;
+-- Added not valid and then validated, as 0361 does for acts_infraction_payload: the rows already there are checked by a scan that does not stop writes.
 alter table acts add constraint acts_surface_payload check (kind not in ('draw', 'wash') or (
   octet_length((payload - 'cells' - 'coats' - 'takes' - 'uncovered' - 'cut')::text) <= 65536 and (
     (kind = 'draw' and jsonb_typeof(payload -> 'groups') = 'array' and surface_coat_string_ok(payload ->> 'coats'))
     or (kind = 'wash' and jsonb_typeof(payload -> 'cuts') = 'array' and surface_takes_ok(payload -> 'takes'))
-    or (jsonb_typeof(payload -> 'strokes') = 'array' and jsonb_typeof(payload -> 'cells') = 'string' and char_length(payload ->> 'cells') = 10000 and (payload ->> 'cells') !~ '[^01]'))) is true);
+    or (jsonb_typeof(payload -> 'strokes') = 'array' and jsonb_typeof(payload -> 'cells') = 'string' and char_length(payload ->> 'cells') = 10000 and (payload ->> 'cells') !~ '[^01]'))) is true) not valid;
+alter table acts validate constraint acts_surface_payload;
 
 -- surface_check_payload(payload, kind): the writers' check. A drawing holds its groups and a wash its cuts, as lists, and at most 64 KiB less the server's keys. The old shape (`strokes`) is never accepted by a writer
 -- again; only lay_sprung, laying a back set before 0343, writes one, through surface_apply.
@@ -194,6 +232,14 @@ begin
   return out;
 end $$;
 revoke execute on function surface_prune(uuid[], jsonb, uuid[]) from public, anon, authenticated, service_role;
+
+-- surface_place_ok(place): a place is the attachment of one group for one version, or JSON null for its box spot. An attachment is an object of at most 2 KiB as Postgres writes it, whose `kind` is one of the three
+-- engine/rules/anchor.ts defines (text, image, box). Pure; the bound every writer of surface_places takes (a draw's places and an edit's), so a client's input is never stored unbounded.
+create function surface_place_ok(p jsonb) returns boolean
+language sql immutable parallel safe set search_path = public, pg_temp as $$
+  select jsonb_typeof(p) = 'null' or (jsonb_typeof(p) = 'object' and octet_length(p::text) <= 2048 and p ->> 'kind' in ('text', 'image', 'box'))
+$$;
+revoke execute on function surface_place_ok(jsonb) from public, anon, authenticated, service_role;
 
 -- surface_apply(play, character, kind, payload, coats, takes, places, most): the lock, the limits and the Act. The row is locked first, so the limit and the live count are read under it and two draws cannot both pass; a
 -- refused draw writes nothing.
@@ -245,7 +291,7 @@ begin
   new_washes := s.washes;
   if in_kind = 'draw' then
     legacy := jsonb_typeof(in_payload -> 'groups') is distinct from 'array';
-    grid := coat_cells(in_coats);
+    grid := surface_lay(in_coats);
     painted_new := surface_painted(grid);
     select count(*)::integer into live_draws from surface_coats c where c.play = on_play;
     if painted_new > 0 and s.covered + painted_new > most then
@@ -261,6 +307,23 @@ begin
                     and jsonb_typeof(coalesce(p -> 'place', 'null'::jsonb)) in ('object', 'null')
                     and ((p ->> 'version')::uuid = s.post or exists (select 1 from acts v where v.id = (p ->> 'version')::uuid and v.kind = 'edit' and v.target_act_id = s.post)))) then
       raise exception 'a place is of the post''s own words or one of its edits' using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    -- The bounds of a place, whoever sends it: at most 48 draws of 120 groups' worth of entries, a group the drawing has, an attachment of a known kind at most 2 KiB, and the post's words as they now stand. The last is the
+    -- Edge Function's read racing an edit: the tags are refused rather than kept with no place for the current version (surface_groups_on reads the current version's rows alone).
+    if jsonb_typeof(in_places) = 'array' then
+      if jsonb_array_length(in_places) > 5760 then
+        raise exception 'a drawing places at most 5,760 groups' using hint = 'kayfabb.refusal', errcode = '22023';
+      end if;
+      if exists (select 1 from jsonb_array_elements(in_places) p where (p ->> 'grp')::integer >= jsonb_array_length(case when jsonb_typeof(in_payload -> 'groups') = 'array' then in_payload -> 'groups' else '[]'::jsonb end)) then
+        raise exception 'a place names a group the drawing does not have' using hint = 'kayfabb.refusal', errcode = '22023';
+      end if;
+      if exists (select 1 from jsonb_array_elements(in_places) p where not surface_place_ok(coalesce(p -> 'place', 'null'::jsonb))) then
+        raise exception 'a place is a text, an image or a box attachment of at most 2 KiB' using hint = 'kayfabb.refusal', errcode = '22023';
+      end if;
+      if exists (select 1 from jsonb_array_elements(in_places) p
+                 where (p ->> 'version')::uuid is distinct from coalesce((select ed.id from acts ed where ed.kind = 'edit' and ed.target_act_id = s.post order by ed.created_at desc, ed.id desc limit 1), s.post)) then
+        raise exception 'That post''s words aren''t the ones you drew on. Reload it and tag again.' using hint = 'kayfabb.refusal', errcode = '55000';
+      end if;
     end if;
   else
     if not surface_takes_ok(coalesce(in_takes, '[]'::jsonb)) then
@@ -482,35 +545,41 @@ declare
   touched text[];
   died boolean;
   pruned surface_live;
-  takes jsonb;
+  lt smallint[];
+  lat integer[];
+  ids uuid[] := '{}';
 begin
   out.live := '{}';
   out.washes := '{}';
   for r in select a.id, a.kind, a.payload, a.created_at from acts a where a.target_act_id = in_play and a.kind in ('draw', 'wash') order by a.created_at, a.id loop
     out.updated_at := r.created_at;
     if r.kind = 'draw' then
-      grid := case when r.payload ? 'coats' then coat_cells(r.payload ->> 'coats') else surface_legacy_coats(r.payload ->> 'cells') end;
+      grid := case when r.payload ? 'coats' then surface_lay(r.payload ->> 'coats') else surface_legacy_coats(r.payload ->> 'cells') end;
       painted_new := surface_painted(grid);
       if painted_new > 0 then
         rows := rows || row(r.id, grid, painted_new)::surface_coat_row;
+        ids := ids || r.id;
         out.live := out.live || r.id;
       end if;
     else
       touched := '{}';
       died := false;
-      takes := case when r.payload ? 'takes' then r.payload -> 'takes'
-                    else coalesce((select jsonb_agg(jsonb_build_object('draw', x.draw, 'takes', null)) from unnest(rows) x), '[]'::jsonb) end;
-      for e in select x.i, case when r.payload ? 'takes' then coat_cells(x.v ->> 'takes') else surface_legacy_takes(r.payload ->> 'cells') end as t, (x.v ->> 'draw')::uuid as draw
-               from jsonb_array_elements(takes) with ordinality x(v, i) order by x.i loop
-        at := null;
-        for i in 1..coalesce(cardinality(rows), 0) loop if rows[i].draw = e.draw then at := i; exit; end if; end loop;
+      -- A wash of the old shape takes the same coats of every draw older than it that is still live: that grid is computed once for the wash, not once for each draw. A wash of the new shape names its draws.
+      lt := case when r.payload ? 'takes' then null else surface_legacy_takes(r.payload ->> 'cells') end;
+      lat := case when lt is null then null else coalesce((select array_agg(u.i::integer) from unnest(lt) with ordinality u(v, i) where u.v > 0), '{}') end;
+      for e in select x.draw, case when lt is null then coat_cells(x.takes) end as t
+               from (select (v ->> 'draw')::uuid as draw, v ->> 'takes' as takes, i from jsonb_array_elements(case when lt is null then r.payload -> 'takes' else '[]'::jsonb end) with ordinality x(v, i)
+                     union all select u.id, null, u.ord from unnest(case when lt is null then '{}'::uuid[] else ids end) with ordinality u(id, ord)) x
+               order by x.i loop
+        at := array_position(ids, e.draw);
         if at is null then continue; end if;
-        nxt := surface_take(rows[at].coats, e.t);
+        nxt := case when lt is null then surface_take(rows[at].coats, e.t) else surface_take_at(rows[at].coats, lt, lat) end;
         if nxt = rows[at].coats then continue; end if;
         touched := touched || e.draw::text;
         painted_new := surface_painted(nxt);
         if painted_new = 0 then
           rows := rows[1:at - 1] || rows[at + 1:coalesce(cardinality(rows), 0)];
+          ids := ids[1:at - 1] || ids[at + 1:coalesce(cardinality(ids), 0)];
           died := true;
         else
           rows[at] := row(e.draw, nxt, painted_new)::surface_coat_row;
@@ -521,7 +590,7 @@ begin
         out.washes := out.washes || jsonb_build_object(r.id::text, to_jsonb(touched));
       end if;
       if died then
-        pruned := surface_prune(out.live, out.washes, array(select x.draw from unnest(rows) x));
+        pruned := surface_prune(out.live, out.washes, ids);
         out.live := pruned.live;
         out.washes := pruned.washes;
       end if;
@@ -1665,7 +1734,9 @@ begin
   return written;
 end $function$;
 -- edit_post (0395), also taking `surface_places`: the places of the post's live groups for the edit's own version, written in the edit's transaction ([{draw, grp, place}], place an attachment or JSON null). The four-argument
--- function is dropped, so no stale signature stays callable. Everything else as 0395 wrote it.
+-- function is dropped, so no stale signature stays callable. Everything else as 0395 wrote it. Any caller may send places, and the Edge Function sends them with the player's own session, so the list is bounded, not
+-- restricted (see the header, section 5): refused above 5,760 entries, for a place that is not an attachment of a known kind at most 2 KiB, and for a group number the draw does not have. An entry for a draw that is not live
+-- on this post is left out. A direct call can misplace tags on the caller's own post only within those bounds.
 drop function edit_post(uuid, uuid, text, jsonb);
 CREATE FUNCTION public.edit_post(target uuid, through uuid, body text, poll jsonb DEFAULT NULL::jsonb, surface_places jsonb DEFAULT '[]'::jsonb)
  RETURNS jsonb
@@ -1702,11 +1773,23 @@ begin
   -- Where each live group of the walls on this post sits in the new words, for the edit's own version: the Edge Function maps them (surface_groups_on gives it the groups). An entry that is not a live tag on this
   -- post, or whose place is not an attachment or JSON null, is left out, and a group with no entry is at its box spot.
   if jsonb_typeof(surface_places) = 'array' then
+    -- The list comes from the client's call, so it is bounded as a draw's is: at most 48 draws of 120 groups, each place an attachment of a known kind at most 2 KiB, and a group the draw has.
+    if jsonb_array_length(surface_places) > 5760 then
+      raise exception 'an edit places at most 5,760 groups' using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    if exists (select 1 from jsonb_array_elements(surface_places) x where jsonb_typeof(x) = 'object' and not surface_place_ok(coalesce(x -> 'place', 'null'::jsonb))) then
+      raise exception 'a place is a text, an image or a box attachment of at most 2 KiB' using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    if exists (select 1 from jsonb_array_elements(surface_places) x
+               join acts d on jsonb_typeof(x) = 'object' and (x ->> 'draw') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' and (x ->> 'grp') ~ '^[0-9]{1,4}$' and d.id = (x ->> 'draw')::uuid and d.kind = 'draw'
+               where (x ->> 'grp')::integer >= jsonb_array_length(case when jsonb_typeof(d.payload -> 'groups') = 'array' then d.payload -> 'groups' else '[]'::jsonb end)
+                 and exists (select 1 from surfaces s join surface_coats c on c.play = s.play where s.post = target and c.draw = d.id)) then
+      raise exception 'a place names a group the drawing does not have' using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
     insert into surface_places (draw, grp, version, place)
     select (x ->> 'draw')::uuid, (x ->> 'grp')::smallint, edit_act, coalesce(x -> 'place', 'null'::jsonb)
     from jsonb_array_elements(surface_places) x
     where jsonb_typeof(x) = 'object' and (x ->> 'draw') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' and (x ->> 'grp') ~ '^[0-9]{1,4}$'
-      and jsonb_typeof(coalesce(x -> 'place', 'null'::jsonb)) in ('object', 'null')
       and exists (select 1 from surfaces s join surface_coats c on c.play = s.play where s.post = target and c.draw = (x ->> 'draw')::uuid)
     on conflict (draw, grp, version) do nothing;
   end if;

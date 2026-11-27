@@ -18,7 +18,7 @@
 import { useCallback, useId, useMemo, useRef } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
-import { BYTES, cellsOf, count, GRID, hasCell, union, type Cells } from '../../rules/surface.ts';
+import { coatsOf, paintedCount } from '../../rules/surface.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { PostEffects, WriteLateNote } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
@@ -46,18 +46,6 @@ import { forgedList } from '../../bbcode/quoted.ts';
 const STAGED_AT = '2026-01-01T00:00:00.000Z';
 
 const idOf = frontDoorId;
-
-/**
- * A staged wall's draws as a wall's live Acts, oldest first, each with the share of the wall it owns: a later draw owns the cells it covers
- * (`surfaceStep` in data/fake.ts prunes a draw left owning nothing, so a staged wall drops it too and shows what a live thread would).
- */
-function wallShares(draws: readonly Cells[]): readonly number[] {
-  const owners = new Uint16Array(GRID * GRID);
-  draws.forEach((cells, k) => { for (let i = 0; i < owners.length; i++) if (hasCell(cells, i)) owners[i] = k + 1; });
-  const owned = new Array<number>(draws.length).fill(0);
-  for (const o of owners) if (o !== 0) owned[o - 1]!++;
-  return owned;
-}
 
 /** A made-up character is in the ladder's first rung, the one every new character starts in. */
 const stage = (c: FrontDoorCharacter, group: string): Character => ({
@@ -159,17 +147,17 @@ export function FrontDoor() {
         if (p.state !== undefined) plays.setStates({ [id]: { state: p.state, savedAt: STAGED_AT } });
         const rules = instance.cards.find((c) => c.key === p.card);
         if (p.draws === undefined || !rules?.surface) return;
-        const kept: { readonly by: string; readonly payload: Record<string, unknown>; readonly cells: Cells }[] = [];
+        /* A wall's draws are each its own coats (the surface's `coats` rules): a draw owns the cells it paints, ink over another's ink is paid for again, and the wall covers the sum. A draw that paints nothing is no live Act, as a thread's would not be. */
+        const kept: { readonly by: string; readonly payload: Record<string, unknown>; readonly painted: number }[] = [];
         for (const d of p.draws) {
           const verdict = rules.surface.validateDraw(d.draw);
-          if (verdict.ok) kept.push({ by: d.by, payload: verdict.value.payload, cells: cellsOf(verdict.value.strokes) });
+          if (verdict.ok) kept.push({ by: d.by, payload: verdict.value.payload, painted: paintedCount(coatsOf(verdict.value.strokes, rules.surface.coats)) });
         }
-        const shares = wallShares(kept.map((k) => k.cells));
-        const wall: SurfaceAct[] = kept.flatMap((k, n) => shares[n] === 0 ? [] : [{
+        const wall: SurfaceAct[] = kept.flatMap((k, n) => k.painted === 0 ? [] : [{
           id: idOf(`draw:${i}:${j}:${n}`), character: idOf(k.by), kind: 'draw', thread: idOf('thread'), targetActId: id, seq: null, createdAt: STAGED_AT,
-          payload: k.payload, currentPayload: {}, editedAt: null, shownEditedAt: null, share: shares[n]!,
+          payload: k.payload, currentPayload: {}, editedAt: null, shownEditedAt: null, share: k.painted, places: [],
         }]);
-        plays.setSurfaceActs(id, count(kept.reduce<Cells>((all, k) => union(all, k.cells), new Uint8Array(BYTES))), wall);
+        plays.setSurfaceActs(id, kept.reduce((n, k) => n + k.painted, 0), wall);
       });
     });
     return { plays, tallies, mine: createMine() };

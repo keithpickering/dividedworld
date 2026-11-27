@@ -2650,8 +2650,16 @@ describe('taking a back back', () => {
 describe('a surface play\'s tab', () => {
   const stroke = (y: number, width: number) => ({ width, aspect: 1, points: [[0, y], [1, y]] as [number, number][] });
   const check = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
-    ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes, colors: (input as { colors?: unknown }).colors } }) : refuse('strokes'));
-  const slab = { ...testInstance.cards[0]!, key: 'slab', name: 'Slab', stack: 1, reaches: ['post' as const], surface: { limitKey: 'slab.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: check, validateWash: check } } as unknown as CardRules;
+    ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { box: { w: 60, h: 40 }, groups: [], strokes: (input as { strokes: unknown[] }).strokes, colors: (input as { colors?: unknown }).colors } }) : refuse('strokes'));
+  /** A wash names the draws it cuts and the presses for each, as Graffiti's does; a draw not live is refused. */
+  const checkWash = (input: unknown, draws: ReadonlyMap<string, unknown>) => {
+    const cuts = (input as { cuts?: { draw: string; presses: [number, number][]; radius: number }[] } | null)?.cuts;
+    if (!Array.isArray(cuts) || cuts.some((c) => !draws.has(c.draw))) return refuse('cuts');
+    return ok({ cuts: cuts.map((c) => ({ ...c, aspect: 1 })), payload: { cuts } });
+  };
+  /** One straight pass of the sponge along the wall's middle: it takes a coat (10 tenths) of a line drawn there, whatever its width. */
+  const pass = (draw: string, y = 0.5) => ({ cuts: [{ draw, presses: Array.from({ length: 13 }, (_, k): [number, number] => [-0.5 + k / 6, y]), radius: 0.5 }] });
+  const slab = { ...testInstance.cards[0]!, key: 'slab', name: 'Slab', stack: 1, reaches: ['post' as const], surface: { limitKey: 'slab.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: check, validateWash: checkWash } } as unknown as CardRules;
   const surfaced = { ...testInstance, cards: [slab], settings: { ...testInstance.settings, cardSettings: { 'slab.limit': 40 } } };
   const slabUi = (extra: Partial<CardUi> = {}) => [cardUi('slab', { describeDraw: (p) => (typeof p.colors === 'string' ? p.colors : ''), logDraw: { verb: 'tagged', noun: 'tag', nouns: 'tags', surface: 'the wall' }, ...extra })];
 
@@ -2667,11 +2675,18 @@ describe('a surface play\'s tab', () => {
     fake.clock.advance(60_000);
     const play = fake.seed.card(gloomba, post, 'slab', { message: 'a wall' });
     const as = async (account: Id, run: () => Promise<unknown>) => { fake.signInAs(account); fake.clock.advance(60_000); const a = await run() as { ok: boolean }; expect(a.ok).toBe(true); };
-    /* Old tags, painted over wholly by the next one at the same cells. */
-    for (let i = 0; i < oldOnes; i++) await as(third, () => fake.draw(play, gloomba, { strokes: [stroke(0.8, 0.02)], colors: 'black' }));
-    await as(other, () => fake.draw(play, spritey, { strokes: [stroke(0.8, 0.06)], colors: 'white' }));
+    /* Old tags, washed off wholly (two passes each) before the next ones are drawn. */
+    for (let i = 0; i < oldOnes; i++) {
+      let old = '';
+      await as(third, async () => { const r = await fake.draw(play, gloomba, { strokes: [stroke(0.5, 0.02)], colors: 'black' }); old = (r as { value: { id: Id } }).value.id; return r; });
+      await as(other, () => fake.wash(play, spritey, pass(old, 0.5)));
+      await as(other, () => fake.wash(play, spritey, pass(old, 0.5)));
+    }
+    let white = '';
+    await as(other, async () => { const r = await fake.draw(play, spritey, { strokes: [stroke(0.8, 0.06)], colors: 'white' }); white = (r as { value: { id: Id } }).value.id; return r; });
     await as(third, () => fake.draw(play, gloomba, { strokes: [stroke(0.2, 0.06)], colors: 'pink and lime' }));
-    await as(other, () => fake.wash(play, spritey, { strokes: [stroke(0.8, 0.02)] }));
+    /* One pass along the white tag's row: it is thinned, not cleared, so it keeps all its cells. */
+    await as(other, () => fake.wash(play, spritey, pass(white, 0.8)));
     fake.signInAs(me);
     return { fake, thread, play };
   }
@@ -2688,8 +2703,8 @@ describe('a surface play\'s tab', () => {
     const box = await openSlab(await wall());
     await waitFor(() => expect(draws(box)).toHaveLength(3));
     const [white, pink, washed] = draws(box).map(said);
-    /* Spritey's white tag covered 600 cells and the wash took 200 back: 400 are still its own. Gloomba's pink tag owns its 600. */
-    expect(white).toMatch(/^Spritey · .+ · white · 4% of the wall$/u);
+    /* Spritey's white tag covered 600 cells and one pass thinned it without clearing a cell: all 600 are still its own, as Gloomba's pink tag's 600 are. */
+    expect(white).toMatch(/^Spritey · .+ · white · 6% of the wall$/u);
     expect(pink).toMatch(/^Gloomba · .+ · pink and lime · 6% of the wall$/u);
     expect(washed).toMatch(/^Spritey · .+ · washed$/u);
     expect(draws(box).map((r) => r.getAttribute('data-kb-surface-act'))).toHaveLength(3);
@@ -2724,7 +2739,7 @@ describe('a surface play\'s tab', () => {
   test('the engine\'s own words stand where the card gives none, and name no card\'s', async () => {
     const box = await openSlab(await wall(2), [cardUi('slab')]);
     await waitFor(() => expect(draws(box)).toHaveLength(3));
-    expect(draws(box).map(said).map((t) => t.replace(/^(\w+) · .+? · /u, '$1 · '))).toEqual(['Spritey · 4% of the surface', 'Gloomba · 6% of the surface', 'Spritey · washed']);
+    expect(draws(box).map(said).map((t) => t.replace(/^(\w+) · .+? · /u, '$1 · '))).toEqual(['Spritey · 6% of the surface', 'Gloomba · 6% of the surface', 'Spritey · washed']);
     expect(within(box).getByText('and 2 older drawings, washed off')).toBeInTheDocument();
   });
   test('a tab of a card with no surface has no such rows', async () => {

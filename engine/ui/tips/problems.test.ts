@@ -6,6 +6,7 @@ import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import type { CardUi } from '../cards/types.ts';
 import type { FrontDoorUi, InstanceUi, OnboardingUi } from '../types.ts';
 import { localKey } from '../../rules/emoji.ts';
+import { coatsOf, paintedCount, type SurfaceStroke } from '../../rules/surface.ts';
 
 const tips = () => Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `T ${k}`, line: `L ${k}`, ...((ACTION_TIPS as readonly string[]).includes(k) ? { action: `A ${k}` } : {}) }])) as unknown as Record<string, { title: string; line: string }>;
 /** The rules the front door is held to: two reactions, three ranks and two classes. */
@@ -322,27 +323,27 @@ describe('instanceUiProblems', () => {
   describe('the front door\'s plays held to their cards\' rules', () => {
     const ok = (value: unknown) => ({ ok: true as const, value });
     const no = (why: string) => ({ ok: false as const, why });
-    const strokes = (x: number) => [{ width: 0.1, aspect: 1, points: [[x, 0.5]] }];
+    const strokes = (x: number, width = 0.1) => [{ width, aspect: 1, points: [[x, 0.5]] }];
     const inkRules = {
       key: 'ink', name: 'Ink', stack: 1,
       validateConfig: (c: unknown) => (typeof (c as { seed?: unknown })?.seed === 'number' ? ok(c) : no('needs a seed')),
       validateState: (s: unknown) => (typeof (s as { wet?: unknown })?.wet === 'boolean' ? ok(s) : no('wet is yes or no')),
       surface: {
-        limitKey: 'wallLimit', mostLive: 2,
+        limitKey: 'wallLimit', mostLive: 2, coats: { line: 20, most: 40 },
         validateDraw: (d: unknown) => (Array.isArray((d as { strokes?: unknown })?.strokes) ? ok({ strokes: (d as { strokes: unknown[] }).strokes, payload: {} }) : no('a draw has strokes')),
         validateWash: () => no('x'),
       },
     };
     const plainRules = { key: 'plain', name: 'Plain', stack: 1, validateConfig: () => ok({}) };
     const reactRules = { key: 'react', name: 'React', stack: 1, reaction: true, validateConfig: () => ok({}) };
-    const withRules = { ...(rules as object), cards: [inkRules, plainRules, reactRules], settings: { cardSettings: { wallLimit: 1 } } } as never;
+    const withRules = { ...(rules as object), cards: [inkRules, plainRules, reactRules], settings: { cardSettings: { wallLimit: 2 } } } as never;
     type Play = NonNullable<FrontDoorUi['posts'][number]['plays']>[number];
     const withPlay = (play: Partial<Play> & { state?: unknown; draws?: unknown }, reactions?: Record<string, number>, card = 'ink') => {
       const d = goodDoor() as { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] };
       d.posts = [d.posts[0]!, { ...d.posts[1]!, ...(reactions ? { reactions } : {}), plays: [{ card, by: 'a', config: { seed: 1 }, ...play } as Play] }];
       return instanceUiProblems({ ...ui(good, d), cards: [{ key: 'ink', status: 's' }, { key: 'plain', status: 's' }, { key: 'react', status: 's' }] as unknown as readonly CardUi[] }, withRules);
     };
-    const draw = (by: string, x: number) => ({ by, draw: { strokes: strokes(x) } });
+    const draw = (by: string, x: number, width = 0.1) => ({ by, draw: { strokes: strokes(x, width) } });
     test('a valid play with a state, draws and a local reaction count has no problem', () => {
       assert.deepEqual(withPlay({ state: { wet: true }, draws: [draw('a', 0.2), draw('b', 0.2)] }), []);
       assert.deepEqual(withPlay({ config: { emoji: '💀', quadrant: 'excitedNegative' } }, { tea: 2, [localKey('💀')]: 3 }, 'react'), []);
@@ -353,11 +354,12 @@ describe('instanceUiProblems', () => {
     test('names draws on a card with no surface', () => assert.deepEqual(withPlay({ draws: [draw('a', 0.2)] }, undefined, 'plain'), ['front door post 1 play 0 ("plain") has draws, and the card has no surface']));
     test('names a draw by someone outside the cast', () => assert.deepEqual(withPlay({ draws: [draw('ghost', 0.2)] }), ['front door post 1 play 0 draw 0 is by "ghost", who is not in the cast']));
     test('names a draw the card refuses', () => assert.deepEqual(withPlay({ draws: [{ by: 'a', draw: {} }] }), ['front door post 1 play 0 draw 0 is one the card refuses: a draw has strokes']));
-    test('names one draw more than the card holds live', () => assert.deepEqual(withPlay({ draws: [draw('a', 0.2), draw('a', 0.2), draw('a', 0.2)] }), ['front door post 1 play 0 has 3 draws, over the 2 the card holds live']));
-    test('names draws that cover more than the surface\'s limit', () => {
-      const problems = withPlay({ draws: [draw('a', 0.2), draw('b', 0.7)] });
+    test('names one draw more than the card holds live', () => assert.deepEqual(withPlay({ draws: [draw('a', 0.2, 0.05), draw('a', 0.2, 0.05), draw('a', 0.2, 0.05)] }), ['front door post 1 play 0 has 3 draws, over the 2 the card holds live']));
+    test('names draws that cover more than the surface\'s limit, each draw paid for whatever it overlaps', () => {
+      const problems = withPlay({ draws: [draw('a', 0.2, 0.2), draw('b', 0.2, 0.2)] });
       assert.equal(problems.length, 1);
-      assert.equal(problems[0], 'front door post 1 play 0 draws cover 160 cells, over the 100 its surface holds');
+      assert.equal(problems[0], `front door post 1 play 0 draws cover ${2 * paintedCount(coatsOf(strokes(0.2, 0.2) as unknown as SurfaceStroke[], { line: 20, most: 40 }))} cells, over the 200 its surface holds`);
+      assert.deepEqual(withPlay({ draws: [draw('a', 0.2), draw('b', 0.2)] }), [], 'two overlapping dabs of 80 cells each fit in 200');
     });
     test('names a surface limit the settings do not hold, and does not throw', () => {
       const d = goodDoor() as { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] };

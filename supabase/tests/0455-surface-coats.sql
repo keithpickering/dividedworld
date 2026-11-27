@@ -48,7 +48,7 @@ begin
   perform open_surface(play);
 end $$;
 create function pg_temp.draw(who uuid, through uuid, play uuid, coats text, most integer default 4000, places jsonb default '[]') returns text language sql as $$
-  select pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, %L, %s)::text', who, through, play, '{"box": {"w": 60, "h": 40}, "groups": []}'::jsonb, coats, places, most))
+  select pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, %L, %s)::text', who, through, play, '{"box": {"w": 60, "h": 40}, "groups": [{}, {}, {}]}'::jsonb, coats, places, most))
 $$;
 -- A wash by the service role: takes is [{draw, takes}].
 create function pg_temp.wash(who uuid, through uuid, play uuid, takes jsonb) returns text language sql as $$
@@ -464,4 +464,107 @@ begin
   if pg_temp.as_val(bob, format('select draw_on_surface(%L, %L, %L, ''{}'', null, null, 1)', bob, b, w.play)) not like 'ERROR: permission denied%' then raise exception 'a player does not call draw_on_surface'; end if;
   -- The log's rows are what the Acts say, in both directions.
   if exists (select 1 from (select * from surface_marks where play = w.play except select * from surface_marks_of(w.play)) x) or exists (select 1 from (select * from surface_marks_of(w.play) except select * from surface_marks where play = w.play) x) then raise exception 'surface_marks_of gives the stored marks'; end if;
+end $$;
+
+-- ---- 11. The bounds of a place, and the current version ----
+do $$
+declare
+  ann uuid := tests.account('cw-11-ann'); bob uuid := tests.account('cw-11-bob');
+  a uuid := tests.character(ann, 'Cw Eleven Ann'); b uuid := tests.character(bob, 'Cw Eleven Bob');
+  t uuid := tests.thread('Cw eleven'); w record := pg_temp.wall(a, t);
+  d uuid; got text; ok jsonb := '{"kind": "text", "version": "x", "at": 4, "len": 5, "dx": 1, "dy": 2}'; e1 uuid;
+  many jsonb; big jsonb;
+begin
+  d := (pg_temp.draw(bob, b, w.play, pg_temp.coats(0, 100))::jsonb ->> 'id')::uuid;
+  -- A draw's places: a group the drawing has (it has three), the kinds the engine knows, at most 2 KiB, at most 5,760 entries.
+  got := pg_temp.draw(bob, b, w.play, pg_temp.coats(200, 10), 4000, jsonb_build_array(jsonb_build_object('grp', 3, 'version', w.post, 'place', ok)));
+  if got is distinct from 'ERROR: a place names a group the drawing does not have' then raise exception 'a draw''s place for a group it lacks is refused: %', got; end if;
+  got := pg_temp.draw(bob, b, w.play, pg_temp.coats(200, 10), 4000, jsonb_build_array(jsonb_build_object('grp', 0, 'version', w.post, 'place', '{"kind": "sticker"}'::jsonb)));
+  if got is distinct from 'ERROR: a place is a text, an image or a box attachment of at most 2 KiB' then raise exception 'a place of an unknown kind is refused: %', got; end if;
+  got := pg_temp.draw(bob, b, w.play, pg_temp.coats(200, 10), 4000, jsonb_build_array(jsonb_build_object('grp', 0, 'version', w.post, 'place', jsonb_build_object('kind', 'text', 'pad', repeat('x', 2100)))));
+  if got is distinct from 'ERROR: a place is a text, an image or a box attachment of at most 2 KiB' then raise exception 'a place over 2 KiB is refused: %', got; end if;
+  select jsonb_agg(jsonb_build_object('grp', 0, 'version', w.post, 'place', null)) into many from generate_series(1, 5761);
+  got := pg_temp.draw(bob, b, w.play, pg_temp.coats(200, 10), 4000, many);
+  if got is distinct from 'ERROR: a drawing places at most 5,760 groups' then raise exception 'a draw''s places are capped: %', got; end if;
+  got := pg_temp.draw(bob, b, w.play, pg_temp.coats(200, 10), 4000, jsonb_build_array(jsonb_build_object('grp', 2, 'version', w.post, 'place', '{"kind": "box"}'::jsonb)));
+  if got like 'ERROR:%' then raise exception 'a place within the bounds is kept: %', got; end if;
+  -- An edit's places, from any caller: the same bounds, and nothing is written by a refused one (the edit is undone with it).
+  perform tests.become(ann);
+  begin
+    perform edit_post(w.post, a, 'Words one.', null, jsonb_build_array(jsonb_build_object('draw', d, 'grp', 3, 'place', ok)));
+    raise exception 'an edit placing a group the draw lacks was allowed';
+  exception when others then
+    if sqlerrm is distinct from 'a place names a group the drawing does not have' then raise exception 'an edit''s place for a group the draw lacks: %', sqlerrm; end if;
+  end;
+  begin
+    perform edit_post(w.post, a, 'Words one.', null, jsonb_build_array(jsonb_build_object('draw', d, 'grp', 0, 'place', '{"kind": "sticker"}'::jsonb)));
+    raise exception 'an edit with an unknown kind was allowed';
+  exception when others then
+    if sqlerrm is distinct from 'a place is a text, an image or a box attachment of at most 2 KiB' then raise exception 'an edit''s place of an unknown kind: %', sqlerrm; end if;
+  end;
+  begin
+    perform edit_post(w.post, a, 'Words one.', null, jsonb_build_array(jsonb_build_object('draw', d, 'grp', 0, 'place', jsonb_build_object('kind', 'text', 'pad', repeat('x', 2100)))));
+    raise exception 'an edit with a large place was allowed';
+  exception when others then
+    if sqlerrm is distinct from 'a place is a text, an image or a box attachment of at most 2 KiB' then raise exception 'an edit''s place over 2 KiB: %', sqlerrm; end if;
+  end;
+  select jsonb_agg(jsonb_build_object('draw', d, 'grp', 0, 'place', null)) into many from generate_series(1, 5761);
+  begin
+    perform edit_post(w.post, a, 'Words one.', null, many);
+    raise exception 'an edit with too many places was allowed';
+  exception when others then
+    if sqlerrm is distinct from 'an edit places at most 5,760 groups' then raise exception 'an edit''s places are capped: %', sqlerrm; end if;
+  end;
+  perform tests.unbecome();
+  if exists (select 1 from acts where kind = 'edit' and target_act_id = w.post) then raise exception 'a refused edit wrote no Act'; end if;
+  -- Within the bounds the edit lands, and an entry for a draw that is not live on this post is still left out.
+  perform tests.become(ann);
+  perform edit_post(w.post, a, 'Words one.', null, jsonb_build_array(jsonb_build_object('draw', d, 'grp', 2, 'place', '{"kind": "box"}'::jsonb), jsonb_build_object('draw', gen_random_uuid(), 'grp', 99, 'place', null)));
+  perform tests.unbecome();
+  e1 := (select id from acts where kind = 'edit' and target_act_id = w.post);
+  if (select count(*) from surface_places where version = e1) is distinct from 1 then raise exception 'the edit wrote the one place within the bounds: %', (select count(*) from surface_places where version = e1); end if;
+  -- The post's words have changed since the drawer read them: a draw whose places are for the first version is refused, one for the edit's version lands; no places at all is never stale.
+  got := pg_temp.draw(bob, b, w.play, pg_temp.coats(300, 10), 4000, jsonb_build_array(jsonb_build_object('grp', 0, 'version', w.post, 'place', ok)));
+  if got is distinct from 'ERROR: That post''s words aren''t the ones you drew on. Reload it and tag again.' then raise exception 'a draw placed for an old version is refused: %', got; end if;
+  if (select count(*) from surface_coats where play = w.play) is distinct from 2 then raise exception 'a refused draw wrote nothing'; end if;
+  got := pg_temp.draw(bob, b, w.play, pg_temp.coats(300, 10), 4000, jsonb_build_array(jsonb_build_object('grp', 0, 'version', e1, 'place', ok)));
+  if got like 'ERROR:%' then raise exception 'a draw placed for the current version lands: %', got; end if;
+  got := pg_temp.draw(bob, b, w.play, pg_temp.coats(400, 10));
+  if got like 'ERROR:%' then raise exception 'a draw with no places lands: %', got; end if;
+  -- The check is in surface_apply, which every draw writer (a player's, a persona's, a play's first draw) calls: called here as its owner.
+  got := '';
+  begin
+    perform surface_apply(w.play, b, 'draw', '{"groups": [{}]}'::jsonb, pg_temp.coats(500, 10), null, jsonb_build_array(jsonb_build_object('grp', 0, 'version', w.post, 'place', ok)), 4000);
+  exception when others then got := sqlerrm; end;
+  if got is distinct from 'That post''s words aren''t the ones you drew on. Reload it and tag again.' then raise exception 'surface_apply, which every draw writer calls, refuses the old version: %', got; end if;
+end $$;
+
+-- ---- 12. A draw's grid is laid at 1 tenth as 0; the constraint is validated ----
+do $$
+declare
+  ann uuid := tests.account('cw-12-ann'); bob uuid := tests.account('cw-12-bob');
+  a uuid := tests.character(ann, 'Cw Twelve Ann'); b uuid := tests.character(bob, 'Cw Twelve Bob');
+  t uuid := tests.thread('Cw twelve'); w record := pg_temp.wall(a, t);
+  d uuid; w1 uuid; got text; s surfaces%rowtype; r surfaces%rowtype;
+begin
+  -- 100 cells at 2 coats, then 50 cells at 1 tenth: those are clean and are stored as 0.
+  d := (pg_temp.draw(bob, b, w.play, pg_temp.coats(0, 100) || '')::jsonb ->> 'id')::uuid;
+  got := pg_temp.draw(bob, b, w.play, repeat('0', 200) || repeat('k', 10) || repeat('1', 50) || repeat('0', 9740));
+  d := (got::jsonb ->> 'id')::uuid;
+  if (select painted from surface_coats where draw = d) is distinct from 10 or (select coats[211] from surface_coats where draw = d) is distinct from 0 or (select count(*) from surface_coats c, unnest(c.coats) x where c.draw = d and x = 1) is distinct from 0 then
+    raise exception 'cells held at 1 tenth are stored as 0';
+  end if;
+  if (select payload ->> 'coats' from acts where id = d) is distinct from repeat('0', 200) || repeat('k', 10) || repeat('1', 50) || repeat('0', 9740) then raise exception 'the Act keeps the coat string as it was sent'; end if;
+  -- A wash that takes only those cells changes nothing: it is written and not live, as one over a cell that was always clean.
+  got := pg_temp.wash(ann, a, w.play, jsonb_build_array(pg_temp.take(d, repeat('0', 210) || repeat('a', 50) || repeat('0', 9740))));
+  if got like 'ERROR:%' then raise exception 'the wash was refused: %', got; end if;
+  w1 := (got::jsonb ->> 'id')::uuid;
+  if (select w1 = any (live) from surfaces where play = w.play) or (select washes from surfaces where play = w.play) is distinct from '{}'::jsonb then raise exception 'a wash of clean cells is not live: %', (select live from surfaces where play = w.play); end if;
+  -- The rebuild agrees, since it lays the grid the same way.
+  select * into s from surfaces where play = w.play;
+  r := rebuild_surface(w.play);
+  if r.covered is distinct from s.covered or r.live is distinct from s.live or r.washes is distinct from s.washes then raise exception 'the rebuilt row is the stored one'; end if;
+  if exists (select 1 from rebuild_surface_coats(w.play) x join surface_coats c on c.play = x.play and c.draw = x.draw where x.coats is distinct from c.coats) then raise exception 'the rebuilt grids are the stored ones'; end if;
+  -- The constraint was added not valid and validated.
+  if not (select convalidated from pg_constraint where conname = 'acts_surface_payload' and conrelid = 'acts'::regclass) then raise exception 'acts_surface_payload is validated'; end if;
 end $$;
