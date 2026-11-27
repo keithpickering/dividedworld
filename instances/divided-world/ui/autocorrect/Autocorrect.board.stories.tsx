@@ -2,9 +2,10 @@
  * Autocorrect's masking tape as stories for the owner's word (docs/plans/2026-11-11-autocorrect-tape-design.md; plan Task 10): the
  * bench's five posts (docs/research/2026-11-11-autocorrect-tape-bench/01-bench.html) written for the Main board's moment, each with
  * the plays the bench gives it: `one` (a short word, three times), `covered` (the words wider than the replacement), `wider` (the
- * replacement wider than the words), `across` (a long phrase that breaks across lines at a phone's width) and `stack` (three strips
- * pressed one over another) and `door` (the front door's own post and play, whose short strip lands at a line's end at some phone widths). `half` is `one` with the first strip half peeled by its author, saved as a `stuck` stretch, so the
- * residue and a tape end stand on screen; `reloaded` is `wider` visited again after its author peeled the strip whole (saved as `peeled`),
+ * replacement wider than the words), `across` (a long phrase that breaks across lines at a phone's width), `stack` (three strips
+ * pressed one over another) and `door` (the front door's own post and play, whose short strip lands at a line's end at some phone
+ * widths). `half` is `one` with the first strip half peeled by its author, saved as a `stuck` stretch, so the residue and a tape end
+ * stand on screen; `reloaded` is `wider` visited again after its author peeled the strip whole (saved as `peeled`),
  * which takes its words' own width with no room after them.
  *
  * `viewer` is `reader`, a new account that wrote none of the thread (it can only peek, and nothing it does is saved), or `author`,
