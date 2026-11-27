@@ -38,13 +38,14 @@ import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { FrontDoorCharacter } from '../types.ts';
 import { PersonaMark } from '../updates/Persona.tsx';
 import './front-door.css';
+import { frontDoorId, frontDoorPlayId } from './ids.ts';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 
 /** The instant every staged Act and play carries: a made-up thread has no real time. */
 const STAGED_AT = '2026-01-01T00:00:00.000Z';
 
-const idOf = (key: string): Id => `front-door:${key}`;
+const idOf = frontDoorId;
 
 /**
  * A staged wall's draws as a wall's live Acts, oldest first, each with the share of the wall it owns: a later draw owns the cells it covers
@@ -142,7 +143,7 @@ export function FrontDoor() {
     door.posts.forEach((post, i) => {
       tallies.merge(idOf(String(i)), post.reactions);
       (post.plays ?? []).forEach((p, j) => {
-        const id = idOf(`${i}:${j}`);
+        const id = frontDoorPlayId(i, j, p);
         acts.push({
           id, character: idOf(p.by), kind: 'card', thread: idOf('thread'), targetActId: idOf(String(i)), seq: null, createdAt: STAGED_AT,
           payload: { card: p.card, layer: p.layer ?? 1, config: p.config }, currentPayload: {}, editedAt: null, shownEditedAt: null,
@@ -154,7 +155,7 @@ export function FrontDoor() {
     /* A play's saved state, and a surface play's draws as its wall's live Acts (what `readSurface` would have read), both with no read. */
     door.posts.forEach((post, i) => {
       (post.plays ?? []).forEach((p, j) => {
-        const id = idOf(`${i}:${j}`);
+        const id = frontDoorPlayId(i, j, p);
         if (p.state !== undefined) plays.setStates({ [id]: { state: p.state, savedAt: STAGED_AT } });
         const rules = instance.cards.find((c) => c.key === p.card);
         if (p.draws === undefined || !rules?.surface) return;

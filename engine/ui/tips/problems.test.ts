@@ -240,6 +240,12 @@ describe('instanceUiProblems', () => {
   test('refuses a reaction key the instance does not have, naming the post', () => {
     assert.deepEqual(door((d) => { d.posts = [{ ...d.posts[0]!, reactions: { nope: 1 } }, d.posts[1]!]; }), ['front door post 0 has a reaction "nope", which the instance does not have']);
   });
+  test('refuses a play id the thread uses twice, naming both places', () => {
+    const problems = door((d) => {
+      d.posts = [{ ...d.posts[0]!, plays: [{ id: 'x', card: 'whoops', by: 'a', config: {} }] }, { ...d.posts[1]!, plays: [{ id: 'x', card: 'whoops', by: 'a', config: {} }] }];
+    });
+    assert.deepEqual(problems.filter((p) => /id "/u.test(p)), ['front door post 1 play 0 has the id "x", which post 0 play 0 already has']);
+  });
   test('refuses a play of a card with no CardUi, naming the post', () => {
     const problems = door((d) => { d.posts = [d.posts[0]!, { ...d.posts[1]!, plays: [{ card: 'mystery', by: 'a', config: {} }] }]; });
     assert.deepEqual(problems, ['front door post 1 plays "mystery", which has no CardUi']);

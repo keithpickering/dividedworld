@@ -27,6 +27,8 @@ import { gearOf, gearUi } from './cosmetics.ts';
 import { webpInfo } from '../../../tools/art-files.mjs';
 import { gainOf } from './sounds.ts';
 import { mooch } from '../cards/mooch.ts';
+import { objectOf } from './steel-chair/objects.ts';
+import { frontDoorPlayId } from '../../../engine/ui/front-door/ids.ts';
 import { toll } from '../cards/toll.ts';
 import { lineCutter } from '../cards/line-cutter.ts';
 import { feelinGlam } from '../cards/feelin-glam.ts';
@@ -74,7 +76,7 @@ describe('Divided World\'s onboarding words', () => {
     expect(Object.keys(instanceUi.onboarding.tips).sort()).toEqual([...TIP_KEYS].sort());
   });
   test('the front door passes the same check, in its own words', () => {
-    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Snuckles', 'Hotel Bro', 'Chadluminum', 'Serious Deer', 'D-Guy']);
+    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Snuckles', 'Hotel Mario', 'Chadluminum', 'Serious Deer', 'D-Guy']);
     /* One of each class that posts, each through the postbit's real revealed line: the Lurker never posts, so it is absent by design. */
     expect(instanceUi.frontDoor.cast.map((c) => c.revealed?.class)).toEqual(['jabroni', 'heel', 'face', 'technician', 'tweener']);
     expect(instanceUi.frontDoor.posts).toHaveLength(10);
@@ -85,7 +87,15 @@ describe('Divided World\'s onboarding words', () => {
     }
     expect(instanceUiProblems(instanceUi, instance).filter((p) => /front door/u.test(p))).toEqual([]);
   });
-  test('Hotel Bro\'s wash is a couple of hurried streaks: every line of #3 is just legible at a desktop box and a phone\'s, and most of the ink stays', () => {
+  test('Snuckles\'s exit is hit by the three who argued, united: two folding chairs, then a fire extinguisher', () => {
+    const exit = instanceUi.frontDoor.posts[9]!;
+    expect(exit.by).toBe('snuckles');
+    const plays = exit.plays ?? [];
+    expect(plays.map((p) => [p.card, p.by])).toEqual([['steel-chair', 'hotelmario'], ['steel-chair', 'chadluminum'], ['steel-chair', 'deer']]);
+    /* What each throws is rolled from its play's id (./steel-chair/objects.ts), so the ids are the instance's, picked for these rolls. */
+    expect(plays.map((p, j) => objectOf(frontDoorPlayId(9, j, p)))).toEqual(['chair', 'chair', 'extinguisher']);
+  });
+  test('Hotel Mario\'s wash is a couple of hurried streaks: every line of #3 is just legible at a desktop box and a phone\'s, and most of the ink stays', () => {
     const play = instanceUi.frontDoor.posts[2]!.plays![0]!;
     expect(play.card).toBe('whoops');
     const splat = makeSplat(Number(play.config.seed));

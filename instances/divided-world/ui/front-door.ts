@@ -5,26 +5,29 @@
  * Face's burn, the shading critique, the "fix", the AI accusation and the exit. The Mods' half stays with the film. The words are the owner's.
  *
  * The cast is one character of each posting class, each shown through the postbit's real "Revealed:" line; the Lurker reads the room and
- * never posts, so it is absent by design. They are made-up names with no profile behind them. Hotel Bro (the Heel) has no pictures yet, so the
- * postbit draws his initial.
+ * never posts, so it is absent by design. They are made-up names with no profile behind them. Hotel Mario (the Heel) is named for the game
+ * Hotel Mario, so Chadluminum's "7 hotels in one night" on #6 reads as a joke about that character and never as a shot at a player.
  *
  * `{{setting:<path>}}` marks a number a retune would change; the engine fills it from the settings in force, so no number is typed here.
  * `rank` is an index into the instance's ranks (../index.ts), so the pips differ.
  *
  * The counts are a quiet thread's: a post gets nought to two reactions of one kind, and only the hits get several. #3 (the burn on the
- * sheet) is thrown tomatoes, #5's seven thumbs-ups answer Hotel Bro's complaint about the one on #3, and #6's skulls are Chadluminum's burn landing.
+ * sheet) is thrown tomatoes, #5's seven thumbs-ups answer Hotel Mario's complaint about the one on #3, and #6's skulls are Chadluminum's burn landing.
  * A visitor's own reactions are added on their screen alone (docs/plans/2026-11-07-front-door-play-design.md).
  *
  * Where each card sits, and why:
- * - **Graffiti on #1**, the opener, drawn by Serious Deer, Hotel Bro and D-Guy on Snuckles's sheet: the wall is the critique, and a visitor
+ * - **Graffiti on #1**, the opener, drawn by Serious Deer, Hotel Mario and D-Guy on Snuckles's sheet: the wall is the critique, and a visitor
  *   sees a surface card before anything else.
  * - **Whoops! on #3**, thrown by Chadluminum in `#e8402a`, a custom hex near the 🍅 so the splat reads as "your post got lots of tomatoes"
- *   (seed 1, picked from a scan of seeds for one that covers most of the words). Hotel Bro, whose post it is, has washed part of it in a hurry:
+ *   (seed 1, picked from a scan of seeds for one that covers most of the words). Hotel Mario, whose post it is, has washed part of it in a hurry:
  *   two messy, slanted streaks through his words, no more than leaves each line just legible at a desktop's width and a phone's (most of the
  *   ink stays): the play's saved state is his wash. The Lens reports the wash truthfully, and a visitor can scrub further on their own screen.
- * - **Autocorrect x3 on #5** at layers 1 to 3, each a different caster's tape over Hotel Bro's rant.
+ * - **Autocorrect x3 on #5** at layers 1 to 3, each a different caster's tape over Hotel Mario's rant.
  * - **Overreaction on #6**, D-Guy's skull, counted under its local key (`x-1f480`), with two Feelin' Fabs (a stack that glows) and a Steel Chair.
  * - **Feelin' Fab on #2** and **Below the Fold on #9**, the thread's small plays.
+ * - **Steel Chair x3 on #10**, Snuckles's exit: Hotel Mario, Chadluminum and Serious Deer, who argued all thread, unite against him. The
+ *   first two throw folding chairs and the third a fire extinguisher, the rarest thing the card throws. What a throw is gets rolled from its
+ *   play's id (./steel-chair/objects.ts), so these three plays name their ids, each picked from a scan for the roll it gives.
  *
  * The graffiti and the wash are shapes (./front-door/marks.ts: an arrow, a ring, "??", a heart, a scribble, wash passes across bands) turned into
  * the cards' own strokes with a fixed seed, so every visitor sees the same hand-drawn marks; move one by changing a number. Their `aspect`s are
@@ -36,6 +39,8 @@
 import type { FrontDoorUi } from '../../../engine/ui/types.ts';
 import snucklesPortrait from './avatars/snuckles_portrait.png?url';
 import snucklesSquare from './avatars/snuckles_square.png?url';
+import hotelPortrait from './avatars/hotelmario_portrait.png?url';
+import hotelSquare from './avatars/hotelmario_square.png?url';
 import chadPortrait from './avatars/robochad_portrait.jpg?url';
 import chadSquare from './avatars/robochad_square.jpg?url';
 import deerPortrait from './avatars/deer_portrait.jpg?url';
@@ -59,7 +64,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
   label: 'Sample thread · made up',
   cast: Object.freeze([
     Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }), avatarPortrait: snucklesPortrait, avatarSquare: snucklesSquare }),
-    Object.freeze({ key: 'hotelbro', name: 'Hotel Bro', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }) }),
+    Object.freeze({ key: 'hotelmario', name: 'Hotel Mario', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }), avatarPortrait: hotelPortrait, avatarSquare: hotelSquare }),
     Object.freeze({ key: 'chadluminum', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }), avatarPortrait: chadPortrait, avatarSquare: chadSquare }),
     Object.freeze({ key: 'deer', name: 'Serious Deer', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }), avatarPortrait: deerPortrait, avatarSquare: deerSquare }),
     Object.freeze({ key: 'dguy', name: 'D-Guy', rank: 4, posts: 1224, revealed: Object.freeze({ class: 'tweener', at: REVEALED_AT }), avatarPortrait: dguyPortrait, avatarSquare: dguySquare }),
@@ -73,8 +78,8 @@ export const frontDoor: FrontDoorUi = Object.freeze({
         card: 'graffiti', by: 'deer', config: Object.freeze({}),
         draws: Object.freeze([
           { by: 'deer', draw: tag('red', 'stock', SHEET_ASPECT, ring([0.069, 0.36], 0.045, 0.05, 3), arrow([0.27, 0.435], [0.118, 0.375], SHEET_ASPECT, 4)) },
-          { by: 'hotelbro', draw: tag('black', 'stock', SHEET_ASPECT, glyphs('??', [0.17, 0.43], 0.18, SHEET_ASPECT, 5)) },
-          { by: 'hotelbro', draw: tag('black', 'fat', SHEET_ASPECT, scribble({ x0: 0.032, y0: 0.64, x1: 0.168, y1: 0.66 }, 6)) },
+          { by: 'hotelmario', draw: tag('black', 'stock', SHEET_ASPECT, glyphs('??', [0.17, 0.43], 0.18, SHEET_ASPECT, 5)) },
+          { by: 'hotelmario', draw: tag('black', 'fat', SHEET_ASPECT, scribble({ x0: 0.032, y0: 0.64, x1: 0.168, y1: 0.66 }, 6)) },
           { by: 'dguy', draw: tag('pink', 'stock', SHEET_ASPECT, heart([0.272, 0.868], 0.07, SHEET_ASPECT, 7)) },
         ]),
       })]),
@@ -86,7 +91,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
       plays: Object.freeze([Object.freeze({ card: 'feelin-fab', by: 'snuckles', config: Object.freeze({}) })]),
     }),
     Object.freeze({
-      by: 'hotelbro',
+      by: 'hotelmario',
       body: 'OF COURSE YOUR SPRITES LOOK LIKE THIS WITH THOSE STEAMBOAT WILLIE ASS FINGERS',
       reactions: Object.freeze({ tomato: 5, 'thumbs-up': 1 }),
       plays: Object.freeze([Object.freeze({
@@ -101,7 +106,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
       reactions: Object.freeze({ laughing: 1 }),
     }),
     Object.freeze({
-      by: 'hotelbro',
+      by: 'hotelmario',
       body: 'Who was that react from?! Come fight me like a man and I\'ll show ya where to put that thumbs up.',
       reactions: Object.freeze({ 'thumbs-up': 7, tomato: 2 }),
       plays: Object.freeze([
@@ -118,7 +123,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
         Object.freeze({ card: 'overreaction', by: 'dguy', config: Object.freeze({ emoji: '💀', quadrant: 'boredNegative' }) }),
         Object.freeze({ card: 'feelin-fab', by: 'deer', layer: 1, config: Object.freeze({}) }),
         Object.freeze({ card: 'feelin-fab', by: 'snuckles', layer: 2, config: Object.freeze({}) }),
-        Object.freeze({ card: 'steel-chair', by: 'hotelbro', config: Object.freeze({}) }),
+        Object.freeze({ card: 'steel-chair', by: 'hotelmario', config: Object.freeze({}) }),
       ]),
     }),
     Object.freeze({
@@ -135,12 +140,17 @@ export const frontDoor: FrontDoorUi = Object.freeze({
       by: 'deer',
       body: 'After analyzing the pixels in this sprite sheet I have come to the unfortunate conclusion that it was created with the assistance of generative AI.',
       reactions: Object.freeze({ 'thumbs-down': 1 }),
-      plays: Object.freeze([Object.freeze({ card: 'below-the-fold', by: 'hotelbro', config: Object.freeze({}) })]),
+      plays: Object.freeze([Object.freeze({ card: 'below-the-fold', by: 'hotelmario', config: Object.freeze({}) })]),
     }),
     Object.freeze({
       by: 'snuckles',
       body: 'That does it! I\'ll kindly take my Wigglers elsewhere!!!',
       reactions: Object.freeze({ laughing: 2 }),
+      plays: Object.freeze([
+        Object.freeze({ id: 'pile-on-1', card: 'steel-chair', by: 'hotelmario', config: Object.freeze({}) }),
+        Object.freeze({ id: 'pile-on-2', card: 'steel-chair', by: 'chadluminum', config: Object.freeze({}) }),
+        Object.freeze({ id: 'pile-on-44', card: 'steel-chair', by: 'deer', config: Object.freeze({}) }),
+      ]),
     }),
   ]),
   note: [
