@@ -239,7 +239,8 @@ for (const story of ['door-phone', 'one-phone']) {
     const broken: string[] = [];
     for (let width = 320; width <= 430; width += 2) {
       await page.setViewportSize({ width, height: 844 });
-      await page.evaluate(() => document.fonts.ready.then(() => undefined));
+      /* Two frames, so the resize has reached the effect's observer and the first read is of this width's layout. */
+      await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
       /* Settled: the same lines on three reads in a row, 60 ms apart. */
       let last = '', same = 0;
       for (let i = 0; i < 100 && same < 3; i++) {
@@ -248,6 +249,7 @@ for (const story of ['door-phone', 'one-phone']) {
         same = now === last ? same + 1 : 0;
         last = now;
       }
+      if (same < 3) broken.push(`${width}px: the lines never settled`);
       const by = JSON.parse(last) as Record<string, string[]>;
       expect(Object.keys(by).length).toBeGreaterThan(0);
       for (const [key, ls] of Object.entries(by)) if (new Set(ls).size !== 1) broken.push(`${width}px: strip ${key} on lines ${[...new Set(ls)].join(', ')}`);
