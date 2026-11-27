@@ -296,7 +296,7 @@ begin
   perform set_config('role', 'service_role', true);
   due := due_broadcasts();
   perform tests.unbecome();
-  -- Its board hears of the thread from the thread's first Act, a row (0453), and no longer from a `thread` event of masks_change's own.
+  -- Its board hears of the thread from the thread's first Act, a row (0455), and no longer from a `thread` event of masks_change's own.
   if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'row' and m ->> 'topic' = 'board:' || system_board()) then
     raise exception 'a Promos thread the announcement opened was not told to its board';
   end if;

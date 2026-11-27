@@ -3,7 +3,7 @@
 -- past one's own place in the thread by characters one does not own. The alerts plan, Task 4; the design,
 -- sections 4, 10 and 11.
 
--- The fixtures here write thousands of Acts one statement at a time; 0453's trigger would add two projections (a few ms) to each, and these files measure other costs (the file is rolled back).
+-- The fixtures here write thousands of Acts one statement at a time; 0455's trigger would add two projections (a few ms) to each, and these files measure other costs (the file is rolled back).
 alter table acts disable trigger acts_live_lists;
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$

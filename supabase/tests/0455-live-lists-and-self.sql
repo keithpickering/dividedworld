@@ -1,4 +1,4 @@
--- A board's list and the index hear every post (supabase/migrations/0453_live_lists_and_self.sql; docs/plans/2026-11-25-live-lists-and-self-plan.md, Task 1).
+-- A board's list and the index hear every post (supabase/migrations/0455_live_lists_and_self.sql; docs/plans/2026-11-25-live-lists-and-self-plan.md, Task 1).
 --
 -- 1. A post in a thread queues one `row` on `board:<board>` that equals the thread's row as board_page lists it, and one `board` on `index` that equals the board's entry as index_page builds it.
 -- 1b. A statement that writes many Acts sends each thread's row and board's entry once.

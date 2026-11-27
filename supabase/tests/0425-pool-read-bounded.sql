@@ -10,7 +10,7 @@
 -- 0426 added keys to pool_read (an origin, and each post's poll, plays, reactions and rewoundTo); 0421's read, kept below, has none, so the comparisons strip them.
 -- What the files before this one leave committed (0434_reads_bounded_on_any_plan.sql), planted first so that every run measures in it: a few live author veils and card_end Acts elsewhere in the instance, analyzed before this
 -- file's own rows are written, as the earlier files' rows are by the suite's vacuum. With them, each probe of an Act through acts_public was a hashed read of every veil and card_end (CI on main at 7d8a255: `pool_read reads 1924 rows of acts in a 4,000-post thread`).
--- The fixtures here write thousands of Acts one statement at a time; 0453's trigger would add two projections (a few ms) to each, and these files measure other costs (the file is rolled back).
+-- The fixtures here write thousands of Acts one statement at a time; 0455's trigger would add two projections (a few ms) to each, and these files measure other costs (the file is rolled back).
 alter table acts disable trigger acts_live_lists;
 
 select tests.plant_live_veils(8, 10) is not null;

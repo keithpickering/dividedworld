@@ -864,7 +864,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const settled = { id: String(id), at: iso(at + APPLIED_AFTER) };
     send('reach', 'settled', () => { for (const l of [...reachListeners]) l.onSettled?.(settled); });
   };
-  /* A placed Act bumps its thread: the thread's row on its board (`row`) and the board's entry on the index (`board`), as thread_row and board_summary (0453) send them. */
+  /* A placed Act bumps its thread: the thread's row on its board (`row`) and the board's entry on the index (`board`), as thread_row and board_summary (0455) send them. */
   const sendRows = (act: ActRec) => {
     const t = threads.get(act.thread);
     if (!t || act.seq === null || !listed(t)) return;
@@ -876,7 +876,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     send('index', 'board', () => { for (const l of [...indexListeners]) l.onBoard?.(entry); });
   };
   /**
-   * The Act kinds the database pokes the owner's account about with `self` (`self_kinds()`, 0453), besides a `move` naming one of their characters. The wallet moves
+   * The Act kinds the database pokes the owner's account about with `self` (`self_kinds()`, 0455), besides a `move` naming one of their characters. The wallet moves
    * (any kind but a settlement's), the card ledger rows and the ban lifts and warn reliefs poke too, where the fake writes them. One list, so a kind added to the SQL is added here.
    */
   const SELF_KINDS: ReadonlySet<ActKind> = new Set<ActKind>(['appeal_ruling', 'ban', 'card_end', 'infraction', 'move', 'move_end', 'spring', 'unmask']);
@@ -889,7 +889,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** A text that is a character id, else null (`self_uuid`): a payload is JSON, and a character in it is only as good as its writer. */
   const selfCharacter = (v: unknown): Id | null => (typeof v === 'string' && characters.has(v) ? v : null);
   /**
-   * The characters one Act changes (`act_self_characters`, 0453): the Act and, for an Act that ends or rules on another, the Act it points at and that Act's own target, up to two hops; on each the payload's
+   * The characters one Act changes (`act_self_characters`, 0455): the Act and, for an Act that ends or rules on another, the Act it points at and that Act's own target, up to two hops; on each the payload's
    * `character`, a move's `params.character` and a spring's `locks`; an unmask's own character; and the character a play lifted a ban from (`ban_lifts`).
    */
   const actSelfCharacters = (act: ActRec): Set<Id> => {

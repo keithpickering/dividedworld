@@ -36,7 +36,7 @@ create function pg_temp.shape(projection jsonb) returns jsonb language sql as $$
                                'current_payload', (projection -> 'current_payload') - array['character', 'thread', 'board', 'targetName'])
 $$;
 
--- Alerts only: a play or a post also moves a wallet or a hand, which pokes the account with a bare `self` (0453), and that is not what this file counts.
+-- Alerts only: a play or a post also moves a wallet or a hand, which pokes the account with a bare `self` (0455), and that is not what this file counts.
 create function pg_temp.queued() returns bigint language sql as $$ select count(*) from broadcasts_due where event = 'alert' and topic like 'account:%' $$;
 
 -- ---- The table is there, holds no content, and reaches no API role's writes ----

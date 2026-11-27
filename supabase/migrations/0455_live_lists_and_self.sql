@@ -15,7 +15,7 @@
 create function thread_row(in_thread uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  -- The keys of the select list below are pinned in supabase/tests/0453-live-lists-and-self.sql; editing the list means editing that pin.
+  -- The keys of the select list below are pinned in supabase/tests/0455-live-lists-and-self.sql; editing the list means editing that pin.
   return (select to_jsonb(l) from (
     select t.id, t.board, t.title, t.origin_act_id, t.created_at, t.last_at, t.last_seq, t.replies, t.first_act, t.first_character, t.last_act, t.last_character,
            t.replies_this_week, t.origin_thread, t.origin_place
@@ -145,7 +145,7 @@ end $$;
 --
 --   poke_self                 the one place a `self` is queued.
 --   wallet_events, card_ledger  a statement that writes rows pokes each account it wrote once, except for rows that carry a settlement (its own moves and its crowd pay): a settlement moves every wallet in one transaction and the HUD reads again on `settled` instead.
---   self_kinds, quiet_kinds   the Act kinds that can change what my_characters shows, and the others. Both are written out in full on purpose: supabase/tests/0453-live-lists-and-self.sql holds them to acts_kind_check's own list, so a kind
+--   self_kinds, quiet_kinds   the Act kinds that can change what my_characters shows, and the others. Both are written out in full on purpose: supabase/tests/0455-live-lists-and-self.sql holds them to acts_kind_check's own list, so a kind
 --                             added later is classified or the build fails, and a list that read the constraint would hold nothing.
 --   acts_self                 after a statement that wrote Acts of the kinds in self_kinds(), pokes the owner of each character such an Act changes.
 --   act_self_characters       the characters one Act changes: the one it names (payload `character`, `params.character`, or `locks`, a lockout's), the one it acts as where that is its subject (an unmask), and,

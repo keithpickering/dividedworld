@@ -12,7 +12,7 @@
 --  3. The races (first in the file, as 0304's section 13 is, so the committed rows meet none of this file's locks): a veil's landing held open, and the author's edit of the post waits for it and is covered; the edit held
 --     open, and the veil waits for it and covers it; a spring's card held open, and a second veil's landing waits for it and covers it; another character's Acts on the post while a veil's landing is held open do not wait
 --     (and the author's own Act under the same timeout does, so that check is shown able to fail).
---  4. The cost of an insert: a reply, a quote and a card by a character who is not the post's author read post_veils a few times, a bound that holds for any thread (0453: the row sent to the board's list, as thread_list reads the first and latest post); the author's own Act on the post does (so the count measures something).
+--  4. The cost of an insert: a reply, a quote and a card by a character who is not the post's author read post_veils a few times, a bound that holds for any thread (0455: the row sent to the board's list, as thread_list reads the first and latest post); the author's own Act on the post does (so the count measures something).
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
 begin
@@ -486,7 +486,7 @@ begin
   perform pg_temp.agree('poison 3 rolled back');
 end $$;
 
--- ---- 4. The cost of an insert: another character's Act reads post_veils a bounded few times (0453), and the author's own does ----
+-- ---- 4. The cost of an insert: another character's Act reads post_veils a bounded few times (0455), and the author's own does ----
 -- Counted across the inserts by the transaction's own table statistics (pg_stat_xact_user_tables, scans of either kind). The thread holds some hundreds of Acts, analyzed, so a plan that read all of them would be seen.
 select tests.unbecome();
 do $$
@@ -507,7 +507,7 @@ begin
   perform tests.act(b, 'post', t, jsonb_build_object('body', 'A quote of the veiled post.'), p);
   perform tests.act(b, 'card', t, jsonb_build_object('card', 'vcmove', 'message', '', 'config', '{}'::jsonb, 'layer', 9), p);
   scans_after := (select coalesce(sum(x.seq_scan + coalesce(x.idx_scan, 0)), 0) from pg_stat_xact_user_tables x where x.relname = 'post_veils');
-  -- Since 0453 an Act with a place number (the reply and the quote; the card has none) also sends its thread's row to the board's list, which names the thread's first and latest post's author as thread_list does (0444): nine probes of
+  -- Since 0455 an Act with a place number (the reply and the quote; the card has none) also sends its thread's row to the board's list, which names the thread's first and latest post's author as thread_list does (0444): nine probes of
   -- post_veils for each of them (first and latest post, for the thread's row and for the board's entry, nine in all), so 18 for the reply and the quote together, however long the thread (this one holds 600 Acts). The card sends no row and reads none.
   -- Measured: 18; a bound of 17 fails. The cost this guard is for stays: nothing here reads the thread's Acts or every veil.
   if scans_after - scans_before > 18 then raise exception 'a reply, a quote and a card by a character who is not the post''s author read post_veils % time(s)', scans_after - scans_before; end if;
