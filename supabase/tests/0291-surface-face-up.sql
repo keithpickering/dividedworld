@@ -63,7 +63,7 @@ begin
   if spring -> 'payload' ->> 'did' <> 'landed' or (spring -> 'payload' ->> 'drawn') is distinct from 'true' then raise exception 'the spring says the draft was drawn: %', spring; end if;
   struck := (select k.id from acts k where k.kind = 'card' and k.target_act_id = q1 and k.payload ->> 'card' = 'sfu');
   if struck is null then raise exception 'the wall landed on the quoting post'; end if;
-  if (select bit_count(cover) from surfaces where play = struck) is distinct from 500 then raise exception 'the draft is the first draw, covering 500 cells'; end if;
+  if (select covered from surfaces where play = struck) is distinct from 500 or (select coats[1] from surface_coats where play = struck) is distinct from 20::smallint then raise exception 'the draft is the first draw, covering 500 cells, laid at 20 tenths by the legacy rule'; end if;
   if not exists (select 1 from acts d where d.kind = 'draw' and d.target_act_id = struck and d.character = a) then raise exception 'the first draw is by the setter'; end if;
   if exists (select 1 from face_down_draws where play = set1) then raise exception 'the draft row is deleted once read'; end if;
   -- The second is taken back, and its draft goes with it.

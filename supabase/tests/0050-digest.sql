@@ -94,6 +94,8 @@ begin
       'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
       -- The same kind for a pack's pulls (0139): pure, reading no table.
       'pack_pulls_problem(jsonb)',
+      -- A surface Act's payload check (0455), called by acts_surface_payload (a CHECK, so executable by PUBLIC): pure, reading no table.
+      'surface_coat_string_ok(text)', 'surface_takes_ok(jsonb)',
       -- What acts_public calls as its reader (0340): whether a version is hidden, what its quoting body's layer comes to and what a payload shows of it, so a digest never reads a hidden version's words.
       'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)',
       -- And whether a ballot's poll is secret (0395): acts_public withholds a secret ballot's character and picks, and the digest reads it through the view.

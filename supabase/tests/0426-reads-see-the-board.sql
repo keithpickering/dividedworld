@@ -183,7 +183,7 @@ begin
   -- a writing play's words (the current version's, else the latest) and a surface's share covered
   w := tests.act(c, 'card', t, jsonb_build_object('card', 'exwink'), p_play, now() - interval '8 hours');
   insert into card_texts (play, version, text) values (w, p_play, 'A tail for the old version.');
-  insert into surfaces (play, post, cover, owners, live) values (w, p_play, (repeat('1', 2500) || repeat('0', 7500))::bit(10000), array_fill(0::smallint, array[10000]), '{}');
+  insert into surfaces (play, post, covered, live) values (w, p_play, 2500, '{}');
   insert into fx values ('tail_play', w), ('unsprung', us), ('shown_post', p_play);
   plays := pg_temp.ex(p_play) -> 'plays';
   perform pg_temp.expect((select x ->> 'text' from jsonb_array_elements(plays) x where x ->> 'play' = w::text) = 'A tail for the old version.'

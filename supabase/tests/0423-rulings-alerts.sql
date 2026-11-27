@@ -612,7 +612,7 @@ declare
   said jsonb; said2 jsonb; refused text; gifted uuid; drew uuid; washed uuid;
   persona uuid;
   n bigint;
-  payload jsonb := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+  payload jsonb := '{"groups": []}';
 begin
   perform tests.become(pg_temp.owner(author));
   t := ((start_thread('general', author, 'Ra gifts two', 'Ra gift words two.')) -> 'act' ->> 'thread')::uuid;
@@ -663,7 +663,7 @@ begin
   -- 2. A draw by another player: one cardOnYours/drew alert to the author, about the draw Act (counted as the change across the draw, as the gift is).
   n := (select count(*) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew');
   perform tests.become_service();
-  said := draw_on_surface(pg_temp.owner(donor), donor, wall, payload, pg_temp.cells(0, 100), 4000);
+  said := draw_on_surface(pg_temp.owner(donor), donor, wall, payload, translate(pg_temp.cells(0, 100)::text, '1', 'k'), '[]', 4000);
   perform tests.unbecome();
   drew := (said ->> 'id')::uuid;
   if (select count(*) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew') - n is distinct from 1
@@ -674,7 +674,7 @@ begin
   -- By the author's other mask: none.
   n := (select count(*) from alerts a where a.sub = 'drew');
   perform tests.become_service();
-  said2 := draw_on_surface(pg_temp.owner(author), author2, wall, payload, pg_temp.cells(200, 100), 4000);
+  said2 := draw_on_surface(pg_temp.owner(author), author2, wall, payload, translate(pg_temp.cells(200, 100)::text, '1', 'k'), '[]', 4000);
   perform tests.unbecome();
   if (select count(*) from alerts a where a.sub = 'drew') is distinct from n then raise exception 'a draw by the author''s other mask wrote an alert'; end if;
   if (select array_agg(k order by k) from jsonb_object_keys(said) k) is distinct from (select array_agg(k order by k) from jsonb_object_keys(said2) k) then
@@ -687,7 +687,7 @@ begin
   perform set_config('kayfabb.staff_writer', '', true);
   n := (select count(*) from alerts a where a.sub = 'drew');
   perform tests.become_service();
-  said := staff_draw_on_surface('ra-gw-persona', wall, payload, pg_temp.cells(400, 100), 4000);
+  said := staff_draw_on_surface('ra-gw-persona', wall, payload, translate(pg_temp.cells(400, 100)::text, '1', 'k'), '[]', 4000);
   perform tests.unbecome();
   if (select count(*) from alerts a where a.sub = 'drew') - n is distinct from 1
      or (select count(*) from alerts a where a.sub = 'drew' and a.act = (said ->> 'id')::uuid and a.character = author and a.account = pg_temp.owner(author)) is distinct from 1 then
@@ -697,7 +697,7 @@ begin
   -- 3. A wash writes none.
   n := (select count(*) from alerts a where a.kind = 'cardOnYours');
   perform tests.become_service();
-  said := wash_surface(pg_temp.owner(author), author, wall, payload, pg_temp.cells(0, 50));
+  said := wash_surface(pg_temp.owner(author), author, wall, '{"cuts": []}', (select jsonb_agg(jsonb_build_object('draw', c.draw, 'takes', translate(pg_temp.cells(0, 50)::text, '1', 'E'))) from surface_coats c where c.play = wall));
   perform tests.unbecome();
   if (said ->> 'kind') is distinct from 'wash' then raise exception 'the wash did not land: %', said; end if;
   if (select count(*) from alerts a where a.kind = 'cardOnYours') is distinct from n then raise exception 'a wash wrote a cardOnYours alert'; end if;
@@ -705,7 +705,7 @@ begin
   -- 4b. A refused draw (past the wall's limit) writes none.
   n := (select count(*) from alerts a where a.kind = 'cardOnYours');
   perform tests.become_service();
-  refused := pg_temp.refusal(format('select draw_on_surface(%L, %L, %L, %L, %L, 10)', pg_temp.owner(donor), donor, wall, payload, pg_temp.cells(1000, 500)::text));
+  refused := pg_temp.refusal(format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 10)', pg_temp.owner(donor), donor, wall, payload, translate(pg_temp.cells(1000, 500)::text, '1', 'k'), '[]'));
   perform tests.unbecome();
   if refused is null then raise exception 'a draw past the limit was not refused'; end if;
   if (select count(*) from alerts a where a.kind = 'cardOnYours') is distinct from n then raise exception 'a refused draw wrote an alert'; end if;
@@ -925,7 +925,7 @@ declare
   donor uuid := pg_temp.player('ld2-donor');
   caster uuid := pg_temp.player('ld2-caster');
   t uuid; p uuid; drive uuid; wall uuid; played jsonb; said jsonb; gifted uuid; drew uuid; got jsonb;
-  payload jsonb := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+  payload jsonb := '{"groups": []}';
 begin
   perform tests.become(pg_temp.owner(author));
   t := ((start_thread('general', author, 'Ra loads gifts', 'Ra load words.')) -> 'act' ->> 'thread')::uuid;
@@ -942,7 +942,7 @@ begin
   perform tests.become_service();
   said := donate(pg_temp.owner(donor), donor, drive, 10);
   gifted := (said #>> '{gift,id}')::uuid;
-  said := draw_on_surface(pg_temp.owner(donor), donor, wall, payload, pg_temp.cells(0, 100), 4000);
+  said := draw_on_surface(pg_temp.owner(donor), donor, wall, payload, translate(pg_temp.cells(0, 100)::text, '1', 'k'), '[]', 4000);
   drew := (said ->> 'id')::uuid;
   perform tests.unbecome();
 

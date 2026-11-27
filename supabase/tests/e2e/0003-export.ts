@@ -283,13 +283,14 @@ test('an instance exported and imported into a fresh database is the same instan
       -- and a surface card set face down with its draft, whose private row is carried too.
       insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, surface) values ('expwall', 'Exported Wall', 'pepperoni', 'rare', 'cast', '{post}', 1, true);
       insert into card_ledger (account, card, kind, price) values (ann, 'expwall', 'bought', 0);
-      declare wall_post uuid; wall_play uuid; wall_set uuid;
+      declare wall_post uuid; wall_play uuid; wall_set uuid; wall_draw uuid;
       begin
         wall_post := tests.post(a, t, 'A wall, carried across.');
         insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, wall_post, '{"card": "expwall", "message": "", "config": {}, "layer": 1}') returning id into wall_play;
         perform open_surface(wall_play);
-        perform draw_on_surface(bob, b, wall_play, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}', (repeat('1', 300) || repeat('0', 9700))::bit(10000), 4000);
-        perform wash_surface(ann, a, wall_play, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000));
+        -- A draw with a place for the post's own words (surface_places is a table an export carries) and a wash that clears 100 of its 300 cells (a take of 40 tenths on a grid of 20).
+        wall_draw := (draw_on_surface(bob, b, wall_play, '{"groups": []}', repeat('k', 300) || repeat('0', 9700), jsonb_build_array(jsonb_build_object('grp', 0, 'version', wall_post, 'place', '{"kind": "text", "version": "x", "at": 0, "len": 1, "dx": 0, "dy": 0}'::jsonb)), 4000) ->> 'id')::uuid;
+        perform wash_surface(ann, a, wall_play, '{"cuts": []}', jsonb_build_array(jsonb_build_object('draw', wall_draw, 'takes', repeat('E', 100) || repeat('0', 9900))));
         wall_set := tests.post(a, t, 'A wall, set face down.');
         -- A surface card is cast face up now (0343) and face_down_never_writes refuses its back, so the rows set_surface_card wrote are written directly with that trigger off for the insert:
         -- they stand for a back set before 0343, whose private draft an export still carries.
@@ -706,7 +707,9 @@ test('an instance exported and imported into a fresh database is the same instan
     (select count(*) from acts where kind = 'card' and payload ->> 'card' = 'expscore' and payload ->> 'starts' is not null) || '|' ||
     (select count(*) from acts where kind = 'spring' and payload ->> 'did' = 'rode' and payload ->> 'quadrant' = 'excitedPositive')`);
   // A surface's row is derived from its Acts: rebuilt from them, it is the stored row (the first number is the fixture's own wall, the second the surfaces in the database that differ, the races' committed ones included).
-  const surfaceRows = (url: string) => psqlOn(url, `select count(*) filter (where k.payload ->> 'card' = 'expwall') || '|' || count(*) filter (where r.cover is distinct from s.cover or r.owners is distinct from s.owners or r.live is distinct from s.live)
+  const surfaceRows = (url: string) => psqlOn(url, `select count(*) filter (where k.payload ->> 'card' = 'expwall') || '|' || count(*) filter (where r.covered is distinct from s.covered or r.washes is distinct from s.washes or r.live is distinct from s.live
+      or exists (select draw, coats, painted from rebuild_surface_coats(s.play) except select draw, coats, painted from surface_coats c where c.play = s.play)
+      or exists (select draw, coats, painted from surface_coats c where c.play = s.play except select draw, coats, painted from rebuild_surface_coats(s.play)))
     from surfaces s join acts k on k.id = s.play cross join lateral rebuild_surface(s.play) r`);
   assert.equal(surfaceRows(from), '1|0', 'the fixture holds a surface, and rebuilding it from its Acts gives the stored row');
   // The log's narrow rows (surface_marks, surface_cuts) are what the Acts say too: recomputed from every surface's Acts they are the stored rows, in both directions (the first number counts the rows the fixture's wall holds; the second the differences).
