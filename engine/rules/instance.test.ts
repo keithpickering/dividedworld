@@ -955,6 +955,12 @@ test('a card that draws an effect reaches a post and is not a set card', () => {
   assert.match(instanceProblems(withCards({ drawsEffect: {}, play: 'set', trap: { trigger: { on: 'visit' } } })).join('\n'), /card "splat" draws an effect and is a set card/);
 });
 
+test('a card whose clear is final gives a cleared', () => {
+  assert.deepEqual(instanceProblems(withCards({ drawsEffect: { final: true, cleared: () => true } })), []);
+  assert.deepEqual(instanceProblems(withCards({ drawsEffect: { cleared: () => true } })), []);
+  assert.match(instanceProblems(withCards({ drawsEffect: { final: true } })).join('\n'), /card "splat" says its clear is final and gives no cleared; a clear is read from cleared/);
+});
+
 test('a card carries one of the four rarities', () => {
   assert.deepEqual(instanceProblems(withCards({ rarity: 'legendary' })), []);
   assert.match(instanceProblems(withCards({ rarity: undefined })).join('\n'), /card "splat" has no rarity/);

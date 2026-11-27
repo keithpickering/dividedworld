@@ -1002,6 +1002,24 @@ test('a cleared play, an ended one and an effect from above count none; a live b
   assert.deepEqual(decidePlay(drawer, limit, post, [back('a'), drawing('b')], {}, ''), { ok: false, why: said });
 });
 
+test('a final clear holds no stack place; a clear that is not final still does', () => {
+  const clean = (s: unknown) => (s as { clean?: boolean } | null)?.clean === true;
+  const finals: CardRules = { ...cast('finals', 'common'), drawsEffect: { cleared: clean, final: true } };
+  const plain1: CardRules = { ...cast('plain1', 'common'), drawsEffect: { cleared: clean } };
+  const now = new Date();
+  const play = (card: string, extra: Partial<CardEffect> = {}): CardEffect => ({ card, act: `${card}-${Math.random()}`, drawing: true, ...extra });
+  const clearedFinal = [play('finals', { cleared: true })];
+  assert.equal(landsOn(finals, post, clearedFinal, now).ok, true, 'a cleared play of a final card blocks nothing');
+  assert.equal(landsOn(plain1, post, [play('plain1', { cleared: true })], now).ok, false, 'a cleared play of a card that is not final still holds its place');
+  assert.equal(landsOn(finals, post, [play('finals')], now).ok, false, 'an uncleared play holds its place');
+  assert.equal(landsOn(plain1, post, [play('plain1')], now).ok, false);
+  assert.equal(landsOn(finals, post, [play('plain1', { cleared: true })], now).ok, true, 'another card\'s cleared play changes nothing');
+  assert.equal(landsOn(plain1, post, [play('finals', { cleared: true })], now).ok, true);
+  assert.equal(landsOn(finals, post, [play('plain1')], now).ok, true);
+  assert.equal(landsOn(finals, post, [play('finals', { cleared: true }), play('finals')], now).ok, false, 'the uncleared one still blocks');
+  assert.equal(effectsUp(post, clearedFinal, now), 0, 'effectsUp is unchanged: a cleared play counts none');
+});
+
 test('a target that is not a post is never refused by the count', () => {
   const character = { reach: 'character', act: 'c', kind: 'character' } as unknown as CardTarget;
   assert.equal(effectsUp(character, full, new Date()), 0);
