@@ -96,9 +96,15 @@ export function Page({ surface, menu = true, children }: PageProps) {
   }, [landed]);
   const first = useRef(true);
   useEffect(() => {
-    if (first.current) { first.current = false; return; }
     /* As the frame's: a fragment is the page's to scroll to, and back or forward keeps the browser's scroll. */
-    if (!hash && !popped) globalThis.scrollTo?.(0, 0);
+    const toTop = !hash && !popped;
+    /*
+     * The page's first screen: a move from a board into the glass mounts this page afresh, with the window still scrolled where the board
+     * was (the board has already been pinned there, Held.tsx), so the glass starts at its top too. On the document's own first page the
+     * window is at its top already and nothing moves; focus stays where the crossing and the load leave it.
+     */
+    if (first.current) { first.current = false; if (toTop && globalThis.scrollY > 0) globalThis.scrollTo?.(0, 0); return; }
+    if (toTop) globalThis.scrollTo?.(0, 0);
     main.current?.focus({ preventScroll: true });
   }, [screenKey]);
   /* The screen's head, panels and rows enter by the feel's stagger (enter.ts), once the screen has mounted, before it paints. */
