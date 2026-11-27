@@ -663,13 +663,26 @@ function cosmeticsProblems(instance: Instance): string[] {
   for (const l of lines) {
     if (l.item === undefined) continue;
     if (l.outcome === 'line') { out.push(`event line "${l.key}" is a line event and names the item "${l.item}"; only a gear or card event gives an item`); continue; }
-    const found = l.outcome === 'gear' ? gear.find((g) => g.key === l.item) : l.outcome === 'card' ? cards.find((c) => c.key === l.item) : undefined;
     if (l.outcome !== 'gear' && l.outcome !== 'card') continue;
+    const found = l.outcome === 'gear' ? gear.find((g) => g.key === l.item) : cards.find((c) => c.key === l.item);
     if (!found) out.push(`event line "${l.key}" names the ${l.outcome} "${l.item}", and the instance has no such ${l.outcome}`);
     else if (RARITIES.includes(eventRarity(l)) && RARITIES.indexOf(eventRarity(l)) < RARITIES.indexOf(found.rarity)) out.push(`event line "${l.key}" is ${eventRarity(l)} and names the ${found.rarity} ${l.outcome} "${l.item}"; an event is at least as rare as the item it gives`);
   }
-  for (const g of gear) if (g.eventOnly && !lines.some((l) => l.outcome === 'gear' && l.item === g.key)) out.push(`gear "${g.key}" is event-only and no event line names it, so it could never be found`);
-  for (const c of cards) if (c.eventOnly && !c.retired && !lines.some((l) => l.outcome === 'card' && l.item === c.key)) out.push(`card "${c.key}" is event-only and no event line names it, so it could never be found`);
+  // An event-only item is found only through an event line; with the odds readable, that line must sit at a rarity eventRarity weighs.
+  const weighed = cosmeticsRule(instance.settings?.cosmetics) === null ? instance.settings?.cosmetics?.events?.eventRarity : undefined;
+  const findable = (l: EventLine) => !weighed || (weighed[eventRarity(l)] ?? 0) > 0;
+  for (const g of gear) {
+    if (!g.eventOnly) continue;
+    const named = lines.filter((l) => l.outcome === 'gear' && l.item === g.key);
+    if (!named.length) out.push(`gear "${g.key}" is event-only and no event line names it, so it could never be found`);
+    else if (!named.some(findable)) out.push(`gear "${g.key}" is event-only and no event line at a rarity events.eventRarity weighs names it, so it could never be found`);
+  }
+  for (const c of cards) {
+    if (!c.eventOnly || c.retired) continue;
+    const named = lines.filter((l) => l.outcome === 'card' && l.item === c.key);
+    if (!named.length) out.push(`card "${c.key}" is event-only and no event line names it, so it could never be found`);
+    else if (!named.some(findable)) out.push(`card "${c.key}" is event-only and no event line at a rarity events.eventRarity weighs names it, so it could never be found`);
+  }
   // Settings are checked on their own; the odds read here only once they hold.
   const events = instance.settings?.cosmetics?.events;
   if (cosmeticsRule(instance.settings?.cosmetics) === null && events) {
