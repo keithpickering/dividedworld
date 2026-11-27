@@ -100,6 +100,8 @@ declare
                            'surface_acts(uuid)',
                            -- Each live draw's painted cells (0456): the one fact of the grids the Lens shows, a count of a public Act.
                            'surface_shares(uuid)',
+                           -- A post's current version and a draw's places at it (0456): thin definers over post_version, which a player cannot call; each reads public edits and a public draw's own rows, never an owner, a class or a reaction.
+                           'post_current_version(uuid)', 'surface_places_now(uuid,uuid)',
                            'card_target_reach(text,uuid,uuid)', 'effects_above(uuid[],uuid,uuid)', 'pinned_threads(uuid)',
                            -- Updates (0062): an admin's post_update, and the page's read.
                            'post_update(text,text,jsonb)', 'updates(timestampwithtimezone,integer)',

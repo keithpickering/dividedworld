@@ -289,7 +289,7 @@ test('an instance exported and imported into a fresh database is the same instan
         insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, wall_post, '{"card": "expwall", "message": "", "config": {}, "layer": 1}') returning id into wall_play;
         perform open_surface(wall_play);
         -- A draw with a place for the post's own words (surface_places is a table an export carries) and a wash that clears 100 of its 300 cells (a take of 40 tenths on a grid of 20).
-        wall_draw := (draw_on_surface(bob, b, wall_play, '{"groups": []}', repeat('k', 300) || repeat('0', 9700), jsonb_build_array(jsonb_build_object('grp', 0, 'version', wall_post, 'place', '{"kind": "text", "version": "x", "at": 0, "len": 1, "dx": 0, "dy": 0}'::jsonb)), 4000) ->> 'id')::uuid;
+        wall_draw := (draw_on_surface(bob, b, wall_play, '{"groups": [{}]}', repeat('k', 300) || repeat('0', 9700), jsonb_build_array(jsonb_build_object('grp', 0, 'version', wall_post, 'place', '{"kind": "text", "version": "x", "at": 0, "len": 1, "dx": 0, "dy": 0}'::jsonb)), 4000) ->> 'id')::uuid;
         perform wash_surface(ann, a, wall_play, '{"cuts": []}', jsonb_build_array(jsonb_build_object('draw', wall_draw, 'takes', repeat('E', 100) || repeat('0', 9900))));
         wall_set := tests.post(a, t, 'A wall, set face down.');
         -- A surface card is cast face up now (0343) and face_down_never_writes refuses its back, so the rows set_surface_card wrote are written directly with that trigger off for the insert:

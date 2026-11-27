@@ -364,6 +364,8 @@ select 'function', n, m, w from (values
   ('start_thread', 'no author', 'a write: answers the Act it wrote through the projection, to its author'),
   ('suggest_characters', 'no author', 'characters by name prefix: all characters_public shows, the stand-in included'),
   ('surface_acts', 'swept', 'a wall''s live draws and washes, through acts_public: a wash is the post''s own character''s, so on a veiled post it is the stand-in''s'),
+  ('post_current_version', 'no author', 'the id of a post''s latest edit Act (or the post itself): both public, the same version acts_public already shows as `version`; no owner, class or reaction'),
+  ('surface_places_now', 'no author', 'a draw''s places (group and spot) for a post''s current version: public Act data a viewer already sees drawn, with no character, owner, class or reaction'),
   ('surface_shares', 'no author', 'each live draw''s painted cells, by the draw''s id: a count, no character'),
   ('thread_page', 'swept', 'a thread''s page'),
   ('tip_keys_ok', 'no author', 'a pure function of its argument'),
