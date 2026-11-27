@@ -141,9 +141,10 @@ describe('Compose, on the post a card is played on', () => {
     const { surface } = mountCompose();
     drag(surface, LINE);
     const last = vi.mocked(spray.paintWall).mock.calls.at(-1)!;
-    expect(last[3]).toHaveLength(1);
-    expect(last[3][0]!.kind).toBe('draw');
-    expect((last[3][0]!.payload as { groups: { strokes: unknown[] }[] }).groups[0]!.strokes).toHaveLength(1);
+    const acts = last[3] as readonly spray.WallAct[];
+    expect(acts).toHaveLength(1);
+    expect(acts[0]!.kind).toBe('draw');
+    expect((acts[0]!.payload as { groups: { strokes: unknown[] }[] }).groups[0]!.strokes).toHaveLength(1);
   });
 
   test('Tag it waits for a drawing, and the toolbar counts it: Wall 0% of 40% grows', async () => {
@@ -218,7 +219,7 @@ describe('a stencil', () => {
     await user.click(screen.getByRole('radio', { name: 'Crown' }));
     await user.click(screen.getByRole('radio', { name: 'Pink' }));
     await user.click(screen.getByRole('radio', { name: 'Top left' }));
-    const shown = vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
+    const shown = vi.mocked(spray.paintWall).mock.calls.at(-1)![3] as readonly spray.WallAct[];
     expect(shown).toHaveLength(1);
     const group = (shown[0]!.payload as { groups: { at: number[]; strokes: { can: string }[] }[] }).groups[0]!;
     expect(group.strokes).toHaveLength(4);
@@ -359,7 +360,7 @@ describe('review fixes', () => {
     unders.push(under);
     renderInWorld(<Compose post={POST} box={{ w: 600, h: 400 }} under={under} submit={ok} cancel={() => {}} hold={() => {}} ready={() => {}}><p>x</p></Compose>);
     drag(under.querySelector('[data-kb-draw-surface]') as HTMLElement, LINE);
-    const painted = vi.mocked(spray.paintWall).mock.calls.at(-1)![3][0]!.payload as { box: unknown; groups: { at: number[]; anchor: unknown }[] };
+    const painted = (vi.mocked(spray.paintWall).mock.calls.at(-1)![3] as readonly spray.WallAct[])[0]!.payload as { box: unknown; groups: { at: number[]; anchor: unknown }[] };
     expect(painted.box).toEqual({ w: 40, h: 26.67 });
     expect(painted.groups[0]).toMatchObject({ at: [0.4, 0.3], anchor: { kind: 'box' } });
   });
@@ -402,13 +403,29 @@ describe('tagging a post\'s words and images', () => {
     expect(first.groups[0]).toMatchObject({ unit: 'image', em: 13.33, anchor: { kind: 'image', version: 'post-1', n: 0, src: 'https://x.test/a.png', nth: 0, x: 0.5, y: 0.5 } });
   });
 
-  test('a post that has been edited, whose current version the page does not hold, is tagged against the box', async () => {
+  test('an edited post whose page holds no tails is tagged against its words, at the current version the page\'s read carries', async () => {
     const user = userEvent.setup();
     layout({ 0: rect(0, 10, 0, 21) });
-    const { props, surface } = mountCompose({ post: edited('Hello', { editedAt: '2026-10-30T00:00:00.000Z' }), words: 'Hello' });
+    const { props, surface } = mountCompose({ post: edited('Hello', { editedAt: '2026-10-30T00:00:00.000Z', version: 'edit-1' }), words: 'Hello' });
+    drag(surface, [[20 / 600, 25 / 400], [60 / 600, 25 / 400]]);
+    await user.click(tag());
+    expect((vi.mocked(props.submit).mock.calls[0]![1] as { groups: { anchor: unknown }[] }).groups[0]!.anchor).toMatchObject({ kind: 'text', version: 'edit-1', at: 0, len: 5 });
+  });
+
+  test('a post edited since the page read it, with no tails, is tagged against the box, since the version the page holds is the old one', async () => {
+    const user = userEvent.setup();
+    layout({ 0: rect(0, 10, 0, 21) });
+    const { props, surface } = mountCompose({ post: edited('Hello', { editedAt: '2026-10-30T00:00:00.000Z', version: 'post-1' }), words: 'Hello' });
     drag(surface, [[20 / 600, 25 / 400], [60 / 600, 25 / 400]]);
     await user.click(tag());
     expect((vi.mocked(props.submit).mock.calls[0]![1] as { groups: { anchor: unknown }[] }).groups[0]!.anchor).toEqual({ kind: 'box' });
+  });
+});
+
+describe('Compose is only ever for a new wall', () => {
+  test('its meter starts from nothing: a play of the card makes its own wall, one to a post (stack 1), and a Draw on a wall that is there is DrawMode with its covered', () => {
+    mountCompose();
+    expect(screen.getByText(/^Wall 0% of 40%$/)).toBeInTheDocument();
   });
 });
 

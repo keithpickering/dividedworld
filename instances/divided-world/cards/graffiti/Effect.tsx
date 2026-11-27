@@ -15,7 +15,12 @@
  * in this component's memory for the visit (a reload brings the paint back) and placed in the wall's order where it was made, so a tag drawn
  * after it shows. The painter cuts it exactly as it cuts a saved wash, so what the eye sees and what `hitAt` finds agree.
  *
- * The author's strokes are also collected and sent with `surface.wash` once 1.5 seconds pass without a stroke, or as the post is left (a wash
+ * The sponge goes to the top group of the wall with paint under it (spray.ts), a press every third of its radius, each thinning only that group; a
+ * reader's presses are replayed on this screen after the wall's saved washes (`chunks`), and a rebuilt wall (a new draw, a resize) replays them again.
+ * Where a draw's groups are is this screen's own: a `TextLayer` of marks lies at each text attachment, the marks and `[data-kb-img]` images are measured after
+ * layout (and again on a resize, an image's load and a change of text size), and `placeGroups` puts each group there (spray.ts).
+ *
+ * The author's presses are also collected, by draw and group in the group's own units, and sent with `surface.wash` as `{ cuts }` once 1.5 seconds pass without a stroke, or as the post is left (a wash
  * Act is one batch, within the card's bounds). A refusal is shown and not retried; an answer that never came is sent again, as Whoops!'s
  * saves are, even after the post is left (the retries outlive the effect, for at most about two minutes). "Hold to scrub" is the reader's keyboard path at Whoops!'s pace and stays on this screen for everyone; the author's "Wash" is the
  * same sweep, saved for everyone.
@@ -31,51 +36,50 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
-import { bodyBox, bodyOf } from '../../../../engine/ui/cards/body.ts';
+import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
+import { bodyBox, bodyOf, wordsBoxOf } from '../../../../engine/ui/cards/body.ts';
+import type { Measured } from '../../../../engine/ui/cards/place.ts';
 import { bringClear } from '../../../../engine/ui/cards/clear.ts';
 import { LOST_ANSWER, type Answer, type SurfaceAct } from '../../../../engine/ui/data/api.ts';
 import { usePlayer } from '../../../../engine/ui/player.tsx';
 import type { CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
-import { CANS, SPONGE, type Can } from '../graffiti.ts';
-import { DrawMode } from './Compose.tsx';
+import { BOUNDS, CANS, type Can } from '../graffiti.ts';
+import { DrawMode, Marked } from './Compose.tsx';
 import { dockHostOf } from './Toolbar.tsx';
 import { lastCan } from './draft.ts';
 import { cursor } from '../whoops/cursor.ts';
 import { ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, sweepStep, type Sweep } from '../whoops/scrub.ts';
 import * as suds from '../whoops/suds.ts';
 import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
-import { hitAt, paintWall, wallDensity, type Box, type WallAct } from './spray.ts';
+import { DEFAULT_EM_PX, Wall, groupsOf, hitAt, markKey, paintWall, wallDensity, type Box, type Chunk, type Walker, type WallAct } from './spray.ts';
 import './graffiti.css';
 
 export { MAX_SAVE_RETRIES, RETRY_AFTER_MS };
 /** A burst of washes is sent once it has been quiet this long. */
 export const WASH_AFTER_MS = 1500;
-/** A wash holds at most this many strokes of at most this many points, 3,000 points in all (`graffiti.ts` `BOUNDS`, the server's check). */
-const BATCH = { strokes: 120, points: 300, total: 3000 } as const;
-/** Points closer than this to the one before are dropped, px. */
-const MIN_STEP_PX = 5;
-/** Where along a line, and how many places, the line is tested for paint; and the probes of a band, in rows of height from its middle. */
-const SPAN_SAMPLES = 64;
+/** A wash holds at most this many presses in all (`graffiti.ts` `BOUNDS`, the server's check). */
+const BATCH_PRESSES = BOUNDS.presses;
 /** The wall's sweep keeps its pace as a share of the wall's width a second. Whoops!'s moved to a hand's pace in px
  *  (docs/plans/2026-11-12-whoops-followups-design.md, section 4), which was weighed for a splat and not for a wall. */
 const SWEEP_SPEED = 0.55;
+/** The mark a text group's place is found by after layout. */
+const MARK = 'data-kb-graffiti-mark';
+const EMPTY: readonly SurfaceAct[] = [];
 
 const HOLD_HELP = 'Hold Space or Enter on this button to scrub the wall away line by line, at the pace of a hand, on your screen only. Let go to stop. It never clears the wall all at once.';
 const WASH_HELP = 'Hold Space or Enter on this button to wash the wall line by line, at the pace of a hand, for everyone. Let go to stop. It never clears the wall all at once.';
 const ENDS = 'Ends on your screen when you scrub it off. The author can wash it off for everyone, and anyone can tag it again.';
 
 type Pt = readonly [number, number];
-/** A scrub made on this screen: where in the wall's order it was made (the last Act then), and the stroke in shares of the box. */
-interface Local {
-  /** The ids of the live Acts when it was made: it lies after the last of them still live, so a tag drawn later is never painted over by it. */
-  readonly seen: ReadonlySet<string>;
-  readonly aspect: number;
-  readonly points: Pt[];
-  /** The scrub as a wash Act, made again each time its points grow, so the painter's cache (by Act object) is never stale and never rebuilt for a scrub that has not changed. */
-  act: WallAct;
-}
+/**
+ * What this screen's sponge took from one group: in the group's units, as the wash keeps them. It stays while the wall is rebuilt, and is sent (the author's) once closed.
+ * `sent` says the wash that holds it was saved (its Act's id, or true where the answer had none): it is dropped once the wall's Acts hold that wash.
+ */
+interface MChunk { draw: string; group: number; presses: [number, number][]; save: boolean; open: boolean; sent?: string | true; sentActs?: unknown }
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
-interface Live { readonly local: Local; readonly pointer: number | null; readonly touch?: true; readonly save: boolean }
+/** A stroke of the sponge under way, in the chunks it has filled. */
+interface Live { readonly walker: Walker; readonly chunks: Map<string, MChunk>; readonly pointer: number | null; readonly touch?: true; readonly save: boolean }
+const newLive = (pointer: number | null, save: boolean, touch = false): Live => ({ walker: { last: null, left: 0 }, chunks: new Map(), pointer, save, ...(touch ? { touch: true as const } : null) });
 
 /** What takes a press for itself: a link, a button, a field or anything made to be pressed. A press there goes to it and starts no scrub. */
 const INTERACTIVE = 'a[href], button, input, select, textarea, summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="link"], [role="checkbox"], [role="menuitem"], [role="switch"], [role="tab"]';
@@ -84,56 +88,7 @@ const interactive = (target: unknown): boolean => {
   return typeof el?.closest === 'function' && el.closest(INTERACTIVE) !== null;
 };
 
-const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
-const clamp = (n: number) => Math.min(1, Math.max(0, n));
-
-const actOf = (l: Pick<Local, 'aspect' | 'points'>): WallAct => ({ kind: 'wash', payload: { strokes: [{ aspect: l.aspect, points: l.points }] } });
-function newLocal(acts: readonly { readonly id?: string }[], aspect: number, first: Pt): Local {
-  const l: Local = { seen: new Set(acts.flatMap((a) => (a.id === undefined ? [] : [a.id]))), aspect, points: [first], act: { kind: 'wash', payload: null } };
-  l.act = actOf(l);
-  return l;
-}
-function grow(l: Local, p: Pt): void {
-  l.points.push(p);
-  l.act = actOf(l);
-}
-
-/** The wall's Acts with this screen's scrubs, each placed after the last live Act that existed when it was made (before them all when none is live any more). */
-function merge(acts: readonly (WallAct & { readonly id?: string })[], locals: readonly Local[]): WallAct[] {
-  if (locals.length === 0) return [...acts];
-  const after = new Map<number, WallAct[]>();
-  for (const l of locals) {
-    let i = acts.length - 1;
-    while (i >= 0 && !(acts[i]!.id !== undefined && l.seen.has(acts[i]!.id!))) i--;
-    const list = after.get(i) ?? [];
-    list.push(l.act);
-    after.set(i, list);
-  }
-  const out: WallAct[] = [...(after.get(-1) ?? [])];
-  acts.forEach((a, i) => { out.push(a); out.push(...(after.get(i) ?? [])); });
-  return out;
-}
-
-/** A stroke as a wash keeps it: held to the box to a ten-thousandth, thinned of points that add nothing, cut into strokes of at most 300 points that each start on the point the last ended on. */
-function fit(points: readonly Pt[], box: Box): { aspect: number; points: [number, number][] }[] {
-  const kept: [number, number][] = [];
-  for (const [x, y] of points) {
-    const p: [number, number] = [tenThousandth(clamp(x)), tenThousandth(clamp(y))];
-    const last = kept[kept.length - 1];
-    if (last && Math.hypot((p[0] - last[0]) * box.w, (p[1] - last[1]) * box.h) < MIN_STEP_PX) continue;
-    kept.push(p);
-  }
-  if (kept.length === 0) return [];
-  const aspect = Number((box.w / box.h).toPrecision(3));
-  const out: { aspect: number; points: [number, number][] }[] = [];
-  for (let at = 0; ; at += BATCH.points - 1) {
-    out.push({ aspect, points: kept.slice(at, at + BATCH.points) });
-    if (at + BATCH.points >= kept.length) break;
-  }
-  return out;
-}
-
-export function Effect({ plays, reader, surface, ink: registry, place, show, met, still, children }: EffectProps) {
+export function Effect({ post, plays, reader, surface, ink: registry, place, show, met, still, children }: EffectProps) {
   const { session, hudCharacter } = usePlayer();
   const account = session.signedIn ? session.account : null;
   /*
@@ -189,19 +144,30 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   useEffect(() => { if (drawing && !drawable) setDrawing(false); }, [drawing, drawable]);
   const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
-  const locals = useRef<Local[]>([]);
+  const chunks = useRef<MChunk[]>([]);
+  const strokes = useRef(0);
   const now = useRef({ acts, surface, plays, reader, size, near, surfaceEl, drawing, still, dpr });
   now.current = { acts, surface, plays, reader, size, near, surfaceEl, drawing, still, dpr };
-  /** The wall as this screen draws and tests it: the live Acts and the scrubs made here. */
-  const merged = useRef<{ acts: readonly SurfaceAct[] | null; made: readonly WallAct[]; out: WallAct[] } | null>(null);
-  const wall = useCallback((): WallAct[] => {
-    const { acts: a } = now.current;
-    const made = locals.current.map((l) => l.act);
-    const had = merged.current;
-    if (had && had.acts === a && had.made.length === made.length && had.made.every((m, i) => m === made[i])) return had.out;
-    const out = merge(a ?? [], locals.current);
-    merged.current = { acts: a, made, out };
-    return out;
+  /** Where each text and image group's attachment is on this screen, in px of the box, and the text size: what placement runs against. */
+  const measuredRef = useRef<ReadonlyMap<string, Measured>>(new Map());
+  const emRef = useRef(DEFAULT_EM_PX);
+  const [layoutRev, setLayoutRev] = useState(0);
+  const revRef = useRef(0);
+  const chunkRev = useRef(0);
+  /** The wall as this screen holds it, built again when its Acts, its box, the text size, where its groups are attached or the saved presses change, and not as presses are made. */
+  const built = useRef<{ acts: readonly SurfaceAct[]; w: number; h: number; em: number; rev: number; chunkRev: number; wall: Wall } | null>(null);
+  const wall = useCallback((): Wall => {
+    const { acts: live, size: { box: b } } = now.current;
+    const a = live ?? EMPTY;
+    const had = built.current;
+    if (had && had.acts === a && had.w === b.w && had.h === b.h && had.em === emRef.current && had.rev === revRef.current && had.chunkRev === chunkRev.current) return had.wall;
+    /* A scrub this visit sent is dropped once the wall's Acts hold the wash that saved it, which replays the same presses. */
+    const ids = new Set(a.flatMap((x) => (x.id === undefined ? [] : [x.id])));
+    const kept = chunks.current.filter((c) => !(c.sent !== undefined && (typeof c.sent === 'string' ? ids.has(c.sent) : c.sentActs !== a)));
+    if (kept.length !== chunks.current.length) { chunks.current = kept; chunkRev.current += 1; }
+    const next = Wall.of(a, { box: b, emPx: emRef.current, measured: (g) => measuredRef.current.get(markKey(g)) ?? null }, chunks.current as readonly Chunk[]);
+    built.current = { acts: a, w: b.w, h: b.h, em: emRef.current, rev: revRef.current, chunkRev: chunkRev.current, wall: next };
+    return next;
   }, []);
 
   const metNow = useRef(met);
@@ -214,11 +180,14 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   /* ------------------------------------------------------------------ measuring ---- */
 
   const remeasure = useRef<(() => void) | null>(null);
+  const signature = useRef('');
   useLayoutEffect(() => {
     const f = frameRef.current;
     if (!f) return;
     let watched: HTMLElement | null = null;
     let watch: ResizeObserver | null = null;
+    const loaded = new WeakSet<Element>();
+    let sizes: MutationObserver | null = null;
     const measure = () => {
       const cell = bodyOf(f);
       if (watch && cell !== watched) {
@@ -238,6 +207,29 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
       const was = now.current.size;
       const kept = was.box.w === next.box.w && was.box.h === next.box.h && was.left === next.left && was.top === next.top ? was : next;
       now.current = { ...now.current, surfaceEl: surf, size: kept };
+      /* Where the groups' marks and images are, and the size of the text, on this screen now. */
+      const words = cell ? wordsBoxOf(cell) ?? cell : f;
+      const fontPx = typeof getComputedStyle === 'function' ? parseFloat(getComputedStyle(words).fontSize) : Number.NaN;
+      const em = Number.isFinite(fontPx) && fontPx > 0 ? fontPx : DEFAULT_EM_PX;
+      const found = new Map<string, Measured>();
+      const origin = surf.getBoundingClientRect();
+      const [ox, oy] = [origin.left + surf.clientLeft, origin.top + surf.clientTop];
+      for (const g of groupsOf((now.current.acts ?? []) as readonly WallAct[])) {
+        if (g.anchor.kind === 'text') {
+          const el = f.querySelector(`[${MARK}="${markKey(g)}"]`);
+          if (el) { const r = el.getBoundingClientRect(); found.set(markKey(g), { kind: 'point', x: r.left - ox, y: r.top - oy }); }
+        } else if (g.anchor.kind === 'image') {
+          const el = f.querySelector(`[data-kb-img="${g.anchor.n}"]`);
+          if (el) { const r = el.getBoundingClientRect(); found.set(markKey(g), { kind: 'rect', x: r.left - ox, y: r.top - oy, w: r.width, h: r.height }); }
+        }
+      }
+      for (const img of f.querySelectorAll('[data-kb-img]')) if (!loaded.has(img)) { loaded.add(img); img.addEventListener('load', measure); }
+      const sig = JSON.stringify([[...found], em]);
+      if (sig !== signature.current) {
+        signature.current = sig;
+        measuredRef.current = found; emRef.current = em; revRef.current += 1;
+        setLayoutRev(revRef.current);
+      }
       setSurfaceEl((prev) => (prev === surf ? prev : surf));
       setSize((prev) => (prev.box.w === kept.box.w && prev.box.h === kept.box.h && prev.left === kept.left && prev.top === kept.top ? prev : kept));
     };
@@ -245,9 +237,13 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
       watch = new ResizeObserver(measure);
       watch.observe(f);
     }
+    if (typeof MutationObserver === 'function') {
+      sizes = new MutationObserver(measure);
+      sizes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-text-size'] });
+    }
     measure();
     remeasure.current = measure;
-    return () => { remeasure.current = null; watch?.disconnect(); };
+    return () => { remeasure.current = null; watch?.disconnect(); sizes?.disconnect(); for (const img of f.querySelectorAll('[data-kb-img]')) img.removeEventListener('load', measure); };
   }, []);
 
   /* A takeover moves the words between the cell and a view with no size change: each render checks the cell is still the surface listened on. */
@@ -257,6 +253,15 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     const cell = bodyOf(f);
     if ((cell ?? f) !== now.current.surfaceEl) remeasure.current();
   });
+
+  /* The marks come and go with the wall's Acts, and a text group's mark is a run of the post's words: measured again whenever they do. */
+  const runs = useMemo<TextRun[]>(() => groupsOf((acts ?? []) as readonly WallAct[]).flatMap((g): TextRun[] => {
+    const a = g.anchor;
+    if (a.kind !== 'text') return [];
+    const key = markKey(g);
+    return [{ start: a.at, end: a.at, key: `kbgm${key}`, z: 0, mode: 'mark', render: ({ key: k }) => <span key={k} {...{ [MARK]: key }} aria-hidden="true" /> }];
+  }), [acts]);
+  useLayoutEffect(() => { remeasure.current?.(); }, [acts, drawing]);
 
   /* Only a post near the viewport is drawn: past a screen above or below, the canvas is dropped. */
   useEffect(() => {
@@ -283,7 +288,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     if (!canvas || !isNear || sz.box.w <= 0 || sz.box.h <= 0) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    paintWall(ctx, sz.box, density, draftAct.current ? [...wall(), draftAct.current] : wall());
+    paintWall(ctx, sz.box, density, wall(), draftAct.current);
   }, [wall]);
   const schedulePaint = useCallback(() => {
     if (paintQueued.current) return;
@@ -321,7 +326,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
       canvas.height = Math.ceil(box.h * q);
     }
     paintNow();
-  }, [near, fixed, box.w, box.h, q, acts, paintNow]);
+  }, [near, fixed, box.w, box.h, q, acts, layoutRev, paintNow]);
 
   /* ------------------------------------------------------------------ the suds ---- */
 
@@ -343,46 +348,56 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
 
   /* ------------------------------------------------------------------- the wash ---- */
 
-  const pending = useRef<{ aspect: number; points: [number, number][] }[]>([]);
   const sending = useRef(false);
   const failures = useRef(0);
   const washTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The author's presses still to send: closed, kept for everyone, and not yet saved. */
+  const toSend = () => chunks.current.filter((c) => c.save && !c.open && c.sent === undefined && c.presses.length > 0);
 
   const flush = useCallback(async (): Promise<void> => {
     if (washTimer.current) clearTimeout(washTimer.current);
     washTimer.current = null;
     const { surface: s, plays: ps } = now.current;
     const play = ps[0];
-    if (sending.current || pending.current.length === 0 || !s || !play) return;
-    /* One wash on its way at a time; what is made meanwhile goes after it answers. */
-    const batch: typeof pending.current = [];
-    let points = 0;
-    while (pending.current.length > 0 && batch.length < BATCH.strokes && points + pending.current[0]!.points.length <= BATCH.total) {
-      const next = pending.current.shift()!;
-      points += next.points.length;
-      batch.push(next);
+    if (sending.current || !s || !play) return;
+    /* One wash on its way at a time; what is made meanwhile goes after it answers. A chunk too long for one wash is cut where the wash ends. */
+    const batch: MChunk[] = [];
+    let total = 0;
+    for (const c of toSend()) {
+      const room = BATCH_PRESSES - total;
+      if (room <= 0) break;
+      if (c.presses.length <= room) { batch.push(c); total += c.presses.length; continue; }
+      const head: MChunk = { ...c, presses: c.presses.slice(0, room) };
+      c.presses = c.presses.slice(room);
+      chunks.current.splice(chunks.current.indexOf(c), 0, head);
+      batch.push(head);
+      break;
     }
+    if (batch.length === 0) return;
     sending.current = true;
     let answer: Answer<unknown>;
     try {
-      answer = await s.wash(play.id, { strokes: batch });
+      const cuts = new Map<string, { draw: string; group: number; presses: [number, number][] }>();
+      for (const c of batch) { const k = `${c.draw}/${c.group}`, cut = cuts.get(k) ?? { draw: c.draw, group: c.group, presses: [] }; cut.presses.push(...c.presses); cuts.set(k, cut); }
+      answer = await s.wash(play.id, { cuts: [...cuts.values()] });
     } catch {
       answer = { ok: false, error: LOST_ANSWER, uncertain: true };
     }
     sending.current = false;
     if (!answer.ok) {
       say(answer.error);
-      /* A refusal is the card's answer and would be the same again. A wash that got no answer is sent again, a little later each time, and given up on after a few: the strokes stay, and the author's next one sends them. */
+      /* A refusal is the card's answer and would be the same again. A wash that got no answer is sent again, a little later each time, and given up on after a few: the presses stay, and the author's next stroke sends them. */
       if (answer.uncertain) {
-        pending.current.unshift(...batch);
         failures.current += 1;
         if (failures.current <= MAX_SAVE_RETRIES) queueWash(RETRY_AFTER_MS * 2 ** (failures.current - 1));
-      }
+      } else for (const c of batch) c.save = false;
       return;
     }
+    const id = (answer.value as { id?: unknown } | null)?.id;
+    for (const c of batch) { c.sent = typeof id === 'string' ? id : true; c.sentActs = now.current.acts; }
     failures.current = 0;
     say('');
-    if (pending.current.length > 0) queueWash(gone.current ? 0 : WASH_AFTER_MS);
+    if (toSend().length > 0) queueWash(gone.current ? 0 : WASH_AFTER_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [say]);
   const queueWash = useCallback((after = WASH_AFTER_MS) => {
@@ -390,13 +405,10 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     washTimer.current = setTimeout(() => { void flush(); }, after);
   }, [flush]);
 
-  /** A finished stroke is kept as the scrub it is; the author's is also sent. */
+  /** A finished stroke closes its chunks; the author's are then sent. */
   const keep = useCallback((s: Live) => {
-    if (s.local.points.length === 0) return;
-    if (s.save && now.current.reader.author) {
-      pending.current.push(...fit(s.local.points, now.current.size.box));
-      queueWash();
-    }
+    for (const c of s.chunks.values()) c.open = false;
+    if (s.chunks.size > 0 && s.save && now.current.reader.author) queueWash();
   }, [queueWash]);
 
   /* ------------------------------------------------------------------ a stroke ---- */
@@ -407,6 +419,22 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     const rect = el.getBoundingClientRect();
     const { box: b } = now.current.size;
     return [(clientX - rect.left - el.clientLeft) / b.w, (clientY - rect.top - el.clientTop) / b.h];
+  };
+  /** Where a point of the screen lies in the body's box, in px. */
+  const pxAt = (clientX: number, clientY: number): Pt => {
+    const el = now.current.surfaceEl ?? frameRef.current!;
+    const rect = el.getBoundingClientRect();
+    return [clientX - rect.left - el.clientLeft, clientY - rect.top - el.clientTop];
+  };
+  /** Presses to the sponge's walk to a px point: they thin the wall's top group with paint, and are kept in the stroke's chunks. */
+  const pressTo = (s: Live, p: Pt) => {
+    for (const press of wall().walk(s.walker, p)) {
+      if (press.draw === '') continue;
+      const key = `${press.draw}/${press.group}`;
+      let c = s.chunks.get(key);
+      if (!c) { c = { draw: press.draw, group: press.group, presses: [], save: s.save && now.current.reader.author, open: true }; s.chunks.set(key, c); chunks.current.push(c); }
+      c.presses.push([press.u, press.v]);
+    }
   };
   /** Whether the wall has ink at a point of the screen. */
   const hitAtClient = (clientX: number, clientY: number): boolean => {
@@ -453,23 +481,24 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   const begin = (clientX: number, clientY: number, pointer: number, touch: boolean): boolean => {
     if (!startsAt(clientX, clientY)) return false;
     meet();
-    const { size: { box: b }, acts: now_ } = now.current;
-    const local = newLocal(now_ ?? [], b.w / b.h, shareAt(clientX, clientY));
-    locals.current.push(local);
-    setScrubbed(locals.current.length);
-    live.current = { local, pointer, save: true, ...(touch ? { touch: true as const } : null) };
+    const stroke = newLive(pointer, true, touch);
+    strokes.current += 1;
+    setScrubbed(strokes.current);
+    live.current = stroke;
     suppress.current = false;
+    pressTo(stroke, pxAt(clientX, clientY));
     schedulePaint();
     return true;
   };
 
   const extend = (s: Live, clientX: number, clientY: number) => {
-    const p = shareAt(clientX, clientY);
-    const last = s.local.points[s.local.points.length - 1]!;
-    if (Math.hypot(p[0] - last[0], p[1] - last[1]) === 0) return;
-    grow(s.local, p);
+    const p = pxAt(clientX, clientY);
+    const last = s.walker.last;
+    if (last && Math.hypot(p[0] - last[0], p[1] - last[1]) === 0) return;
+    pressTo(s, p);
     suppress.current = true;
-    throwSuds(last, p);
+    const { box: b } = now.current.size;
+    if (last && b.w > 0 && b.h > 0) throwSuds([last[0] / b.w, last[1] / b.h], [p[0] / b.w, p[1] / b.h]);
     schedulePaint();
   };
 
@@ -684,21 +713,17 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     if (now.current.still || sweeping.current || sz.box.w <= 0 || sz.box.h <= 0 || now.current.acts === null) return;
     const b = sz.box;
     const rows = bandsOf(b);
-    const half = ROW_PX / 2 / b.h;
+    const half = (ROW_PX / 2 / b.h) * SWEEP_BRUSH_ROWS / 1.15;
     const run = { raf: 0, last: performance.now(), sweep: { row: Math.min(sweepFrom.current, rows.length - 1), x: 0 } as Sweep };
     sweeping.current = run;
     const tick = (t: number) => {
       const dt = Math.min(0.05, Math.max(0, (t - run.last) / 1000));
       run.last = t;
       const w = wall();
-      /* A band's ink: where the wall still has paint on it, so the sweep waits out no empty line. */
+      /* A band's ink, across, in shares: where the wall's fields still hold paint on it, so the sweep waits out no empty line. */
       const span = (row: number): readonly [number, number] | null => {
-        let lo = Infinity, hi = -Infinity;
-        for (const dy of [-half * SWEEP_BRUSH_ROWS / 1.15, 0, half * SWEEP_BRUSH_ROWS / 1.15]) {
-          const y = (rows[row]! + dy) * b.h;
-          for (let i = 0; i <= SPAN_SAMPLES; i++) if (hitAt(w, b, (i / SPAN_SAMPLES) * b.w, y)) { lo = Math.min(lo, i / SPAN_SAMPLES); hi = Math.max(hi, i / SPAN_SAMPLES); }
-        }
-        return lo <= hi ? [lo, hi] : null;
+        const px = w.spanOf((rows[row]! - half) * b.h, (rows[row]! + half) * b.h);
+        return px ? [px[0] / b.w, px[1] / b.w] : null;
       };
       const step = sweepStep(rows, run.sweep, dt, SWEEP_SPEED, span);
       if (step.idle) {
@@ -706,20 +731,22 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
         return;
       }
       const p = step.point;
+      const px: Pt = [p[0] * b.w, p[1] * b.h];
       const open = sweepStroke.current;
       const sameBand = open !== null && step.sweep.row === run.sweep.row;
       if (open && !sameBand) closeSweepStroke();
       meet();
       const cur = sweepStroke.current;
       if (cur) {
-        const last = cur.local.points[cur.local.points.length - 1]!;
-        grow(cur.local, p);
-        throwSuds(last, p);
+        const last = cur.walker.last!;
+        pressTo(cur, px);
+        throwSuds([last[0] / b.w, last[1] / b.h], p);
       } else {
-        const local = newLocal(now.current.acts ?? [], b.w / b.h, p);
-        locals.current.push(local);
-        setScrubbed(locals.current.length);
-        sweepStroke.current = { local, pointer: null, save };
+        const stroke = newLive(null, save);
+        strokes.current += 1;
+        setScrubbed(strokes.current);
+        sweepStroke.current = stroke;
+        pressTo(stroke, px);
         throwSuds(p, p);
       }
       run.sweep = step.sweep;
@@ -741,7 +768,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
       stopLatest.current();
       gone.current = true;
       /* What is still to send is sent now, and a send that gets no answer is retried after the post is gone: its timer is left to run out the retries. */
-      if (pending.current.length > 0) void flush();
+      if (toSend().length > 0) void flush();
     };
   }, [flush]);
 
@@ -770,7 +797,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     <div ref={rootRef} className="kb-graffiti" data-kb-graffiti data-kb-place={place} data-kb-scrubbed={scrubbed} data-kb-drawing={drawing ? 'true' : undefined}>
       <div ref={frameRef} className="kb-graffiti-frame" style={cellEl ? { overflow: 'visible' } : undefined}>
         <div ref={layoutRef} data-kb-graffiti-layout="">
-          {children}
+          <TextLayer runs={runs}>{drawing ? <Marked post={post}>{children}</Marked> : children}</TextLayer>
         </div>
         {near && fixed && (
           <>
@@ -792,7 +819,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
         )}
         {drawing && drawable && surface && plays[0] && hudCharacter && (
           <DrawMode
-            box={box} wall={acts} covered={surface.covered} most={surface.most} asks
+            box={box} post={post} wall={acts} covered={surface.covered} most={surface.most} asks
             dockHost={dockHostOf(frameRef.current) ?? rootRef.current}
             submit={async (input) => {
               const answer = await surface.draw(plays[0]!.id, hudCharacter.id, input);
