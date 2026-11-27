@@ -85,3 +85,12 @@ test('a card that is out of print is never eligible: not in the odds, never roll
   const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   for (let i = 0; i < 300; i++) for (const k of rollPack(pack, kept, on, random)) assert.ok(k === 'b' || k === 'f', `rolled ${k}`);
 });
+
+test('an event-only card is never listed in the odds or rolled', () => {
+  const only = { ...card('o', 'common'), eventOnly: true } as unknown as CardRules;
+  const thin: PullPack = { key: 'x', pulls: [{ weights: { common: 1 } }] };
+  const odds = packOdds(thin, [only, card('p', 'common')], on);
+  assert.deepEqual(odds[0]![0]!.cards, [{ card: 'p', chance: 1 }], 'only the plain one, at the whole common chance');
+  for (let i = 0; i < 20; i++) assert.deepEqual(rollPack(thin, [only, card('p', 'common')], on, () => i / 20), ['p']);
+  assert.throws(() => rollPack(thin, [only], on, () => 0), /no card to give/u);
+});

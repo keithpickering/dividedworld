@@ -21,7 +21,7 @@ import { pronounProblems } from './pronouns.ts';
 import { BEYOND_POST, DISCIPLINE_KINDS, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, inPrint, instant, spanMs, withheld } from './cards.ts';
 import type { CardRules, Rarity } from './cards.ts';
 import { isFixed, type Pull, type SlotSeed } from './packs.ts';
-import type { EventLine } from './cosmetics.ts';
+import { eventRarity, type EventLine } from './cosmetics.ts';
 
 /**
  * What a Mod Bot's bribe may cost, in hundredths of an orb, for every bot in every instance: dear enough to be a
@@ -309,7 +309,7 @@ function conductRule(v: unknown): string | null {
  */
 const COSMETICS_OUTCOMES = ['line', 'gear', 'card'] as const;
 function cosmeticsRule(v: unknown): string | null {
-  const shape = 'an object giving gear (wornMost, a whole number, at least 1; reach, a fraction of the portrait\'s width from 0 to 2), trophies (shownMost, a whole number, at least 1) and events (windowMinutes, a whole number from 1 to 1440; dayMost, a whole number, at least 1; outcomes, a positive whole weight for line, gear and card and an optional whole weight, at least 0, for none; gearRarity and cardRarity, each a positive whole weight for one or more of ' + RARITIES.join(', ') + ')';
+  const shape = 'an object giving gear (wornMost, a whole number, at least 1; reach, a fraction of the portrait\'s width from 0 to 2), trophies (shownMost, a whole number, at least 1) and events (windowMinutes, a whole number from 1 to 1440; dayMost, a whole number, at least 1; outcomes, a positive whole weight for line, gear and card and an optional whole weight, at least 0, for none; gearRarity, cardRarity and eventRarity, each a positive whole weight for one or more of ' + RARITIES.join(', ') + ')';
   const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
   const exactly = (x: unknown, keys: readonly string[], name: string): string | null => {
     if (!object(x)) return name === 'cosmetics' ? shape : `"${name}" must be an object giving ${keys.join(', ')}`;
@@ -335,7 +335,7 @@ function cosmeticsRule(v: unknown): string | null {
   const trophies = exactly(c.trophies, ['shownMost'], 'trophies');
   if (trophies) return trophies;
   if (!isWhole((c.trophies as Record<string, unknown>).shownMost, 1)) return `"trophies.shownMost" must be a whole number, at least 1`;
-  const events = exactly(c.events, ['windowMinutes', 'dayMost', 'outcomes', 'gearRarity', 'cardRarity'], 'events');
+  const events = exactly(c.events, ['windowMinutes', 'dayMost', 'outcomes', 'gearRarity', 'cardRarity', 'eventRarity'], 'events');
   if (events) return events;
   const e = c.events as Record<string, unknown>;
   if (!isWhole(e.windowMinutes, 1) || e.windowMinutes > 1440) return `"events.windowMinutes" must be a whole number from 1 to 1440`;
@@ -344,7 +344,7 @@ function cosmeticsRule(v: unknown): string | null {
   if (outcomes) return outcomes;
   const o = e.outcomes as Record<string, unknown>;
   for (const k of COSMETICS_OUTCOMES) if (!(k in o)) return `"events.outcomes.${k}" is missing; it must be a positive whole weight`;
-  return weights(e.gearRarity, RARITIES, 'events.gearRarity') ?? weights(e.cardRarity, RARITIES, 'events.cardRarity');
+  return weights(e.gearRarity, RARITIES, 'events.gearRarity') ?? weights(e.cardRarity, RARITIES, 'events.cardRarity') ?? weights(e.eventRarity, RARITIES, 'events.eventRarity');
 }
 
 /** The `jobGraceMinutes` setting: some of the scheduled jobs (engine/rules/jobs.ts), each a grace of whole minutes from 1 to 1440; a job left out keeps its default. */
@@ -574,6 +574,7 @@ function packProblems(instance: Instance): string[] {
         if (!card) out.push(`pack "${pack.key}" holds "${k}", and the instance has no such card`);
         else if (!inPrint(card)) out.push(`pack "${pack.key}" holds "${k}", which is out of print; no pack gives out a card that is out of print`);
         else if (withheld(card, instance.settings)) out.push(`pack "${pack.key}" holds "${k}", which this instance withholds`);
+        else if (card.eventOnly) out.push(`pack "${pack.key}" holds "${k}", which is event-only; an event-only card is found only through its events`);
       }
       if ('leaves' in pack) out.push(`pack "${pack.key}" is fixed and has a leaves list; a fixed pack leaves nothing out`);
       continue;
@@ -590,7 +591,7 @@ function packProblems(instance: Instance): string[] {
       if (!weights.length) out.push(`${where} has no weights`);
       for (const [rarity, w] of weights) {
         if (!isWhole(w, 1)) out.push(`${where} has a weight of ${JSON.stringify(w)} for ${rarity}; a weight is a positive whole number`);
-        const eligible = instance.cards.some((c) => inPrint(c) && c.rarity === rarity && !(pack.leaves ?? []).includes(c.key));
+        const eligible = instance.cards.some((c) => inPrint(c) && !c.eventOnly && c.rarity === rarity && !(pack.leaves ?? []).includes(c.key));
         if (!eligible) out.push(`${where} names ${rarity}, and the pack has no eligible card of that rarity`);
       }
     });
@@ -608,6 +609,7 @@ function packProblems(instance: Instance): string[] {
       const card = instance.cards.find((c) => c.key === (slot.item as { card: string }).card);
       if (!card) out.push(`${who} names a card, and the instance has no such card`);
       else if (!inPrint(card)) out.push(`${who} names a card that is out of print; the machine sells no card that is out of print`);
+      else if (card.eventOnly) out.push(`${who} names an event-only card; an event-only card is found only through its events`);
     }
     else if (!packs.some((p) => p.key === (slot.item as { pack: string }).pack)) out.push(`${who} names a pack, and the instance has no such pack`);
     if (!isWhole(slot.price, 1) || slot.price > INT4_MAX) out.push(`${who} has a price of ${JSON.stringify(slot.price)}; a price is a whole number of hundredths from 1 to ${INT4_MAX}`);
@@ -653,12 +655,31 @@ function cosmeticsProblems(instance: Instance): string[] {
     else if ((l.outcome === 'gear' || l.outcome === 'card') && !l.text.includes('{item}')) out.push(`event line "${l.key}" is a ${l.outcome} line and does not say {item}, the found item's name`);
     if (!(COSMETICS_OUTCOMES as readonly string[]).includes(l.outcome)) out.push(`event line "${l.key}" has the outcome ${JSON.stringify(l.outcome)}; an outcome is line, gear or card`);
   }
+  // A line's rarity and the item it gives; an event is at least as rare as its item (RARITIES' order is the order of rarity).
+  const cards = Array.isArray(instance.cards) ? instance.cards : [];
+  for (const l of lines) {
+    if (l.rarity !== undefined && !RARITIES.includes(l.rarity)) out.push(`event line "${l.key}" has the rarity ${JSON.stringify(l.rarity)}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+  }
+  for (const l of lines) {
+    if (l.item === undefined) continue;
+    if (l.outcome === 'line') { out.push(`event line "${l.key}" is a line event and names the item "${l.item}"; only a gear or card event gives an item`); continue; }
+    const found = l.outcome === 'gear' ? gear.find((g) => g.key === l.item) : l.outcome === 'card' ? cards.find((c) => c.key === l.item) : undefined;
+    if (l.outcome !== 'gear' && l.outcome !== 'card') continue;
+    if (!found) out.push(`event line "${l.key}" names the ${l.outcome} "${l.item}", and the instance has no such ${l.outcome}`);
+    else if (RARITIES.includes(l.rarity ?? 'common') && RARITIES.indexOf(eventRarity(l)) < RARITIES.indexOf(found.rarity)) out.push(`event line "${l.key}" is ${eventRarity(l)} and names the ${found.rarity} ${l.outcome} "${l.item}"; an event is at least as rare as the item it gives`);
+  }
+  for (const g of gear) if (g.eventOnly && !lines.some((l) => l.outcome === 'gear' && l.item === g.key)) out.push(`gear "${g.key}" is event-only and no event line names it, so it could never be found`);
+  for (const c of cards) if (c.eventOnly && !c.retired && !lines.some((l) => l.outcome === 'card' && l.item === c.key)) out.push(`card "${c.key}" is event-only and no event line names it, so it could never be found`);
   // Settings are checked on their own; the odds read here only once they hold.
   const events = instance.settings?.cosmetics?.events;
   if (cosmeticsRule(instance.settings?.cosmetics) === null && events) {
     for (const o of COSMETICS_OUTCOMES) if (!lines.some((l) => l.outcome === o)) out.push(`the events' outcome "${o}" has no event line, and a Random Event that picks it would have nothing to say`);
-    for (const rarity of Object.keys(events.gearRarity)) if (!gear.some((g) => g.rarity === rarity)) out.push(`events.gearRarity names ${rarity}, and the instance has no gear of that rarity`);
-    for (const rarity of Object.keys(events.cardRarity)) if (!instance.cards.some((c) => c.rarity === rarity)) out.push(`events.cardRarity names ${rarity}, and the instance has no card of that rarity`);
+    for (const o of COSMETICS_OUTCOMES) {
+      const mine = lines.filter((l) => l.outcome === o);
+      if (mine.length && !mine.some((l) => (events.eventRarity[eventRarity(l)] ?? 0) > 0)) out.push(`the events' outcome "${o}" has no event line at a rarity events.eventRarity weighs, and a Random Event that picks it would have nothing to say`);
+    }
+    for (const rarity of Object.keys(events.gearRarity)) if (!gear.some((g) => g.rarity === rarity && !g.eventOnly)) out.push(`events.gearRarity names ${rarity}, and the instance has no gear of that rarity that can be drawn`);
+    for (const rarity of Object.keys(events.cardRarity)) if (!instance.cards.some((c) => c.rarity === rarity && !c.eventOnly)) out.push(`events.cardRarity names ${rarity}, and the instance has no card of that rarity that can be drawn`);
   }
   return out;
 }

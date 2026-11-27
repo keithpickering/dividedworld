@@ -498,6 +498,8 @@ export interface CosmeticsSettings {
     readonly gearRarity: Readonly<Partial<Record<Rarity, number>>>;
     /** The weight of each rarity of a found card. */
     readonly cardRarity: Readonly<Partial<Record<Rarity, number>>>;
+    /** The weight of each rarity of an event, rolled among the rarities that hold an event of the rolled outcome. */
+    readonly eventRarity: Readonly<Partial<Record<Rarity, number>>>;
   };
 }
 

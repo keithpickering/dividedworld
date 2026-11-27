@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GEAR_VIEWS, beltHolder, inSquare, outfitOverhang, outfitProblems, pieceExtent, pieceHolds, pieceProblem, pieceShape, shownView } from './cosmetics.ts';
+import { GEAR_VIEWS, beltHolder, eventRarity, inSquare, outfitOverhang, outfitProblems, pieceExtent, pieceHolds, pieceProblem, pieceShape, shownView } from './cosmetics.ts';
 import type { CosmeticsSettings, GearShape, Piece } from './cosmetics.ts';
 
 const settings: CosmeticsSettings = {
   gear: { wornMost: 12, reach: 0.4 },
   trophies: { shownMost: 3 },
-  events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80 }, cardRarity: { common: 80 } },
+  events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80 }, cardRarity: { common: 80 }, eventRarity: { common: 80 } },
 };
 const piece = (over: Partial<Piece> = {}): Piece => ({ gear: 'hat', x: 0.5, y: 0.5, w: 0.5, turn: 0, layer: 0, view: null, ...over });
 
@@ -216,4 +216,9 @@ test('outfitOverhang: turned half a circle, a band-pivot cap leaves only what wa
   /* w 0.5: 0.25 above the pivot and 0.05 below. Turned 180 the part above goes below and the part below goes above. */
   near(outfitOverhang([piece({ gear: 'cap', y: 0, w: 0.5, turn: 180 })], shapeOf, 2, 0.4), 0.05, 'turned');
   near(outfitOverhang([piece({ gear: 'cap', y: 0, w: 0.5, turn: 0 })], shapeOf, 2, 0.4), 0.25, 'unturned');
+});
+
+test('an event\'s rarity is common unless it says otherwise', () => {
+  assert.equal(eventRarity({}), 'common');
+  assert.equal(eventRarity({ rarity: 'legendary' }), 'legendary');
 });
