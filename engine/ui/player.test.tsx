@@ -1,7 +1,10 @@
 import { useLayoutEffect } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { Estimate, KayfaApi, MyCharacter, Session, Slot } from './data/api.ts';
+import type { AccountListener, Estimate, KayfaApi, MyCharacter, ReachListener, Session, Slot } from './data/api.ts';
+import { createFake } from './data/fake.ts';
+import { testInstance } from './test-world.tsx';
+import { REACH_SPREAD_MS } from './alerts/useAlertFeed.ts';
 import { PlayerProvider, usePlayer } from './player.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../rules/pronouns.ts';
 
@@ -21,6 +24,8 @@ function stubApi(over: Partial<KayfaApi> = {}) {
     myCards: async () => [{ card: 'whoops', held: 2 }],
     lastSettledAt: async () => '2026-10-28T08:17:00Z',
     estimate,
+    subscribeAccount: () => () => {},
+    subscribeReach: () => () => {},
     ...over,
   } as unknown as KayfaApi;
   return { api, estimate };
@@ -189,6 +194,8 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
     const api = {
       session: async () => ({ signedIn: true, account: 'acc-a', bar: null, conductAccepted: true }),
       onSession: (l: (s: Session) => void) => { listener = l; return () => {}; },
+      subscribeAccount: () => () => {},
+      subscribeReach: () => () => {},
       myCharacters: async () => [char('a')],
       wallet: async () => ({ balance: 100, cap: 600 }),
       myCards: async () => [],
@@ -306,6 +313,8 @@ describe('from PR #49\'s fifth review: what the provider holds is the account\'s
     const api = {
       session: async () => ({ signedIn: true, account }),
       onSession: (l: (s: Session) => void) => { listener = l; return () => {}; },
+      subscribeAccount: () => () => {},
+      subscribeReach: () => () => {},
       myCharacters: async () => rows[account as keyof typeof rows].chars,
       wallet: async () => rows[account as keyof typeof rows].wallet,
       myCards: async () => [],
@@ -419,5 +428,122 @@ describe('a provider that starts from the first load\'s session', () => {
     act(() => { listener({ signedIn: false, account: null, bar: null, conductAccepted: true }); });
     await act(async () => { answer({ signedIn: true, account: 'acc-1', bar: null, conductAccepted: true }); });
     expect(screen.getByTestId('acting')).toHaveTextContent('');
+  });
+});
+
+describe('the HUD hears its own state', () => {
+  const SIGNED_OUT_SESSION: Session = { signedIn: false, account: null, bar: null, conductAccepted: true };
+  const fakeTimers = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  /* A stub whose two channels the test drives, and whose reads are counted by myCharacters. */
+  function heard(reading?: () => Promise<MyCharacter[]>) {
+    const account: { l: AccountListener | null } = { l: null };
+    const reach: { l: ReachListener | null } = { l: null };
+    let emit: (s: Session) => void = () => {};
+    const reads = vi.fn(reading ?? (async () => [char('a')]));
+    const { api } = stubApi({
+      myCharacters: reads,
+      onSession: (l) => { emit = l; return () => {}; },
+      subscribeAccount: (l) => { account.l = l; return () => { account.l = null; }; },
+      subscribeReach: (l) => { reach.l = l; return () => { reach.l = null; }; },
+    });
+    return { api, account, reach, reads, emit: (s: Session) => emit(s) };
+  }
+  const settle = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(0); }); };
+  const ms = async (n: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(n); }); };
+
+  test('a wallet move the player did not make moves the HUD with no action by the player', async () => {
+    fakeTimers();
+    const fake = createFake({ instance: testInstance });
+    const ana = fake.seed.account('ana');
+    fake.seed.character(ana, 'Ana', 'face');
+    fake.seed.wallet(ana, 562);
+    fake.signInAs(ana);
+    render(<PlayerProvider api={fake}><Probe /></PlayerProvider>);
+    await settle();
+    expect(screen.getByTestId('wallet').textContent).toBe('562');
+    /* a purchase made as that player elsewhere (another tab), not through this provider */
+    await fake.buyCard((await fake.machine())[0]!);
+    await settle();
+    await ms(400);
+    expect(screen.getByTestId('wallet').textContent).toBe('462');
+  });
+
+  test('three pokes inside the debounce run one read', async () => {
+    fakeTimers();
+    const w = heard();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    const before = w.reads.mock.calls.length;
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(100);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(100);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(50);
+    expect(w.reads.mock.calls.length).toBe(before);
+    await ms(400);
+    expect(w.reads.mock.calls.length).toBe(before + 1);
+  });
+
+  test('a settled runs one read, at some moment within the spread', async () => {
+    fakeTimers();
+    const w = heard();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    const before = w.reads.mock.calls.length;
+    act(() => { w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); });
+    await ms(REACH_SPREAD_MS);
+    expect(w.reads.mock.calls.length).toBe(before + 1);
+  });
+
+  test('signing out drops the channels and any timer: a poke after it reads nothing', async () => {
+    fakeTimers();
+    const w = heard();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    expect(w.account.l).not.toBeNull();
+    const before = w.reads.mock.calls.length;
+    const account = w.account.l;
+    act(() => { account?.onSelf?.(); w.reach.l?.onSettled?.({ id: '1', at: 'x' }); });
+    act(() => { w.emit(SIGNED_OUT_SESSION); });
+    await settle();
+    expect(w.account.l).toBeNull();
+    expect(w.reach.l).toBeNull();
+    act(() => { account?.onSelf?.(); });
+    await ms(REACH_SPREAD_MS * 2);
+    expect(w.reads.mock.calls.length).toBe(before);
+  });
+
+  test('a poke during a read in flight runs exactly one more after it, never two at once', async () => {
+    fakeTimers();
+    let open = 0;
+    let most = 0;
+    const releases: (() => void)[] = [];
+    const w = heard(() => new Promise<MyCharacter[]>((r) => {
+      open += 1; most = Math.max(most, open);
+      releases.push(() => { open -= 1; r([char('a')]); });
+    }));
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    await act(async () => { releases.shift()?.(); });
+    await settle();
+    const base = w.reads.mock.calls.length;
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(350);
+    expect(w.reads.mock.calls.length).toBe(base + 1);
+    /* two more pokes while that read is out */
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(350);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(350);
+    expect(w.reads.mock.calls.length).toBe(base + 1);
+    await act(async () => { releases.shift()?.(); });
+    await settle();
+    expect(w.reads.mock.calls.length).toBe(base + 2);
+    await act(async () => { releases.shift()?.(); });
+    await settle();
+    await ms(1000);
+    expect(w.reads.mock.calls.length).toBe(base + 2);
+    expect(most).toBe(1);
   });
 });

@@ -13,12 +13,22 @@
  * and answered by one ask at `freshAfter`, however many came; so a post under a storm of reactions
  * costs one read of the window every thirty seconds at most, and none once the storm passes.
  *
+ * The rows stay current by themselves. The account's own channel carries a bare `self` poke when a wallet, a hand or one of the
+ * player's characters changed (a trap, a refund, a ban, an infraction): one read follows about 300 ms later, joined by any poke that
+ * lands meanwhile. A settlement pokes no one; the HUD hears `settled` on `reach` and reads at a random moment within the alert feed's
+ * spread (`REACH_SPREAD_MS`), so a busy instance's readers do not all read in one second. A poke during a read runs one more read after
+ * it, never two at once. Both are dropped with the account.
+ *
  * At a settlement the wallet moves; the wallet last shown on this device (`kb-wallet-seen:<account>`)
  * is where the orbs' cascade runs from.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Answer, Boot, Bought, Estimate, HeldCard, Id, KayfaApi, MyCharacter, Opened, Session, Slot, Wallet } from './data/api.ts';
 import { clearDrafts } from './composer/draft.ts';
+import { REACH_SPREAD_MS } from './alerts/useAlertFeed.ts';
+
+/** A poke on the player's own channel is read after this long, so a trap's wallet move and its card's ledger row come as one read. */
+const SELF_DEBOUNCE_MS = 300;
 
 export interface Player {
   readonly session: Session;
@@ -205,6 +215,41 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
     if (adopted.current?.account === account) return;
     void refresh();
   }, [account, refresh]);
+
+  /* The player's own channel and the settlements: a poke becomes one read, joined with the pokes near it and never run beside another. */
+  useEffect(() => {
+    if (!account) return;
+    let live = true;
+    let out = false;
+    let again = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let due = 0;
+    const read = () => {
+      if (!live) return;
+      if (out) { again = true; return; }
+      out = true;
+      void refresh().finally(() => {
+        out = false;
+        if (live && again) { again = false; read(); }
+      });
+    };
+    /* One timer at a time: a poke joins the one waiting unless it would come sooner, which it then replaces. */
+    const soon = (delay: number) => {
+      const at = Date.now() + delay;
+      if (timer !== null && due <= at) return;
+      if (timer !== null) clearTimeout(timer);
+      due = at;
+      timer = setTimeout(() => { timer = null; read(); }, delay);
+    };
+    const offAccount = api.subscribeAccount({ onSelf: () => soon(SELF_DEBOUNCE_MS) });
+    const offReach = api.subscribeReach({ onSettled: () => soon(Math.random() * REACH_SPREAD_MS) });
+    return () => {
+      live = false;
+      if (timer !== null) clearTimeout(timer);
+      offAccount();
+      offReach();
+    };
+  }, [api, account, refresh]);
 
   /*
    * The estimate's asks: one out at a time, none before freshAfter, a held ask answered once at
