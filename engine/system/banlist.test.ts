@@ -49,7 +49,9 @@ test('the ban prompt carries the thread, the banned character, the days, the rul
   assert.match(p.system, /one short line/);
   assert.match(p.system, /280 characters/);
   assert.match(p.system, /already states the ban/);
-  assert.match(p.system, /quoting nothing the thread does not show|quote nothing the thread does not show/i);
+  assert.match(p.system, /under a quote of the post that tipped the bar/);
+  assert.match(p.system, /the line alone/);
+  assert.doesNotMatch(p.system, /Quote nothing/, 'the model is no longer asked to quote');
   assert.match(p.system, /you make no move/i);
   assert.deepEqual(Object.keys((p.schema as any).properties), ['line']);
   assert.deepEqual((p.schema as any).required, ['line']);
@@ -81,6 +83,13 @@ const kept = (raw: unknown) => {
 test('a ban line passes unchanged with no trims; whitespace is collapsed to one line', () => {
   assert.deepEqual(repairBanLine('Rules are rules.'), { line: 'Rules are rules.', trims: [] });
   assert.equal(kept('Two\n\nlines   here. ').line, 'Two lines here.');
+});
+
+test('a [quote] the model writes anyway is stripped and recorded as quote(model); a line of only a quote is none', () => {
+  const r = repairBanLine('[quote=a1]their words[/quote] Gone, {banned}. [Quote]x [quote]y[/quote][/Quote]');
+  assert.equal(r.line, 'Gone, {banned}.');
+  assert.deepEqual(r.trims.map((t) => [t.path, t.predicate]), [['line', 'quote(model)']]);
+  assert.deepEqual(repairBanLine('[quote]all of it[/quote]'), { line: null, trims: [] });
 });
 
 test('a 400-character ban line is cut at a sentence to 280, and named; it is never rejected for length', () => {

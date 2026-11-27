@@ -152,3 +152,13 @@ export function forgedList(payload: Readonly<Record<string, unknown>> | null | u
 
 /** A verdict as `parse` takes it, or undefined for none. */
 export const forgedSet = (list: readonly string[] | undefined): ReadonlySet<string> | undefined => (list && list.length > 0 ? new Set(list) : undefined);
+
+/**
+ * A selection's words as a quote keeps them: as typed. Words that would read as a tag (`[b]`, `[/quote]`, `[url=...]`; the parser's tag names are letters or `*`) go in `[noparse]`, so the quote holds
+ * no markup the post did not show. The cover ends at the first `[/noparse]`, so one inside the words is cut in two there (its `]` goes to a cover of its own),
+ * which reads back as the same characters and can never end the cover early.
+ */
+export function asTyped(words: string): string {
+  if (!/\[\/?[a-z*]/iu.test(words)) return words;
+  return `[noparse]${words.replace(/\[\/noparse\]/giu, (closer) => `${closer.slice(0, -1)}[/noparse][noparse]]`)}[/noparse]`;
+}

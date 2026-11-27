@@ -23,6 +23,7 @@ import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { localReaction } from '../../rules/emoji.ts';
+import { outcomeQuote } from '../../bbcode/outcome-quote.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, postEffects: 8, crowdPayEach: 2, crowdFloor: 2, crowdPayMost: 10, charactersPerPlayer: 3,
@@ -8325,6 +8326,102 @@ describe('a Mod posts its visit\'s outcomes', () => {
     expect(first?.visits[0]?.answers).toEqual([]);
     expect(last?.acts.some((a) => a.id === post.id)).toBe(true);
     expect(last?.visits.map((v) => [v.id, v.answers])).toEqual([[w.visit, [post.id]]]);
+  });
+});
+
+/* The outcome quotes plan, Task 2: each outcome post opens with a real quote of what it answers, as post_outcome writes it, and the Mod's words are never cut for it. */
+describe('a Mod\'s outcome post quotes what it answers', () => {
+  const setup = (postMaxLength = 2000) => {
+    const w = world({ postMaxLength });
+    const mod = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const visit = w.fake.seed.visit(mod, w.opener, { challenge: { kind: 'bribe', price: 0 } });
+    const last = async () => (await w.fake.acts(w.thread, 1, 50)).filter((a) => a.kind === 'post').at(-1)!;
+    return { ...w, mod, visit, last };
+  };
+
+  test('a filing opens with a quote of the visited post, the whole of a short one, then the Mod\'s words', async () => {
+    const w = setup();
+    w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed. Rule 2.' });
+    expect((await w.last()).payload['body']).toBe(`${outcomeQuote(w.opener, 'First post')}Filed. Rule 2.`);
+    expect((await w.last()).payload['body']).toBe(`[quote=${w.opener}]First post[/quote]\nFiled. Rule 2.`);
+  });
+
+  test('a long post is cut at a word to 280 characters and an ellipsis; words holding a bracket are wrapped in noparse', async () => {
+    const w = setup();
+    const long = Array.from({ length: 80 }, (_, i) => `word${i}`).join(' ');
+    const post = w.fake.seed.post(w.thread, w.boFace, long);
+    const v = w.fake.seed.visit(w.mod, post, { challenge: { kind: 'bribe', price: 0 } });
+    w.fake.seed.visitEnd(v, { outcome: 'filed', line: 'Filed.' });
+    const body = (await w.last()).payload['body'] as string;
+    const words = body.slice(`[quote=${post}]`.length, body.indexOf('[/quote]'));
+    expect(words.endsWith('…') && words.length <= 281).toBe(true);
+    expect(long.startsWith(words.slice(0, -1))).toBe(true);
+    expect(long[words.length - 1]).toBe(' ');
+    expect(body.endsWith('[/quote]\nFiled.')).toBe(true);
+    const tagged = w.fake.seed.post(w.thread, w.boFace, 'use [b]bold[/b] here');
+    const v2 = w.fake.seed.visit(w.mod, tagged, { challenge: { kind: 'bribe', price: 0 } });
+    w.fake.seed.visitEnd(v2, { outcome: 'filed', line: 'Filed.' });
+    expect((await w.last()).payload['body']).toBe(`[quote=${tagged}]use bold here[/quote]\nFiled.`);
+    const bracket = w.fake.seed.post(w.thread, w.boFace, 'type [noparse][b][/noparse] for bold');
+    const v3 = w.fake.seed.visit(w.mod, bracket, { challenge: { kind: 'bribe', price: 0 } });
+    w.fake.seed.visitEnd(v3, { outcome: 'filed', line: 'Filed.' });
+    expect((await w.last()).payload['body']).toBe(`[quote=${bracket}][noparse]type [b] for bold[/noparse][/quote]\nFiled.`);
+  });
+
+  test('the body never exceeds the post length at the edge, whatever markup the quote needs', async () => {
+    const line = 'Filed.';
+    for (const text of ['plain words that go on and on and on', 'type [noparse][b][/noparse] words that go on and on', 'close [noparse][/noparse] the cover ] again and again']) {
+      let quoted = 0;
+      for (let max = text.length; max <= text.length + 90; max++) {
+        const w = setup(max);
+        const post = w.fake.seed.post(w.thread, w.boFace, text);
+        const v = w.fake.seed.visit(w.mod, post, { challenge: { kind: 'bribe', price: 0 } });
+        w.fake.seed.visitEnd(v, { outcome: 'filed', line });
+        const body = (await w.last()).payload['body'] as string;
+        expect(body.length, `${text} at ${max}`).toBeLessThanOrEqual(max);
+        expect(body.endsWith(line)).toBe(true);
+        if (body.startsWith('[quote=')) quoted++;
+      }
+      expect(quoted).toBeGreaterThan(0);
+    }
+  });
+
+  test('an edited post quotes its latest version', async () => {
+    const w = setup();
+    w.fake.seed.edit(w.opener, w.boFace, 'Second thoughts');
+    w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+    expect((await w.last()).payload['body']).toBe(`[quote=${w.opener}]Second thoughts[/quote]\nFiled.`);
+  });
+
+  test('a concession and an infraction\'s ruling quote the visited post too', async () => {
+    const w = setup();
+    w.fake.seed.concession(w.visit, 'Fine, {who}.');
+    await w.fake.intercept(w.anaFace, w.visit, null);
+    expect((await w.last()).payload['body']).toBe(`[quote=${w.opener}]First post[/quote]\nFine, Ana Face.`);
+    const r = setup();
+    r.fake.seed.visitEnd(r.visit, { outcome: 'filed' });
+    const inf = r.fake.seed.infraction(r.visit);
+    r.fake.signInAs(r.bo);
+    r.fake.seed.wallet(r.bo, 500);
+    await r.fake.fileAppeal(r.boFace, inf, 'please');
+    const ruling = (await r.last()).payload['body'] as string;
+    expect(ruling.startsWith(`[quote=${r.opener}]First post[/quote]\n`)).toBe(true);
+  });
+
+  test('with little room the quote shrinks, then goes, and the Mod\'s words are whole', async () => {
+    const w = setup(100);
+    const text = 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron';
+    const post = w.fake.seed.post(w.thread, w.boFace, text);
+    const v = w.fake.seed.visit(w.mod, post, { challenge: { kind: 'bribe', price: 0 } });
+    w.fake.seed.visitEnd(v, { outcome: 'filed', line: 'Filed.' });
+    const body = (await w.last()).payload['body'] as string;
+    const words = body.slice(`[quote=${post}]`.length, body.indexOf('[/quote]'));
+    expect(body.endsWith('[/quote]\nFiled.')).toBe(true);
+    expect(body.length).toBeLessThanOrEqual(100);
+    expect(words.endsWith('…') && words.length > 1 && words.length < text.length).toBe(true);
+    const tight = setup(15);
+    tight.fake.seed.visitEnd(tight.visit, { outcome: 'filed', line: 'Filed.' });
+    expect((await tight.last()).payload['body']).toBe('Filed.');
   });
 });
 

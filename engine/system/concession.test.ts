@@ -49,7 +49,9 @@ test('the prompt carries the thread, the judged post, the interceptor and asks f
   assert.ok(p.message.includes('Cy (she/her)') && p.message.includes('Rule 2: no double posting') && p.message.includes('Best Mario game?'), p.message);
   assert.match(p.system, /concede/);
   assert.match(p.system, /reply in the thread/);
-  assert.match(p.system, /quoting the post/);
+  assert.match(p.system, /under a quote of the post you inspected/);
+  assert.match(p.system, /the reply alone/);
+  assert.doesNotMatch(p.system, /quoting the post|Quote nothing/, 'the model is no longer asked to quote');
   assert.match(p.system, /2000 characters/);
   assert.match(p.system, /\{who\}/);
   assert.match(p.system, /you make no move/i);
@@ -106,6 +108,15 @@ const fine = (raw: unknown, most = 2000) => {
   assert.ok(r.ok, JSON.stringify(r));
   return r;
 };
+
+test('a [quote] the model writes anyway is stripped, nested ones too, in any case, and recorded as quote(model)', () => {
+  const r = fine('[QUOTE=abc]their words [quote]inner[/quote] more[/quote]\nFine, {who}.');
+  assert.equal(r.body, 'Fine, {who}.');
+  assert.ok(r.trims.some((t) => t.path === 'concession' && t.predicate === 'quote(model)'), JSON.stringify(r.trims));
+  assert.equal(fine('Fine.').trims.length, 0);
+  const blank = repairConcession('[quote=a]only a quote[/quote]', 2000);
+  assert.equal(blank.ok, false, 'a body that is only a quote is blank');
+});
 
 test('a good concession passes unchanged with no trims; line breaks survive, edges are trimmed', () => {
   assert.deepEqual(fine('Fine, {who}. You win.'), { ok: true, body: 'Fine, {who}. You win.', trims: [] });

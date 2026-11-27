@@ -62,6 +62,8 @@ end $$;
 
 create function pg_temp.outcome(about uuid) returns outcome_posts language sql as $$ select * from outcome_posts where about_act = about $$;
 create function pg_temp.body(a uuid) returns text language sql as $$ select payload ->> 'body' from acts where id = a $$;
+-- The Mod's own words: the body without the quote of what it answers, which outcome_quote (0452_outcome_quotes.sql) writes ahead of them; tests/0452-outcome-quotes.sql holds the quote itself.
+create function pg_temp.said(a uuid) returns text language sql as $$ select regexp_replace(payload ->> 'body', E'^\\[quote=[0-9a-f-]{36}\\].*?\\[/quote\\]\n', '') from acts where id = a $$;
 
 create function pg_temp.say(by_character uuid, in_thread uuid, body text default null) returns uuid language plpgsql as $$
 declare made jsonb;
@@ -176,7 +178,7 @@ begin
   perform pg_temp.expect(o.about_act is not null and o.kind = 'filed' and o.visit_act = v and o.source = 'model' and o.post_act is not null and o.error is null, 'the outcome row is wrong: ' || to_jsonb(o)::text);
   select * into posted from acts where id = o.post_act;
   perform pg_temp.expect(posted.kind = 'post' and posted.character = mod and posted.thread = t and posted.target_act_id = p, 'the filing post is wrong: ' || to_jsonb(posted)::text);
-  perform pg_temp.expect(posted.payload ->> 'body' = 'Filed, and I mean it.', 'the filing post body is wrong: ' || (posted.payload ->> 'body'));
+  perform pg_temp.expect(pg_temp.said(posted.id) = 'Filed, and I mean it.', 'the filing post body is wrong: ' || (posted.payload ->> 'body'));
   perform pg_temp.expect((select count(*) from acts where kind = 'post') = n_posts + 1, 'the filing wrote ' || ((select count(*) from acts where kind = 'post') - n_posts) || ' posts');
   -- A second filing of the same visit posts nothing more.
   perform file_visit(v, 'Again.');
@@ -186,7 +188,7 @@ begin
   got := file_visit(v2, null);
   select * into o from outcome_posts where about_act = (pg_temp.end_of(v2)).id;
   perform pg_temp.expect(o.source = 'stock' and o.post_act is not null, 'the stock filing row is wrong: ' || to_jsonb(o)::text);
-  perform pg_temp.expect(pg_temp.body(o.post_act) = 'Outcome Mod One filed this post under Rule 1: no all-caps posts.', 'the stock filing body is wrong: ' || pg_temp.body(o.post_act));
+  perform pg_temp.expect(pg_temp.said(o.post_act) = 'Outcome Mod One filed this post under Rule 1: no all-caps posts.', 'the stock filing body is wrong: ' || pg_temp.body(o.post_act));
   perform pg_temp.expect((select a.target_act_id from acts a where a.id = o.post_act) = p2, 'the stock filing post does not quote the visited post');
 end $$;
 
@@ -235,7 +237,7 @@ begin
   perform pg_temp.expect(o.kind = 'ruling' and o.visit_act = v and o.source = 'model' and o.post_act is not null, 'the ruling row is wrong: ' || to_jsonb(o)::text);
   select * into posted from acts where id = o.post_act;
   perform pg_temp.expect(posted.character = mod and posted.thread = t and posted.target_act_id = p, 'the ruling post is not in the punished post''s thread quoting it: ' || to_jsonb(posted)::text);
-  perform pg_temp.expect(posted.payload ->> 'body' = 'No. The infraction stands, and so does this post.', 'the ruling post body is wrong');
+  perform pg_temp.expect(pg_temp.said(posted.id) = 'No. The infraction stands, and so does this post.', 'the ruling post body is wrong');
   perform pg_temp.expect((select count(*) from acts where kind = 'post') = n_posts + 1, 'the ruling wrote another number of posts');
   -- Closing again returns the ruling that stands and posts nothing.
   closed := close_appeal(ap, 'upheld', 'Again.', null, null);
@@ -245,7 +247,7 @@ begin
   closed := close_appeal(ap2, 'overturned', null, null, null);
   select * into o from outcome_posts where about_act = (closed ->> 'ruling_act')::uuid;
   perform pg_temp.expect(o.source = 'stock' and o.post_act is not null, 'the stock ruling row is wrong: ' || to_jsonb(o)::text);
-  perform pg_temp.expect(pg_temp.body(o.post_act) = 'Outcome Mod One sets Op Bob R free.', 'the stock ruling body is wrong: ' || pg_temp.body(o.post_act));
+  perform pg_temp.expect(pg_temp.said(o.post_act) = 'Outcome Mod One sets Op Bob R free.', 'the stock ruling body is wrong: ' || pg_temp.body(o.post_act));
 end $$;
 
 -- ---- 3. A talk-down owes one concession and posts nothing; the staff write posts it; the tick posts the stock ----
@@ -289,7 +291,7 @@ begin
   select * into o from outcome_posts where about_act = e;
   perform pg_temp.expect(o.kind = 'intercepted' and o.visit_act = v and o.source = 'model' and o.post_act is not null, 'the concession row is wrong: ' || to_jsonb(o)::text);
   select * into posted from acts where id = o.post_act;
-  perform pg_temp.expect(posted.character = mod and posted.thread = t and posted.target_act_id = p and posted.payload ->> 'body' = 'Fine, Op Ann A. You may pass.', 'the concession post is wrong: ' || to_jsonb(posted)::text);
+  perform pg_temp.expect(posted.character = mod and posted.thread = t and posted.target_act_id = p and pg_temp.said(posted.id) = 'Fine, Op Ann A. You may pass.', 'the concession post is wrong: ' || to_jsonb(posted)::text);
   r := post_visit_concession(v, 'A second try.');
   perform pg_temp.expect(not (r ->> 'posted')::boolean and (r ->> 'existing')::boolean, 'a second write posted: ' || r::text);
   perform pg_temp.expect((select count(*) from acts where kind = 'post') = n_posts + 1, 'the concession wrote another number of posts');
@@ -332,7 +334,7 @@ begin
   select * into o from outcome_posts where about_act = (pg_temp.end_of(v1)).id;
   perform pg_temp.expect(o.kind = 'intercepted' and o.source = 'stock' and o.post_act is not null and o.visit_act = v1, 'the stock row is wrong: ' || to_jsonb(o)::text);
   select replace(l.line, '{who}', 'Op Ann A') into expected from staff_concessions l where l.staff = 'op-m1' order by l.idx offset concession_line_index(v1, 3) limit 1;
-  perform pg_temp.expect(pg_temp.body(o.post_act) = expected, 'the stock line is not the one the visit draws: ' || pg_temp.body(o.post_act) || ' vs ' || expected);
+  perform pg_temp.expect(pg_temp.said(o.post_act) = expected, 'the stock line is not the one the visit draws: ' || pg_temp.body(o.post_act) || ' vs ' || expected);
   -- The fresh one is untouched; the Mod with no lines records `no line`.
   perform pg_temp.expect(not exists (select 1 from outcome_posts where about_act = (pg_temp.end_of(v2)).id), 'a concession inside the window was posted by the tick');
   select * into o from outcome_posts where about_act = (pg_temp.end_of(v3)).id;
@@ -520,7 +522,7 @@ begin
   select * into o from outcome_posts where about_act = (closed ->> 'ruling_act')::uuid;
   perform pg_temp.expect(o.kind = 'move_ruling' and o.visit_act is null and o.post_act is not null and o.source = 'model', 'the move ruling row is wrong: ' || to_jsonb(o)::text);
   select * into posted from acts where id = o.post_act;
-  perform pg_temp.expect(posted.thread = mt and posted.target_act_id = m and posted.character = pg_temp.modchar('op-m1') and posted.payload ->> 'body' = 'Overturned. Sorry about that.', 'the move ruling post is wrong: ' || to_jsonb(posted)::text);
+  perform pg_temp.expect(posted.thread = mt and posted.target_act_id = m and posted.character = pg_temp.modchar('op-m1') and pg_temp.said(posted.id) = 'Overturned. Sorry about that.', 'the move ruling post is wrong: ' || to_jsonb(posted)::text);
   perform pg_temp.expect((select count(*) from acts where kind = 'post') = n_posts + 1, 'the move ruling wrote another number of posts');
   perform pg_temp.expect(exists (select 1 from acts where kind = 'move_end' and target_act_id = m), 'the overturn did not end the move');
   perform pg_temp.expect(not exists (select 1 from lines_owed where cause_act = m), 'an overturn that posted its ruling owes an end line');
@@ -643,8 +645,8 @@ begin
   select * into posted from acts where id = o.post_act;
   seq := (select a.seq from acts a where a.id = p);
   head := 'Banned: Op Banned One, 1 days, Rule 1: no all-caps posts. [url=/t/' || t || '#post-' || seq || ']The post that did it.[/url]';
-  perform pg_temp.expect(posted.character = pg_temp.modchar('op-m1') and posted.thread = bt and posted.target_act_id is null, 'the entry post is wrong: ' || to_jsonb(posted)::text);
-  perform pg_temp.expect(posted.payload ->> 'body' = head || E'\n\n' || 'Mind the rules next time.', 'the entry body is wrong: ' || (posted.payload ->> 'body'));
+  perform pg_temp.expect(posted.character = pg_temp.modchar('op-m1') and posted.thread = bt and posted.target_act_id = p, 'the entry post is wrong: ' || to_jsonb(posted)::text);
+  perform pg_temp.expect(pg_temp.said(posted.id) = head || E'\n\n' || 'Mind the rules next time.', 'the entry body is wrong: ' || (posted.payload ->> 'body'));
   perform pg_temp.expect(not exists (select 1 from pending_ban_entries(50) x where x.ban_act = ban), 'a posted entry is still pending');
   -- A second try posts nothing.
   r := post_ban_entry(ban, 'Again.', 'model');
@@ -726,7 +728,7 @@ begin
   perform pg_temp.expect(ruling.kind = 'ban_ruling' and ruling.visit_act is null and ruling.source = 'model' and ruling.post_act is not null, 'the ban ruling row is wrong: ' || to_jsonb(ruling)::text);
   select * into posted from acts where id = ruling.post_act;
   bt := (select banlist_thread from seasons where ends_at is null);
-  perform pg_temp.expect(posted.thread = bt and posted.target_act_id = entry.post_act and posted.character = pg_temp.modchar('op-boss') and posted.payload ->> 'body' = 'The ban stands.', 'the ban ruling post is wrong: ' || to_jsonb(posted)::text);
+  perform pg_temp.expect(posted.thread = bt and posted.target_act_id = entry.post_act and posted.character = pg_temp.modchar('op-boss') and pg_temp.said(posted.id) = 'The ban stands.', 'the ban ruling post is wrong: ' || to_jsonb(posted)::text);
   perform pg_temp.expect((select a.created_at from acts a where a.id = entry.post_act) < posted.created_at, 'the entry is not before the ruling');
 end $$;
 
