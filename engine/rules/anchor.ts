@@ -223,13 +223,6 @@ function myers(a: string, b: string): Same[] | null {
   return same.reverse();
 }
 
-let lastFrom = '', lastTo = '', lastDiff: Same[] | null | undefined;
-/** The diff of one pair of texts is kept, since a wall maps many groups through the same edit. */
-function diffOf(a: string, b: string): Same[] | null {
-  if (lastDiff === undefined || a !== lastFrom || b !== lastTo) { lastDiff = diff(a, b); lastFrom = a; lastTo = b; }
-  return lastDiff;
-}
-
 /**
  * Where an attachment is on the post as it now stands, or null when it is nowhere to be found (it falls back to its box spot).
  * Text keeps its place when its run and `MARGIN` characters each side (held to the text) lie in one unchanged stretch; the
@@ -243,7 +236,7 @@ export function mapPlace(from: { text: string; images: Img[] }, to: { text: stri
   }
   const lo = Math.max(0, a.at - MARGIN), hi = Math.min(from.text.length, a.at + a.len + MARGIN);
   if (hi <= lo) return null;
-  const same = diffOf(from.text, to.text);
+  const same = diff(from.text, to.text);
   if (!same) return null;
   const s = same.find((m) => m.from <= lo && hi <= m.from + m.len);
   return s ? { ...a, at: a.at + (s.to - s.from) } : null;

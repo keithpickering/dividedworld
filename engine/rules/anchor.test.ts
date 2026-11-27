@@ -82,7 +82,7 @@ const content = (t: string) => ({ text: t, images: [] });
 test('mapPlace: a typo fixed 30 characters before the run moves `at` by the change', () => {
   const from = word.repeat(3);
   const i = from.indexOf('quick');
-  const to = from.slice(0, i) + 'quikck'.slice(0, 0) + from.slice(i + 1); // delete one char at i
+  const to = from.slice(0, i) + from.slice(i + 1); // delete one char at i
   const at0 = i + 30;
   const m = mapPlace(content(from), content(to), text(from, at0, 5)) as Extract<Attachment, { kind: 'text' }>;
   assert.equal(m.at, at0 - 1);
