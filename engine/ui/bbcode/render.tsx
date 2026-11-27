@@ -80,6 +80,13 @@ interface Layered {
   readonly markLeading: ReadonlySet<number>;
 }
 
+/** The index of the first span that ends at or after `o`, in spans that are ascending and do not overlap (the walk's own order), or their count when none does. */
+function firstEndingBy(spans: readonly (readonly [number, number])[], o: number): number {
+  let [lo, hi] = [0, spans.length];
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (spans[mid]![1] < o) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
 /**
  * Where a standing run's trail is drawn: its end clamped to the text (the run is kept if not then empty), and then, by the text nodes' spans,
  * at that offset where a text piece ends at it or holds it inside; where it falls in a gap (a `\n` the walk puts for a quote, an [hr] and the like)
@@ -94,12 +101,12 @@ interface Layered {
 function standingTrails(length: number, runs: readonly TextRun[], spans: readonly (readonly [number, number])[]): Pick<Layered, 'standing' | 'standingAt' | 'leading'> {
   const standing = new Map<number, TextRun[]>();
   const leading = new Set<number>();
-  const ends = new Set(spans.map(([, e]) => e));
   const placed = (e: number): number => {
-    if (ends.has(e) || spans.some(([s, f]) => s < e && e < f)) return e;
-    const next = spans.find(([s]) => s >= e);
-    if (next) { leading.add(next[0]); return next[0]; }
-    return spans.length ? spans[spans.length - 1]![1] : e;
+    const at = spans[firstEndingBy(spans, e)];
+    if (at === undefined) return spans.length ? spans[spans.length - 1]![1] : e;
+    if (at[1] === e || at[0] < e) return e;
+    leading.add(at[0]);
+    return at[0];
   };
   runs.map((run, i) => ({ run, i }))
     .filter(({ run }) => stands(run) && Math.min(run.end, length) > Math.max(0, run.start))
@@ -119,12 +126,12 @@ function standingTrails(length: number, runs: readonly TextRun[], spans: readonl
 function markPlaces(length: number, runs: readonly TextRun[], spans: readonly (readonly [number, number])[]): Pick<Layered, 'marks' | 'markAt' | 'markLeading'> {
   const marks = new Map<number, TextRun[]>();
   const markLeading = new Set<number>();
-  const ends = new Set(spans.map(([, e]) => e));
   const placed = (o: number): number => {
-    if (ends.has(o) || spans.some(([s, f]) => s < o && o < f)) return o;
-    const next = spans.find(([s]) => s >= o);
-    if (next) { markLeading.add(next[0]); return next[0]; }
-    return spans[spans.length - 1]![1];
+    const at = spans[firstEndingBy(spans, o)];
+    if (at === undefined) return spans[spans.length - 1]![1];
+    if (at[1] === o || at[0] < o) return o;
+    markLeading.add(at[0]);
+    return at[0];
   };
   if (spans.length) {
     runs.map((run, i) => ({ run, i })).filter(({ run }) => run.mode === 'mark')

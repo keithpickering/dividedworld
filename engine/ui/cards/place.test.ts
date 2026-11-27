@@ -4,7 +4,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { placeGroups, type PlaceGroup, type Measured } from './place.ts';
+import { NUDGE_STEPS, placeGroups, type PlaceGroup, type Measured } from './place.ts';
 
 const EM = 15;
 /** A group of one horizontal stroke `wide` units long, centered on its origin, with a brush of radius `r` units; its drawer's box is 24 by 40 ems. */
@@ -139,5 +139,39 @@ describe('placing groups on a screen', () => {
     const [p] = placeGroups([g], [{ kind: 'point', x: 355, y: 100 }], box, EM);
     assert.equal(bounds(g, p!).x1, box.w);
     assert.equal(p!.x, box.w - 7 * EM);
+  });
+  test('a nudge walks at most NUDGE_STEPS ems each way, so a huge box or a tiny em returns promptly and the group is still pulled no further than that', () => {
+    const [big, tiny] = [{ w: 360, h: 1e5 }, 0.01];
+    const a = group({ at: [0.2, 0.2], anchor: textAt() });
+    const b = group({ at: [0.8, 0.2], anchor: textAt() });
+    const started = performance.now();
+    const [pa, pb] = placeGroups([a, b], [{ kind: 'point', x: 100, y: 5e4 }, { kind: 'point', x: 100, y: 5e4 }], big, tiny);
+    const took = performance.now() - started;
+    assert.ok(took < 250, `took ${took} ms`);
+    assert.equal(pa!.y, 5e4);
+    assert.ok(Math.abs(pb!.y - 5e4) <= NUDGE_STEPS * tiny + 1e-9, `moved ${pb!.y - 5e4}`);
+    assert.equal(NUDGE_STEPS, 400);
+  });
+
+  test('a box or an em that is not a positive finite number skips the nudge, and places the groups where the earlier steps put them', () => {
+    const a = group({ at: [0.2, 0.2], anchor: textAt() });
+    const b = group({ at: [0.8, 0.2], anchor: textAt() });
+    const at = [{ kind: 'point', x: 100, y: 100 }, { kind: 'point', x: 110, y: 104 }] as const;
+    for (const [bx, em] of [[{ w: 360, h: Infinity }, EM], [{ w: 360, h: 600 }, 0], [{ w: 360, h: 600 }, -3], [{ w: NaN, h: 600 }, EM]] as const) {
+      const [, pb] = placeGroups([a, b], at, bx, em);
+      assert.equal(pb!.y, 104, JSON.stringify([bx, em]));
+    }
+  });
+
+  test('a measured point or rect that is not finite is no measure: the group goes to its `at`', () => {
+    const t = group({ at: [0.25, 0.5], anchor: textAt(2, 1) });
+    const i = group({ at: [0.5, 0.25], unit: 'image', em: 8, anchor: { kind: 'image', version: 'v1', n: 0, src: 'https://a.example/i.png', nth: 0, x: 0.5, y: 0.25 }, strokes: [{ points: [[-0.1, 0], [0.1, 0]], r: 0.02 }] });
+    const bad: (Measured | null)[] = [{ kind: 'point', x: NaN, y: 100 }, { kind: 'rect', x: 0, y: 0, w: Infinity, h: 80 }];
+    const [pt, pi] = placeGroups([t, i], bad, box, EM);
+    assert.deepEqual(pt, { x: 0.25 * box.w, y: 0.5 * box.h, scale: 1 });
+    assert.equal(pi!.x, 0.5 * box.w);
+    assert.equal(pi!.y, 0.25 * box.h);
+    const [pn] = placeGroups([t], [{ kind: 'point', x: 100, y: Infinity }], box, EM);
+    assert.deepEqual(pn, { x: 0.25 * box.w, y: 0.5 * box.h, scale: 1 });
   });
 });

@@ -38,6 +38,9 @@ export interface PlaceGroup {
   readonly frame: { readonly w: number; readonly h: number };
 }
 
+/** The most ems a group is nudged down, and then up, looking for clear room: a box that is huge or an em that is tiny costs this much and no more. */
+export const NUDGE_STEPS = 400;
+
 /** Where a group's origin goes, in px, and how much it is shrunk about it. */
 export interface Placed { readonly x: number; readonly y: number; readonly scale: number }
 
@@ -56,9 +59,14 @@ function reach(g: PlaceGroup): Rect {
 /** The overlap of two rectangles, in px squared (touching is none). */
 const overlapOf = (a: Rect, b: Rect): number => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
 
+const positive = (n: number): boolean => Number.isFinite(n) && n > 0;
+const finite = (...n: number[]): boolean => n.every(Number.isFinite);
+
 export function placeGroups(groups: readonly PlaceGroup[], measured: readonly (Measured | null)[], box: { readonly w: number; readonly h: number }, emPx: number): Placed[] {
   const out: Placed[] = [];
-  const rects: Rect[] = [];
+  /** The groups placed so far, by drawing: each one's frame on its drawer's screen and its rect on this one. */
+  const earlier = new Map<string, { frame: Rect; rect: Rect }[]>();
+  const nudging = positive(box.w) && positive(box.h) && positive(emPx);
   const frames: Rect[] = groups.map((g) => {
     const b = reach(g), u = g.unit === 'em' ? 1 : g.em ?? 1;
     const [cx, cy] = [g.at[0] * g.frame.w, g.at[1] * g.frame.h];
@@ -69,8 +77,8 @@ export function placeGroups(groups: readonly PlaceGroup[], measured: readonly (M
     const a = g.anchor;
     // Step 1, and the unit of step 2.
     let [x, y, unit] = [g.at[0] * box.w, g.at[1] * box.h, g.unit === 'em' ? emPx : (g.em ?? 1) * emPx];
-    if (m !== null && a.kind === 'text' && m.kind === 'point') [x, y] = [m.x + a.dx * emPx, m.y + a.dy * emPx];
-    else if (m !== null && a.kind === 'image' && m.kind === 'rect') [x, y, unit] = [m.x + a.x * m.w, m.y + a.y * m.h, m.w];
+    if (m !== null && a.kind === 'text' && m.kind === 'point' && finite(m.x, m.y)) [x, y] = [m.x + a.dx * emPx, m.y + a.dy * emPx];
+    else if (m !== null && a.kind === 'image' && m.kind === 'rect' && finite(m.x, m.y, m.w, m.h)) [x, y, unit] = [m.x + a.x * m.w, m.y + a.y * m.h, m.w];
     const b = reach(g);
     // Step 3.
     const wide = (b.x1 - b.x0) * unit;
@@ -87,23 +95,27 @@ export function placeGroups(groups: readonly PlaceGroup[], measured: readonly (M
     r = rect(x, y);
     if (r.y0 < 0) y -= r.y0;
     // Step 5.
-    const clear = groups.flatMap((o, j) => (j < k && o.drawing === g.drawing && overlapOf(frames[j]!, frames[k]!) === 0 ? [rects[j]!] : []));
-    const cost = (oy: number): number => clear.reduce((n, e) => n + overlapOf(rect(x, oy), e), 0);
-    if (cost(y) > 0) {
+    const mine = earlier.get(g.drawing) ?? [];
+    if (nudging) {
+      const clear = mine.filter((e) => overlapOf(e.frame, frames[k]!) === 0).map((e) => e.rect);
+      const cost = (oy: number): number => { const c = rect(x, oy); let n = 0; for (const e of clear) n += overlapOf(c, e); return n; };
       const fits = (oy: number): boolean => { const c = rect(x, oy); return c.y0 >= -1e-9 && c.y1 <= box.h + 1e-9; };
-      const down: number[] = [], up: number[] = [];
-      for (let d = 1; emPx > 0 && fits(y + d * emPx); d++) down.push(y + d * emPx);
-      for (let d = 1; emPx > 0 && fits(y - d * emPx); d++) up.push(y - d * emPx);
-      const free = down.find((oy) => cost(oy) === 0) ?? up.find((oy) => cost(oy) === 0);
-      if (free !== undefined) y = free;
-      else {
-        let best = y, least = cost(y);
-        for (const oy of [...down, ...up]) { const c = cost(oy); if (c < least) { best = oy; least = c; } }
-        y = best;
+      let [best, least] = [y, cost(y)];
+      // Down, then up, one em at a time, stopping at the first clear spot; failing that, the least overlap seen (down before up on a tie).
+      for (const dir of [1, -1]) {
+        for (let d = 1; least > 0 && d <= NUDGE_STEPS; d++) {
+          const oy = y + dir * d * emPx;
+          if (!fits(oy)) break;
+          const c = cost(oy);
+          if (c < least) { best = oy; least = c; }
+        }
+        if (least === 0) break;
       }
+      y = best;
     }
     out.push({ x, y, scale });
-    rects.push(rect(x, y));
+    mine.push({ frame: frames[k]!, rect: rect(x, y) });
+    earlier.set(g.drawing, mine);
   });
   return out;
 }

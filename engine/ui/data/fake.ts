@@ -29,7 +29,7 @@ import { fallsOn, inPrint, instant, RARITIES, type Rarity } from '../../rules/ca
 import { atOrBelow, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { pointAt, rewindConfig, rewindPointProblem } from '../../rules/rewind.ts';
-import { fromBits, fromCoatString, legacyCoats, minusCoats, paintedCount, type Coats } from '../../rules/surface.ts';
+import { fromBits, fromCoatString, legacyCoats, minusCoats, paintedCount, PAINTED, type Coats } from '../../rules/surface.ts';
 import { contentOf, mapPlace, mapPlaces, type Attachment } from '../../rules/anchor.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -2326,9 +2326,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const drop = (p: Readonly<Record<string, unknown>>) => Object.fromEntries(Object.entries(p).filter(([k]) => !(SERVER_KEYS as readonly string[]).includes(k)));
     return { ...a, payload: drop(a.payload), currentPayload: drop(a.currentPayload) };
   };
-  /** A draw's grid as the server lays it: its coats, or for a draw of the old shape (no groups) 20 tenths on each cell it set (0455, surface_apply). */
+  /** A draw's grid as the server lays it (surface_lay): its coats with a cell held below PAINTED (1 tenth) kept at 0, or for a draw of the old shape (no groups) 20 tenths on each cell it set (0455, surface_apply). */
   const layDraw = (payload: Readonly<Record<string, unknown>>, coats: string): Coats =>
-    (Array.isArray(payload.groups) ? fromCoatString(coats) : legacyCoats(fromBits([...fromCoatString(coats)].map((v) => (v > 0 ? '1' : '0')).join('')), LEGACY_LINE));
+    (Array.isArray(payload.groups) ? fromCoatString(coats).map((v) => (v < PAINTED ? 0 : v)) : legacyCoats(fromBits([...fromCoatString(coats)].map((v) => (v > 0 ? '1' : '0')).join('')), LEGACY_LINE));
   /** A stored draw's grid: its coats, or for one of the old shape its cells laid at 20 tenths. */
   const gridOfPayload = (payload: Readonly<Record<string, unknown>>): Coats => (typeof payload.coats === 'string' ? fromCoatString(payload.coats) : legacyCoats(fromBits(String(payload.cells)), LEGACY_LINE));
   /** The surface of a play of a card with one: opened with the play (open_surface), here the first time it is asked for. Null for any other Act. */
@@ -3393,11 +3393,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /**
    * An edit moves the walls on its post with its words (edit_post, 0455; the act function's placesOfEdit): each group of each live draw that is still placed at the version the edit replaces is mapped against the
-   * new words, under the verdict that version holds, and its place is written against the edit's id. A group already fallen has no row for the edit and stays at its box spot.
+   * new words, under the verdict the new words hold (the edit's own `forged`, as quote_forged writes it), and its place is written against the edit's id. A group already fallen has no row for the edit and stays at its
+   * box spot. The version it replaces is read as surface_groups_on reads it, through acts_public: one an admin hid has no words there, so every group on it maps from nothing and falls to its box spot; the edit is not refused.
    */
-  function moveWalls(post: ActRec, before: ActRec, body: string, edit: Id): void {
-    const old = contentAt(before);
-    const next = contentOf(body, forgedSet(forgedList(before.payload)));
+  function moveWalls(post: ActRec, before: ActRec, edit: ActRec): void {
+    const old = hiddenVersions.has(before.id) ? contentOf('', forgedSet(forgedList(before.payload))) : contentAt(before);
+    const next = contentAt(edit);
     for (const [play, s] of surfaceRecs) {
       if (playOf(play)?.target !== post.id) continue;
       for (const draw of s.grids.keys()) {
@@ -3405,7 +3406,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (!here) continue;
         const alive = [...here].filter(([, place]) => place !== null);
         const moved = mapPlaces(old, next, alive.map(([, place]) => place!));
-        surfacePlaces.get(draw)!.set(edit, new Map(alive.map(([grp], i) => [grp, moved[i] ?? null])));
+        surfacePlaces.get(draw)!.set(edit.id, new Map(alive.map(([grp], i) => [grp, moved[i] ?? null])));
       }
     }
   }
@@ -3425,7 +3426,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (had !== undefined && now() >= pollEnd(had)) return refuse('a closed poll cannot change');
     const before = versionOf(original);
     const written = write({ character, kind: 'edit', thread: original.thread, target, payload: { body } });
-    moveWalls(original, before, body, written.id);
+    moveWalls(original, before, written);
     if (poll && 'removed' in poll) { if (had !== undefined) write({ character, kind: 'poll', thread: original.thread, target, payload: { removed: true } }); }
     else if (poll) writePoll(original, character, poll);
     sendAct(original);

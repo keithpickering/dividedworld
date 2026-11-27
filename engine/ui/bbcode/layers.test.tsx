@@ -22,7 +22,7 @@ const band = (start: number, end: number, z = 0): TextRun => ({
 /** A mark run: nothing at all in the words, an empty element at one offset. */
 const mark = (start: number, id: string, z = 0): TextRun => ({
   start, end: start, key: `m${start}-${id}`, z, mode: 'mark',
-  render: ({ key }) => <span key={key} data-mark={id} />,
+  render: ({ key }) => <span key={key} aria-hidden="true" data-mark={id} />,
 });
 /** A wrap run that stands a trail after its words. */
 const trailing = (start: number, end: number, id: string): TextRun => ({
@@ -137,7 +137,7 @@ describe('text layers', () => {
       const text = 'my [b]cats[/b] here';
       const o = at(text, 'cats') + 2;
       show(text, [mark(o, 'm')]);
-      expect(out().querySelector('strong')!.innerHTML).toBe('ca<span data-mark="m"></span>ts');
+      expect(out().querySelector('strong')!.innerHTML).toBe('ca<span aria-hidden="true" data-mark="m"></span>ts');
       expect(out().textContent).toBe('my cats here');
       expect(out().querySelectorAll('[data-mark]')).toHaveLength(1);
     });
@@ -164,6 +164,38 @@ describe('text layers', () => {
       const seen = visibleText(parse(text));
       show(text, [mark(0, 'start'), mark(seen.length, 'end'), mark(seen.indexOf('two') - 1, 'gap')]);
       expect([...out().querySelectorAll('[data-mark]')].map((m) => m.getAttribute('data-mark')).sort()).toEqual(['end', 'gap', 'start']);
+    });
+
+    test('in a replace run that spans bold and plain words draws once in each part, and the run still draws its words once', () => {
+      const text = 'my ca[b]ts[/b] are here';
+      const from = at(text, 'cats');
+      show(text, [strip(from, from + 4, 'dogs'), mark(from + 1, 'plain'), mark(from + 3, 'bold')]);
+      expect(out().querySelectorAll('[data-strip]')).toHaveLength(1);
+      expect(out().querySelector('[data-strip]')!.getAttribute('data-covers')).toBe('cats');
+      expect(out().querySelectorAll('[data-mark]')).toHaveLength(2);
+      // The replace run's words are one element drawn where the run starts; a mark it covers is drawn with it, once, in offset order, and the bold word has none of its own.
+      expect([...out().querySelectorAll('[data-mark]')].map((m) => m.getAttribute('data-mark'))).toEqual(['plain', 'bold']);
+      expect(out().querySelector('strong')?.querySelectorAll('[data-mark]').length ?? 0).toBe(0);
+      expect(out().textContent).toBe('my dogs are here');
+    });
+
+    test('exactly at the boundary between two adjacent text nodes draws once, at the end of the first', () => {
+      const text = 'my ca[b]ts[/b] here';
+      const o = at(text, 'cats') + 2;
+      show(text, [mark(o, 'm')]);
+      expect(out().querySelectorAll('[data-mark]')).toHaveLength(1);
+      expect(flat(out().firstElementChild!)).toBe('my ca|m|(strong ts) here');
+      cleanup();
+      show(text, [band(o - 2, o + 2), mark(o, 'm')]);
+      expect(out().querySelectorAll('[data-mark]')).toHaveLength(1);
+      expect(flat(out().firstElementChild!)).toBe('my (i ca)|m|(strong (i ts)) here');
+    });
+
+    test('is hidden from assistive technology by what the run draws: the element is empty and aria-hidden', () => {
+      show('my cats here', [mark(5, 'm')]);
+      const m = out().querySelector('[data-mark]')!;
+      expect(m.getAttribute('aria-hidden')).toBe('true');
+      expect(m.childNodes).toHaveLength(0);
     });
 
     test('at an offset where a standing trail is drawn comes after that trail, and marks at one offset go by z then list order', () => {

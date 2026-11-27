@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { landsOn, ok, quadrantFree, refuse, refusalTime, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
 import { cellsOf, count } from '../../rules/surface.ts';
+import { contentOf } from '../../rules/anchor.ts';
 import { JOBS, jobHealth } from '../../rules/jobs.ts';
 import { momentParts } from '../cards/Effects.tsx';
 import type { CardUi } from '../cards/types.ts';
@@ -5644,8 +5645,8 @@ describe('a surface, as the server keeps it', () => {
   /** One straight pass of the sponge along `y`: presses every third of its radius, which takes one coat (10 tenths) under their path, whatever lies within a hundredth of it. */
   const pass = (draw: string, y = 0.5, radius = 0.5) => ({ cuts: [{ draw, presses: Array.from({ length: 13 }, (_, k): [number, number] => [-0.5 + (k * radius) / 3, y]), radius }] });
   const surfaced: Instance = { ...instance, cards: [slab as unknown as CardRules], settings: { ...settings, cardSettings: { 'slab.limit': 40 } } };
-  function wall() {
-    const fake = createFake({ instance: surfaced });
+  function wall(inst: Instance = surfaced, card = 'slab') {
+    const fake = createFake({ instance: inst });
     const ana = fake.seed.account('ana');
     const bo = fake.seed.account('bo');
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
@@ -5653,7 +5654,7 @@ describe('a surface, as the server keeps it', () => {
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread } = fake.seed.thread('general', boFace, 'Hello', 'First post');
     const post = fake.seed.post(thread, anaFace, 'a post of Ana\'s');
-    const play = fake.seed.card(boFace, post, 'slab');
+    const play = fake.seed.card(boFace, post, card);
     fake.signInAs(ana);
     return { fake, ana, bo, anaFace, anaHeel, boFace, thread, post, play };
   }
@@ -5840,6 +5841,24 @@ describe('a surface, as the server keeps it', () => {
     expect(await fake.wash(play, anaFace, pass('not-a-draw'))).toEqual(refused('that tag is not live'));
   });
 
+  test('a draw\'s cells held at 1 tenth are stored as clean, so a wash that takes only them changes nothing and is never live (surface_lay, 0455)', async () => {
+    /* A card whose strokes each lay one tenth: where two cross the cell holds 2 and is painted, everywhere else it holds 1 and is clean. */
+    const thin = { ...slab, key: 'thin', surface: { ...slab.surface!, coats: { line: 1, most: 40 } } };
+    const { fake, anaFace, play } = wall({ ...surfaced, cards: [thin as unknown as CardRules] }, 'thin');
+    const tag = must(await fake.draw(play, anaFace, { strokes: [stroke(0.5, 0.1), dab(0.5, 0.5, 0.02)] }));
+    const painted = tag.covered;
+    expect(painted).toBeGreaterThan(0);
+    expect(painted).toBeLessThan(count(cellsOf([stroke(0.5, 0.1)])));
+    /* The sponge passes over the left of the stroke, where the cells hold 1 tenth. */
+    const rub = must(await fake.wash(play, anaFace, { cuts: [{ draw: tag.id, presses: Array.from({ length: 12 }, (_, k): [number, number] => [0.05 + k * 0.01, 0.5]), radius: 0.02 }] }));
+    expect(rub.payload).toMatchObject({ uncovered: 0, cut: [] });
+    expect(rub.live).toEqual([tag.id]);
+    expect(rub.covered).toBe(painted);
+    const held = (await fake.surfaceActs(play))!;
+    expect(held.acts.map((a) => a.id)).toEqual([tag.id]);
+    expect(held.older).toBe(0);
+  });
+
   test('a draw of the old shape lays 20 tenths on each cell it set, so one pass thins it and a second clears it', async () => {
     const { fake, ana, anaFace, play } = wall();
     const old = must(await fake.draw(play, anaFace, { strokes: [dab(0.5)], legacy: true }));
@@ -5958,8 +5977,8 @@ describe('a surface, as the server keeps it', () => {
     const FOX = BODY.indexOf('fox');
     const THE = BODY.indexOf('the');
     const text = (version: string, at = FOX, len = 3) => ({ kind: 'text' as const, version, at, len, dx: 1, dy: 0.5 });
-    const placed = () => {
-      const w = wall();
+    const placed = (inst: Instance = surfaced) => {
+      const w = wall(inst);
       const post = w.fake.seed.post(w.thread, w.anaFace, BODY);
       const play = w.fake.seed.card(w.boFace, post, 'slab');
       return { ...w, post, play };
@@ -6004,6 +6023,26 @@ describe('a surface, as the server keeps it', () => {
       fake.seed.edit(post, anaFace, `Oh. ${BODY}`);
       [places] = await placesOf(fake, play);
       expect(places).toEqual([{ grp: 1, place: { ...text(post, THE), at: THE + 4 } }]);
+    });
+
+    test('an edit maps the groups against the new words under the verdict the new words hold, not the one the old version held', async () => {
+      const { fake, post, play, anaFace, anaHeel, thread, boFace } = placed({ ...surfaced, settings: { ...surfaced.settings, postMaxLength: 500 } });
+      const quoted = fake.seed.post(thread, boFace, 'Words that nobody here wrote down');
+      must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], groups: [group(text(post))] }));
+      /* The quote's words are in no version of the post it names, so the edit's own verdict forges it, and a forged quote's words count as the post's own. */
+      const body = `[quote=${quoted}]made up words[/quote] ${BODY}`;
+      fake.seed.edit(post, anaFace, body);
+      const real = contentOf(body, new Set([quoted])).text.indexOf('fox');
+      expect(real).not.toBe(contentOf(body).text.indexOf('fox'));
+      expect(await placesOf(fake, play)).toEqual([[{ grp: 0, place: { ...text(post), at: real } }]]);
+    });
+
+    test('an edit of a post whose current version an admin hid reads that version as the database does (no words), so every text group falls to its box spot, and the edit is not refused (surface_groups_on)', async () => {
+      const { fake, post, play, anaFace, anaHeel } = placed();
+      must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], groups: [group(text(post)), group(text(post, THE))] }));
+      fake.seed.hide(post, 'hide');
+      fake.seed.edit(post, anaFace, `Oh. ${BODY}`);
+      expect(await placesOf(fake, play)).toEqual([[{ grp: 0, place: null }, { grp: 1, place: null }]]);
     });
 
     test('a wash and a later draw leave an earlier draw\'s places as they were', async () => {

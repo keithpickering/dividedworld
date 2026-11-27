@@ -21,7 +21,8 @@
  *   inside the piece of text that holds it (so a bold word is split around it, inside the bold), whatever run covers the offset: a replace run's
  *   words and a wrap run's pieces are drawn as they were and by the same run. At an offset where a run draws a standing trail, the mark comes after
  *   it. Marks at one offset go by `z` ascending, then list order. An instance's placed marks (graffiti) use it to find where a word is on this
- *   screen. `stretchesOf` ignores marks, since they draw none of the words.
+ *   screen. `stretchesOf` ignores marks, since they draw none of the words. A mark's `render` must return an empty element that is `aria-hidden` (an empty `span`
+ *   with `aria-hidden="true"`): it sits inside the post's words, which a screen reader reads as they are, so it must add no text, name or role to them.
  *
  * Where runs overlap, a replace run wins over a wrap run, and of two of a kind the one with the higher `z` wins; the lower one is
  * drawn only where it is not covered, each uncovered stretch of it once. A run never reaches into a quote, code, a link or an
