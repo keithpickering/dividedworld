@@ -32,8 +32,27 @@ function world(fake: Fake, options: { readonly threads?: number; readonly signed
     ids.push(fake.seed.thread('general', spritey, `Thread ${String(i + 1).padStart(3, '0')}`, 'first', { at: T0 + i * 60_000 }).thread);
   }
   if (options.signedIn !== false) fake.signInAs(me);
+  track(fake);
   return { me, other, mine, spritey, ids };
 }
+
+/* The board subscribes from a passive effect, so a list can be on screen before anything listens: a row, a moved, a gone or a play sent in
+   that gap is heard by no one. `world` makes every fake count its subscriptions, and a test that sends live waits on `subscribed` first. */
+const listening = new WeakMap<Fake, { board: number; reach: number }>();
+function track(fake: Fake) {
+  const seen = { board: 0, reach: 0 };
+  listening.set(fake, seen);
+  const board = fake.subscribeBoard.bind(fake);
+  const reach = fake.subscribeReach.bind(fake);
+  fake.subscribeBoard = (b, l) => { seen.board++; return board(b, l); };
+  fake.subscribeReach = (l) => { seen.reach++; return reach(l); };
+}
+/** Waits until the screen has made its subscription (the board's, and with `reach` the reach one too): the condition itself, not a flush. */
+const subscribed = (fake: Fake, o: { readonly reach?: boolean } = {}) => waitFor(() => {
+  const seen = listening.get(fake)!;
+  expect(seen.board).toBeGreaterThan(0);
+  if (o.reach) expect(seen.reach).toBeGreaterThan(0);
+});
 
 /** Spritey replies `n` times to a thread, an hour apart from `at`. */
 function replies(fake: Fake, thread: string, by: string, n: number, at = T0 + 3 * DAY) {
@@ -760,6 +779,7 @@ describe('pinned threads and the banner', () => {
     const banner = fake.seed.reach(w.spritey, 'board', board, 'rumble', { ends: Date.now() + DAY });
     renderIn(fake, <LoadedBoard slug="general" />, { instance, path: `/b/general${o.page ? `?page=${o.page}` : ''}` });
     await screen.findByRole('link', { name: o.page === 2 ? 'Thread 005' : 'Thread 025' });
+    await subscribed(fake, { reach: true });
     return { fake, w, pin, banner };
   }
 
@@ -841,6 +861,7 @@ describe('pinned threads and the banner', () => {
     fake.seed.wallet(w.me, 500);
     renderIn(fake, <Frame><LoadedBoard slug="general" /></Frame>, { instance, path: '/b/general' });
     await screen.findByRole('link', { name: 'Thread 002' });
+    await subscribed(fake, { reach: true });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
     await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Rumble, /u })[0]!);
@@ -858,12 +879,10 @@ describe('pinned threads and the banner', () => {
 
   test('a board card played while the page is open is drawn on the banner, heard on reach', async () => {
     const fake = createFake({ instance, now: () => Date.now() });
-    const heard = vi.spyOn(fake, 'subscribeReach');
     const w = world(fake, { threads: 2 });
     renderIn(fake, <LoadedBoard slug="general" />, { instance, path: '/b/general' });
     await screen.findByRole('link', { name: 'Thread 002' });
-    /* The page listens from an effect, which can run after the list is on screen: a play sent before it would be heard by no one. */
-    await waitFor(() => expect(heard).toHaveBeenCalled());
+    await subscribed(fake, { reach: true });
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
     expect(within(banner).queryByRole('button', { name: /^Rumble, 1 play\b/u })).toBeNull();
     const board = (await fake.board('general'))!.id;
@@ -874,12 +893,10 @@ describe('pinned threads and the banner', () => {
 
   test('a board card on another board is not drawn on this banner', async () => {
     const fake = createFake({ instance, now: () => Date.now() });
-    const heard = vi.spyOn(fake, 'subscribeReach');
     const w = world(fake, { threads: 2 });
     renderIn(fake, <LoadedBoard slug="general" />, { instance, path: '/b/general' });
     await screen.findByRole('link', { name: 'Thread 002' });
-    /* The page listens from an effect, which can run after the list is on screen: a play sent before it would be heard by no one. */
-    await waitFor(() => expect(heard).toHaveBeenCalled());
+    await subscribed(fake, { reach: true });
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
     fake.seed.reach(w.spritey, 'board', '99999999-9999-4999-8999-999999999999', 'rumble', { ends: Date.now() + DAY, live: true, thread: w.ids[0]! });
     await new Promise((r) => setTimeout(r, 50));
@@ -1153,6 +1170,7 @@ describe('the thread list goes live', () => {
   test('a post to the top row updates its replies and Last post in place, with no bar and no move', async () => {
     const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 3 }) });
     await screen.findByRole('link', { name: 'Thread 003' });
+    await subscribed(fake);
     const order = () => [...document.querySelectorAll('.kb-thread-list tbody .kb-thread-title')].map((a) => a.textContent);
     expect(order()).toEqual(['Thread 003', 'Thread 002', 'Thread 001']);
     expect(rowOf('Thread 003')).toHaveTextContent('0 replies');
@@ -1165,6 +1183,7 @@ describe('the thread list goes live', () => {
   test('a row whose new Last post would put it above the row before it updates in place and shows the bar', async () => {
     const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 3 }) });
     await screen.findByRole('link', { name: 'Thread 001' });
+    await subscribed(fake);
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await waitFor(() => expect(rowOf('Thread 001')).toHaveTextContent('1 reply'));
     const rows = screen.getAllByRole('row').slice(1);
@@ -1175,6 +1194,7 @@ describe('the thread list goes live', () => {
   test('a row for a thread off the page shows "1 thread has new posts", a second makes it "2 threads", the same thread twice counts once', async () => {
     const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     expect(bar()).toBeNull();
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await waitFor(() => expect(bar()).toHaveTextContent('1 thread has new posts'));
@@ -1188,6 +1208,7 @@ describe('the thread list goes live', () => {
   test('the bar is a polite status region inside the board, above the list, with a Show button', async () => {
     const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await waitFor(() => expect(bar()).not.toBeNull());
     /* role="status" is the polite live region (its implicit aria-live); the bar is that one element, between the form and the list. */
@@ -1203,6 +1224,7 @@ describe('the thread list goes live', () => {
   test('Show reads the page again: the bumped thread is at the top and the bar goes', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     const read = vi.spyOn(fake, 'boardPage');
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await userEvent.click(await screen.findByRole('button', { name: 'Show' }));
@@ -1216,6 +1238,7 @@ describe('the thread list goes live', () => {
   test('a thread on page 2 bumped above its neighbor counts on page 2, and Show keeps the reader on page 2', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general?page=2', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 005' });
+    await subscribed(fake);
     const read = vi.spyOn(fake, 'boardPage');
     await bump(fake, seeded.ids[2]!, seeded.mine!);
     await waitFor(() => expect(bar()).toHaveTextContent('1 thread has new posts'));
@@ -1232,6 +1255,7 @@ describe('the thread list goes live', () => {
   test('after Show, focus lands on the board heading, since the button it was on is gone', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await userEvent.click(await screen.findByRole('button', { name: 'Show' }));
     await screen.findByRole('link', { name: 'Thread 001' });
@@ -1241,6 +1265,7 @@ describe('the thread list goes live', () => {
   test('Show moves focus without scrolling the page', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     const focus = vi.spyOn(HTMLElement.prototype, 'focus');
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await userEvent.click(await screen.findByRole('button', { name: 'Show' }));
@@ -1255,6 +1280,7 @@ describe('the thread list goes live', () => {
   test('a Show whose document lands after the reader has moved on does not take focus from where they went', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     const real = fake.boardPage.bind(fake);
     let release: () => void = () => undefined;
@@ -1272,6 +1298,7 @@ describe('the thread list goes live', () => {
   test('a document that lands with no Show pressed takes no focus, and one Show does not claim focus for the next', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await userEvent.click(await screen.findByRole('button', { name: 'Show' }));
     await screen.findByRole('link', { name: 'Thread 001' });
@@ -1292,6 +1319,7 @@ describe('the thread list goes live', () => {
     vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { if (l.onRow) heard.push(l.onRow); return real(b, l); });
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Moved: Thread 001' });
+    await subscribed(fake);
     const back = (await fake.boardPage('off-topic', 1, []))!.threads.find((t) => t.id === w.ids[0])!;
     expect(bar()).toBeNull();
     await act(async () => { for (const hear of heard) hear({ ...back, lastAt: new Date(Date.now() + DAY).toISOString(), lastSeq: back.lastSeq + 1 }); });
@@ -1308,6 +1336,7 @@ describe('the thread list goes live', () => {
     vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { if (l.onRow) heard.push(l.onRow); return real(b, l); });
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 002' });
+    await subscribed(fake);
     act(() => { fake.seed.moveThread(w.ids[1]!, 'off-topic'); });
     await screen.findByRole('link', { name: 'Moved: Thread 002' });
     const back = (await fake.boardPage('off-topic', 1, []))!.threads.find((t) => t.id === w.ids[1])!;
@@ -1325,6 +1354,7 @@ describe('the thread list goes live', () => {
     vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { heard.push(l); return real(b, l); });
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 002' });
+    await subscribed(fake);
     await act(async () => { for (const l of heard) l.onGone?.(w.ids[1]!); });
     expect(screen.queryByRole('link', { name: 'Thread 002' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Thread 001' })).toBeInTheDocument();
@@ -1345,6 +1375,7 @@ describe('the thread list goes live', () => {
     vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { heard.push(l); return real(b, l); });
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Moved: Thread 001' });
+    await subscribed(fake);
     const visitor = (await fake.boardPage('off-topic', 1, []))!.threads.find((t) => t.id === elsewhere)!;
     await act(async () => { for (const l of heard) l.onRow?.(visitor); });
     expect(bar()).toHaveTextContent('1 thread has new posts');
@@ -1362,6 +1393,7 @@ describe('the thread list goes live', () => {
     vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { heard.push(l); return real(b, l); });
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 002' });
+    await subscribed(fake);
     expect(bar()).toBeNull();
     await act(async () => { for (const l of heard) l.onChanged?.(); });
     expect(bar()).toHaveTextContent('This board has changed');
@@ -1375,8 +1407,7 @@ describe('the thread list goes live', () => {
     const elsewhere = fake.seed.thread('off-topic', w.mine!, 'Visitor', 'Hi').thread;
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 002' });
-    /* The board's subscription is made in an effect that may not have run yet: flush it before the topic sends. */
-    await act(async () => {});
+    await subscribed(fake);
     act(() => { fake.seed.moveThread(w.ids[1]!, 'off-topic'); });
     const stub = await screen.findByRole('link', { name: 'Moved: Thread 002' });
     expect(screen.queryByRole('link', { name: 'Thread 002' })).toBeNull();
@@ -1391,6 +1422,7 @@ describe('the thread list goes live', () => {
   test('a thread that waited behind the bar and then moves away leaves the count, and a thread of a later page that moves away is a stub on page 1', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await waitFor(() => expect(bar()).toHaveTextContent('1 thread has new posts'));
     act(() => { fake.seed.moveThread(seeded.ids[0]!, 'off-topic'); });
@@ -1401,6 +1433,7 @@ describe('the thread list goes live', () => {
   test('the first row of page 2 counts on any bump, since no row above it is shown to compare with', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general?page=2', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 005' });
+    await subscribed(fake);
     /* Thread 005 is page 2's first row: it would stay below page 1's last row after this post, yet it counts (an accepted over-count). */
     await bump(fake, seeded.ids[4]!, seeded.mine!);
     await waitFor(() => expect(bar()).toHaveTextContent('1 thread has new posts'));
@@ -1418,6 +1451,7 @@ describe('the thread list goes live', () => {
     fake.seed.reach(w.spritey, 'thread', w.ids[0]!, 'beacon', { ends: Date.now() + DAY, message: 'Look here.' });
     renderIn(fake, <LoadedBoard slug="general" />, { instance, path: '/b/general' });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     const pinned = () => document.querySelector('[data-kb-pinned]') as HTMLElement;
     await waitFor(() => expect(pinned()).not.toBeNull());
     await bump(fake, w.ids[0]!, w.mine!);
@@ -1429,6 +1463,7 @@ describe('the thread list goes live', () => {
     const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 1 }) });
     fake.markRead(seeded.ids[0]!, 1, null);
     await screen.findByRole('link', { name: 'Thread 001' });
+    await subscribed(fake);
     expect(within(rowOf('Thread 001')).queryByText('New')).toBeNull();
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await waitFor(() => expect(within(rowOf('Thread 001')).getByText(/^New\b/)).toBeInTheDocument());
@@ -1438,6 +1473,7 @@ describe('the thread list goes live', () => {
   test('a character a row names and the page does not know is read once, by id', async () => {
     const { seeded, fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 1 }) });
     await screen.findByRole('link', { name: 'Thread 001' });
+    await subscribed(fake);
     const read = vi.spyOn(fake, 'characters');
     const newcomer = fake.seed.character(seeded.me, 'Latecomer', 'face', { at: T0 });
     await bump(fake, seeded.ids[0]!, newcomer);
@@ -1461,9 +1497,8 @@ describe('the thread list goes live', () => {
     const { heard } = hearing(fake);
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 003' });
+    await subscribed(fake);
     const top = (await fake.boardPage('general', 1, []))!.threads.find((t) => t.title === 'Thread 003')!;
-    /* The rows are heard once the board's subscription is made, in an effect that may run after the list is first drawn. */
-    await waitFor(() => expect(heard.length).toBeGreaterThan(0));
     await act(async () => { for (const hear of heard) hear({ ...top, title: 'Renamed three' }); });
     expect(screen.getByRole('link', { name: 'Renamed three' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Thread 003' })).toBeNull();
@@ -1473,6 +1508,7 @@ describe('the thread list goes live', () => {
   test('the subscription outlives a Show: one subscribe, and a row heard after the new document lands still counts', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     const { heard, sub } = hearing(fake);
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await userEvent.click(await screen.findByRole('button', { name: 'Show' }));
@@ -1489,10 +1525,10 @@ describe('the thread list goes live', () => {
     const { heard } = hearing(fake);
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 001' });
+    await subscribed(fake);
     const read = vi.spyOn(fake, 'characters');
     const newcomer = fake.seed.character(w.me, 'Latecomer', 'face', { at: T0 });
     const row = (await fake.boardPage('general', 1, []))!.threads[0]!;
-    await waitFor(() => expect(heard.length).toBeGreaterThan(0));
     await act(async () => { for (const hear of heard) hear({ ...row, firstCharacter: newcomer, lastCharacter: newcomer, lastSeq: row.lastSeq + 1, lastAt: new Date(Date.now() + 1000).toISOString() }); });
     await waitFor(() => expect(within(rowOf('Thread 001')).getAllByText('Latecomer').length).toBeGreaterThan(0));
     expect(read.mock.calls.filter(([ids]) => ids.includes(newcomer))).toHaveLength(1);
@@ -1515,6 +1551,7 @@ describe('the thread list goes live', () => {
   test('axe finds no violation with the bar shown', async () => {
     const { seeded, fake, container } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 025' });
+    await subscribed(fake);
     await bump(fake, seeded.ids[0]!, seeded.mine!);
     await screen.findByRole('button', { name: 'Show' });
     const found = await axeViolations(container);
