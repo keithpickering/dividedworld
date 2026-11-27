@@ -45,7 +45,7 @@ import { payItForward } from '../cards/pay-it-forward.ts';
 import { kickMe } from '../cards/kick-me.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
 import { WORDS as THIS_WORDS, thisCard } from '../cards/this.ts';
-import { HOT_BOX_LASTS, hotBox } from '../cards/hot-box.ts';
+import { HOT_BOX_THINS, hotBox } from '../cards/hot-box.ts';
 import { setMoveWords } from './cards/words.ts';
 import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
@@ -664,7 +664,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ui.hint).toBe('Point at the words to part the smoke.');
     expect(ui.Effect).toBeDefined();
     expect(ui.ConfigForm).toBeDefined();
-    expect(ui.describe(instance.settings)).toBe(`A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. It lasts ${spanWords(HOT_BOX_LASTS)}, thinning as it goes, then clears by itself. One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`);
+    expect(ui.describe(instance.settings)).toBe(`A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. It lasts ${spanWords(HOT_BOX_THINS)}, thinning as it goes, then clears by itself. One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`);
     expect(ui.describe(instance.settings)).toContain('It lasts 3 days, thinning');
     expect(ui.logPlay!({ color: '#19e3ff' }, {} as never)).toBe('It smoked the post in cyan.');
     expect(ui.logPlay!({ color: 'not a color' }, {} as never)).toBeUndefined();
@@ -1642,7 +1642,7 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
     expect(status([])).toBe('Dented by a chair');
   });
 
-  test('its words read the stack and the span from its rules', () => {
+  test('its words read the stack from its rules', () => {
     expect(chair.describe(instance.settings)).toBe('A Salty card, common. Something is thrown at a post and dents it, usually a folding chair, sometimes a trash can, a step ladder or a fire extinguisher: the words bend into the dent, and the thing drops to the floor under them. A trash can\'s lid flies off, and a fire extinguisher fills the post with spray that clears by itself in a few seconds. Once it lands it covers none of the words, and it holds nobody. It plays again each time the post scrolls into view, somewhere else each time, and with Game sounds on it clangs each time, unless motion is reduced. Up to 3 can stack on one post, each with its own dent, and they stay. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
   });
 

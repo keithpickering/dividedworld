@@ -1947,12 +1947,12 @@ describe('what it tells the Lens', () => {
     expect(lastView().ends).toMatch(/^Ends /u);
   });
 
-  test('a play with no ends gives no ends line, alone or beside one that has an end', () => {
+  test('a play with no ends gives no ends line alone; beside one that has an end, the line names the first gone', () => {
     const { ends: _ends, ...bare } = play(1);
     mount({ plays: [bare] });
     expect(lastView().ends).toBeUndefined();
     mount({ plays: [bare, play(2, '2026-11-03T12:00:00Z')] });
-    expect(lastView().ends).toMatch(/^Ends /u);
+    expect(lastView().ends, 'one chair of two ends, so the line says it is the first gone, not that the card ends').toMatch(/^The first one is gone .*\.$/u);
   });
 
   test('Throw again clears the run and starts another, with a different target', () => {

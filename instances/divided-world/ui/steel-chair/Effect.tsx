@@ -857,7 +857,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   /* A chair or a dent that was just rendered is placed at once, never waiting for a frame. */
   useLayoutEffect(() => { paintNow.current(); }, [chairs, dents]);
 
-  /* The Lens: how many chairs, when the first is gone, and the two controls. */
+  /* The Lens: the chairs' state, when the first dated one is gone (a play whose Act carries no ends stays), and the two controls. */
   const dated = live.filter((p) => p.ends !== undefined).length;
   const soonest = live.reduce<number | null>(
     (m, p) => (p.ends === undefined ? m : m === null ? Date.parse(p.ends) : Math.min(m, Date.parse(p.ends))),
@@ -867,7 +867,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   const view = useMemo<CardView>(() => {
     const at = soonest === null ? null : new Date(soonest).toISOString();
     const ends = at === null ? undefined
-      : dated === 1 ? endsWords(at, now)
+      : dated === 1 && live.length === 1 ? endsWords(at, now)
       : `The first one is gone ${dayAndTime(at)}.`;
     return {
       progress: null,

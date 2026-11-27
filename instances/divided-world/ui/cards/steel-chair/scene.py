@@ -1,6 +1,6 @@
 """Steel Chair card art: a folding chair caught at the end of its swing, its back already dented, over a wrestling
 ring at night: the ropes and a corner post behind it, spotlights in the haze, flashbulbs in the dark. (The card dents
-a post's box at one corner for 3 days and covers none of its words.) Nobody holds the chair and nobody is hit: the
+a post's box at one corner, stays, and covers none of its words.) Nobody holds the chair and nobody is hit: the
 picture is the chair."""
 import sys, os, math, random
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # rig.py is one folder up, shared by every card
