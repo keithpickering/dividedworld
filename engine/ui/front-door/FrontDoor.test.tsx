@@ -239,6 +239,15 @@ describe('the front door\'s saved states and surface draws', () => {
     expect(s.acts!.map((x) => (x as { places?: unknown }).places)).toEqual([[], [], []]);
   });
 
+  test('a staged draw\'s groups are placed where they were drawn, as the server writes a draw on the post\'s current version (an empty list would drop every one to its box spot)', () => {
+    const text = { kind: 'text', version: 'front-door:0', at: 2, len: 3, dx: 1, dy: 0.5 };
+    const box = { kind: 'box' };
+    const grouped = (anchor: unknown) => ({ strokes: [stroke(0.2)], groups: [{ anchor }] });
+    drawWith([{ by: 'bo', body: 'A wall.', reactions: {}, plays: [{ card: 'slab', by: 'ann', config: {}, draws: [{ by: 'ann', draw: grouped(text) }, { by: 'bo', draw: grouped(box) }, { by: 'bo', draw: { strokes: [stroke(0.6)] } }] }] }]);
+    const places = wallSeen!.surface!.acts!.map((x) => (x as { places?: unknown }).places);
+    expect(places).toEqual([[{ grp: 0, place: text }], [], []]);
+  });
+
   test('a draw painted over wholly by a later one stays live, as a thread\'s would: only a wash takes a tag off', () => {
     const wide: SurfaceStroke = { width: 0.4, aspect: 1, points: [[0.0, 0.2], [1.0, 0.2]] };
     drawWith([wallPost([stroke(0.2), wide])]);

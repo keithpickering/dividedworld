@@ -75,12 +75,12 @@ if (WORDS_AT < 0) throw new Error('post #1 no longer says what the heart is draw
 const SHEET_MARKS = [
   /* Serious Deer's ring around the Example Wiggler (the sprite in the "Example:" frame, about 62 by 128 px: 0.325 across and 0.326 down), and the arrow running in to it from off the sheet's right edge. */
   onImage(0, [0.325, 0.326], SHEET_EM, 'red', 'stock', ring([0, 0], 0.17, 0.115, 3), arrow([1.0, 0.22], [0.24, 0.04], 4)),
-  /* Hotel Mario's "??" beside the "Build Your Own" row, to the right of its sprites and past the sheet's edge (the row is at 0.52 down). */
-  onImage(0, [1.0, 0.52], SHEET_EM, 'black', 'stock', glyphs('??', [-0.24, -0.15], 0.3, 5)),
-  /* Hotel Mario's black bar over the credit block ("This sheet was made by..."): a fat back-and-forth scribble across the red text, 0.12 to 0.88 across and about 0.8 down. */
-  onImage(0, [0.5, 0.8], SHEET_EM, 'black', 'fat', scribble({ x0: -0.38, y0: -0.07, x1: 0.38, y1: 0.07 }, 6)),
-  /* D-Guy's heart beside the end of "what you think!", a little to the right of the run and half an em down its line. */
-  onWords(WORDS_AT, WHAT_YOU_THINK.length, [9.5, 0.7], 'pink', 'stock', heart([0, 0], 2.6, 7)),
+  /* Hotel Mario's "??" beside the "Build Your Own" row, to the right of its sprites and mostly past the sheet's right edge (the row is at 0.52 down). */
+  onImage(0, [1.0, 0.52], SHEET_EM, 'black', 'stock', glyphs('??', [-0.04, -0.15], 0.3, 5)),
+  /* Hotel Mario's black bar over the credit block ("This sheet was made by..."): a fat back-and-forth scribble across the whole red block, which runs 0.07 to 0.91 across and 0.675 to 0.955 down (the brush is about 0.11 of an image width in radius, so the strokes stop short of the block's edges by that). */
+  onImage(0, [0.49, 0.815], SHEET_EM, 'black', 'fat', scribble({ x0: -0.31, y0: -0.19, x1: 0.31, y1: 0.19 }, 6)),
+  /* D-Guy's heart beside the end of "what you think!", just clear of the "!" and level with its line (the heart is 2.6 ems tall and its brush half an em). */
+  onWords(WORDS_AT, WHAT_YOU_THINK.length, [10.3, 0.7], 'pink', 'stock', heart([0, 0], 2.6, 7)),
 ];
 
 export const frontDoor: FrontDoorUi = Object.freeze({
