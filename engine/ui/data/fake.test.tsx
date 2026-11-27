@@ -2774,13 +2774,13 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     await flush();
     expect(set.kind).toBe('set');
     const [setterBefore, otherBefore] = [setter.mock.calls.length, other.mock.calls.length];
-    fake.broadcast.log.length = 0;
+    const logFrom = fake.broadcast.log.length;
     must(await fake.playCard('blot', boFace, opener, {}, ''));
     await flush();
     /* Ana is poked for the caught ledger row (the spring Act names no character of hers), Bo for the card he played: one each. */
     expect(setter.mock.calls.length - setterBefore).toBe(1);
     expect(other.mock.calls.length - otherBefore).toBe(1);
-    const selfs = fake.broadcast.log.filter((e) => e.event === 'self').map((e) => e.topic);
+    const selfs = fake.broadcast.log.slice(logFrom).filter((e) => e.event === 'self').map((e) => e.topic);
     expect(selfs.filter((t) => t === `account:${ana}`)).toHaveLength(1);
     expect(selfs.filter((t) => t === `account:${bo}`)).toHaveLength(1);
   });
