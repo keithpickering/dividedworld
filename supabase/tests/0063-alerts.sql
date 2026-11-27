@@ -36,7 +36,8 @@ create function pg_temp.shape(projection jsonb) returns jsonb language sql as $$
                                'current_payload', (projection -> 'current_payload') - array['character', 'thread', 'board', 'targetName'])
 $$;
 
-create function pg_temp.queued() returns bigint language sql as $$ select count(*) from broadcasts_due where topic like 'account:%' $$;
+-- Alerts only: a play or a post also moves a wallet or a hand, which pokes the account with a bare `self` (0453), and that is not what this file counts.
+create function pg_temp.queued() returns bigint language sql as $$ select count(*) from broadcasts_due where event = 'alert' and topic like 'account:%' $$;
 
 -- ---- The table is there, holds no content, and reaches no API role's writes ----
 do $$
@@ -90,13 +91,13 @@ begin
   if r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said ->> 'id')::uuid or r.sub is not null then
     raise exception 'a quote is Ann''s, about Bob''s new post and her character: %', to_jsonb(r);
   end if;
-  if (select count(*) from broadcasts_due where topic = 'account:' || ann) is distinct from 1 then raise exception 'a quote queued % broadcasts on Ann''s channel', (select count(*) from broadcasts_due where topic = 'account:' || ann); end if;
-  if (select payload from broadcasts_due where topic = 'account:' || ann) is distinct from jsonb_build_object('id', r.id, 'kind', 'quote', 'sub', null, 'act', r.act, 'character', a1, 'at', r.at)
-     or (select event from broadcasts_due where topic = 'account:' || ann) is distinct from 'alert' then
-    raise exception 'the broadcast is the alert''s public projection: %', (select to_jsonb(x) from broadcasts_due x where topic = 'account:' || ann);
+  if (select count(*) from broadcasts_due where event = 'alert' and topic = 'account:' || ann) is distinct from 1 then raise exception 'a quote queued % broadcasts on Ann''s channel', (select count(*) from broadcasts_due where event = 'alert' and topic = 'account:' || ann); end if;
+  if (select payload from broadcasts_due where event = 'alert' and topic = 'account:' || ann) is distinct from jsonb_build_object('id', r.id, 'kind', 'quote', 'sub', null, 'act', r.act, 'character', a1, 'at', r.at)
+     or (select event from broadcasts_due where event = 'alert' and topic = 'account:' || ann) is distinct from 'alert' then
+    raise exception 'the broadcast is the alert''s public projection: %', (select to_jsonb(x) from broadcasts_due x where x.event = 'alert' and topic = 'account:' || ann);
   end if;
-  if (select payload::text from broadcasts_due where topic = 'account:' || ann) ~ (bob::text || '|' || b1::text) then raise exception 'the broadcast names the caster'; end if;
-  delete from broadcasts_due where topic like 'account:%';
+  if (select payload::text from broadcasts_due where event = 'alert' and topic = 'account:' || ann) ~ (bob::text || '|' || b1::text) then raise exception 'the broadcast names the caster'; end if;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%';
   delete from alerts;
 
   -- Quoting a staff post, one's own post, and one's own other mask's post write nothing.
@@ -115,8 +116,8 @@ begin
   if (select count(*) from alerts) is distinct from 1 or r.kind is distinct from 'cardOnYours' or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said ->> 'id')::uuid then
     raise exception 'a card on a post is Ann''s cardOnYours about the play: % / %', to_jsonb(r), (select count(*) from alerts);
   end if;
-  if (select count(*) from broadcasts_due where topic = 'account:' || ann) is distinct from 1 or pg_temp.queued() is distinct from 1 then raise exception 'a card on a post queued % account broadcasts', pg_temp.queued(); end if;
-  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+  if (select count(*) from broadcasts_due where event = 'alert' and topic = 'account:' || ann) is distinct from 1 or pg_temp.queued() is distinct from 1 then raise exception 'a card on a post queued % account broadcasts', pg_temp.queued(); end if;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%'; delete from alerts;
 
   -- A card on a character: Ann's Ann One, from her post.
   said := play_card(bob, 'glint', b1, a1, '{}', 0, '', 'character', a1_post);
@@ -124,8 +125,8 @@ begin
   if (select count(*) from alerts) is distinct from 1 or r.kind is distinct from 'cardOnYours' or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said ->> 'id')::uuid then
     raise exception 'a card on a character is Ann''s cardOnYours: % / %', to_jsonb(r), (select count(*) from alerts);
   end if;
-  if (select count(*) from broadcasts_due where topic = 'account:' || ann) is distinct from 1 or pg_temp.queued() is distinct from 1 then raise exception 'a card on a character queued % account broadcasts', pg_temp.queued(); end if;
-  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+  if (select count(*) from broadcasts_due where event = 'alert' and topic = 'account:' || ann) is distinct from 1 or pg_temp.queued() is distinct from 1 then raise exception 'a card on a character queued % account broadcasts', pg_temp.queued(); end if;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%'; delete from alerts;
 
   -- A card on a thread: the player of the character that started it.
   said := play_card(bob, 'marquee', b1, mine_t, '{}', 0, '', 'thread');
@@ -134,7 +135,7 @@ begin
     raise exception 'a card on a thread is its starter''s player''s: % / %', to_jsonb(r), (select count(*) from alerts);
   end if;
   if pg_temp.queued() <> 1 then raise exception 'a card on a thread queued % account broadcasts', pg_temp.queued(); end if;
-  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%'; delete from alerts;
 
   -- A board play writes none; a play on a staff character and on a staff post none; a play by Ann's own other mask on Ann's none.
   perform play_card(bob, 'quake', b1, brd, '{}', 0, '', 'board', null, null, null, null, '{}', (select x.id from threads x where x.board = brd));
@@ -164,8 +165,8 @@ begin
   if (select count(*) from alerts where kind = 'trapStruck') is distinct from 1 or r.account is distinct from bob or r.character is distinct from b1 or r.act is distinct from (said -> 'sprung' -> 'struck' ->> 'id')::uuid then
     raise exception 'a trap set off against another player''s is the replier''s trapStruck: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
   end if;
-  if (select count(*) from broadcasts_due where topic like 'account:%') is distinct from 3 then raise exception 'a quote that sprang a trap queued % broadcasts, not 3', pg_temp.queued(); end if;
-  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+  if (select count(*) from broadcasts_due where event = 'alert' and topic like 'account:%') is distinct from 3 then raise exception 'a quote that sprang a trap queued % broadcasts, not 3', pg_temp.queued(); end if;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%'; delete from alerts;
 
   -- A trap Bob set on his other mask's post, set off by his Bob One: his own doing to himself, so no alert at all.
   perform pg_temp.hand(bob, 'quoter');
@@ -192,7 +193,7 @@ begin
     raise exception 'the same spring is also the setter''s trapSprang: %', to_jsonb(r);
   end if;
   if pg_temp.queued() <> 2 then raise exception 'a landing and its spring queued % account broadcasts, not 2', pg_temp.queued(); end if;
-  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%'; delete from alerts;
 end $$;
 
 -- ---- The caster's answer is the same whatever owns the target, and never holds the alert ----
@@ -303,7 +304,7 @@ begin
   if (select count(*) from alerts where kind = 'trapSprang') is distinct from 1 or r.character is distinct from a1 or r.act is distinct from (said -> 'sprung' ->> 'id')::uuid then
     raise exception 'a cast that springs another''s trap is the setter''s trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x where kind = 'trapSprang');
   end if;
-  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%'; delete from alerts;
 
   -- Bob's other mask casts on Bob's own trapped post: his own doing, no alert at all.
   perform pg_temp.hand(bob, 'sweetie');
@@ -343,7 +344,7 @@ begin
   perform set_card(ann, 'quoter', a1, anns, '{}', 0);
   perform set_card(cat, 'quoter', c1, cats, '{}', 0);
   perform set_card(bob, 'quoter', b2, bobs, '{}', 0);
-  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%'; delete from alerts;
 
   -- A reaction springs nothing, whoever set the back: it writes no alert and queues no broadcast.
   perform tests.become(bob);
@@ -360,9 +361,9 @@ begin
   if (select count(*) from alerts where kind = 'trapSprang') is distinct from 1 or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said -> 'sprung' ->> 'id')::uuid then
     raise exception 'a quote that springs a Move is the setter''s one trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
   end if;
-  if (select count(*) from broadcasts_due where topic = 'account:' || ann and payload ->> 'kind' = 'trapSprang') is distinct from 1 then raise exception 'the spring queued % broadcasts on the setter''s channel, not 1', pg_temp.queued(); end if;
-  if (select array_agg(k order by k) from broadcasts_due b, jsonb_object_keys(b.payload) k where b.topic like 'account:%' and b.payload ->> 'kind' = 'trapSprang') is distinct from array['act', 'at', 'character', 'id', 'kind', 'sub'] then
-    raise exception 'the broadcast holds more than the public projection: %', (select payload from broadcasts_due where topic like 'account:%' and payload ->> 'kind' = 'trapSprang');
+  if (select count(*) from broadcasts_due where event = 'alert' and topic = 'account:' || ann and payload ->> 'kind' = 'trapSprang') is distinct from 1 then raise exception 'the spring queued % broadcasts on the setter''s channel, not 1', pg_temp.queued(); end if;
+  if (select array_agg(k order by k) from broadcasts_due b, jsonb_object_keys(b.payload) k where b.event = 'alert' and b.topic like 'account:%' and b.payload ->> 'kind' = 'trapSprang') is distinct from array['act', 'at', 'character', 'id', 'kind', 'sub'] then
+    raise exception 'the broadcast holds more than the public projection: %', (select payload from broadcasts_due where event = 'alert' and topic like 'account:%' and payload ->> 'kind' = 'trapSprang');
   end if;
   -- Masks: an alert's id says nothing of how many alerts were written for others (a shared counter's gaps would count them, and
   -- a skipped alert, one for a target the actor owns, is a private fact). So it is not drawn from a sequence.
@@ -373,10 +374,10 @@ begin
   end if;
   if (select array_agg(c.column_name::text order by c.ordinal_position) from information_schema.columns c where c.table_name = 'alerts' and c.table_schema = 'public')
      is distinct from array['id', 'account', 'kind', 'sub', 'act', 'character', 'at'] then raise exception 'the alert row carries a column besides the account, kind, Act, character and time'; end if;
-  if r::text ~ (bob::text || '|' || b1::text) or exists (select 1 from broadcasts_due where topic = 'account:' || ann and payload::text ~ (bob::text || '|' || b1::text)) then
+  if r::text ~ (bob::text || '|' || b1::text) or exists (select 1 from broadcasts_due where event = 'alert' and topic = 'account:' || ann and payload::text ~ (bob::text || '|' || b1::text)) then
     raise exception 'an alert names the quoter or its account';
   end if;
-  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%'; delete from alerts;
 
   -- The answer is the same shape whoever set the Move.
   perform tests.become(bob);
@@ -388,7 +389,7 @@ begin
     raise exception 'post''s answer differs in shape with who set the Move: % / %', said, said_other;
   end if;
   if said::text ~* 'alert' or said_other::text ~* 'alert' then raise exception 'post''s answer holds the alert'; end if;
-  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+  delete from broadcasts_due where event = 'alert' and topic like 'account:%'; delete from alerts;
 
   -- A reaction by the account that owns the setter is refused outright, so it springs nothing and writes nothing.
   perform tests.become(bob);
