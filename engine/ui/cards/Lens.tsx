@@ -757,8 +757,8 @@ const NAMES_SHOWN = 3;
  * Every kind the Lens holds, in the tabs' order, for a tab row too long to show them all (the All button). Each entry is a button with the kind's name, its count of plays and, where any play of it is
  * up now (`inForce`), a sign that is no more than a sign: its words for a screen reader are "N up now". The visit's tab, where there is one, is first and has no count. The grid is a way to the tabs; the tabs stay.
  */
-function KindsGrid({ kinds, labelOf, billed, counts, now, keeping, onChoose }: {
-  readonly kinds: readonly string[]; readonly labelOf: (kind: string) => string; readonly billed: readonly CardPlay[]; readonly counts: ReadonlyMap<string, { readonly all: number }>; readonly now: number; readonly keeping: ReadonlySet<string>; readonly onChoose: (kind: string) => void;
+function KindsGrid({ kinds, labelOf, artOf, billed, counts, now, keeping, onChoose }: {
+  readonly kinds: readonly string[]; readonly labelOf: (kind: string) => string; readonly artOf: (kind: string) => CardUi['art'] | undefined; readonly billed: readonly CardPlay[]; readonly counts: ReadonlyMap<string, { readonly all: number }>; readonly now: number; readonly keeping: ReadonlySet<string>; readonly onChoose: (kind: string) => void;
 }) {
   return (
     <ul className="kb-lens-kinds" aria-label="Every kind of card">
@@ -770,6 +770,7 @@ function KindsGrid({ kinds, labelOf, billed, counts, now, keeping, onChoose }: {
         return (
           <li key={kind}>
             <button type="button" className="kb-lens-kind" data-kb-card={kind} onClick={() => onChoose(kind)}>
+              <TabIcon art={artOf(kind)} />
               <span className="kb-lens-kind-name">{labelOf(kind)}</span>
               {kind !== VISIT_KIND && <><span className="kb-lens-kind-count" aria-hidden="true">{total}</span><span className="kb-visually-hidden">{playsPhrase(total)}</span></>}
               {up > 0 && <><span className="kb-lens-kind-up" aria-hidden="true" /><span className="kb-visually-hidden">{up} up now</span></>}
@@ -948,7 +949,7 @@ export interface LensProps {
   readonly reportTo?: ReportTo | undefined;
 }
 
-/** A card's icon on its tab (spent-marks design, section 5): the mark in its own colors, a swatch where the art has no mark, nothing where there is no art. Decoration: the tab's name is its label. */
+/** A card's icon on its tab and on its entry in the kinds grid (spent-marks design, section 5): the mark in its own colors, a swatch where the art has no mark, nothing where there is no art. Decoration: the tab's name is its label. */
 function TabIcon({ art }: { readonly art: CardUi['art'] | undefined }) {
   if (art === undefined) return null;
   if (art.mark) return <img className="kb-lens-tab-icon" src={art.mark} alt="" draggable={false} />;
@@ -1205,7 +1206,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
               <PreparedTab
                 key={kind} ref={(el) => { if (el) tabs.current.set(kind, el); else tabs.current.delete(kind); }}
                 id={tabId(kind)} kind={kind} selected={selected} controls={selected ? panelId : undefined} read={readOf(kind)} onChoose={() => { void choose(kind); }}
-              ><TabIcon art={tabArtOf(kind)} />{label}</PreparedTab>
+              ><TabIcon art={tabArtOf(kind)} /><span className="kb-lens-tab-name">{label}</span></PreparedTab>
             );
           })}
         </div>
@@ -1222,7 +1223,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
         {/* The fade at the body's top: it sticks to the scroll edge under the bar, and shows once the body is scrolled off its top. */}
         <div className="kb-lens-fade-top" aria-hidden="true" />
         {/* The grid is the whole body while it shows: the Report foot link goes with the tab's sections, and is back with them. */}
-        {gridOn ? <KindsGrid kinds={kinds} labelOf={labelOf} billed={billed} counts={here.counts} now={now} keeping={keeping} onChoose={pick} /> : <>
+        {gridOn ? <KindsGrid kinds={kinds} labelOf={labelOf} artOf={tabArtOf} billed={billed} counts={here.counts} now={now} keeping={keeping} onChoose={pick} /> : <>
         {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
         {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} {...spinAnswer} />}
         {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} {...spinAnswer} />}
