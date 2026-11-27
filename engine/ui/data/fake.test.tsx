@@ -4783,12 +4783,12 @@ describe('Random Events by their own rarity', () => {
     { key: 'secret', name: 'Secret', line: 'Hush.', rarity: 'common' as const, eventOnly: true as const },
   ];
   /* A world whose odds the test sets: every roll is its own window, and the day holds them all. */
-  function rolling(over: { outcomes?: Record<string, number>; eventRarity?: Record<string, number>; gearRarity?: Record<string, number>; lines: Instance['events']['lines']; cards?: Instance['cards'] }) {
+  function rolling(over: { outcomes?: Record<string, number>; eventRarity?: Record<string, number>; gearRarity?: Record<string, number>; lines: Instance['events']['lines']; cards?: Instance['cards']; oldVoice?: boolean }) {
     /* The settings' own eventRarity is dropped unless the test gives one: an absent one reads as common alone. */
     const { eventRarity: _own, ...events } = settings.cosmetics.events;
     const inst: Instance = {
       ...instance, gear, cards: over.cards ?? [], events: { lines: over.lines },
-      settings: { ...settings, cosmetics: { ...settings.cosmetics, events: { ...events, windowMinutes: 1, dayMost: 100000, outcomes: { line: 0, gear: 0, card: 0, ...over.outcomes } as never, gearRarity: (over.gearRarity ?? { common: 1 }) as never, cardRarity: { common: 1 }, ...(over.eventRarity ? { eventRarity: over.eventRarity as never } : {}) } as never } },
+      settings: { ...settings, ...(over.oldVoice === undefined ? {} : { oldVoice: over.oldVoice }), cosmetics: { ...settings.cosmetics, events: { ...events, windowMinutes: 1, dayMost: 100000, outcomes: { line: 0, gear: 0, card: 0, ...over.outcomes } as never, gearRarity: (over.gearRarity ?? { common: 1 }) as never, cardRarity: { common: 1 }, ...(over.eventRarity ? { eventRarity: over.eventRarity as never } : {}) } as never } },
     };
     const fake = createFake({ instance: inst });
     const ana = fake.seed.account('ana');
@@ -4848,6 +4848,19 @@ describe('Random Events by their own rarity', () => {
     expect((await named.rolls(40)).every((e) => e?.lineKey === 'c' && e.eventRarity === 'common' && e.item === 'new')).toBe(true);
     const only = rolling({ outcomes: { card: 1 }, cards: [mk('old', 'common', { retired: true })], lines: [{ key: 'c', outcome: 'card', text: 'C' }] });
     expect((await only.rolls(5)).every((e) => e === null)).toBe(true);
+  });
+
+  /* No old voice runs, and this card writes: the instance withholds it, as the shop and `roll_pack` do. */
+  const typewriter = mk('typewriter', 'common', { writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } });
+
+  test('an event naming a card the instance withholds is not eligible, so it answers null', async () => {
+    const { rolls } = rolling({ outcomes: { card: 1 }, oldVoice: false, cards: [typewriter], lines: [{ key: 'c', outcome: 'card', text: 'C {item}', item: 'typewriter' }] });
+    expect((await rolls(10)).every((e) => e === null)).toBe(true);
+  });
+
+  test('an event naming no card never draws one the instance withholds, so it answers null', async () => {
+    const { rolls } = rolling({ outcomes: { card: 1 }, oldVoice: false, cards: [typewriter], lines: [{ key: 'c', outcome: 'card', text: 'C {item}' }] });
+    expect((await rolls(10)).every((e) => e === null)).toBe(true);
   });
 
   test('a scripted event may give its eventRarity, defaults to its line\'s own, and else common', async () => {

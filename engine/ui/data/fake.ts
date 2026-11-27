@@ -3713,7 +3713,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const scriptedLine = lineKey === null ? undefined : instance.events.lines.find((l) => l.key === lineKey);
       eventRarity = next.eventRarity ?? (scriptedLine ? lineRarity(scriptedLine) : 'common');
     } else {
-      /* `random_event`'s draw order (0453): the outcome; the event's rarity among the weighted rarities that hold an eligible line; a line of it by key; then the line's named item with no draw, else `drawByRarity`. */
+      /* `random_event`'s draw order (0453): the outcome; the event's rarity among the weighted rarities that hold an eligible line; a line of it by key; then the line's named item with no draw, else `drawByRarity`. The fake walks `RARITIES` order, and its `random()` is not SQL's `random()`: it mirrors the count and order of the draws, not a seeded replay. */
       const o = { ...cfg.outcomes, none: cfg.outcomes.none ?? 0 };
       const total = o.line + o.gear + o.card + o.none;
       let at = random() * total;
