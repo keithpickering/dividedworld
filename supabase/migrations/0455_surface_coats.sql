@@ -654,6 +654,14 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function surface_version_pair(uuid, uuid) from public, anon, authenticated;
 grant execute on function surface_version_pair(uuid, uuid) to service_role;
+
+-- surface_post_of(play): the post a wall is on, for a draw's Edge Function, which has the play and needs the post's versions (surface_version_pair). Null for a play that holds no wall. Service role only; it names no owner.
+create function surface_post_of(p_play uuid) returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select s.post from surfaces s where s.play = p_play
+$$;
+revoke execute on function surface_post_of(uuid) from public, anon, authenticated;
+grant execute on function surface_post_of(uuid) to service_role;
 -- card_target (0413), from its latest definition, changing only what is said.
 CREATE OR REPLACE FUNCTION public.card_target(target uuid)
  RETURNS jsonb

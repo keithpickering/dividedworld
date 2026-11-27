@@ -980,12 +980,12 @@ async function onePick(r: PickRun): Promise<PickRecord> {
           if (first === undefined) throw new DatabaseError('no configuration could be built for the card', '', 400, 'no configuration could be built for the card');
           record['cardConfig'] = chosen;
           const drawn = wall !== undefined
-            ? await db.rpc<{ id: string }>('staff_draw_on_surface', { staff_key: p.staff, play: wall, payload: { ...first.payload, pool: day }, cells: first.cells, most: first.most })
+            ? await db.rpc<{ id: string }>('staff_draw_on_surface', { staff_key: p.staff, play: wall, payload: { ...first.payload, pool: day }, coats: first.coats, places: [], most: first.most })
             : await db.rpc<{ id: string }>('staff_play_surface_card', {
               staff_key: p.staff, card: answer.card.key, target: quotes, config: {}, message: '', pool_day: day,
               // `tokens` has no default in staff_play_surface_card, so it is always sent, null for a card that writes nothing.
               tokens: rules.writes === undefined ? null : rules.writes.tokens({} as never, tuned.settings),
-              first: first.payload, first_cells: first.cells, most: first.most, most_live: rules.surface.mostLive,
+              first: first.payload, first_coats: first.coats, first_places: [], most: first.most, most_live: rules.surface.mostLive,
             });
           card = drawn.id;
         } else {

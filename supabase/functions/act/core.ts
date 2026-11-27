@@ -15,7 +15,8 @@
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
 import { casterMessage, refusalTime, decideDraw, decidePlay, decideSet, decideUse, decideWash, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
-import { forgedList } from '../../../engine/bbcode/quoted.ts';
+import { forgedList, forgedSet } from '../../../engine/bbcode/quoted.ts';
+import { contentOf, mapPlaces, type Attachment } from '../../../engine/rules/anchor.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, barredAnswer, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -154,7 +155,9 @@ const live = (rpc: string, answer: unknown, args: Row = {}): Broadcast[] =>
  */
 const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'play_landed_at', 'open_account', 'instance_settings',
   // The hints' calls (0065): a read, and a write that finds its own earlier effect (a pattern already fired for an Act fires nothing).
-  'act_window_counts', 'fire_hint']);
+  'act_window_counts', 'fire_hint',
+  // A wall's reads (0455): the live draws, the post a wall is on, and a post's versions and groups. Each reads Acts and the post's words, never an owner.
+  'surface_acts', 'surface_post_of', 'surface_version_pair', 'surface_groups_on']);
 export const SAFE_TO_REPEAT = (fn: string): boolean => REPEATABLE.has(fn);
 
 /** The act function's two connections: as the player, and as the service; each sends a write once. */
@@ -170,6 +173,54 @@ const NO_ACCOUNT = '28000';
 
 const refused = (field: string, why: string): ActionAnswer => ({ status: 400, body: { field, error: why } });
 
+
+/** What a draw says when the version it was drawn on is not one of the post's. */
+export const NOT_THOSE_WORDS = "That post's words aren't the ones you drew on. Reload it and tag again.";
+
+/** A post's version as the wall reads it: its id, its words and its forged verdict (the list, as `forgedList` reads a payload's). */
+interface Version { readonly version: string; readonly body: string; readonly forged?: unknown }
+const contentAt = (v: Version) => contentOf(v.body, forgedSet(forgedList({ forged: v.forged })));
+const isAttachment = (a: unknown): a is Attachment => typeof a === 'object' && a !== null && ['text', 'image', 'box'].includes((a as Row).kind as string);
+
+/**
+ * Where each group of a draw sits in the post's current version: `[{ grp, version, place }]`, for the groups attached to the post's words or an image (a box group is at its box spot and
+ * has no row). A group drawn on the current version is placed where it was drawn; one drawn on an older version is mapped through the words' diff, null where its words were touched.
+ * A version the post never had is a refusal. One read for each distinct version the groups name, which is one in practice. Reads are retried on a transport failure (SAFE_TO_REPEAT).
+ */
+async function placesOfDraw(service: Db, postOf: () => Promise<string | null>, payload: Record<string, unknown>): Promise<{ ok: true; places: Row[] } | { ok: false; why: string }> {
+  const groups = Array.isArray(payload.groups) ? payload.groups as unknown[] : [];
+  const anchored: { grp: number; at: Attachment & { version: string } }[] = [];
+  groups.forEach((g, grp) => {
+    const at = typeof g === 'object' && g !== null ? (g as Row).anchor : undefined;
+    if (isAttachment(at) && at.kind !== 'box') anchored.push({ grp, at });
+  });
+  if (anchored.length === 0) return { ok: true, places: [] };
+  const post = await postOf();
+  if (!post) return { ok: false, why: NOT_THOSE_WORDS };
+  const places: Row[] = [];
+  for (const version of new Set(anchored.map((a) => a.at.version))) {
+    const pair = await service.rpc<{ current: Version; drawn: Version | null } | null>('surface_version_pair', { p_post: post, p_version: version });
+    if (!pair || !pair.drawn) return { ok: false, why: NOT_THOSE_WORDS };
+    const own = anchored.filter((a) => a.at.version === version);
+    const placed = pair.drawn.version === pair.current.version ? own.map((a) => a.at as Attachment | null)
+      : mapPlaces(contentAt(pair.drawn), contentAt(pair.current), own.map((a) => a.at));
+    own.forEach((a, i) => places.push({ grp: a.grp, version: pair.current.version, place: placed[i] ?? null }));
+  }
+  return { ok: true, places: places.sort((a, b) => (a.grp as number) - (b.grp as number)) };
+}
+
+/** Where each live group of the walls on a post sits in an edit's new words: `[{ draw, grp, place }]`. A group already fallen (null) stays fallen. */
+async function placesOfEdit(service: Db, post: string, body: string): Promise<Row[]> {
+  const read = await service.rpc<{ version: string; body: string; forged?: unknown; groups: { draw: string; grp: number; place: Attachment | null }[] } | null>('surface_groups_on', { p_post: post });
+  if (!read || !Array.isArray(read.groups) || read.groups.length === 0) return [];
+  // The new words' verdict is written by the database as the edit is (0393); the version it replaces is the best the function can hold them to, so a quote counterfeit there stays one here.
+  const set = forgedSet(forgedList({ forged: read.forged }));
+  const alive = read.groups.filter((g) => g.place !== null);
+  const moved = mapPlaces(contentAt(read), contentOf(body, set), alive.map((g) => g.place!));
+  const by = new Map(alive.map((g, i) => [g, moved[i] ?? null]));
+  return read.groups.map((g) => ({ draw: g.draw, grp: g.grp, place: g.place === null ? null : by.get(g) ?? null }));
+}
+
 export async function runAction(dbs: { player: Db; service: Db }, instance: Instance, request: unknown): Promise<ActionAnswer> {
   const decision = decide(request, instance);
   if (!decision.ok) return { ...refused(decision.field, decision.why), nobodyNamed: true };
@@ -178,8 +229,16 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
   try {
     if (!decision.asService) {
       // The player's own call: the database verifies the session on the call itself.
+      let args = decision.args;
+      if (decision.rpc === 'edit_post') {
+        // An edit moves the walls on its post with its words (0455): where each live group sits in the new words, read as the service for a caller the database has an account for.
+        const who = await dbs.player.rpc<string | null>('whoami', {}).catch((e) => { if (sessionRefused(e)) return SIGN_IN; throw e; });
+        if (who === SIGN_IN || !who) return SIGN_IN;
+        const surface_places = await placesOfEdit(dbs.service, args.target as string, args.body as string);
+        if (surface_places.length > 0) args = { ...args, surface_places };
+      }
       writing = true;
-      const body = await dbs.player.rpc<unknown>(decision.rpc, decision.args).catch((e) => { if (sessionRefused(e)) return SIGN_IN; throw e; });
+      const body = await dbs.player.rpc<unknown>(decision.rpc, args).catch((e) => { if (sessionRefused(e)) return SIGN_IN; throw e; });
       if (body === SIGN_IN) return SIGN_IN;
       return { status: 200, body, broadcasts: live(decision.rpc, body) };
     }
@@ -234,7 +293,10 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         if (play.value.draw) {
           rpc = 'play_surface_card';
           // `tokens` has no default in play_surface_card, so it is always sent: a card that writes nothing sends null (PostgREST finds no function otherwise).
-          args = { ...args, tokens: play.value.tokens ?? null, first: play.value.draw.payload, first_cells: play.value.draw.cells, most: play.value.draw.most, most_live: rules.surface!.mostLive };
+          // Its groups' places are those of the post's current version, which the play was just decided against.
+          const placed = await placesOfDraw(dbs.service, async () => decision.args.target as string, play.value.draw.payload);
+          if (!placed.ok) return refused('first', placed.why);
+          args = { ...args, tokens: play.value.tokens ?? null, first: play.value.draw.payload, first_coats: play.value.draw.coats, first_places: placed.places, most: play.value.draw.most, most_live: rules.surface!.mostLive };
         }
         // The version the play was decided against goes back with it; play_card refuses it once the post has another (0070).
         if (target.reach === 'post' && target.version) args = { ...args, reach: 'post', from_post: null, version: target.version };
@@ -272,11 +334,18 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       if (decision.rpc === 'draw_on_surface') {
         const drawn = decideDraw(rules, tuned.settings, decision.args.input);
         if (!drawn.ok) return refused('input', drawn.why);
-        args = { ...rest, payload: drawn.value.payload, cells: drawn.value.cells, most: drawn.value.most };
+        // Where its groups sit in the post's current version; the post is the one the wall is on, read only for a drawing with a group attached to its words or an image.
+        const placed = await placesOfDraw(dbs.service, () => dbs.service.rpc<string | null>('surface_post_of', { p_play: decision.args.play }), drawn.value.payload);
+        if (!placed.ok) return refused('input', placed.why);
+        args = { ...rest, payload: drawn.value.payload, coats: drawn.value.coats, places: placed.places, most: drawn.value.most };
       } else {
-        const washed = decideWash(rules, tuned.settings, decision.args.input);
+        // The live draws' payloads, which a cut names its draw and group in (the card's own validateWash reads them); a draw not live is not among them.
+        const live = await dbs.service.rpc<{ acts: { id: string; kind: string; payload: unknown }[] } | null>('surface_acts', { play: decision.args.play });
+        if (!live) return refused('play', 'there is no wall on that post');
+        const draws = new Map(live.acts.filter((a) => a.kind === 'draw').map((a) => [a.id, a.payload] as const));
+        const washed = decideWash(rules, tuned.settings, decision.args.input, draws);
         if (!washed.ok) return refused('input', washed.why);
-        args = { ...rest, payload: washed.value.payload, cells: washed.value.cells };
+        args = { ...rest, payload: washed.value.payload, takes: washed.value.takes };
       }
     }
     writing = true;

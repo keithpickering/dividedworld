@@ -357,6 +357,10 @@ begin
   got := surface_version_pair(w.post, w2.post);
   if got -> 'drawn' is distinct from 'null'::jsonb then raise exception 'another post''s version is not this post''s: %', got; end if;
   perform tests.unbecome();
+  perform tests.become_service();
+  if surface_post_of(w.play) is distinct from w.post or surface_post_of(gen_random_uuid()) is not null then raise exception 'surface_post_of names the post a wall is on, and nothing for a play that is no wall'; end if;
+  perform tests.unbecome();
+  if pg_temp.as_val(bob, format('select surface_post_of(%L)::text', w.play)) not like 'ERROR: permission denied%' then raise exception 'a player does not call surface_post_of'; end if;
   -- The two reads are the service role's alone.
   if pg_temp.as_val(bob, format('select surface_groups_on(%L)::text', w.post)) not like 'ERROR: permission denied%' or pg_temp.as_val(bob, format('select surface_version_pair(%L, %L)::text', w.post, w.post)) not like 'ERROR: permission denied%' then
     raise exception 'a player calls neither read';
