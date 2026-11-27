@@ -14,6 +14,8 @@
 -- 3. The forged-quote check counts a `move` with a text body as a version of itself, as a post and a spin are: acts_quote_sources writes its source (the trigger's WHEN, and a backfill for the moves already written) and quote_forged
 --    reads it, so a quote of a move's said line is real and a doctored one is forged. Posts, spins and edits read as they did.
 --
+-- Whom it alerts: a ban entry's quote of the tipped post springs that post's quote traps on the Mod, as a player's cross-thread quote would. It writes no `quote` alert to the tipped post's author, as no staff outcome post does (only `post()` writes one).
+--
 -- Masks: the quote is the target's public words, written as a player's quote; nothing in it, in when it is written or in whether it is left out turns on who owns any character.
 -- Security: every function pins search_path ending in pg_temp; outcome_quote is internal.
 
@@ -24,11 +26,23 @@
 drop trigger acts_quote_sources on acts;
 create trigger acts_quote_sources after insert on acts for each row
   when (new.kind in ('post', 'spin', 'edit', 'move') and jsonb_typeof(new.payload -> 'body') = 'string') execute function acts_quote_sources();
-insert into quote_sources (act, source, digest)
-select a.id, w.source, md5(w.source)
-from acts a, lateral bbcode_walk(a.payload ->> 'body', null, act_forged(a.payload), true) w
-where a.kind = 'move' and jsonb_typeof(a.payload -> 'body') = 'string'
-on conflict do nothing;
+-- A function so a test can run it again: it writes the source of every move that has none, and is idempotent (the count is the rows it wrote); run once below.
+create function backfill_move_quote_sources() returns integer
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare n integer;
+begin
+  with made as (
+    insert into quote_sources (act, source, digest)
+    select a.id, w.source, md5(w.source)
+    from acts a, lateral bbcode_walk(a.payload ->> 'body', null, act_forged(a.payload), true) w
+    where a.kind = 'move' and jsonb_typeof(a.payload -> 'body') = 'string'
+    on conflict do nothing
+    returning 1
+  ) select count(*)::integer into n from made;
+  return n;
+end $$;
+revoke execute on function backfill_move_quote_sources() from public, anon, authenticated, service_role;
+select backfill_move_quote_sources();
 
 -- quote_forged (0393_forged_quotes.sql), the post's own version is also a move's. Everything else as 0393 wrote it.
 create or replace function quote_forged(body text, at timestamptz) returns uuid[]
@@ -190,6 +204,8 @@ declare
   made jsonb;
   err text;
   held outcome_posts%rowtype;
+  -- The fixed markup of the quote: `[quote=` (7), the Act's id (36), `]` (1), `[/quote]` (8) and the line break (1); engine/bbcode/outcome-quote.ts takes the same 53 out of the room.
+  quote_markup constant integer := 53;
 begin
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.outcome.' || about::text, 0));
   select * into held from outcome_posts o where o.about_act = post_outcome.about;
@@ -199,8 +215,8 @@ begin
     if th is null and post_outcome.season is not null then
       th := banlist_thread((select x.id from seasons x where x.number = post_outcome.season order by x.id desc limit 1));
     end if;
-    -- The quote of what the post answers, ahead of the Mod's words, in what the post has room for after them and the fixed markup (53 characters: the opener, the Act's id, the closer and the line break). The Mod's words are never cut for it.
-    made := write_staff_act(staff_key, 'post', th, target, jsonb_build_object('body', left(coalesce(outcome_quote(target, cap - length(body) - 53), '') || body, cap)));
+    -- The quote of what the post answers, ahead of the Mod's words, in what the post has room for after them and the fixed markup (quote_markup). The Mod's words are never cut for it.
+    made := write_staff_act(staff_key, 'post', th, target, jsonb_build_object('body', left(coalesce(outcome_quote(target, cap - length(body) - quote_markup), '') || body, cap)));
     insert into outcome_posts (about_act, kind, visit_act, source, post_act) values (about, post_outcome.kind, visit, post_outcome.source, (made ->> 'id')::uuid);
     return jsonb_build_object('posted', true, 'existing', false, 'post', (made ->> 'id')::uuid);
   exception when others then

@@ -63,6 +63,12 @@ export const OUTCOME_QUOTE_FIXTURES: readonly OutcomeQuoteFixture[] = [
     "words": "my reply"
   },
   {
+    "name": "leading quote skipped only where the rest is a verbatim run: a code block's [/quote] ends the quote early",
+    "body": "[quote={Q}]a [code][/quote] x[/code]",
+    "room": 100,
+    "words": "[noparse]a [/quote] x[/noparse]"
+  },
+  {
     "name": "no room",
     "body": "some words",
     "room": 1,

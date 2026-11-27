@@ -31,7 +31,7 @@ a refused post takes the best-effort path #1202 built.
   - a filing, a talked-down visit's concession (model or stock): the visited post;
   - an infraction's ruling: the punished post;
   - a ban's entry: the post that tipped the bar (the infraction's `about_act`), in another thread. The entry keeps
-    its approved code line and its link. The quote stands above them, and the post's target becomes that post.
+    its approved code line and its link. The quote stands above them, and the post's target becomes that post. The quote springs the tipped post's quote traps on the Mod, as a player's cross-thread quote would, and writes no `quote` alert to the tipped post's author, as no staff outcome post does (only `post()` writes one).
   - a ban's ruling: the ban's entry. Where the entry was refused, the ruling quotes nothing, as now.
   - a move's ruling: the move Act. A move has no post body of its own beyond its payload's `body`, the said line its
     post shows under the move's tag. Its quote shows that line's words. The forged-quote check counts a `move` with a

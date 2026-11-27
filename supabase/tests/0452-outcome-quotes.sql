@@ -267,9 +267,17 @@ declare
   mt uuid := open_staff_thread('op-m1', 'A quoted move');
   m uuid := pg_temp.landed('op-m1', c, mt);
   ap uuid := pg_temp.appeal(c, m);
-  closed jsonb; o outcome_posts%rowtype; real_q uuid; doctored uuid;
+  closed jsonb; o outcome_posts%rowtype; real_q uuid; doctored uuid; was text;
 begin
   perform pg_temp.expect(exists (select 1 from quote_sources s where s.act = m), 'a move has no quote source');
+  -- The backfill of the moves already written: with a move's source gone (the append-only trigger stood down for the delete), running it again writes the source back, the same as the trigger wrote it.
+  select s.source into was from quote_sources s where s.act = m;
+  alter table quote_sources disable trigger quote_sources_no_update;
+  delete from quote_sources s where s.act = m;
+  alter table quote_sources enable always trigger quote_sources_no_update;
+  perform pg_temp.expect(backfill_move_quote_sources() >= 1, 'the backfill wrote no move source');
+  perform pg_temp.expect((select s.source from quote_sources s where s.act = m) = was and was = 'Moved.', 'the backfill did not give the move its source back: ' || coalesce((select s.source from quote_sources s where s.act = m), 'none'));
+  perform pg_temp.expect(backfill_move_quote_sources() = 0, 'the backfill is not idempotent');
   closed := close_appeal(ap, 'overturned', 'Overturned. Sorry about that.', null, null);
   select * into o from outcome_posts where about_act = (closed ->> 'ruling_act')::uuid;
   perform pg_temp.expect(pg_temp.body(o.post_act) = '[quote=' || m || E']Moved.[/quote]\nOverturned. Sorry about that.', 'the move ruling body is wrong: ' || coalesce(pg_temp.body(o.post_act), 'no post: ' || coalesce(o.error, '')));
