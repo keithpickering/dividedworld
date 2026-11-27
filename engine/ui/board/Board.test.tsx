@@ -1375,6 +1375,8 @@ describe('the thread list goes live', () => {
     const elsewhere = fake.seed.thread('off-topic', w.mine!, 'Visitor', 'Hi').thread;
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 002' });
+    /* The board's subscription is made in an effect that may not have run yet: flush it before the topic sends. */
+    await act(async () => {});
     act(() => { fake.seed.moveThread(w.ids[1]!, 'off-topic'); });
     const stub = await screen.findByRole('link', { name: 'Moved: Thread 002' });
     expect(screen.queryByRole('link', { name: 'Thread 002' })).toBeNull();
@@ -1460,6 +1462,8 @@ describe('the thread list goes live', () => {
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 003' });
     const top = (await fake.boardPage('general', 1, []))!.threads.find((t) => t.title === 'Thread 003')!;
+    /* The rows are heard once the board's subscription is made, in an effect that may run after the list is first drawn. */
+    await waitFor(() => expect(heard.length).toBeGreaterThan(0));
     await act(async () => { for (const hear of heard) hear({ ...top, title: 'Renamed three' }); });
     expect(screen.getByRole('link', { name: 'Renamed three' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Thread 003' })).toBeNull();
@@ -1488,6 +1492,7 @@ describe('the thread list goes live', () => {
     const read = vi.spyOn(fake, 'characters');
     const newcomer = fake.seed.character(w.me, 'Latecomer', 'face', { at: T0 });
     const row = (await fake.boardPage('general', 1, []))!.threads[0]!;
+    await waitFor(() => expect(heard.length).toBeGreaterThan(0));
     await act(async () => { for (const hear of heard) hear({ ...row, firstCharacter: newcomer, lastCharacter: newcomer, lastSeq: row.lastSeq + 1, lastAt: new Date(Date.now() + 1000).toISOString() }); });
     await waitFor(() => expect(within(rowOf('Thread 001')).getAllByText('Latecomer').length).toBeGreaterThan(0));
     expect(read.mock.calls.filter(([ids]) => ids.includes(newcomer))).toHaveLength(1);
