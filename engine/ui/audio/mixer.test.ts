@@ -311,6 +311,23 @@ describe('mixer', () => {
     assert.deepEqual(log.slice(-3), ['cancel 10', 'set 0 10', 'target 0.5 10']);
   });
 
+  it('10b. two unlock() calls make one context and resume twice, and the first resolves true once the second resume resolves', async () => {
+    const m = make();
+    const resolvers: Array<() => void> = [];
+    ctx.resume = mock.fn(() => new Promise<void>((r) => { resolvers.push(r); }));
+    let first: boolean | undefined;
+    const a = m.unlock().then((v) => { first = v; });
+    const b = m.unlock();
+    await Promise.resolve();
+    assert.equal(makeContext.mock.callCount(), 1, 'one context');
+    assert.equal(ctx.resume.mock.callCount(), 2, 'resume asked for each time');
+    assert.equal(first, undefined, 'still waiting');
+    resolvers[1]!();
+    assert.equal(await b, true);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    assert.equal(first, true, 'the first is settled by the second resume');
+  });
+
   it('10. a rejected resume leaves the mixer locked, and a later unlock can unlock it', async () => {
     const m = make();
     ctx.resume = mock.fn(async () => { throw new Error('blocked'); });

@@ -144,6 +144,58 @@ describe('the page sound', () => {
     expect(context.resume).toHaveBeenCalledTimes(1);
   });
 
+  test('a resume that never settles does not hold the next gesture back: a pointerdown, then a click, unlocks', async () => {
+    resetSound({ makeContext: () => { const c = makeContext(); c.resume = context.resume = vi.fn().mockReturnValueOnce(new Promise<void>(() => {})).mockResolvedValue(undefined); return c; }, fetchBytes });
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture('pointerdown');
+    await gesture('click');
+    expect(context.resume).toHaveBeenCalledTimes(2);
+    await act(async () => { await result.current.play('boo'); });
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+  });
+
+  test('a context that reads running after resume() is unlocked at once, though the promise never settles, and the listeners are gone', async () => {
+    resetSound({ makeContext: () => { const c = makeContext() as AudioContextLike & { state?: string }; c.resume = context.resume = vi.fn(() => { c.state = 'running'; return new Promise<void>(() => {}); }); return c; }, fetchBytes });
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture('pointerdown');
+    await gesture('click');
+    expect(context.resume).toHaveBeenCalledTimes(1);
+    await act(async () => { await result.current.play('boo'); });
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['click', 'pointerup'])('a %s alone unlocks a fresh page', async (type) => {
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture(type);
+    await act(async () => { await result.current.play('boo'); });
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+  });
+
+  test('making the context sets navigator.audioSession.type to ambient where it exists, and nothing throws where it does not', async () => {
+    const w = window as unknown as { AudioContext?: unknown };
+    const nav = navigator as unknown as { audioSession?: { type: string } };
+    const saved = w.AudioContext;
+    w.AudioContext = class { currentTime = 0; destination = {}; resume = async () => {}; suspend = async () => {}; };
+    try {
+      resetSound();
+      nav.audioSession = { type: 'auto' };
+      on('game');
+      renderHook(() => useSound(), { wrapper: wrap });
+      await gesture('pointerdown');
+      expect(nav.audioSession.type).toBe('ambient');
+      delete nav.audioSession;
+      resetSound();
+      on('game');
+      await expect(gesture('click')).resolves.not.toThrow();
+    } finally {
+      w.AudioContext = saved;
+      delete nav.audioSession;
+    }
+  });
+
   test('a refused resume leaves the listeners, the next gesture unlocks, and the one after does nothing', async () => {
     resetSound({ makeContext: () => { const c = makeContext(); c.resume = context.resume = vi.fn().mockRejectedValueOnce(new Error('blocked')).mockResolvedValue(undefined); return c; }, fetchBytes });
     on('game');

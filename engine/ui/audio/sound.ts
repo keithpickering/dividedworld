@@ -4,7 +4,7 @@
  * `engine/ui/shine/tilt.ts`'s module shape: the screens that hold the account's preferences tell it through
  * `setSoundPreference`, and nothing is made until something uses it.
  *
- * The listeners (`pointerdown`, `keydown`, `touchend` for the unlock, `visibilitychange` for suspend and resume) are added on
+ * The listeners (`pointerdown`, `pointerup`, `click`, `keydown`, `touchend` for the unlock, `visibilitychange` for suspend and resume) are added on
  * first use, the unlock ones removed after the first gesture, so a page that never uses sound starts nothing.
  *
  * A caption is said once a play resolves, because a play is async (a file is fetched and decoded before it sounds): for the
@@ -36,7 +36,7 @@ export interface SoundPreference {
   readonly interfaceVolume: number;
 }
 
-const GESTURES = ['pointerdown', 'keydown', 'touchend'] as const;
+const GESTURES = ['pointerdown', 'pointerup', 'click', 'keydown', 'touchend'] as const;
 
 export interface SoundPage {
   readonly mixer: Mixer;
@@ -56,12 +56,11 @@ export function createSound(deps: MixerDeps): SoundPage {
     gesturing = false;
     for (const g of GESTURES) document.removeEventListener(g, onGesture, true);
   };
-  /* The listeners stay until an unlock succeeds: a browser that ignores a gesture (a modifier's keydown) is asked again by the next. */
-  let unlocking = false;
+  /* Every gesture until one unlocks asks the mixer again: a browser that ignores a gesture (a modifier's keydown) or leaves its resume
+     unanswered is asked again by the next, and a call made while another is out is harmless, because the mixer settles them together.
+     The first success removes the listeners. */
   const onGesture = (): void => {
-    if (unlocking) return;
-    unlocking = true;
-    void mixer.unlock().then((unlocked) => { unlocking = false; if (unlocked) removeGestures(); });
+    void mixer.unlock().then((unlocked) => { if (unlocked) removeGestures(); });
   };
   const onVisibility = (): void => { void (document.hidden ? mixer.suspend() : mixer.resume()); };
   const arm = (): void => {
@@ -89,6 +88,12 @@ export function createSound(deps: MixerDeps): SoundPage {
 
 const realDeps: MixerDeps = {
   makeContext: () => {
+    /* 'ambient' mixes with the person's music and follows the silent switch; 'playback' would sound through the switch but pause their music
+       (docs/plans/2026-11-27-front-door-impact-design.md, section 1). Where there is no audioSession, or it refuses, nothing changes. */
+    try {
+      const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+      if (session) session.type = 'ambient';
+    } catch { /* the page's sound still works without it */ }
     const w = window as unknown as { AudioContext?: new () => AudioContextLike; webkitAudioContext?: new () => AudioContextLike };
     const Ctx = w.AudioContext ?? w.webkitAudioContext;
     if (!Ctx) throw new Error('this browser has no Web Audio');
