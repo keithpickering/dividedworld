@@ -39,6 +39,7 @@ import type { FrontDoorCharacter } from '../types.ts';
 import { PersonaMark } from '../updates/Persona.tsx';
 import './front-door.css';
 import { frontDoorId, frontDoorPlayId } from './ids.ts';
+import { absolutePictures, absoluteSrc } from './pictures.ts';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 
@@ -46,6 +47,13 @@ import { forgedList } from '../../bbcode/quoted.ts';
 const STAGED_AT = '2026-01-01T00:00:00.000Z';
 
 const idOf = frontDoorId;
+
+/** A staged draw's marks on a picture name it by the address the page draws it from (`./pictures.ts`), as the post's own words are filled, so a mark finds its picture. */
+function markedOnPictures(payload: Record<string, unknown>): Record<string, unknown> {
+  const groups: unknown = payload.groups;
+  if (!Array.isArray(groups)) return payload;
+  return { ...payload, groups: groups.map((g: { anchor?: { kind?: string; src?: string } } | null) => g?.anchor?.kind === 'image' && typeof g.anchor.src === 'string' ? { ...g, anchor: { ...g.anchor, src: absoluteSrc(g.anchor.src, window.location.origin) } } : g) };
+}
 
 /** A made-up character is in the ladder's first rung, the one every new character starts in. */
 const stage = (c: FrontDoorCharacter, group: string): Character => ({
@@ -101,9 +109,8 @@ export function FrontDoor() {
   /* A post's picture must be an http(s) address (`safeImageSrc`), and a bundled file's address is root-relative, so a staged
      picture that starts with a single `/` is made absolute against the page's own origin. These words are the instance's
      committed content, never a player's; a protocol-relative or absolute address is left to the parser as anywhere. */
-  const fill = useCallback((text: string) => text
-    .replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH)
-    .replace(/\[img\](\/(?!\/)[^[]*)\[\/img\]/giu, (_m, src: string) => `[img]${new URL(src, window.location.origin).href}[/img]`), [settings]);
+  const fill = useCallback((text: string) => absolutePictures(text
+    .replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH), window.location.origin), [settings]);
 
   const cast = useMemo(() => new Map(door.cast.map((c) => {
     const rank = Math.min(Math.max(c.rank, 0), Math.max(instance.ranks.length - 1, 0));
@@ -151,7 +158,7 @@ export function FrontDoor() {
         const kept: { readonly by: string; readonly payload: Record<string, unknown>; readonly painted: number }[] = [];
         for (const d of p.draws) {
           const verdict = rules.surface.validateDraw(d.draw);
-          if (verdict.ok) kept.push({ by: d.by, payload: verdict.value.payload, painted: paintedCount(coatsOf(verdict.value.strokes, rules.surface.coats)) });
+          if (verdict.ok) kept.push({ by: d.by, payload: markedOnPictures(verdict.value.payload), painted: paintedCount(coatsOf(verdict.value.strokes, rules.surface.coats)) });
         }
         const wall: SurfaceAct[] = kept.flatMap((k, n) => k.painted === 0 ? [] : [{
           id: idOf(`draw:${i}:${j}:${n}`), character: idOf(k.by), kind: 'draw', thread: idOf('thread'), targetActId: id, seq: null, createdAt: STAGED_AT,

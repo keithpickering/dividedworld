@@ -16,6 +16,9 @@ import { surfaceMost } from '../../rules/cards.ts';
 import { coatsOf, paintedCount } from '../../rules/surface.ts';
 import { localKey, singleEmoji } from '../../rules/emoji.ts';
 import { CONDUCT_TEMPLATES, TEMPLATES } from '../../mail/conduct.ts';
+import { contentOf, type Attachment } from '../../rules/anchor.ts';
+import { frontDoorId } from '../front-door/ids.ts';
+import { absolutePictures, absoluteSrc, CHECK_ORIGIN } from '../front-door/pictures.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
 export const MARQUEE_MAX = 20;
@@ -191,6 +194,31 @@ function licensingProblems(licensing: unknown): string[] {
   return out;
 }
 
+/**
+ * A staged draw's groups held to their post (the graffiti-everywhere plan, Task 9): each group's attachment is on the post's version, an image attachment names an image the post has
+ * at the address it was drawn over, and a text attachment lies inside the post's visible text. The post is read as the page draws it (a bundled picture made absolute, `./pictures.ts`);
+ * a stored draw's payload keeps `groups`, each with its `anchor`, and a payload with none has nothing to hold.
+ */
+function attachmentProblems(who: string, payload: Record<string, unknown>, post: { readonly version: string; readonly body: string }): string[] {
+  const groups: unknown = payload.groups;
+  if (!Array.isArray(groups)) return [];
+  const { text, images } = contentOf(absolutePictures(post.body, CHECK_ORIGIN));
+  const out: string[] = [];
+  groups.forEach((g: { anchor?: Attachment } | null, n) => {
+    const a = g?.anchor;
+    if (a === undefined) return;
+    const at = `${who} group ${n}`;
+    if (a.kind === 'box') return;
+    if (a.version !== post.version) out.push(`${at} is on the version "${a.version}", and the post's is "${post.version}"`);
+    if (a.kind === 'image') {
+      const own = images[a.n];
+      if (own === undefined) out.push(`${at} is on image ${a.n}, and the post has ${images.length} image${images.length === 1 ? '' : 's'}`);
+      else if (own.src !== absoluteSrc(a.src, CHECK_ORIGIN)) out.push(`${at} is on image ${a.n} as "${a.src}", and the post's image ${a.n} is "${own.src.startsWith(`${CHECK_ORIGIN}/`) ? own.src.slice(CHECK_ORIGIN.length) : own.src}"`);
+    } else if (a.at + a.len > text.length) out.push(`${at} is on the words ${a.at} to ${a.at + a.len}, past the post's ${text.length} characters of visible text`);
+  });
+  return out;
+}
+
 /** The code of conduct: a positive whole version, sections with unique keys, and a title and words in each. */
 function conductProblems(conduct: unknown): string[] {
   if (typeof conduct !== 'object' || conduct === null) return ['the instance UI has no conduct'];
@@ -295,14 +323,14 @@ function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance
       if (!keys.has(play.by)) out.push(`front door post ${i} has a play by "${play.by}", who is not in the cast`);
       if (!cards.has(play.card)) out.push(`front door post ${i} plays "${play.card}", which has no CardUi`);
       const rules = (instance.cards ?? []).find((c) => c.key === play.card);
-      if (rules !== undefined) out.push(...playRulesProblems(`front door post ${i} play ${j} ("${play.card}")`, `front door post ${i} play ${j}`, play, rules, keys, instance.settings));
+      if (rules !== undefined) out.push(...playRulesProblems(`front door post ${i} play ${j} ("${play.card}")`, `front door post ${i} play ${j}`, play, rules, keys, instance.settings, { version: frontDoorId(String(i)), body: post.body }));
     });
   });
   return out;
 }
 
 /** A play held to its card's rules: its config, its state, and the draws on its surface, each as the card itself would take them. */
-function playRulesProblems(who: string, at: string, play: NonNullable<FrontDoorPost['plays']>[number], rules: CardRules, cast: ReadonlySet<string>, settings: Instance['settings']): string[] {
+function playRulesProblems(who: string, at: string, play: NonNullable<FrontDoorPost['plays']>[number], rules: CardRules, cast: ReadonlySet<string>, settings: Instance['settings'], post: { readonly version: string; readonly body: string }): string[] {
   const out: string[] = [];
   const config = rules.validateConfig(play.config);
   if (!config.ok) out.push(`${who} has a config the card refuses: ${config.why}`);
@@ -322,7 +350,10 @@ function playRulesProblems(who: string, at: string, play: NonNullable<FrontDoorP
     if (!cast.has(d.by)) out.push(`${at} draw ${k} is by "${d.by}", who is not in the cast`);
     const checked = rules.surface.validateDraw(d.draw);
     if (!checked.ok) out.push(`${at} draw ${k} is one the card refuses: ${checked.why}`);
-    else covered = (covered ?? 0) + paintedCount(coatsOf(checked.value.strokes, rules.surface.coats));
+    else {
+      covered = (covered ?? 0) + paintedCount(coatsOf(checked.value.strokes, rules.surface.coats));
+      out.push(...attachmentProblems(`${at} draw ${k}`, checked.value.payload, post));
+    }
   }
   if (draws.length > rules.surface.mostLive) out.push(`${at} has ${draws.length} draws, over the ${rules.surface.mostLive} the card holds live`);
   const { limitKey } = rules.surface;

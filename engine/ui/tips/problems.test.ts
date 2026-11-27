@@ -361,6 +361,29 @@ describe('instanceUiProblems', () => {
       assert.equal(problems[0], `front door post 1 play 0 draws cover ${2 * paintedCount(coatsOf(strokes(0.2, 0.2) as unknown as SurfaceStroke[], { line: 20, most: 40 }))} cells, over the 200 its surface holds`);
       assert.deepEqual(withPlay({ draws: [draw('a', 0.2), draw('b', 0.2)] }), [], 'two overlapping dabs of 80 cells each fit in 200');
     });
+    describe('a staged draw\'s marks held to their post (the graffiti-everywhere plan, Task 9)', () => {
+      /* Post 1's body has one picture (a bundled file's root-relative address, which the page makes absolute) and ten characters of visible text. */
+      const body = 'Yo [img]/x/a.png[/img] there';
+      const groups = (...anchors: unknown[]) => ({ by: 'a', draw: { strokes: strokes(0.2), groups: anchors.map((anchor) => ({ anchor })) } });
+      const image = (over: Record<string, unknown> = {}) => ({ kind: 'image', version: 'front-door:1', n: 0, src: '/x/a.png', nth: 0, x: 0.5, y: 0.5, ...over });
+      const text = (over: Record<string, unknown> = {}) => ({ kind: 'text', version: 'front-door:1', at: 0, len: 2, dx: 1, dy: 0, ...over });
+      const rulesOf = (card: typeof inkRules) => ({ ...(rules as object), cards: [card, plainRules, reactRules], settings: { cardSettings: { wallLimit: 2 } } }) as never;
+      /* The fake card keeps a draw's groups in its payload, as Graffiti's keeps its own. */
+      const keeping = { ...inkRules, surface: { ...inkRules.surface, validateDraw: (d: unknown) => ok({ strokes: (d as { strokes: unknown[] }).strokes, payload: { groups: (d as { groups?: unknown[] }).groups ?? [] } }) } };
+      const run = (...anchors: unknown[]) => {
+        const d = goodDoor() as { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] };
+        d.posts = [d.posts[0]!, { ...d.posts[1]!, body, plays: [{ card: 'ink', by: 'a', config: { seed: 1 }, draws: [groups(...anchors)] } as Play] }];
+        return instanceUiProblems({ ...ui(good, d), cards: [{ key: 'ink', status: 's' }, { key: 'plain', status: 's' }, { key: 'react', status: 's' }] as unknown as readonly CardUi[] }, rulesOf(keeping as never));
+      };
+      test('a draw whose marks are on its post\'s image, words and box has no problem', () => assert.deepEqual(run(image(), text(), { kind: 'box' }), []));
+      test('names an image attachment on an image the post does not have', () => assert.deepEqual(run(image({ n: 3 })), ['front door post 1 play 0 draw 0 group 0 is on image 3, and the post has 1 image']));
+      test('names an image attachment with another address than the post\'s image', () => assert.deepEqual(run(image({ src: '/x/b.png' })), ['front door post 1 play 0 draw 0 group 0 is on image 0 as "/x/b.png", and the post\'s image 0 is "/x/a.png"']));
+      test('names a text attachment past the end of the post\'s visible text', () => assert.deepEqual(run(text({ at: 20, len: 5 })), ['front door post 1 play 0 draw 0 group 0 is on the words 20 to 25, past the post\'s 10 characters of visible text']));
+      test('names an attachment of another version than the post\'s', () => assert.deepEqual(run(image({ version: 'front-door:0' }), text({ version: 'elsewhere' })), [
+        'front door post 1 play 0 draw 0 group 0 is on the version "front-door:0", and the post\'s is "front-door:1"',
+        'front door post 1 play 0 draw 0 group 1 is on the version "elsewhere", and the post\'s is "front-door:1"',
+      ]));
+    });
     test('names a surface limit the settings do not hold, and does not throw', () => {
       const d = goodDoor() as { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] };
       d.posts = [d.posts[0]!, { ...d.posts[1]!, plays: [{ card: 'ink', by: 'a', config: { seed: 1 }, draws: [draw('a', 0.2)] } as Play] }];

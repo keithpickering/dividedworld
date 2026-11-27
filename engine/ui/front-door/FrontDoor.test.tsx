@@ -28,7 +28,7 @@ const test_card: CardUi = {
 const rulesOf = (key: string, extra: Partial<CardRules>): CardRules => ({ ...testInstance.cards[0]!, key, name: key, stack: 1, reaches: ['post' as const], ...extra } as CardRules);
 const stroke = (y: number): SurfaceStroke => ({ width: 0.1, aspect: 1, points: [[0.1, y], [0.9, y]] });
 const checkDraw = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
-  ? ok({ strokes: (input as { strokes: SurfaceStroke[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('strokes'));
+  ? ok({ strokes: (input as { strokes: SurfaceStroke[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes, ...((input as { groups?: unknown }).groups === undefined ? {} : { groups: (input as { groups: unknown }).groups }) } }) : refuse('strokes'));
 const noted = rulesOf('noted', { validateState: (s: unknown) => ok(s) });
 const noWash = () => refuse('a staged wall is never washed');
 const slab = rulesOf('slab', { surface: { limitKey: 'slab.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: checkDraw, validateWash: noWash } });
@@ -276,6 +276,14 @@ describe('the front door with an effect that loads on first use', () => {
 });
 
 describe('the front door\'s pictures', () => {
+  test('a staged wall\'s mark on a root-relative picture names it by the address the page draws it from, and the other marks are as written', () => {
+    const anchor = { kind: 'image', version: 'front-door:0', n: 0, src: '/x/sheet.gif', nth: 0, x: 0.5, y: 0.5 };
+    const text = { kind: 'text', version: 'front-door:0', at: 0, len: 2, dx: 1, dy: 0 };
+    drawWith([{ by: 'ann', body: '[img]/x/sheet.gif[/img] Hi', reactions: {}, plays: [{ card: 'slab', by: 'ann', config: {}, draws: [{ by: 'ann', draw: { strokes: [stroke(0.2)], groups: [{ anchor }, { anchor: text }, { anchor: { kind: 'box' } }] } }] }] }]);
+    const groups = (wallSeen!.surface!.acts![0]!.payload as { groups: { anchor: unknown }[] }).groups;
+    expect(groups.map((g) => g.anchor)).toEqual([{ ...anchor, src: `${window.location.origin}/x/sheet.gif` }, text, { kind: 'box' }]);
+  });
+
   test('a root-relative picture in a staged post is drawn from the page\'s own origin', () => {
     drawWith([{ by: 'ann', body: '[img]/x/sheet.gif[/img]', reactions: {} }]);
     /* Over https it is an img; over http (this test's origin) the renderer shows the same address as a link. */

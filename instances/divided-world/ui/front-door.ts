@@ -30,8 +30,8 @@
  *   play's id (./steel-chair/objects.ts), so these three plays name their ids, each picked from a scan for the roll it gives.
  *
  * The graffiti and the wash are shapes (./front-door/marks.ts: an arrow, a ring, "??", a heart, a scribble, wash passes across bands) turned into
- * the cards' own strokes with a fixed seed, so every visitor sees the same hand-drawn marks; move one by changing a number. Their `aspect`s are
- * the post bodies' width over height as measured on a desktop board. The two sprite sheets are bundled (`?url`) and written root-relative; the
+ * the cards' own strokes with a fixed seed, so every visitor sees the same hand-drawn marks; move one by changing a number. A graffiti mark is a group on the
+ * picture or the words it points at (marks.ts), so it keeps its place on a phone as on a desktop; the wash's `aspect` is post #3's body, width over height, as measured on a desktop board. The two sprite sheets are bundled (`?url`) and written root-relative; the
  * page makes them absolute against its own origin.
  *
  * The glass may joke where it describes the game, and it never bluffs (CLAUDE.md, "The fiction may lie; the log never does").
@@ -49,15 +49,39 @@ import dguyPortrait from './avatars/dguy_portrait.jpg?url';
 import dguySquare from './avatars/dguy_square.jpg?url';
 import sheet from './front-door/wiggler-sheet.gif?url';
 import sheetShadow from './front-door/wiggler-sheet-dropshadow.gif?url';
-import { arrow, glyphs, heart, ring, scribble, tag, washPasses } from './front-door/marks.ts';
+import { frontDoorId } from '../../../engine/ui/front-door/ids.ts';
+import { arrow, drawOver, glyphs, heart, onImage, onWords, postContent, ring, scribble, washPasses } from './front-door/marks.ts';
 
 /** When the sample cast revealed their classes: a fixed day, so the postbit's dated line reads the same for every visitor. */
 const REVEALED_AT = '2026-10-03T12:00:00Z';
 
-/** Post #1's body, as the Effect measures it at a desktop board: width over height (the graffiti is drawn at it). */
-const SHEET_ASPECT = 1.71;
-/** Post #3's body, the same. */
-const BURN_ASPECT = 2.8;
+/** Post #3's body, as the Effect measures it at a desktop board: width over height (the Whoops! wash is drawn at it). */
+const WASH_ASPECT = 2.8;
+
+/** Post #1's words, and the graffiti on them. */
+const SHEET_BODY = `Hi divided world, it's ya boy Snuckles here with my first ever sprite sheet. He's an original character I invented after I saw him in a Mario game.\n\n[img]${sheet}[/img]\n\nLet me know what you think!`;
+/** The sheet as the post shows it at a desktop board, 15px to the em: 188 px across (12.5 ems) and 390 tall, below the first paragraph. Where the graffiti falls back to when a screen cannot find the picture or the words. */
+const SHEET_EM = 12.5;
+const SHEET = { version: frontDoorId('0'), body: SHEET_BODY, box: { w: 65.9, h: 38.5 }, images: [{ left: 0, top: 6, w: SHEET_EM, h: (SHEET_EM * 390) / 188 }], words: (at: number): [number, number] => [(at - (postContent(SHEET_BODY).text.lastIndexOf('\n', at - 1) + 1)) * 0.5, 36] } as const;
+/** The words the heart goes on. */
+const WHAT_YOU_THINK = 'what you think!';
+const WORDS_AT = postContent(SHEET_BODY).text.indexOf(WHAT_YOU_THINK);
+if (WORDS_AT < 0) throw new Error('post #1 no longer says what the heart is drawn on');
+
+/*
+ * The marks on post #1, each a group on the picture or the words it points at, in that group's own units (image widths, ems), from its center. The picture's
+ * shares are read off wiggler-sheet-dropshadow.gif, 191 by 393 (the sheet and its drop shadow are one drawing to within a few pixels).
+ */
+const SHEET_MARKS = [
+  /* Serious Deer's ring around the Example Wiggler (the sprite in the "Example:" frame, about 62 by 128 px: 0.325 across and 0.326 down), and the arrow running in to it from off the sheet's right edge. */
+  onImage(0, [0.325, 0.326], SHEET_EM, 'red', 'stock', ring([0, 0], 0.17, 0.115, 3), arrow([1.0, 0.22], [0.24, 0.04], 4)),
+  /* Hotel Mario's "??" beside the "Build Your Own" row, to the right of its sprites and past the sheet's edge (the row is at 0.52 down). */
+  onImage(0, [1.0, 0.52], SHEET_EM, 'black', 'stock', glyphs('??', [-0.24, -0.15], 0.3, 5)),
+  /* Hotel Mario's black bar over the credit block ("This sheet was made by..."): a fat back-and-forth scribble across the red text, 0.12 to 0.88 across and about 0.8 down. */
+  onImage(0, [0.5, 0.8], SHEET_EM, 'black', 'fat', scribble({ x0: -0.38, y0: -0.07, x1: 0.38, y1: 0.07 }, 6)),
+  /* D-Guy's heart beside the end of "what you think!", a little to the right of the run and half an em down its line. */
+  onWords(WORDS_AT, WHAT_YOU_THINK.length, [9.5, 0.7], 'pink', 'stock', heart([0, 0], 2.6, 7)),
+];
 
 export const frontDoor: FrontDoorUi = Object.freeze({
   title: 'Look At My Wiggler Sprites',
@@ -72,15 +96,15 @@ export const frontDoor: FrontDoorUi = Object.freeze({
   posts: Object.freeze([
     Object.freeze({
       by: 'snuckles',
-      body: `Hi divided world, it's ya boy Snuckles here with my first ever sprite sheet. He's an original character I invented after I saw him in a Mario game.\n\n[img]${sheet}[/img]\n\nLet me know what you think!`,
+      body: SHEET_BODY,
       reactions: Object.freeze({ heart: 1 }),
       plays: Object.freeze([Object.freeze({
         card: 'graffiti', by: 'deer', config: Object.freeze({}),
         draws: Object.freeze([
-          { by: 'deer', draw: tag('red', 'stock', SHEET_ASPECT, ring([0.069, 0.36], 0.045, 0.05, 3), arrow([0.27, 0.435], [0.118, 0.375], SHEET_ASPECT, 4)) },
-          { by: 'hotelmario', draw: tag('black', 'stock', SHEET_ASPECT, glyphs('??', [0.17, 0.43], 0.18, SHEET_ASPECT, 5)) },
-          { by: 'hotelmario', draw: tag('black', 'fat', SHEET_ASPECT, scribble({ x0: 0.032, y0: 0.64, x1: 0.168, y1: 0.66 }, 6)) },
-          { by: 'dguy', draw: tag('pink', 'stock', SHEET_ASPECT, heart([0.272, 0.868], 0.07, SHEET_ASPECT, 7)) },
+          { by: 'deer', draw: drawOver(SHEET, SHEET_MARKS[0]!) },
+          { by: 'hotelmario', draw: drawOver(SHEET, SHEET_MARKS[1]!) },
+          { by: 'hotelmario', draw: drawOver(SHEET, SHEET_MARKS[2]!) },
+          { by: 'dguy', draw: drawOver(SHEET, SHEET_MARKS[3]!) },
         ]),
       })]),
     }),
@@ -96,7 +120,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
       reactions: Object.freeze({ tomato: 5, 'thumbs-up': 1 }),
       plays: Object.freeze([Object.freeze({
         card: 'whoops', by: 'chadluminum', config: Object.freeze({ color: '#e8402a', seed: 1 }),
-        state: washPasses([{ top: 0.04, bottom: 0.05, left: 0.06, right: 0.93, slant: 0.03 }, { top: 0.13, bottom: 0.14, left: 0.12, right: 0.8, slant: 0.07 }], { aspect: BURN_ASPECT, width: 0.022, seed: 7 }),
+        state: washPasses([{ top: 0.04, bottom: 0.05, left: 0.06, right: 0.93, slant: 0.03 }, { top: 0.13, bottom: 0.14, left: 0.12, right: 0.8, slant: 0.07 }], { aspect: WASH_ASPECT, width: 0.022, seed: 7 }),
         reactions: Object.freeze({ laughing: 2 }),
       })]),
     }),
