@@ -57,7 +57,7 @@ function Probe() {
 }
 
 beforeEach(() => localStorage.clear());
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('a purchase from the Vending Machine', () => {
   /* A server whose wallet and hand a purchase changes, as the real one's do. */
@@ -453,19 +453,42 @@ describe('the HUD hears its own state', () => {
 
   test('a wallet move the player did not make moves the HUD with no action by the player', async () => {
     fakeTimers();
-    const fake = createFake({ instance: testInstance });
+    const appeal = {
+      key: 'appeal', name: 'Appeal', alignment: 'sweet' as const, rarity: 'uncommon' as const, stack: 3,
+      drive: { lasts: { unit: 'day' as const, count: 7 }, gifts: ['driveGift1'], overhead: 'driveOverhead' },
+      playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
+      canApply: () => ({ ok: true as const, value: undefined }),
+    };
+    const drives = { ...testInstance, cards: [appeal], settings: { ...testInstance.settings, economy: { ...testInstance.settings.economy, driveGift1: 25, driveOverhead: 20 } } };
+    const fake = createFake({ instance: drives });
     const ana = fake.seed.account('ana');
-    fake.seed.character(ana, 'Ana', 'face');
-    fake.seed.wallet(ana, 562);
-    fake.signInAs(ana);
-    render(<PlayerProvider api={fake}><Probe /></PlayerProvider>);
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana', 'face');
+    const boFace = fake.seed.character(bo, 'Bo', 'face');
+    const { act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    const drive = fake.seed.card(boFace, opener, 'appeal');
+    fake.seed.wallet(ana, 100);
+    fake.seed.wallet(bo, 562);
+    /* The HUD is Bo's: every call the provider makes is answered as Bo, and the session never changes under it. Ana's gift is made beside it, as another player's tab would. */
+    const asBo = new Proxy(fake, {
+      get: (target, prop, receiver) => {
+        if (prop === 'onSession') return () => () => {};
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? (...a: unknown[]) => { target.signInAs(bo); return (v as (...x: unknown[]) => unknown).apply(target, a); } : v;
+      },
+    });
+    fake.signInAs(bo);
+    render(<PlayerProvider api={asBo}><Probe /></PlayerProvider>);
     await settle();
     expect(screen.getByTestId('wallet').textContent).toBe('562');
-    /* a purchase made as that player elsewhere (another tab), not through this provider */
-    await fake.buyCard((await fake.machine())[0]!);
+    fake.signInAs(ana);
+    const given = await fake.donate(anaFace, drive, 25);
+    expect(given.ok).toBe(true);
+    fake.signInAs(bo);
     await settle();
     await ms(400);
-    expect(screen.getByTestId('wallet').textContent).toBe('462');
+    expect((await fake.wallet()).balance).toBe(582);
+    expect(screen.getByTestId('wallet').textContent).toBe('582');
   });
 
   test('three pokes inside the debounce run one read', async () => {
@@ -492,6 +515,24 @@ describe('the HUD hears its own state', () => {
     await settle();
     const before = w.reads.mock.calls.length;
     act(() => { w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); });
+    await ms(0);
+    expect(w.reads.mock.calls.length).toBe(before);
+    await ms(REACH_SPREAD_MS);
+    expect(w.reads.mock.calls.length).toBe(before + 1);
+  });
+
+  test('a settled pending (about 9 s out) and then a self: one read by the self\'s debounce, and none more by the end of the spread', async () => {
+    fakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const w = heard();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    const before = w.reads.mock.calls.length;
+    act(() => { w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); });
+    await ms(100);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(350);
+    expect(w.reads.mock.calls.length).toBe(before + 1);
     await ms(REACH_SPREAD_MS);
     expect(w.reads.mock.calls.length).toBe(before + 1);
   });
