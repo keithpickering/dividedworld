@@ -1,4 +1,4 @@
--- Surfaces count each tag's own paint (supabase/migrations/0455_surface_coats.sql; docs/plans/2026-11-27-graffiti-everywhere-plan.md, Task 4): each live draw has a grid of its own in tenths of a coat, a wall's `covered` is the sum
+-- Surfaces count each tag's own paint (supabase/migrations/0456_surface_coats.sql; docs/plans/2026-11-27-graffiti-everywhere-plan.md, Task 4): each live draw has a grid of its own in tenths of a coat, a wall's `covered` is the sum
 -- of its live draws' painted cells (2 tenths or more), and a wash takes tenths off the draws it names. The card is this file's own (`cwwall`, with the surface flag); every name is prefixed cw.
 --
 --  1. the coat functions: a coat string decodes, refuses what is not 10,000 characters of the alphabet; a take leaves 1 or less clean

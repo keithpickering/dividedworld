@@ -2308,26 +2308,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
 
-  /* ------------------------------------------------------------------ surfaces (0317, 0455) ---- */
+  /* ------------------------------------------------------------------ surfaces (0317, 0456) ---- */
   /**
-   * A surface as the database's `surfaces` and `surface_coats` rows hold it (0455): each live draw's grid of coats in tenths (a cell is painted at 2 or more), the live list, and for each live wash the live draws it changed.
+   * A surface as the database's `surfaces` and `surface_coats` rows hold it (0456): each live draw's grid of coats in tenths (a cell is painted at 2 or more), the live list, and for each live wash the live draws it changed.
    * A wall's `covered` is the sum of its live draws' painted cells.
    */
   interface SurfaceRec { readonly grids: Map<Id, Coats>; live: Id[]; readonly washes: Map<Id, Id[]> }
   const surfaceRecs = new Map<Id, SurfaceRec>();
-  /** Where each group of each draw is attached in each version of its post (`surface_places`, 0455): the attachment, or null once the group has fallen to its box spot. */
+  /** Where each group of each draw is attached in each version of its post (`surface_places`, 0456): the attachment, or null once the group has fallen to its box spot. */
   const surfacePlaces = new Map<Id, Map<Id, Map<number, Attachment | null>>>();
   /** What a draw and a wash keep in their payloads that no reader is sent: the grid of coats (or the old cells) and a wash's takes. */
   const SERVER_KEYS = ['coats', 'cells', 'takes'] as const;
   /** The words `act` answers with when the version a draw names is none of its post's (supabase/functions/act/core.ts, NOT_THOSE_WORDS). */
   const NOT_THOSE_WORDS = 'That post\'s words aren\'t the ones you drew on. Reload it and tag again.';
-  /** The line a draw of the old shape lays on each cell it set (0455: 2 coats). */
+  /** The line a draw of the old shape lays on each cell it set (0456: 2 coats). */
   const LEGACY_LINE = 20;
   const withoutKeys = <T extends Act>(a: T): T => {
     const drop = (p: Readonly<Record<string, unknown>>) => Object.fromEntries(Object.entries(p).filter(([k]) => !(SERVER_KEYS as readonly string[]).includes(k)));
     return { ...a, payload: drop(a.payload), currentPayload: drop(a.currentPayload) };
   };
-  /** A draw's grid as the server lays it (surface_lay): its coats with a cell held below PAINTED (1 tenth) kept at 0, or for a draw of the old shape (no groups) 20 tenths on each cell it set (0455, surface_apply). */
+  /** A draw's grid as the server lays it (surface_lay): its coats with a cell held below PAINTED (1 tenth) kept at 0, or for a draw of the old shape (no groups) 20 tenths on each cell it set (0456, surface_apply). */
   const layDraw = (payload: Readonly<Record<string, unknown>>, coats: string): Coats =>
     (Array.isArray(payload.groups) ? fromCoatString(coats).map((v) => (v < PAINTED ? 0 : v)) : legacyCoats(fromBits([...fromCoatString(coats)].map((v) => (v > 0 ? '1' : '0')).join('')), LEGACY_LINE));
   /** A stored draw's grid: its coats, or for one of the old shape its cells laid at 20 tenths. */
@@ -2368,7 +2368,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   const placesNow = (draw: Id, post: ActRec): { grp: number; place: Attachment | null }[] =>
     [...(surfacePlaces.get(draw)?.get(versionOf(post).id) ?? [])].map(([grp, place]) => ({ grp, place })).sort((x, y) => x.grp - y.grp);
-  /** surface_prune (0455): the live list once the draws with no grid have gone; a wash stays while a draw it changed is alive. */
+  /** surface_prune (0456): the live list once the draws with no grid have gone; a wash stays while a draw it changed is alive. */
   function prune(s: SurfaceRec): void {
     s.live = s.live.filter((id) => s.grids.has(id) || (s.washes.get(id) ?? []).some((d) => s.grids.has(d)));
     for (const w of [...s.washes.keys()]) if (!s.live.includes(w)) s.washes.delete(w);
@@ -2376,7 +2376,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** What the wash's `validateWash` is shown of the live draws: each one's payload, as `surface_acts` gives it. */
   const liveDraws = (s: SurfaceRec): ReadonlyMap<Id, unknown> => new Map(s.live.filter((id) => s.grids.has(id)).map((id) => [id, withoutKeys(publicAct(acts.get(id)!)).payload]));
   /**
-   * draw_on_surface and wash_surface (0455), in the order they refuse: the character, the wall, the lock, then the limits; a draw alone is held to them. A draw's grid is its coats (a draw of the old shape lays
+   * draw_on_surface and wash_surface (0456), in the order they refuse: the character, the wall, the lock, then the limits; a draw alone is held to them. A draw's grid is its coats (a draw of the old shape lays
    * 20 tenths on each cell it set), costs its painted cells against the wall's limit and its place in the live count, and writes its groups' places against the post's current version. A wash takes each live draw
    * it names down by its takes, and a draw left with nothing painted goes with its washes.
    */
@@ -2461,7 +2461,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     send(`thread:${p.thread}`, 'surface', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onSurface?.(play, covered); });
     return ok({ ...withoutKeys(publicAct(rec)), covered, live: [...s.live] });
   }
-  /** surface_acts (0455): a play's live draws and washes, oldest first, each draw with its own painted cells and where its groups are in the post's current version; null where the play has no surface. */
+  /** surface_acts (0456): a play's live draws and washes, oldest first, each draw with its own painted cells and where its groups are in the post's current version; null where the play has no surface. */
   function surfaceActs(play: Id): SurfaceActs | null {
     const s = surfaceOf(play);
     if (!s) return null;
@@ -3394,7 +3394,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /**
-   * An edit moves the walls on its post with its words (edit_post, 0455; the act function's placesOfEdit): each group of each live draw that is still placed at the version the edit replaces is mapped against the
+   * An edit moves the walls on its post with its words (edit_post, 0456; the act function's placesOfEdit): each group of each live draw that is still placed at the version the edit replaces is mapped against the
    * new words, under the verdict the new words hold (the edit's own `forged`, as quote_forged writes it), and its place is written against the edit's id. A group already fallen has no row for the edit and stays at its
    * box spot. The version it replaces is read as surface_groups_on reads it, through acts_public: one an admin hid has no words there, so every group on it maps from nothing and falls to its box spot; the edit is not refused.
    */

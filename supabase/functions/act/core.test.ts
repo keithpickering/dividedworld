@@ -1317,7 +1317,7 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
       { draw: d1, grp: 0, place: textAt(v1, 0, 5) }, { draw: d1, grp: 1, place: null }, { draw: d1, grp: 2, place: textAt(v1, 13, 4) }, { draw: d1, grp: 3, place: textAt(v1, 25, 5) }] }, edit_post: { id: post, kind: 'edit' } });
     const out = await runAction(dbs, walled, { action: 'edit', post, character: id, body: WORDS2 });
     assert.equal(out.status, 200, JSON.stringify(out.body));
-    // A group with no row for the edit's version is at its box spot (0455), the same as a null place: the fallen one is not sent.
+    // A group with no row for the edit's version is at its box spot (0456), the same as a null place: the fallen one is not sent.
     assert.deepEqual(sentTo(calls.map((c) => c.replace(/^player:/, 'service:')), 'edit_post').surface_places, [
       { draw: d1, grp: 0, place: textAt(v1, 4, 5) }, { draw: d1, grp: 2, place: textAt(v1, 17, 4) }, { draw: d1, grp: 3, place: null }]);
     assert.ok(calls.some((c) => c.startsWith('service:surface_groups_on:')), calls.join('\n'));

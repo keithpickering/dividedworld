@@ -1,4 +1,4 @@
--- An edit and every draw on its post serialize on one advisory lock (supabase/migrations/0455_surface_coats.sql, edit_post and surface_apply; review of graffiti everywhere, task 4).
+-- An edit and every draw on its post serialize on one advisory lock (supabase/migrations/0456_surface_coats.sql, edit_post and surface_apply; review of graffiti everywhere, task 4).
 --
 -- A draw applies under its surface's row lock and reads the post's current version there. An edit that inserted its Act without a lock the draws share could be uncommitted while the draw applied: the draw then
 -- committed places for the old version, and the edit's own places could not see the draw. A row lock on the post's surfaces cannot see a surface a concurrent, uncommitted first draw is creating, so the edit and

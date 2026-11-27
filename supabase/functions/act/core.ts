@@ -156,7 +156,7 @@ const live = (rpc: string, answer: unknown, args: Row = {}): Broadcast[] =>
 const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'play_landed_at', 'open_account', 'instance_settings',
   // The hints' calls (0065): a read, and a write that finds its own earlier effect (a pattern already fired for an Act fires nothing).
   'act_window_counts', 'fire_hint',
-  // A wall's reads (0455): the live draws, the post a wall is on, and a post's versions and groups. Each reads Acts and the post's words, never an owner.
+  // A wall's reads (0456): the live draws, the post a wall is on, and a post's versions and groups. Each reads Acts and the post's words, never an owner.
   'surface_acts', 'surface_post_of', 'surface_version_pair', 'surface_groups_on',
   // The forged-quote verdict of a body (0393): a read of the posts' versions as they stand, which an edit's new words are mapped against.
   'quote_forged']);
@@ -240,7 +240,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       // The player's own call: the database verifies the session on the call itself.
       let args = decision.args;
       if (decision.rpc === 'edit_post') {
-        // An edit moves the walls on its post with its words (0455): where each live group sits in the new words, read as the service for a caller the database has an account for.
+        // An edit moves the walls on its post with its words (0456): where each live group sits in the new words, read as the service for a caller the database has an account for.
         const who = await dbs.player.rpc<string | null>('whoami', {}).catch((e) => { if (sessionRefused(e)) return SIGN_IN; throw e; });
         if (who === SIGN_IN || !who) return SIGN_IN;
         const surface_places = await placesOfEdit(dbs.service, args.target as string, args.body as string);

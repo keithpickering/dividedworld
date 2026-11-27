@@ -569,7 +569,7 @@ export interface Act {
   readonly payload: Readonly<Record<string, unknown>>;
   readonly currentPayload: Readonly<Record<string, unknown>>;
   /**
-   * On a post the page's read gives (`thread_page`, 0455): the post's current version, the id of its latest edit (through `acts_public`, a hidden edit included) or its own id where it has none. Edits are public Acts, so it is
+   * On a post the page's read gives (`thread_page`, 0456): the post's current version, the id of its latest edit (through `acts_public`, a hidden edit included) or its own id where it has none. Edits are public Acts, so it is
    * the same for every reader and no private fact. A draw's tags name it (`anchor.version`); absent on an Act the page did not read as a post.
    */
   readonly version?: Id;

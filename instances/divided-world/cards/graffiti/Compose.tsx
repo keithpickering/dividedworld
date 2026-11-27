@@ -192,7 +192,7 @@ export function DrawMode(p: DrawModeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [p.covered, p.most, frame, tab, stencil, can, spot, version, strokes.current.length],
   );
-  /* The post's current version: what the tails the page holds say (they are read again after an edit), else the version the page's read carried with the post (`version`, thread_page 0455: its latest edit, or its own Act), else its own
+  /* The post's current version: what the tails the page holds say (they are read again after an edit), else the version the page's read carried with the post (`version`, thread_page 0456: its latest edit, or its own Act), else its own
      Act while it has no edit. A post edited since the page read it (an edit that lands in it, `editedAt` set while `version` is still its own id or absent) with no tails is not known: its groups are attached to the box, which any version accepts. */
   const heldVersion = usePostVersion(p.post?.id ?? '');
   const postVersion = p.post ? (heldVersion ?? currentVersionOf(p.post)) : null;

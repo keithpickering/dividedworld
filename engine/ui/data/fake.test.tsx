@@ -5807,7 +5807,7 @@ describe('a surface, as the server keeps it', () => {
     expect(held.older).toBe(0);
   });
 
-  test('a draw then two one-pass washes: the first leaves it see-through and covering as before, the second clears it, and the draw leaves with its washes (supabase/tests/0455-surface-coats.sql, section 4)', async () => {
+  test('a draw then two one-pass washes: the first leaves it see-through and covering as before, the second clears it, and the draw leaves with its washes (supabase/tests/0456-surface-coats.sql, section 4)', async () => {
     const { fake, ana, anaFace, boFace, play } = wall();
     const bo = fake.seed.account('bo2');
     fake.seed.character(bo, 'Bo Two', 'heel');
@@ -5841,7 +5841,7 @@ describe('a surface, as the server keeps it', () => {
     expect(await fake.wash(play, anaFace, pass('not-a-draw'))).toEqual(refused('that tag is not live'));
   });
 
-  test('a draw\'s cells held at 1 tenth are stored as clean, so a wash that takes only them changes nothing and is never live (surface_lay, 0455)', async () => {
+  test('a draw\'s cells held at 1 tenth are stored as clean, so a wash that takes only them changes nothing and is never live (surface_lay, 0456)', async () => {
     /* A card whose strokes each lay one tenth: where two cross the cell holds 2 and is painted, everywhere else it holds 1 and is clean. */
     const thin = { ...slab, key: 'thin', surface: { ...slab.surface!, coats: { line: 1, most: 40 } } };
     const { fake, anaFace, play } = wall({ ...surfaced, cards: [thin as unknown as CardRules] }, 'thin');
@@ -5971,7 +5971,7 @@ describe('a surface, as the server keeps it', () => {
     expect(heard).toEqual([[play, written.covered]]);
   });
 
-  /* Where a draw's groups are attached, and how an edit moves them (act/core.ts's placesOfDraw and placesOfEdit; 0455's surface_places). */
+  /* Where a draw's groups are attached, and how an edit moves them (act/core.ts's placesOfDraw and placesOfEdit; 0456's surface_places). */
   describe('places', () => {
     const BODY = 'The quick brown fox jumps over the lazy dog';
     const FOX = BODY.indexOf('fox');
@@ -6045,7 +6045,7 @@ describe('a surface, as the server keeps it', () => {
       expect(await placesOf(fake, play)).toEqual([[{ grp: 0, place: null }, { grp: 1, place: null }]]);
     });
 
-    test('a post on the page carries its current version: its own id, then its latest edit\'s, a hidden one included (thread_page, 0455)', async () => {
+    test('a post on the page carries its current version: its own id, then its latest edit\'s, a hidden one included (thread_page, 0456)', async () => {
       const { fake, post, thread, anaFace } = placed();
       const versionOnPage = async () => (await fake.threadPage(thread, { page: 1 }, 20, []))!.acts.find((a) => a.id === post)!.version;
       expect(await versionOnPage()).toBe(post);
