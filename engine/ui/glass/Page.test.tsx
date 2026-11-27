@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { renderInWorld } from '../test-world.tsx';
-import { Link } from '../router.tsx';
+import { Link, useLocation } from '../router.tsx';
 import { Routes, type Route } from '../routes.tsx';
 import * as enter from './enter.ts';
 import { GlassLink } from './Link.tsx';
@@ -54,6 +54,36 @@ describe('from the Task 1.4 reviews', () => {
     act(() => { window.history.pushState(null, '', '/characters/new'); window.dispatchEvent(new PopStateEvent('popstate')); });
     expect(scrolled).not.toHaveBeenCalled();
     expect(screen.getByRole('main')).toHaveFocus();
+  });
+});
+
+/* A board page or a glass page, as the app's shell draws one or the other: a move from a board into the glass mounts the glass page afresh. */
+function Crossing() {
+  const { path } = useLocation();
+  return path.startsWith('/settings') ? <Page surface="settings"><p>glass</p></Page> : <><Link to="/settings">in</Link><Link to="/settings#invites">to invites</Link></>;
+}
+
+describe('entering the glass from a board', () => {
+  /* The board was scrolled down when the glass was entered. */
+  beforeEach(() => vi.stubGlobal('scrollY', 900));
+
+  test('the glass page starts at its top, wherever the board was scrolled', async () => {
+    renderInWorld(<Crossing />, { path: '/', seed: signedIn });
+    await userEvent.click(await screen.findByRole('link', { name: 'in' }));
+    await screen.findByText('glass');
+    expect(scrolled).toHaveBeenCalledWith(0, 0);
+  });
+
+  test('an address with a fragment, or the browser\'s back and forward, keeps its own scroll', async () => {
+    renderInWorld(<Crossing />, { path: '/', seed: signedIn });
+    await userEvent.click(await screen.findByRole('link', { name: 'to invites' }));
+    await screen.findByText('glass');
+    expect(scrolled).not.toHaveBeenCalled();
+    act(() => { window.history.pushState(null, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')); });
+    await screen.findByRole('link', { name: 'in' });
+    act(() => { window.history.pushState(null, '', '/settings'); window.dispatchEvent(new PopStateEvent('popstate')); });
+    await screen.findByText('glass');
+    expect(scrolled).not.toHaveBeenCalled();
   });
 });
 
