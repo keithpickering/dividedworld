@@ -17,7 +17,8 @@
  * player's characters changed (a trap, a refund, a ban, an infraction): one read follows about 300 ms later, joined by any poke that
  * lands meanwhile. A settlement pokes no one; the HUD hears `settled` on `reach` and reads at a random moment within the alert feed's
  * spread (`REACH_SPREAD_MS`), so a busy instance's readers do not all read in one second. A poke during a read runs one more read after
- * it, never two at once. Both are dropped with the account.
+ * it, never two at once. Both are dropped with the account. A read a poke starts is one the player did not ask for: if it fails it keeps
+ * the last good rows and shows no error (#1240), while the read the player's own action starts reports a failure as it always did.
  *
  * At a settlement the wallet moves; the wallet last shown on this device (`kb-wallet-seen:<account>`)
  * is where the orbs' cascade runs from.
@@ -156,7 +157,8 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
 
   /* Each call is numbered: an earlier read landing after a later one changes nothing, and answers as the later one's rows stand. */
   const calls = useRef(0);
-  const refresh = useCallback(async (): Promise<boolean> => {
+  /* A quiet read is one the player did not ask for (a poke): it fails without a trace, keeping the rows held. */
+  const readRows = useCallback(async (quiet: boolean): Promise<boolean> => {
     if (!account) return true;
     const mineCall = ++calls.current;
     try {
@@ -170,11 +172,14 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
       });
       return true;
     } catch {
+      /* A quiet read keeps the rows and sets no flag; the player's own read's failure is shown. */
+      if (quiet) return false;
       /* The rows as they were: the next action or page asks again. Loading still ends, so the HUD is never blank. */
       if (current.current === account && calls.current === mineCall) setHeld((h) => ({ ...(h.for === account ? h : emptyFor(account)), loaded: true, failed: true }));
       return false;
     }
   }, [api, account]);
+  const refresh = useCallback(() => readRows(false), [readRows]);
 
   useEffect(() => {
     let live = true;
@@ -228,7 +233,7 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
       if (!live) return;
       if (out) { again = true; return; }
       out = true;
-      void refresh().finally(() => {
+      void readRows(true).finally(() => {
         out = false;
         if (live && again) { again = false; read(); }
       });
@@ -249,7 +254,7 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
       offAccount();
       offReach();
     };
-  }, [api, account, refresh]);
+  }, [api, account, readRows]);
 
   /*
    * The estimate's asks: one out at a time, none before freshAfter, a held ask answered once at

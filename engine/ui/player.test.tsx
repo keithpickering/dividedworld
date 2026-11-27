@@ -509,6 +509,34 @@ describe('the HUD hears its own state', () => {
     expect(w.reads.mock.calls.length).toBe(before + 1);
   });
 
+  test('a poke whose read fails keeps the last good rows and shows no error; the player\'s own action\'s failing read does show it (#1240)', async () => {
+    fakeTimers();
+    let down = false;
+    const w = heard(async () => { if (down) throw new Error('down'); return [char('a')]; });
+    let answers: boolean[] = [];
+    function Rows() {
+      const p = usePlayer();
+      return <div><span data-testid="ids">{p.characters.map((c) => c.id).join(',')}</span><span data-testid="failed">{String(p.charactersFailed)}</span><button onClick={() => void p.refresh().then((ok) => { answers = [...answers, ok]; })}>mine</button></div>;
+    }
+    render(<PlayerProvider api={w.api}><Rows /></PlayerProvider>);
+    await settle();
+    expect(screen.getByTestId('ids').textContent).toBe('a');
+    down = true;
+    const before = w.reads.mock.calls.length;
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(400);
+    expect(w.reads.mock.calls.length, 'the poke read').toBe(before + 1);
+    expect(screen.getByTestId('ids').textContent, 'the last good rows stay').toBe('a');
+    expect(screen.getByTestId('failed').textContent, 'no error for a read nobody asked for').toBe('false');
+    act(() => { w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); });
+    await ms(REACH_SPREAD_MS);
+    expect(screen.getByTestId('failed').textContent).toBe('false');
+    await act(async () => { screen.getByText('mine').click(); });
+    await settle();
+    expect(answers).toEqual([false]);
+    expect(screen.getByTestId('failed').textContent, 'the player\'s own read reports failure as before').toBe('true');
+  });
+
   test('a settled runs one read, at some moment within the spread', async () => {
     fakeTimers();
     const w = heard();
