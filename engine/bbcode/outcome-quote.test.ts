@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { OUTCOME_QUOTE_MOST, outcomeQuote, withoutLeadingQuote } from './outcome-quote.ts';
+import { OUTCOME_QUOTE_FIXTURES } from './outcome-quote.fixtures.ts';
 import { parse } from './parse.ts';
 import { CUT, asTyped, holds, quoteHeld, quoteNorm, quoteSource } from './quoted.ts';
 
@@ -141,21 +142,10 @@ test('what a leading-quote skip quotes is still a run of the source', () => {
   assert.ok(quoteSource(parse(body)).includes(quoteNorm(words)));
 });
 
-// One contract for room, held to the same table as the database's outcome_quote (supabase/tests/0452-outcome-quotes.sql): room is what the words, the ellipsis and the cover may take in all; the 53 of the markup are out already.
-const PARITY: readonly (readonly [string, string, number, string | null])[] = [
-  ["whole", "Hello  [b]big\nworld[/b]", 100, "Hello big world"],
-  ["cut at a word", "alpha beta gamma", 9, "alpha…"],
-  ["hard cut, shrunk by the ellipsis", "abcdefghijklmnop", 6, "abcde…"],
-  ["noparse wrap", "[noparse]see [b] now[/noparse]", 40, "[noparse]see [b] now[/noparse]"],
-  ["a [/noparse] escape", "a [/noparse] b", 60, "[noparse]a [/noparse[/noparse][noparse]] b[/noparse]"],
-  ["astral characters", "😀😁😂 😃😄😅", 5, "😀😁😂…"],
-  ["leading quote skipped", "[quote={Q}]first words[/quote] my reply", 100, "my reply"],
-  ["no room", "some words", 1, null],
-];
-
+// One contract for room, held to the same list as the database's outcome_quote (engine/bbcode/outcome-quote.fixtures.ts, made into supabase/tests/0452-outcome-quotes-parity.sql): room is what the words, the ellipsis and the cover may take in all; the 53 of the markup are out already.
 test('the parity table: the same (body, room) cases give the same words as the database', () => {
   const Q = '11111111-2222-3333-4444-555555555555';
-  for (const [name, body, room, words] of PARITY) {
+  for (const { name, body, room, words } of OUTCOME_QUOTE_FIXTURES) {
     assert.equal(outcomeQuote('a1', body.replaceAll('{Q}', Q), room), words === null ? '' : `[quote=a1]${words}[/quote]\n`, name);
   }
 });

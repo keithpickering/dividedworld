@@ -126,6 +126,8 @@ export const STEPS = [
   'node tools/check-name-folds.mjs',
   'node tools/test-bbcode-plain.mjs',
   'node tools/check-bbcode-plain.mjs',
+  'node tools/test-outcome-quote-fixtures.mjs',
+  'node tools/check-outcome-quote-fixtures.mjs',
   'node tools/test-phrase-sql.mjs',
   'node tools/check-phrase-sql.mjs',
   'node tools/test-visit-outcome-words.mjs',

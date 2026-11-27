@@ -2,7 +2,7 @@
 --
 -- 1. Every kind of outcome post (a filing, an infraction's ruling, a model and a stock concession, a ban's entry, a ban's ruling, a move's ruling) opens with a real `[quote=<target>]` of its target's opening words and a line break,
 --    then the Mod's words; the post's target is that Act; and its payload is never `forged`.
--- 2. The words (they open at the target's own: a leading quote is skipped, and one table of (body, room) cases is held by the TS mirror too): a short target whole, a long one cut at a word to at most 280 characters then `…`, markup and whitespace as a reader sees them, `[noparse]` around words that hold a `[`, a literal `[/noparse]` held, a target
+-- 2. The words (they open at the target's own: a leading quote is skipped, and the (body, room) cases are one generated list, 0452-outcome-quotes-parity.sql, held by the TS mirror too): a short target whole, a long one cut at a word to at most 280 characters then `…`, markup and whitespace as a reader sees them, `[noparse]` around words that hold a `[`, a literal `[/noparse]` held, a target
 --    with markup or nested quotes or an edit (the latest eligible version), none of it forged.
 -- 3. A ban's entry quotes the post that tipped the bar (in another thread), and its target is that post; a ban's ruling quotes the entry; a move's ruling quotes the move's said line.
 -- 4. The forged-quote check counts a move with a text body as a version of itself: a player's quote of it is real, a doctored one is forged; posts, spins and edits read as they did.
@@ -332,22 +332,12 @@ begin
 
 end $$;
 
--- The words open at the target's own: a leading quote is skipped (a player's reply, a ban entry), a post that is only a quote quotes its words, and the rule holds for one table of cases the TS mirror holds too.
+-- The words open at the target's own: a leading quote is skipped (a player's reply, a ban entry), a post that is only a quote quotes its words, and the (body, room) cases of the rule are one list with the TS mirror's (engine/bbcode/outcome-quote.fixtures.ts, held in 0452-outcome-quotes-parity.sql).
 do $$
 declare
   t uuid := tests.thread('Op quote leading');
   other uuid := tests.post(pg_temp.chr('Op Ann A'), t, 'x');
-  qp uuid; reply uuid; only_q uuid; nested uuid; p uuid; got text; i integer;
-  parity text[][] := array[
-    [$n$whole$n$, $b$Hello  [b]big
-world[/b]$b$, '100', $e$Hello big world$e$],
-    [$n$cut at a word$n$, $b$alpha beta gamma$b$, '9', $e$alpha…$e$],
-    [$n$hard cut, shrunk by the ellipsis$n$, $b$abcdefghijklmnop$b$, '6', $e$abcde…$e$],
-    [$n$noparse wrap$n$, $b$[noparse]see [b] now[/noparse]$b$, '40', $e$[noparse]see [b] now[/noparse]$e$],
-    [$n$a [/noparse] escape$n$, $b$a [/noparse] b$b$, '60', $e$[noparse]a [/noparse[/noparse][noparse]] b[/noparse]$e$],
-    [$n$astral characters$n$, $b$😀😁😂 😃😄😅$b$, '5', $e$😀😁😂…$e$],
-    [$n$leading quote skipped$n$, $b$[quote={Q}]first words[/quote] my reply$b$, '100', $e$my reply$e$],
-    [$n$no room$n$, $b$some words$b$, '1', null]];
+  reply uuid; only_q uuid; nested uuid;
 begin
   reply := pg_temp.filed(t, '[quote=' || other || ']x[/quote] my reply');
   perform pg_temp.expect(pg_temp.said_quote(reply, pg_temp.target(reply)) = 'my reply' and not pg_temp.forged(reply), 'a leading quote is not skipped: ' || pg_temp.body(reply));
@@ -355,14 +345,6 @@ begin
   perform pg_temp.expect(pg_temp.said_quote(only_q, pg_temp.target(only_q)) = 'x' and not pg_temp.forged(only_q), 'a post that is only a quote does not quote its words: ' || pg_temp.body(only_q));
   nested := pg_temp.filed(t, '[quote=' || other || ']a [quote=' || other || ']x[/quote] b[/quote] after both');
   perform pg_temp.expect(pg_temp.said_quote(nested, pg_temp.target(nested)) = 'after both' and not pg_temp.forged(nested), 'a nested leading quote is not skipped whole: ' || pg_temp.body(nested));
-  -- One table of (body, room) cases, with the same expected words in engine/bbcode/outcome-quote.test.ts (PARITY): room is what the words, the ellipsis and the cover may take in all.
-  qp := tests.post(pg_temp.chr('Op Ann A'), t, 'first words');
-  for i in 1..array_length(parity, 1) loop
-    p := tests.post(pg_temp.chr('Op Bob A'), t, replace(parity[i][2], '{Q}', qp::text));
-    got := outcome_quote(p, parity[i][3]::integer);
-    perform pg_temp.expect(got is not distinct from case when parity[i][4] is null then null else '[quote=' || p || ']' || parity[i][4] || E'[/quote]\n' end,
-      'parity case "' || parity[i][1] || '": ' || coalesce(got, 'no quote'));
-  end loop;
 end $$;
 
 -- An edited target quotes its latest version; a later edit is the latest; an edit an admin hid is skipped for the one before it.
