@@ -1,10 +1,13 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { buildWorld, holdReads, renderIn, renderInWorld, testInstance } from '../test-world.tsx';
 import { seedMoves } from '../board/move-world.ts';
 import { IndexScreen } from './Index.tsx';
 import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { LoadedIndex } from '../loaded.tsx';
+import { Routes, type Route } from '../routes.tsx';
+import { loadIndex, type LoadEnv, type ScreenDoc } from '../screen-docs.ts';
+import type { IndexPage } from '../data/api.ts';
 
 const T0 = Date.UTC(2026, 9, 20, 12);
 
@@ -264,5 +267,67 @@ describe('the index rows\' units and last post (list-rows plan, Task 1)', () => 
     renderInWorld(<LoadedIndex />, { seed: (f) => { f.signInAs(f.seed.account('me')); } });
     const row = (await screen.findByRole('link', { name: 'General' })).closest('tr')!;
     expect(row.querySelector('.kb-board-last')!.textContent).toBe('last: None yet');
+  });
+
+  /* Live (docs/plans/2026-11-25-live-lists-and-self-plan.md, Task 5): a board's summary arrives as its threads are posted to. */
+  describe('live', () => {
+    test('a summary for a listed board updates its count and Last post in place', async () => {
+      const { seeded: w, fake } = renderInWorld(<LoadedIndex />, {
+        seed: (f) => {
+          const me = f.seed.account('me');
+          const spritey = f.seed.character(f.seed.account('other'), 'Spritey', 'face', { at: T0 });
+          f.seed.thread('general', spritey, 'One', 'x', { at: T0 });
+          const mine = f.seed.character(me, 'Mine', 'face', { at: T0 });
+          f.signInAs(me);
+          return { mine };
+        },
+      });
+      const row = (await screen.findByRole('link', { name: 'General' })).closest('tr')!;
+      expect(row).toHaveTextContent('One');
+      expect(within(row).getByText('1', { selector: '.kb-num' })).toBeInTheDocument();
+      await act(async () => {
+        await fake.startThread('general', w.mine, 'Fresh', 'y');
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      const after = screen.getByRole('link', { name: 'General' }).closest('tr')!;
+      await waitFor(() => expect(within(after).getByText('2', { selector: '.kb-num' })).toBeInTheDocument());
+      expect(after).toHaveTextContent('Fresh');
+    });
+
+    test('a summary for a board not on the page reads the index again', async () => {
+      /* The router's own table, as the app has it, so the re-read is the router's: the shown page read again in place. */
+      const fake = buildWorld();
+      const me = fake.seed.account('me');
+      const mine = fake.seed.character(me, 'Mine', 'face', { at: T0 });
+      fake.signInAs(me);
+      const env: LoadEnv = { api: fake, signedIn: () => true, postsPerPage: () => 20, effects: [] };
+      const routes: readonly Route[] = [{ path: '/', load: () => loadIndex(env), render: (_, doc) => <IndexScreen doc={doc as ScreenDoc<IndexPage>} /> }];
+      renderIn(fake, <Routes routes={routes} />);
+      await screen.findByRole('link', { name: 'General' });
+      expect(screen.queryByRole('link', { name: 'Third' })).toBeNull();
+      await act(async () => {
+        fake.seed.board('third', 'Third');
+        await fake.startThread('third', mine, 'Hello', 'z');
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      expect(await screen.findByRole('link', { name: 'Third' })).toBeInTheDocument();
+    });
+
+    test('a Last-post character the page does not know is read once and its name shown', async () => {
+      const { seeded: w, fake } = renderInWorld(<LoadedIndex />, {
+        seed: (f) => { const me = f.seed.account('me'); const mine = f.seed.character(me, 'Newcomer', 'face', { at: T0 }); f.signInAs(me); return { mine }; },
+      });
+      await screen.findByRole('link', { name: 'General' });
+      const reads: string[][] = [];
+      const real = fake.characters.bind(fake);
+      fake.characters = async (ids: readonly string[]) => { reads.push([...ids]); return real(ids); };
+      await act(async () => {
+        await fake.startThread('general', w.mine, 'Late', 'x');
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      const row = screen.getByRole('link', { name: 'General' }).closest('tr')!;
+      expect(await within(row).findByText('Newcomer')).toBeInTheDocument();
+      expect(reads).toHaveLength(1);
+    });
   });
 });
