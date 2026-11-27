@@ -326,7 +326,7 @@ begin
         raise exception 'a place is a text, an image or a box attachment of at most 2 KiB' using hint = 'kayfabb.refusal', errcode = '22023';
       end if;
       if exists (select 1 from jsonb_array_elements(in_places) p
-                 where (p ->> 'version')::uuid is distinct from coalesce((select ed.id from acts ed where ed.kind = 'edit' and ed.target_act_id = s.post order by ed.created_at desc, ed.id desc limit 1), s.post)) then
+                 where (p ->> 'version')::uuid is distinct from post_version(s.post)) then
         raise exception 'That post''s words aren''t the ones you drew on. Reload it and tag again.' using hint = 'kayfabb.refusal', errcode = '55000';
       end if;
     end if;
@@ -665,6 +665,25 @@ grant execute on function surface_shares(uuid) to authenticated;
 
 -- ------------------------------------------------------------------------------------------------------------ 7. readers ----
 
+-- post_current_version(post): post_version (0070), the one rule for a post's current version (its latest edit by created_at, then id, else the post itself, as acts_public's current_payload reads it), callable by the players
+-- thread_page serves, who cannot call post_version. A thin definer over it, so there is one rule and no copy of it; it says which Act is the post's current words, which the page shows in current_payload and `version` already.
+create function post_current_version(post uuid) returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select post_version(post_current_version.post)
+$$;
+revoke execute on function post_current_version(uuid) from public, anon;
+grant execute on function post_current_version(uuid) to authenticated, service_role;
+
+-- surface_places_now(draw, post): a draw's places for the post's current version, [{grp, place}] by group, [] where none were written. The version is post_version's (the one rule: the latest edit by created_at, then id, else the post), which the
+-- Lens, as an invoker, cannot call itself (post_version is not granted to players), so this is the one definer that holds it for them. It reads what the Lens read before, a draw's places, and gives no id.
+create function surface_places_now(draw uuid, post uuid) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce((select jsonb_agg(jsonb_build_object('grp', p.grp, 'place', p.place) order by p.grp) from surface_places p
+                   where p.draw = surface_places_now.draw and p.version = post_version(surface_places_now.post)), '[]'::jsonb)
+$$;
+revoke execute on function surface_places_now(uuid, uuid) from public, anon;
+grant execute on function surface_places_now(uuid, uuid) to authenticated, service_role;
+
 -- surface_acts (0368): the live Acts of a surface, oldest first, each as acts_public shows it. A draw carries its `share` (its own painted cells, which is what it costs the wall) and its `places`: for the post's current version (its
 -- latest edit by created_at, id, or the post), [{grp, place}] from surface_places, a group with no row for it at its box spot. The coats grid and a wash's takes are the server's and are not sent (nor the old cells); `older`
 -- counts the draws no longer live. Public Acts and the row's counts: a security invoker read, as thread_page is.
@@ -677,8 +696,7 @@ begin
     'covered', s.covered,
     'acts', coalesce((select jsonb_agg((to_jsonb(a) #- '{payload,cells}' #- '{current_payload,cells}' #- '{payload,coats}' #- '{current_payload,coats}' #- '{payload,takes}' #- '{current_payload,takes}')
                                        || case when a.kind = 'draw' then jsonb_build_object('share', coalesce(sh.painted, 0),
-                                            'places', coalesce((select jsonb_agg(jsonb_build_object('grp', p.grp, 'place', p.place) order by p.grp) from surface_places p
-                                                                where p.draw = a.id and p.version = coalesce((select e.id from acts e where e.kind = 'edit' and e.target_act_id = s.post order by e.created_at desc, e.id desc limit 1), s.post)), '[]'::jsonb))
+                                            'places', surface_places_now(a.id, s.post))
                                            else '{}'::jsonb end order by u.ord)
                       from unnest(s.live) with ordinality u(id, ord) join acts_public a on a.id = u.id
                       left join surface_shares(s.play) sh on sh.draw = a.id), '[]'::jsonb),
@@ -709,7 +727,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
                         from surfaces s join surface_coats c on c.play = s.play join acts_public d on d.id = c.draw join surface_places p on p.draw = c.draw and p.version = v.id
                         where s.post = p_post), '[]'::jsonb))
   from (select a.id, a.payload from acts_public a
-        where a.id = coalesce((select e.id from acts_public e where e.kind = 'edit' and e.target_act_id = p_post order by e.created_at desc, e.id desc limit 1), p_post)
+        where a.id = post_version(p_post)
           and exists (select 1 from acts_public q where q.id = p_post and q.kind = 'post')) v
 $$;
 revoke execute on function surface_groups_on(uuid) from public, anon, authenticated;
@@ -721,7 +739,7 @@ create function surface_version_pair(p_post uuid, p_version uuid) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object(
     'current', (select jsonb_build_object('version', a.id, 'body', coalesce(a.payload ->> 'body', ''), 'forged', coalesce(a.payload -> 'forged', '[]'::jsonb))
-                from acts_public a where a.id = coalesce((select e.id from acts_public e where e.kind = 'edit' and e.target_act_id = p_post order by e.created_at desc, e.id desc limit 1), p_post)),
+                from acts_public a where a.id = post_version(p_post)),
     'drawn', (select jsonb_build_object('version', a.id, 'body', coalesce(a.payload ->> 'body', ''), 'forged', coalesce(a.payload -> 'forged', '[]'::jsonb))
               from acts_public a where a.id = p_version and (a.id = p_post or (a.kind = 'edit' and a.target_act_id = p_post))))
   where exists (select 1 from acts_public q where q.id = p_post and q.kind = 'post')
@@ -1414,7 +1432,7 @@ begin
                 FROM s), 'page', ( SELECT rng.page
                 FROM rng), 'boardCards', ( SELECT COALESCE(jsonb_agg(to_jsonb(o.*) ORDER BY o.created_at, o.id), '[]'::jsonb) AS "coalesce"
                 FROM on_posts o
-               WHERE (o.target_act_id IS NULL)), 'acts', ( SELECT COALESCE(jsonb_agg((CASE WHEN post_kind(a.kind) THEN to_jsonb(a.*) || jsonb_build_object('version', COALESCE(( SELECT e.id FROM acts_public e WHERE e.kind = 'edit' AND e.target_act_id = a.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1), a.id)) ELSE to_jsonb(a.*) END) ORDER BY a.seq), '[]'::jsonb) AS "coalesce"
+               WHERE (o.target_act_id IS NULL)), 'acts', ( SELECT COALESCE(jsonb_agg((CASE WHEN post_kind(a.kind) THEN to_jsonb(a.*) || jsonb_build_object('version', post_current_version(a.id)) ELSE to_jsonb(a.*) END) ORDER BY a.seq), '[]'::jsonb) AS "coalesce"
                 FROM page_acts a), 'people', ( SELECT COALESCE(jsonb_agg((c.head || jsonb_build_object('posts', COALESCE(( SELECT n.posts
                         FROM character_post_counts n
                        WHERE (n."character" = c.id)), 0), 'standing', COALESCE(( SELECT st.standing

@@ -595,9 +595,14 @@ begin
   perform tests.become(ann);
   page := thread_page(t, 1, null, 20, array[]::text[]);
   perform tests.unbecome();
-  if e2 = e1 or (select x ->> 'version' from jsonb_array_elements(page -> 'acts') x where x ->> 'id' = w.post::text) is distinct from e2::text then raise exception 'a second edit moves the version on: %', page -> 'acts'; end if;
+  -- Two edits made in one transaction share created_at, so which is current is decided by the id (the rule acts_public's current_payload and post_version both hold: created_at desc, id desc), not by which was made later.
+  -- So the assertion is not that the second edit is the version, but that the version is the edit whose words the page shows, whichever of the two wins the tie.
+  if (select count(*) from acts where kind = 'edit' and target_act_id = w.post) is distinct from 2 or (select count(distinct created_at) from acts where kind = 'edit' and target_act_id = w.post) is distinct from 1 then raise exception 'the two edits share a timestamp: %', (select jsonb_agg(created_at) from acts where kind = 'edit' and target_act_id = w.post); end if;
+  if (select x ->> 'version' from jsonb_array_elements(page -> 'acts') x where x ->> 'id' = w.post::text) is distinct from post_version(w.post)::text then raise exception 'the page names the post''s current version: %', page -> 'acts'; end if;
+  if (select e.payload ->> 'body' from acts e where e.id = (select (x ->> 'version')::uuid from jsonb_array_elements(page -> 'acts') x where x ->> 'id' = w.post::text))
+       is distinct from (select x -> 'current_payload' ->> 'body' from jsonb_array_elements(page -> 'acts') x where x ->> 'id' = w.post::text) then raise exception 'the version names the edit whose words the page shows: %', page -> 'acts'; end if;
   if (select x ->> 'version' from jsonb_array_elements(page -> 'acts') x where x ->> 'id' = other::text) is distinct from other::text then raise exception 'another post is untouched by the edit: %', page -> 'acts'; end if;
   -- The field is what surface_version_pair names as current, which is what a draw is checked against.
-  if (select (surface_version_pair(w.post, w.post) -> 'current' ->> 'version') from (select tests.become_service()) z) is distinct from e2::text then raise exception 'the page and the draw agree on the current version'; end if;
+  if (select (surface_version_pair(w.post, w.post) -> 'current' ->> 'version') from (select tests.become_service()) z) is distinct from post_version(w.post)::text then raise exception 'the page and the draw agree on the current version'; end if;
   perform tests.unbecome();
 end $$;
