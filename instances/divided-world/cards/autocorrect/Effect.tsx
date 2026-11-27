@@ -6,7 +6,8 @@
  * - **The line.** The post's words are cut at every strip's ends into `wrap` runs (engine/ui/bbcode/layers.tsx), each drawn as a
  *   `span[data-kb-ac-seg]`, so the words stay in the line in their own formatting. At a strip's end the run's `trail` holds the
  *   strip's room: break-spaces, as many as the replacement needs past the words (tape.ts `roomOf`), measured in the formatting
- *   the room sits in. A strip the author peeled before this load gets no room. While tape covers a segment its words are
+ *   the room sits in. A stack whose footprint fits its line is laid whole (it does not wrap) and moves to the next line as a long word
+ *   does; one wider than its line wraps and is cut into pieces. A strip the author peeled before this load gets no room. While tape covers a segment its words are
  *   `aria-hidden` and `data-kb-quotable="hidden"`; at each taped strip's start a visually hidden anchor stands in the line, named
  *   for what its role can do and quoted as the replacement (design section 10).
  * - **The eye.** A `div.dw-ac-tape` over the post draws each live strip as one piece per line it crosses, measured from a Range
@@ -904,9 +905,11 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
 
   /* Rooms: break-spaces after a strip's words, by the end offset they follow, as this screen's measuring last found them. */
   const [rooms, setRooms] = useState<Rooms>({});
+  /* Whole stacks (design docs/plans/2026-11-27-autocorrect-whole-strip-design.md), by their first strip's start: found from widths only. */
+  const [whole, setWhole] = useState<Record<string, true>>({});
   const [laid, setLaid] = useState<Layout | null>(null);
-  const world = useRef({ strips, stacks, loaded, rooms, key: '' });
-  world.current = { strips, stacks, loaded, rooms, key: `${text}\u0000${configsKey}` };
+  const world = useRef({ strips, stacks, loaded, rooms, whole, key: '' });
+  world.current = { strips, stacks, loaded, rooms, whole, key: `${text}\u0000${configsKey}` };
   const extra = useRef<{ key: string; at: Record<string, number> }>({ key: '', at: {} });
 
   /*
@@ -918,7 +921,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   const layout = useCallback(() => {
     const host = box.current;
     if (!host) return;
-    const { strips: all, stacks: groups, loaded: before, rooms: have, key } = world.current;
+    const { strips: all, stacks: groups, loaded: before, rooms: have, whole: haveWhole, key } = world.current;
     const hostRect = host.getBoundingClientRect();
     const base = Number.parseFloat(getComputedStyle(host).fontSize) || 16;
     const ruler = rulerOf();
@@ -996,7 +999,36 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
      * the strip's pieces are known, and kept (it only grows, up to the replacement's own width) until the post's text or plays change.
      */
     if (extra.current.key !== key) extra.current = { key, at: {} };
-    for (const [end, n] of Object.entries(extra.current.at)) nextRooms[end] = (nextRooms[end] ?? 0) + n;
+    /*
+     * A stack whose footprint (its words and its rooms, as set above) is no wider than its line is whole: it does not wrap and takes no
+     * extra. The line is the content box of the nearest block around its first segment, so a quote or a spun thread's ORIGIN box is
+     * measured as it is. Found from widths alone, never from where the lines broke, so it cannot flip between two layouts.
+     */
+    const lineWidth = (el: HTMLElement | undefined): number => {
+      let e: HTMLElement | null = el?.parentElement ?? null;
+      while (e && e !== host.parentElement && String(getComputedStyle(e).display ?? '').startsWith('inline')) e = e.parentElement;
+      if (!e) return hostRect.width;
+      const cs = getComputedStyle(e);
+      const px = (k: string) => Number.parseFloat(cs.getPropertyValue(k)) || 0;
+      return e.getBoundingClientRect().width - px('padding-left') - px('padding-right') - px('border-left-width') - px('border-right-width');
+    };
+    const nextWhole: Record<string, true> = {};
+    const wholeEnds = new Set<number>();
+    for (const stack of groups) {
+      if (stack.every((s) => before.has(s.key))) continue;
+      const from = stack[0]!.from;
+      const to = Math.max(...stack.map((s) => s.to));
+      const firstIdx = firstAt.get(from);
+      if (firstIdx === undefined) continue;
+      let foot = Math.max(0, upTo[endsAtOrBefore(to)]! - upTo[startsAtOrAfter(from)]!);
+      for (const end of new Set(stack.map((s) => s.to))) foot += (nextRooms[String(end)] ?? 0) * spaceAt(end);
+      if (foot <= lineWidth(segs[firstIdx]) + 0.5) {
+        nextWhole[String(from)] = true;
+        for (const s of stack) wholeEnds.add(s.to);
+      }
+    }
+    for (const [end, n] of Object.entries(extra.current.at)) if (!wholeEnds.has(Number(end))) nextRooms[end] = (nextRooms[end] ?? 0) + n;
+    if (!sameJson(nextWhole, haveWhole)) { setWhole(nextWhole); return; }
     if (!sameJson(nextRooms, have)) { setRooms(nextRooms); return; }
 
     const out: Record<string, Laid> = {};
@@ -1035,7 +1067,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       const dealt = dealWords(s.replacement, boxes.map((b) => b.w - 2 * pad), (t, scale) => ruler(marker(scale), t));
       const lack = ruler(marker(dealt.scale), dealt.words.at(-1) ?? '') - (boxes.at(-1)!.w - 2 * pad);
       const grown = extra.current.at[String(s.to)] ?? 0;
-      if (lack > 0.5 && !before.has(s.key) && grown * spaceAt(s.to) < 2 * ruler(marker(1), s.replacement)) {
+      if (lack > 0.5 && !before.has(s.key) && !wholeEnds.has(s.to) && grown * spaceAt(s.to) < 2 * ruler(marker(1), s.replacement)) {
         const more = Math.ceil(lack / spaceAt(s.to));
         extra.current.at[String(s.to)] = grown + more;
         bump[String(s.to)] = Math.max(bump[String(s.to)] ?? 0, more);
@@ -1052,7 +1084,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   const layoutNow = useRef(layout);
   layoutNow.current = layout;
   /* A new version of the post, a new set of plays, or new rooms in the line: measured before the page paints. */
-  useLayoutEffect(() => { layoutNow.current(); }, [text, configsKey, rooms]);
+  useLayoutEffect(() => { layoutNow.current(); }, [text, configsKey, rooms, whole]);
   /* A resize of the post's box, and fonts that arrive late. */
   useEffect(() => {
     let live = true;
@@ -1073,6 +1105,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       const covered = stack.some((s) => liveKeys.has(s.key) && s.from <= start && s.to >= end);
       const anchors = stack.filter((s) => s.from === start && liveKeys.has(s.key)).sort((a, b) => b.z - a.z);
       const room = rooms[String(end)] ?? 0;
+      const whole_ = whole[String(stack[0]!.from)] ? { 'data-kb-ac-whole': '' } : null;
       return {
         start, end, key: `ac:${id}`, z: 0, mode: 'wrap',
         render: ({ text: words, key }) => (
@@ -1080,13 +1113,13 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
             {key === `ac:${id}@${start}` ? anchors.map((s) => (
               <Anchor key={s.key} strip={s} author={author} heldLeft={heldLeft(s)} open={openKeys.has(s.key)} onKey={onKey} onFocus={setFocused} />
             )) : null}
-            <span data-kb-ac-seg={id} {...(covered ? { 'aria-hidden': true, 'data-kb-quotable': 'hidden' } : null)}>{words}</span>
+            <span data-kb-ac-seg={id} {...whole_} {...(covered ? { 'aria-hidden': true, 'data-kb-quotable': 'hidden' } : null)}>{words}</span>
           </Fragment>
         ),
-        ...(room > 0 ? { trail: (key: string) => <span key={key} className="dw-ac-room" aria-hidden="true" data-kb-quotable="hidden" data-kb-ac-room={end}>{' '.repeat(room)}</span> } : null),
+        ...(room > 0 ? { trail: (key: string) => <span key={key} className="dw-ac-room" aria-hidden="true" data-kb-quotable="hidden" data-kb-ac-room={end} {...whole_}>{' '.repeat(room)}</span> } : null),
       };
     });
-  }), [stacks, liveKeys, live, rooms, author, onKey, clock, holds]);
+  }), [stacks, liveKeys, live, rooms, whole, author, onKey, clock, holds]);
 
   /*
    * What a strip's drawing and hands need of its stretches, made once for the stretches it has (by identity) and this layout, so a

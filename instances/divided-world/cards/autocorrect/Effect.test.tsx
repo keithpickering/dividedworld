@@ -520,6 +520,50 @@ describe('Autocorrect: the room', () => {
   });
 });
 
+describe('Autocorrect: a whole stack', () => {
+  /* Design docs/plans/2026-11-27-autocorrect-whole-strip-design.md: a stack whose footprint fits its line is laid as one unbreakable unit. */
+  const parts = () => [...document.querySelectorAll<HTMLElement>('[data-kb-ac-seg], .dw-ac-room')];
+  const strips = () => parts().filter((e) => e.classList.contains('dw-ac-room') || e.getAttribute('data-kb-ac-seg') === '0-5' || e.getAttribute('data-kb-ac-seg') === '10-15');
+
+  test('a stack whose footprint fits the line has every segment and room whole', () => {
+    /* "Mario" is 50px and its room two 8px spaces: 66px of a 300px line. */
+    mount({ body: 'Mario and mario', plays: [playOf(1, 'mario', 'Luigi')] });
+    expect(rooms()).toHaveLength(2);
+    expect(strips()).toHaveLength(4);
+    for (const e of strips()) expect(e).toHaveAttribute('data-kb-ac-whole');
+    for (const e of parts().filter((x) => !strips().includes(x))) expect(e).not.toHaveAttribute('data-kb-ac-whole');
+  });
+
+  test('a stack wider than its line is not whole', () => {
+    /* Forty letters is 400px of a 300px line. */
+    const phrase = 'abcdefghij abcdefghij abcdefghij abcdefg';
+    mount({ body: `see ${phrase} now`, plays: [playOf(1, phrase, 'Luigi')] });
+    expect(document.querySelectorAll('[data-kb-ac-seg]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+  });
+
+  test('a stack whose only strip was peeled before this load is not whole', () => {
+    mount({ body: 'Mario', states: { k1: savedOf({ peeled: [0] }) } });
+    expect(document.querySelectorAll('[data-kb-ac-seg]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+  });
+
+  test('a whole stack takes no extra: the room after a resize that fits is the one roomOf sets', () => {
+    const bounds = vi.spyOn(Element.prototype, 'getBoundingClientRect');
+    const lineOf = (w: number) => bounds.mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: w, bottom: 60, width: w, height: 60, toJSON: () => ({}) }));
+    /* A 55px line: the 66px footprint is wider, and with the room on a second line the last piece lacks, so the room grows. */
+    lineOf(55);
+    phone = 40;
+    mount({ body: 'Mario', plays: [playOf(1, 'mario', 'a Luigi')] });
+    expect(rooms()[0]!.textContent!.length).toBeGreaterThan(5);
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+    lineOf(300);
+    resize();
+    expect(document.querySelectorAll('[data-kb-ac-whole]').length).toBeGreaterThan(0);
+    expect(rooms()[0]!.textContent).toBe(' '.repeat(5));
+  });
+});
+
 describe('Autocorrect: the author\'s hold', () => {
   const NOW = new Date('2026-11-16T12:00:00.000Z');
   const hourAgo = (): CardPlay => ({ ...playOf(1, 'mario', 'Luigi'), playedAt: new Date(NOW.getTime() - 3_600_000).toISOString() });

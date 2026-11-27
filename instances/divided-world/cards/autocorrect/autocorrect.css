@@ -155,6 +155,14 @@
 .dw-ac-room {
   white-space: break-spaces;
 }
+/* A whole stack (docs/plans/2026-11-27-autocorrect-whole-strip-design.md): its footprint fits its line, so its words and rooms never break
+   and the browser moves it to the next line as it would a long word. */
+[data-kb-ac-seg][data-kb-ac-whole] {
+  white-space: nowrap;
+}
+.dw-ac-room[data-kb-ac-whole] {
+  white-space: pre;
+}
 /* The marker is clipped to its piece, so ink never lands on the post's words; the roll, corner and flap sit outside it. */
 .dw-ac-clip {
   position: absolute;
