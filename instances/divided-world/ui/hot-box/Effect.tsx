@@ -729,7 +729,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
       return;
     }
     /* The server's answer to this state would be the same again, so it is not sent again; a newer state queued while it was in flight is another question, and stays queued to go after the debounce (Whoops! keeps its dirty mark the same way). */
-    if (q.want) q.timer = setTimeout(() => { void run(); }, q.gone ? 0 : SAVE_AFTER_MS);
+    if (q.want) { clearTimeout(q.timer); q.timer = setTimeout(() => { void run(); }, q.gone ? 0 : SAVE_AFTER_MS); }
   }, []);
   const queueSave = useCallback((state: Record<string, unknown>) => {
     const q = queue.current;
