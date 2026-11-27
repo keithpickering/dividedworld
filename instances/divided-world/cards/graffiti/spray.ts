@@ -28,6 +28,10 @@
  * **Composited as the bench does:** the halos of every group, then the cores in wall order. Thinned paint (any cell a press touched) is drawn at
  * `CORE_ALPHA * min(1, 0.35 + 0.65 * (coats - 1.2) / 10)`, coats in tenths.
  *
+ * **Cached.** A field keeps a bitmap of its halo pass and of its core pass, drawn again only after a press or a cut changed the field (`Field.rasters` counts the
+ * draws), so a frame of a scrub or a Hold costs the groups it pressed and the compositing of the rest. A wall built over the one before it (`Wall.of`'s last
+ * argument) keeps each field whose inputs, placement and washes are the same, bitmaps and all.
+ *
  * **Legacy.** A draw of the old shape (`{ strokes }`, in shares of the box with an aspect) is one group at its shares, its strokes at their old widths
  * (`CAPS`), laid as a 2-coat group; its units are shares of the box.
  */
@@ -35,6 +39,7 @@ import type { Attachment } from '../../../../engine/rules/anchor.ts';
 import { placeGroups, type Measured, type PlaceGroup } from '../../../../engine/ui/cards/place.ts';
 import { CANS, CAPS, CAPS_EM, COATS, SPONGE, SPONGE_EM } from '../graffiti.ts';
 import { MAX_CANVAS_PX, MAX_DPR } from '../whoops/paint.ts';
+import { ROW_PX } from '../whoops/scrub.ts';
 import { mulberry32 } from '../whoops/splat.ts';
 
 /** The least a wall needs of an Act: its kind, its payload and, for a draw, its id and where its groups are attached in the post as it is now. */
@@ -197,14 +202,24 @@ export class Field {
   readonly core: Float32Array; readonly halo: Float32Array; readonly dot: Float32Array;
   readonly coreColor: Uint8Array; readonly haloColor: Uint8Array; readonly touched: Uint8Array;
   readonly palette: [number, number, number][] = [];
+  /** How many times a pass of this field was drawn into its bitmap: a repaint with nothing pressed adds none. */
+  rasters = 0;
+  /** What was done to the field since it was laid, as `Wall.of` would replay it: a press is `[0, x, y, radius]`, a legacy cut `[1, k, rw, margin, n, ...x, y]`. */
+  readonly log: number[] = [];
+  private readonly sprites: (HTMLCanvasElement | null)[] = [null, null];
+  private readonly stale = [true, true];
+  private readonly drawn = [false, false];
+
+  /** Where a group's origin is on this screen, and how many px a unit of it is across and down. */
+  static frameOf(src: GroupSrc, spot: Spot, box: Box): { ox: number; oy: number; sx: number; sy: number } {
+    return src.legacy ? { ox: 0, oy: 0, sx: box.w, sy: box.h } : { ox: spot.x, oy: spot.y, sx: spot.unitPx * spot.scale, sy: spot.unitPx * spot.scale };
+  }
 
   constructor(src: GroupSrc, spot: Spot, private readonly layout: Layout) {
     const { box } = layout;
     this.draw = src.draw; this.group = src.index; this.act = src.act; this.legacy = src.legacy; this.scale = spot.scale;
-    if (src.legacy) { [this.ox, this.oy, this.sx, this.sy] = [0, 0, box.w, box.h]; this.keep = round(4); } else {
-      [this.ox, this.oy, this.sx, this.sy] = [spot.x, spot.y, spot.unitPx * spot.scale, spot.unitPx * spot.scale];
-      this.keep = src.unit === 'em' ? round(2) : round(4);
-    }
+    ({ ox: this.ox, oy: this.oy, sx: this.sx, sy: this.sy } = Field.frameOf(src, spot, box));
+    this.keep = src.legacy || src.unit !== 'em' ? round(4) : round(2);
     const em = src.unit === 'image' ? src.em ?? 1 : 1;
     const strokes: PxStroke[] = [];
     for (const s of src.strokes) {
@@ -339,24 +354,42 @@ export class Field {
 
   /** One press: a disc of the sponge over the field, at a px point. */
   disc(x: number, y: number, radius: number): void {
+    this.log.push(0, x, y, radius);
     const R = 2 * radius;
+    let changed = false;
     const x0 = Math.max(this.cx0, Math.floor((x - R) / CELL)), x1 = Math.min(this.cx0 + this.gw - 1, Math.floor((x + R) / CELL));
     const y0 = Math.max(this.cy0, Math.floor((y - R) / CELL)), y1 = Math.min(this.cy0 + this.gh - 1, Math.floor((y + R) / CELL));
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
       const dx = (cx + 0.5) * CELL - x, dy = (cy + 0.5) * CELL - y, q = 1 - (dx * dx + dy * dy) / (R * R);
       if (q <= 0) continue;
       const i = (cy - this.cy0) * this.gw + cx - this.cx0, amount = PRESS_TENTHS * q * q * q;
-      if (this.halo[i]! > 0) this.halo[i] = Math.max(0, this.halo[i]! - amount);
-      if (this.dot[i]! > 0) this.dot[i] = Math.max(0, this.dot[i]! - amount);
+      if (this.halo[i]! > 0) { this.halo[i] = Math.max(0, this.halo[i]! - amount); changed = true; }
+      if (this.dot[i]! > 0) { this.dot[i] = Math.max(0, this.dot[i]! - amount); changed = true; }
       const v = this.core[i]!;
       if (v <= 0) continue;
       this.core[i] = v - amount < CLEAN ? 0 : v - amount;
       this.touched[i] = 1;
+      changed = true;
+    }
+    if (changed) this.stale[0] = this.stale[1] = true;
+  }
+
+  /** Replays what `log` holds, in order: the presses and cuts a wall is built from. */
+  apply(ops: readonly number[]): void {
+    for (let i = 0; i < ops.length;) {
+      if (ops[i] === 0) { this.disc(ops[i + 1]!, ops[i + 2]!, ops[i + 3]!); i += 4; continue; }
+      const n = ops[i + 4]!, pts: [number, number][] = [];
+      for (let j = 0; j < n; j++) pts.push([ops[i + 5 + 2 * j]!, ops[i + 6 + 2 * j]!]);
+      this.cut(pts, ops[i + 1]!, ops[i + 2]!, ops[i + 3]!);
+      i += 5 + 2 * n;
     }
   }
 
   /** An instant cut (a legacy wash), along a polyline in real px whose y is divided by `k` in the brush's space: the core within `rw`, the halo and speckle within `rw + margin`. */
   cut(pts: readonly (readonly [number, number])[], k: number, rw: number, margin: number): void {
+    this.log.push(1, k, rw, margin, pts.length);
+    for (const [x, y] of pts) this.log.push(x, y);
+    this.stale[0] = this.stale[1] = true;
     const reach = rw + margin;
     for (let i = 0; i < pts.length; i++) {
       const [ax, ay] = pts[Math.max(0, i - 1)]!, [bx, by] = pts[i]!;
@@ -384,6 +417,36 @@ export class Field {
     if (this.core[i]! >= CLEAN) return 0;
     const a = OVERSPRAY.alpha * Math.min(1, this.halo[i]! / COATS.line), b = SPECKLE_ALPHA * Math.min(1, this.dot[i]! / COATS.line);
     return 1 - (1 - a) * (1 - b);
+  }
+
+  /** Draws a pass of the field (its halos, or its cores) onto `ctx` at the field's own bounds, a cell `CELL` px: from its bitmap, which is drawn again only if the field changed since. */
+  drawTo(ctx: CanvasRenderingContext2D, halos: boolean): void {
+    const p = halos ? 0 : 1;
+    if (this.stale[p]) { this.drawn[p] = this.raster(halos, p); this.stale[p] = false; }
+    const sprite = this.sprites[p];
+    if (this.drawn[p] && sprite) ctx.drawImage(sprite, this.cx0 * CELL, this.cy0 * CELL, this.gw * CELL, this.gh * CELL);
+  }
+
+  /** Draws pass `p` into its bitmap, a cell to a pixel; whether it holds any paint. */
+  private raster(halos: boolean, p: number): boolean {
+    this.rasters += 1;
+    if (this.gw === 0 || this.gh === 0) return false;
+    const cv = (this.sprites[p] ??= document.createElement('canvas'));
+    if (cv.width !== this.gw) cv.width = this.gw;
+    if (cv.height !== this.gh) cv.height = this.gh;
+    const g = cv.getContext('2d');
+    if (!g) return false;
+    const img = g.createImageData(this.gw, this.gh);
+    let any = false;
+    for (let i = 0; i < this.gw * this.gh; i++) {
+      const a = halos ? this.haloAlpha(i) : this.coreAlpha(i);
+      if (a <= 0.004) continue;
+      const [r, gr, b] = this.palette[halos ? this.haloColor[i]! : this.coreColor[i]!] ?? [0, 0, 0];
+      img.data[i * 4] = r; img.data[i * 4 + 1] = gr; img.data[i * 4 + 2] = b; img.data[i * 4 + 3] = Math.round(a * 255);
+      any = true;
+    }
+    if (any) g.putImageData(img, 0, 0);
+    return any;
   }
 }
 
@@ -414,7 +477,30 @@ function placements(srcs: readonly GroupSrc[], layout: Layout): Spot[] {
 
 /* --------------------------------------------------------------------------- the wall ---- */
 
-let scratch: HTMLCanvasElement | null = null;
+/** A number mixed into two 32-bit hashes, which are a field's fingerprint (a draw's strokes are fixed by its id, but a test or a draft may reuse an id). */
+function fingerprint(src: GroupSrc): string {
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  const mix = (n: number) => { h1 = Math.imul(h1 ^ (n & 0xffff), 0x01000193); h1 = Math.imul(h1 ^ ((n >> 16) & 0xffff), 0x01000193); h2 = Math.imul(h2 + n | 0, 0x85ebca6b) ^ (h2 >>> 13); };
+  for (const s of src.strokes) {
+    for (const ch of `${s.can}/${s.cap}`) mix(ch.charCodeAt(0));
+    mix(s.aspect === undefined ? -1 : Math.round(s.aspect * 10_000));
+    for (const [x, y] of s.points) { mix(Math.round(x * 10_000)); mix(Math.round(y * 10_000)); }
+    mix(-2);
+  }
+  for (const n of [src.at[0], src.at[1], src.em ?? 0, src.frame.w, src.frame.h]) mix(Math.round(n * 10_000));
+  return `${h1 >>> 0}.${h2 >>> 0}`;
+}
+
+/** What a field is laid from: the group, where it is placed, the box it is clipped to and the text size. A field with the same key and the same washes is the same field. */
+function keyOf(src: GroupSrc, spot: Spot, layout: Layout): string | null {
+  if (src.draw === '') return null;
+  return [src.draw, src.index, src.act, src.legacy ? 1 : 0, spot.x, spot.y, spot.scale, spot.unitPx, layout.box.w, layout.box.h, layout.emPx, fingerprint(src)].join('|');
+}
+
+/** The farthest a press reaches to find paint to take from, past its sponge's radius, in px: a band of the sweep and a cell it reports (`bandHalf`). */
+const BAND_REACH = ROW_PX / 2 + 2 * CELL;
+
+const sameLog = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
 
 /** The wall as one screen holds it: a field for each group of each live draw, in wall order, with the saved washes and this visit's presses replayed. */
 export class Wall {
@@ -423,22 +509,88 @@ export class Wall {
   readonly spongePx: number;
   /** A group's sponge radius, px: the screen's, or for a legacy group `SPONGE / 2` of the box's width, as the server takes it. */
   radiusOf(f: Field): number { return f.legacy ? (SPONGE / 2) * this.layout.box.w : this.spongePx; }
+  /** How far from its center a press looks for paint to take from when there is none under it, px: the sponge's radius, or a little more where that is less than a sweep's band is deep (a legacy group on a narrow box), so every band the sweep reports has a press that reaches it. */
+  reachOf(f: Field): number { const r = this.radiusOf(f); return Math.max(r, Math.min(BAND_REACH, 1.5 * r)); }
+  /** Half the depth of a sweep's band, px: `ROW_PX / 2`, or less where a press cannot reach the farthest cell `spanOf` reports in a band that deep. */
+  bandHalf(): number {
+    let half = ROW_PX / 2;
+    for (const f of this.groups) {
+      const r = this.radiusOf(f), reach = this.reachOf(f);
+      /* A cell is reported when its extent touches the band: its center is up to half a cell past it, and a press is up to a sixth of a radius, and half a cell, from the cell's center along the band. */
+      const along = r / (2 * PRESSES_PER_RADIUS) + CELL / 2;
+      half = Math.min(half, Math.sqrt(Math.max(0, reach * reach - along * along)) - CELL / 2);
+    }
+    return Math.max(CELL, half);
+  }
   private readonly byKey = new Map<string, Field>();
+  private draft: { readonly act: WallAct; readonly fields: Field[] } | null = null;
 
-  private constructor(readonly layout: Layout, groups: Field[]) {
+  private constructor(readonly layout: Layout, groups: Field[], private readonly keys: readonly (string | null)[]) {
     this.groups = groups;
     this.spongePx = (SPONGE_EM / 2) * layout.emPx;
     for (const f of groups) this.byKey.set(`${f.draw}/${f.group}`, f);
   }
 
-  /** The fields of `acts` against a layout, with the saved washes among them and then `chunks` replayed. */
-  static of(acts: readonly WallAct[], layout: Layout, chunks: readonly Chunk[] = []): Wall {
+  /**
+   * The fields of `acts` against a layout, with the saved washes among them and then `chunks` replayed. Built over `prev` (the wall of the same post before), each of
+   * its fields whose group, placement, box, text size and washes are the same is kept as it is, with its bitmaps; the others are laid again.
+   */
+  static of(acts: readonly WallAct[], layout: Layout, chunks: readonly Chunk[] = [], prev: Wall | null = null): Wall {
     const srcs = groupsOf(acts);
     const spots = placements(srcs, layout);
-    const wall = new Wall(layout, srcs.map((s, i) => new Field(s, spots[i]!, layout)));
-    acts.forEach((a, index) => { if (a.kind === 'wash') wall.replay(a, index); });
-    for (const c of chunks) wall.replayChunk(c);
-    return wall;
+    const frames = srcs.map((s, i) => Field.frameOf(s, spots[i]!, layout.box));
+    const radius = (i: number) => (srcs[i]!.legacy ? (SPONGE / 2) * layout.box.w : (SPONGE_EM / 2) * layout.emPx);
+    const index = new Map<string, number>();
+    srcs.forEach((s, i) => index.set(`${s.draw}/${s.index}`, i));
+    const logs = srcs.map(() => [] as number[]);
+    const presses = (draw: string, group: number, list: readonly (readonly [number, number])[]) => {
+      const i = index.get(`${draw}/${group}`);
+      if (i === undefined) return;
+      const f = frames[i]!, r = radius(i);
+      for (const [u, v] of list) logs[i]!.push(0, f.ox + u * f.sx, f.oy + v * f.sy, r);
+    };
+    acts.forEach((a, at) => {
+      if (a.kind !== 'wash' || !record(a.payload)) return;
+      const p = a.payload;
+      if (Array.isArray(p.cuts)) {
+        for (const c of p.cuts as unknown[]) {
+          if (!record(c) || typeof c.draw !== 'string' || !finite(c.group)) continue;
+          const list = pointsOf(c.presses);
+          if (list) presses(c.draw, c.group, list);
+        }
+      } else if (Array.isArray(p.strokes)) {
+        /* A wash from before groups: an instant cut, at its old width, of the older draws that were drawn in shares. */
+        const { box } = layout;
+        for (const s of p.strokes as unknown[]) {
+          if (!record(s) || !finite(s.aspect) || !(s.aspect > 0)) continue;
+          const points = pointsOf(s.points);
+          if (!points) continue;
+          const k = (s.aspect * box.h) / box.w, rw = (OLD_SPONGE * box.w) / 2;
+          const margin = ((CAPS.fat * box.w) / 2) * REACHES + 1;
+          srcs.forEach((g, i) => {
+            if (!g.legacy || g.act >= at) return;
+            logs[i]!.push(1, k, rw, margin, points.length);
+            for (const [x, y] of points) logs[i]!.push(x * box.w, y * box.h);
+          });
+        }
+      }
+    });
+    for (const c of chunks) presses(c.draw, c.group, c.presses);
+    const keys = srcs.map((s, i) => keyOf(s, spots[i]!, layout));
+    const fields = srcs.map((s, i) => {
+      const was = keys[i] === null ? undefined : prev?.fieldOf(keys[i]!);
+      if (was && sameLog(was.log, logs[i]!)) return was;
+      const f = new Field(s, spots[i]!, layout);
+      f.apply(logs[i]!);
+      return f;
+    });
+    return new Wall(layout, fields, keys);
+  }
+
+  /** The field laid from a key, if this wall has one. */
+  private fieldOf(key: string): Field | undefined {
+    const at = this.keys.indexOf(key);
+    return at < 0 ? undefined : this.groups[at];
   }
 
   /** The fields of a drawing painted but not part of the wall (a draft): placed like any, never hit and never pressed. */
@@ -446,36 +598,6 @@ export class Wall {
     const srcs = groupsOf(acts);
     const spots = placements(srcs, this.layout);
     return srcs.map((s, i) => new Field(s, spots[i]!, this.layout));
-  }
-
-  private replay(act: WallAct, index: number): void {
-    const p = act.payload;
-    if (!record(p)) return;
-    if (Array.isArray(p.cuts)) {
-      for (const c of p.cuts as unknown[]) {
-        if (!record(c) || typeof c.draw !== 'string' || !finite(c.group)) continue;
-        const presses = pointsOf(c.presses);
-        if (presses) this.replayChunk({ draw: c.draw, group: c.group, presses });
-      }
-    } else if (Array.isArray(p.strokes)) {
-      /* A wash from before groups: an instant cut, at its old width, of the older draws that were drawn in shares. */
-      const { box } = this.layout;
-      for (const s of p.strokes as unknown[]) {
-        if (!record(s) || !finite(s.aspect) || !(s.aspect > 0)) continue;
-        const points = pointsOf(s.points);
-        if (!points) continue;
-        const k = (s.aspect * box.h) / box.w, rw = (OLD_SPONGE * box.w) / 2;
-        const pts = points.map(([x, y]): [number, number] => [x * box.w, y * box.h]);
-        const margin = ((CAPS.fat * box.w) / 2) * REACHES + 1;
-        for (const f of this.groups) if (f.legacy && f.act < index) f.cut(pts, k, rw, margin);
-      }
-    }
-  }
-
-  private replayChunk(c: Chunk): void {
-    const f = this.byKey.get(`${c.draw}/${c.group}`);
-    if (!f) return;
-    for (const [u, v] of c.presses) f.disc(f.ox + u * f.sx, f.oy + v * f.sy, this.radiusOf(f));
   }
 
   /** Whether the wall has paint under the point: some group's core holds `CLEAN` tenths there. */
@@ -492,10 +614,10 @@ export class Wall {
     return lo <= hi ? [lo, hi] : null;
   }
 
-  /** The top group a press at a px point goes to: the topmost with paint under the point, else the topmost with paint within the sponge's radius. */
+  /** The top group a press at a px point goes to: the topmost with paint under the point, else the topmost with paint within the press's reach (`reachOf`). */
   topAt(x: number, y: number): Field | null {
     for (let i = this.groups.length - 1; i >= 0; i--) if (this.groups[i]!.inked(x, y)) return this.groups[i]!;
-    for (let i = this.groups.length - 1; i >= 0; i--) if (this.groups[i]!.inkedNear(x, y, this.radiusOf(this.groups[i]!))) return this.groups[i]!;
+    for (let i = this.groups.length - 1; i >= 0; i--) if (this.groups[i]!.inkedNear(x, y, this.reachOf(this.groups[i]!))) return this.groups[i]!;
     return null;
   }
 
@@ -523,7 +645,7 @@ export class Wall {
     return out;
   }
 
-  /** Paints the wall's fields, and a draft's after them, onto `ctx` (density `q`, set by the caller): the halos of all, then the cores in wall order. */
+  /** Paints the wall's fields, and a draft's after them, onto `ctx` (density `q`, set by the caller): the halos of all, then the cores in wall order. Each field is drawn from its bitmap, laid again only if it changed. */
   paint(ctx: CanvasRenderingContext2D, q: number, draft: WallAct | null = null): void {
     const { box } = this.layout;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -531,35 +653,13 @@ export class Wall {
     ctx.globalCompositeOperation = 'source-over';
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     if (!validBox(box) || !(ctx.canvas.width > 0 && ctx.canvas.height > 0) || !(q > 0)) return;
-    const fields = draft ? [...this.groups, ...this.fieldsOf([draft])] : this.groups;
-    scratch ??= document.createElement('canvas');
+    if (draft && this.draft?.act !== draft) this.draft = { act: draft, fields: this.fieldsOf([draft]) };
+    const fields = draft ? [...this.groups, ...this.draft!.fields] : this.groups;
     ctx.setTransform(q, 0, 0, q, 0, 0);
     ctx.imageSmoothingEnabled = true;
-    for (const halos of [true, false]) for (const f of fields) laid(ctx, f, halos);
+    for (const halos of [true, false]) for (const f of fields) f.drawTo(ctx, halos);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    /* Released, so a big wall does not pin a second canvas's memory until the next paint. */
-    scratch.width = scratch.height = 0;
   }
-}
-
-/** One field's halo or core, drawn through the scratch canvas at its own bounds, a cell `CELL` px. */
-function laid(ctx: CanvasRenderingContext2D, f: Field, halos: boolean): void {
-  if (f.gw === 0 || f.gh === 0 || !scratch) return;
-  scratch.width = f.gw; scratch.height = f.gh;
-  const g = scratch.getContext('2d');
-  if (!g) return;
-  const img = g.createImageData(f.gw, f.gh);
-  let any = false;
-  for (let i = 0; i < f.gw * f.gh; i++) {
-    const a = halos ? f.haloAlpha(i) : f.coreAlpha(i);
-    if (a <= 0.004) continue;
-    const [r, gr, b] = f.palette[halos ? f.haloColor[i]! : f.coreColor[i]!] ?? [0, 0, 0];
-    img.data[i * 4] = r; img.data[i * 4 + 1] = gr; img.data[i * 4 + 2] = b; img.data[i * 4 + 3] = Math.round(a * 255);
-    any = true;
-  }
-  if (!any) return;
-  g.putImageData(img, 0, 0);
-  ctx.drawImage(scratch, f.cx0 * CELL, f.cy0 * CELL, f.gw * CELL, f.gh * CELL);
 }
 
 /** Walls kept by the acts array they were built for, for a caller (a draft's painter, a test) with acts and no wall of its own. */

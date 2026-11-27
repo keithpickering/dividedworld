@@ -413,6 +413,65 @@ describe('the wall\'s bands', () => {
   });
 });
 
+describe('the painter keeps a bitmap for each field', () => {
+  test('a scrub that presses one group of several rasterizes only that group, and the look is the same as a fresh paint', () => {
+    const acts = [draw('a', ...[0.15, 0.35, 0.55, 0.75].map((y) => group(SPAN, { at: [0.5, y] })))];
+    const wall = wallOf(acts);
+    paintOn(wall);
+    expect(wall.groups.every((f) => f.rasters > 0), 'the first paint rasterizes every field').toBe(true);
+    const base = wall.groups.map((f) => f.rasters);
+    /* A frame with nothing pressed rasterizes nothing: it composites from the caches. */
+    paintOn(wall);
+    expect(wall.groups.map((f) => f.rasters), 'a repaint with no press').toEqual(base);
+    const target = wall.groups[2]!;
+    wall.walk({ last: null, left: 0 }, [target.ox + 20, target.oy]);
+    wall.walk({ last: null, left: 0 }, [target.ox + 40, target.oy]);
+    const after = paintOn(wall);
+    const grew = wall.groups.map((f, i) => f.rasters - base[i]!);
+    expect(grew[0], 'the group above').toBe(0);
+    expect(grew[1]).toBe(0);
+    expect(grew[3], 'the group below').toBe(0);
+    expect(grew[2], 'the pressed group').toBeGreaterThan(0);
+    const fresh = wallOf(acts);
+    fresh.walk({ last: null, left: 0 }, [target.ox + 20, target.oy]);
+    fresh.walk({ last: null, left: 0 }, [target.ox + 40, target.oy]);
+    const same = paintOn(fresh);
+    expect(after.px.map((p) => [p.a, p.r, p.g, p.b])).toEqual(same.px.map((p) => [p.a, p.r, p.g, p.b]));
+  });
+
+  test('a press that finds no paint rasterizes nothing', () => {
+    const wall = wallOf([draw('a', group(SPAN))]);
+    paintOn(wall);
+    const was = wall.groups[0]!.rasters;
+    expect(wall.press(10, 10)).toBeNull();
+    paintOn(wall);
+    expect(wall.groups[0]!.rasters).toBe(was);
+  });
+});
+
+describe('a wall built over the one before it', () => {
+  test('reuses a field whose inputs and washes are the same, and builds the one whose washes changed', () => {
+    const acts = [draw('a', group(SPAN, { at: [0.5, 0.2] }), group(SPAN, { at: [0.5, 0.7] }))];
+    const before = Wall.of(acts, layout());
+    const same = Wall.of(acts, layout(), [], before);
+    expect(same.groups[0]).toBe(before.groups[0]);
+    expect(same.groups[1]).toBe(before.groups[1]);
+    const washed = Wall.of(acts, layout(), [{ draw: 'a', group: 1, presses: [[0, 0]] }], before);
+    expect(washed.groups[0], 'a group no wash touched').toBe(before.groups[0]);
+    expect(washed.groups[1], 'a group a wash touched').not.toBe(before.groups[1]);
+    expect(washed.groups[1]!.coatsAt(washed.groups[1]!.ox, washed.groups[1]!.oy)).toBeLessThan(COATS.line);
+  });
+
+  test('builds a group whose spot, or whose text size, changed', () => {
+    const acts = [draw('a', group(SPAN, { at: [0.5, 0.2] }), group(SPAN, { at: [0.5, 0.7] }))];
+    const before = Wall.of(acts, layout());
+    const moved = Wall.of(acts, layout({ measured: (g) => (g.index === 1 ? { kind: 'point', x: 50, y: 300 } : null) }), [], before);
+    expect(moved.groups[0]).toBe(before.groups[0]);
+    const bigger = Wall.of(acts, layout({ emPx: 20 }), [], before);
+    expect(bigger.groups[0]).not.toBe(before.groups[0]);
+  });
+});
+
 describe('wallDensity', () => {
   test('is the density up to MAX_DPR, lowered so the canvas stays within MAX_CANVAS_PX', () => {
     expect(wallDensity({ w: 400, h: 200 }, 1.5)).toBe(1.5);

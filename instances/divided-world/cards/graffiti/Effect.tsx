@@ -48,7 +48,7 @@ import { DrawMode, Marked } from './Compose.tsx';
 import { dockHostOf } from './Toolbar.tsx';
 import { lastCan } from './draft.ts';
 import { cursor } from '../whoops/cursor.ts';
-import { ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, sweepStep, type Sweep } from '../whoops/scrub.ts';
+import { SWEEP_PX_S, bandsOf, sweepStep, type Sweep } from '../whoops/scrub.ts';
 import * as suds from '../whoops/suds.ts';
 import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
 import { DEFAULT_EM_PX, Wall, groupsOf, hitAt, markKey, paintWall, wallDensity, type Box, type Chunk, type Walker, type WallAct } from './spray.ts';
@@ -59,12 +59,10 @@ export { MAX_SAVE_RETRIES, RETRY_AFTER_MS };
 export const WASH_AFTER_MS = 1500;
 /** A wash holds at most this many presses in all (`graffiti.ts` `BOUNDS`, the server's check). */
 const BATCH_PRESSES = BOUNDS.presses;
-/** The wall's sweep keeps its pace as a share of the wall's width a second. Whoops!'s moved to a hand's pace in px
- *  (docs/plans/2026-11-12-whoops-followups-design.md, section 4), which was weighed for a splat and not for a wall. */
-const SWEEP_SPEED = 0.55;
 /** The mark a text group's place is found by after layout. */
 const MARK = 'data-kb-graffiti-mark';
 const EMPTY: readonly SurfaceAct[] = [];
+const NONE: ReadonlySet<string> = new Set();
 
 const HOLD_HELP = 'Hold Space or Enter on this button to scrub the wall away line by line, at the pace of a hand, on your screen only. Let go to stop. It never clears the wall all at once.';
 const WASH_HELP = 'Hold Space or Enter on this button to wash the wall line by line, at the pace of a hand, for everyone. Let go to stop. It never clears the wall all at once.';
@@ -73,9 +71,9 @@ const ENDS = 'Ends on your screen when you scrub it off. The author can wash it 
 type Pt = readonly [number, number];
 /**
  * What this screen's sponge took from one group: in the group's units, as the wash keeps them. It stays while the wall is rebuilt, and is sent (the author's) once closed.
- * `sent` says the wash that holds it was saved (its Act's id, or true where the answer had none): it is dropped once the wall's Acts hold that wash. Where the answer had no id, `sentWashes` is how many wash Acts the wall held when it was sent, and the chunk stays until the wall holds more (a wash Act newer than the press).
+ * `sent` says the wash that holds it was saved (its Act's id, or true where the answer had none): it is dropped once the wall's Acts hold that wash. Where the answer had no id, `sentWashIds` is the ids of the wash Acts the wall held when it was sent, and the chunk stays until a wash Act that is not among them arrives (one newer than the press, even where an older one has since left).
  */
-interface MChunk { draw: string; group: number; presses: [number, number][]; save: boolean; open: boolean; sent?: string | true; sentWashes?: number }
+interface MChunk { draw: string; group: number; presses: [number, number][]; save: boolean; open: boolean; sent?: string | true; sentWashIds?: ReadonlySet<string> }
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
 /** A stroke of the sponge under way, in the chunks it has filled. */
 interface Live { readonly walker: Walker; readonly chunks: Map<string, MChunk>; readonly pointer: number | null; readonly touch?: true; readonly save: boolean }
@@ -163,10 +161,10 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
     if (had && had.acts === a && had.w === b.w && had.h === b.h && had.em === emRef.current && had.rev === revRef.current && had.chunkRev === chunkRev.current) return had.wall;
     /* A scrub this visit sent is dropped once the wall's Acts hold the wash that saved it, which replays the same presses. */
     const ids = new Set(a.flatMap((x) => (x.id === undefined ? [] : [x.id])));
-    const washes = a.reduce((n, x) => n + (x.kind === 'wash' ? 1 : 0), 0);
-    const kept = chunks.current.filter((c) => !(c.sent !== undefined && (typeof c.sent === 'string' ? ids.has(c.sent) : washes > (c.sentWashes ?? 0))));
+    const newer = (c: MChunk) => a.some((x) => x.kind === 'wash' && x.id !== undefined && !(c.sentWashIds ?? NONE).has(x.id));
+    const kept = chunks.current.filter((c) => !(c.sent !== undefined && (typeof c.sent === 'string' ? ids.has(c.sent) : newer(c))));
     if (kept.length !== chunks.current.length) { chunks.current = kept; chunkRev.current += 1; }
-    const next = Wall.of(a, { box: b, emPx: emRef.current, measured: (g) => measuredRef.current.get(markKey(g)) ?? null }, chunks.current as readonly Chunk[]);
+    const next = Wall.of(a, { box: b, emPx: emRef.current, measured: (g) => measuredRef.current.get(markKey(g)) ?? null }, chunks.current as readonly Chunk[], had?.wall ?? null);
     built.current = { acts: a, w: b.w, h: b.h, em: emRef.current, rev: revRef.current, chunkRev: chunkRev.current, wall: next };
     return next;
   }, []);
@@ -181,6 +179,7 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
   /* ------------------------------------------------------------------ measuring ---- */
 
   const remeasure = useRef<(() => void) | null>(null);
+  const remeasureSoon = useRef<(() => void) | null>(null);
   const signature = useRef('');
   useLayoutEffect(() => {
     const f = frameRef.current;
@@ -189,7 +188,9 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
     let watch: ResizeObserver | null = null;
     const loaded = new WeakSet<Element>();
     let sizes: MutationObserver | null = null;
+    let queued = 0;
     const measure = () => {
+      if (queued) { cancelAnimationFrame(queued); queued = 0; }
       const cell = bodyOf(f);
       if (watch && cell !== watched) {
         if (watched) watch.unobserve(watched);
@@ -224,7 +225,7 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
           if (el) { const r = el.getBoundingClientRect(); found.set(markKey(g), { kind: 'rect', x: r.left - ox, y: r.top - oy, w: r.width, h: r.height }); }
         }
       }
-      for (const img of f.querySelectorAll('[data-kb-img]')) if (!loaded.has(img)) { loaded.add(img); img.addEventListener('load', measure); }
+      for (const img of f.querySelectorAll('[data-kb-img]')) if (!loaded.has(img)) { loaded.add(img); img.addEventListener('load', soon); }
       const sig = JSON.stringify([[...found], em]);
       if (sig !== signature.current) {
         signature.current = sig;
@@ -234,17 +235,28 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
       setSurfaceEl((prev) => (prev === surf ? prev : surf));
       setSize((prev) => (prev.box.w === kept.box.w && prev.box.h === kept.box.h && prev.left === kept.left && prev.top === kept.top ? prev : kept));
     };
+    /* What an observer reports is measured once in the frame, however often it reports. */
+    const soon = () => {
+      if (typeof requestAnimationFrame !== 'function') { measure(); return; }
+      if (!queued) queued = requestAnimationFrame(() => { queued = 0; measure(); });
+    };
     if (typeof ResizeObserver === 'function') {
-      watch = new ResizeObserver(measure);
+      watch = new ResizeObserver(soon);
       watch.observe(f);
     }
     if (typeof MutationObserver === 'function') {
-      sizes = new MutationObserver(measure);
+      sizes = new MutationObserver(soon);
       sizes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-text-size'] });
     }
     measure();
     remeasure.current = measure;
-    return () => { remeasure.current = null; watch?.disconnect(); sizes?.disconnect(); for (const img of f.querySelectorAll('[data-kb-img]')) img.removeEventListener('load', measure); };
+    remeasureSoon.current = soon;
+    return () => {
+      remeasure.current = null; remeasureSoon.current = null;
+      if (queued) cancelAnimationFrame(queued);
+      watch?.disconnect(); sizes?.disconnect();
+      for (const img of f.querySelectorAll('[data-kb-img]')) img.removeEventListener('load', soon);
+    };
   }, []);
 
   /* A takeover moves the words between the cell and a view with no size change: each render checks the cell is still the surface listened on. */
@@ -268,7 +280,7 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
   useEffect(() => {
     const f = frameRef.current;
     if (!f || typeof IntersectionObserver !== 'function') return;
-    const watch = new IntersectionObserver((entries) => { setNear(entries.some((e) => e.isIntersecting)); remeasure.current?.(); }, { rootMargin: '100% 0px' });
+    const watch = new IntersectionObserver((entries) => { setNear(entries.some((e) => e.isIntersecting)); remeasureSoon.current?.(); }, { rootMargin: '100% 0px' });
     watch.observe(f);
     return () => watch.disconnect();
   }, []);
@@ -395,7 +407,8 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
       return;
     }
     const id = (answer.value as { id?: unknown } | null)?.id;
-    for (const c of batch) { c.sent = typeof id === 'string' ? id : true; c.sentWashes = (now.current.acts ?? EMPTY).reduce((n, x) => n + (x.kind === 'wash' ? 1 : 0), 0); }
+    const washIds = new Set((now.current.acts ?? EMPTY).flatMap((x) => (x.kind === 'wash' && x.id !== undefined ? [x.id] : [])));
+    for (const c of batch) { c.sent = typeof id === 'string' ? id : true; c.sentWashIds = washIds; }
     failures.current = 0;
     say('');
     if (toSend().length > 0) queueWash(gone.current ? 0 : WASH_AFTER_MS);
@@ -714,19 +727,21 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
     if (now.current.still || sweeping.current || sz.box.w <= 0 || sz.box.h <= 0 || now.current.acts === null) return;
     const b = sz.box;
     const rows = bandsOf(b);
-    const half = (ROW_PX / 2 / b.h) * SWEEP_BRUSH_ROWS / 1.15;
+    /* Whoops!'s pace (scrub.ts `SWEEP_PX_S`, a hand's px a second on any box). */
+    const speed = SWEEP_PX_S / b.w;
     const run = { raf: 0, last: performance.now(), sweep: { row: Math.min(sweepFrom.current, rows.length - 1), x: 0 } as Sweep };
     sweeping.current = run;
     const tick = (t: number) => {
       const dt = Math.min(0.05, Math.max(0, (t - run.last) / 1000));
       run.last = t;
       const w = wall();
-      /* A band's ink, across, in shares: where the wall's fields still hold paint on it, so the sweep waits out no empty line. */
+      /* A band's ink, across, in shares: where the wall's fields still hold paint on it, so the sweep waits out no empty line. The band is no deeper than a press reaches. */
+      const half = w.bandHalf();
       const span = (row: number): readonly [number, number] | null => {
-        const px = w.spanOf((rows[row]! - half) * b.h, (rows[row]! + half) * b.h);
+        const px = w.spanOf(rows[row]! * b.h - half, rows[row]! * b.h + half);
         return px ? [px[0] / b.w, px[1] / b.w] : null;
       };
-      const step = sweepStep(rows, run.sweep, dt, SWEEP_SPEED, span);
+      const step = sweepStep(rows, run.sweep, dt, speed, span);
       if (step.idle) {
         stopSweep();
         return;
