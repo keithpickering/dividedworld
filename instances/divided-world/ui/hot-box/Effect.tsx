@@ -100,6 +100,8 @@ export const WAVE_LABEL = 'Wave the smoke';
 export const WAVE_DESCRIBE = `Hold Space or Enter on this button to wave the smoke off line by line, at the pace of a hand. Let go and it rolls back in. Hold to the end and the post stays clear for ${SMOKE.waved / 1000} seconds.`;
 /** The line that stands where the words are for a screen reader while they are under smoke: the glass's voice, plain and true. */
 export const SMOKED_WAY = `This post is under smoke. To read it, open Hot Box in the cards on this post and hold ${WAVE_LABEL}.`;
+/** The same line for a post with a band aired from its top: it follows the aired lines' own words, and the smoke is over the rest. */
+export const SMOKED_REST_WAY = `The rest of this post is under smoke. To read it, open Hot Box in the cards on this post and hold ${WAVE_LABEL}.`;
 
 /** The author's held control, once the hold is over, and its hidden description. */
 export const AIR_LABEL = 'Air it out';
@@ -836,6 +838,17 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     wasWaved.current = waved;
   }, [waved, play.card]);
 
+  /* The lines already aired are not smoke: their words are read out beside the inert block, so a screen reader pays no more for them than a sighted reader. Read again whenever the band or the words' size change; a browser that cannot measure a range gives none, and the whole-post line stands. */
+  const [airedWords, setAiredWords] = useState('');
+  const airedBand = airedTop(saved, frame.h);
+  useLayoutEffect(() => {
+    const words = wordsRef.current;
+    if (waved || airedBand <= 0 || !words || frame.wh <= 0) { setAiredWords(''); return; }
+    const read = readLines(words, { w: frame.ww, h: frame.wh });
+    const lines = read.filter((l) => px(l.bottom * frame.wh + frame.wy) <= airedBand + BAND_SLOP_PX);
+    setAiredWords(lines.map((l) => l.text).join(' '));
+  }, [waved, airedBand, frame.ww, frame.wh, frame.wy]);
+
   /* ---- what the reader is shown, and what the Lens is told ---- */
   const m = model.current;
   const held = m.sweep !== null && m.sweep.releasedAt === null;
@@ -868,7 +881,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
   return (
     <div ref={hostRef} className="dw-hotbox" data-kb-hotbox data-dw-fog-level={forcedFogLevel() ?? 0} style={standIn}>
       {forced && <p className="dw-hotbox-sign"><strong>{state}.</strong> {endsText}</p>}
-      {!waved && <p className="kb-visually-hidden dw-hotbox-way">{SMOKED_WAY}</p>}
+      {!waved && <p className="kb-visually-hidden dw-hotbox-way">{airedWords ? `${airedWords} ${SMOKED_REST_WAY}` : SMOKED_WAY}</p>}
       <div ref={wordsRef} className="dw-hotbox-words" inert={!waved} style={mask}>{children}</div>
       {forced && (
         <div className="dw-hotbox-frame" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>

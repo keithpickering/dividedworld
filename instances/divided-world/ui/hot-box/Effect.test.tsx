@@ -27,7 +27,7 @@ import { SMOKE, fogAlpha, holeRadius, maskAlpha, strength } from './smoke.ts';
 import { HOT_BOX_THINS } from '../../cards/hot-box.ts';
 import { spanMs } from '../../../../engine/ui/cards/marks.ts';
 import { makeField, paintFog, stepField } from './fog.ts';
-import { AIR_DESCRIBE, HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, nextWake, forgetScratch, resetFogLadder } from './Effect.tsx';
+import { AIR_DESCRIBE, HotBoxEffect, SMOKED_REST_WAY, SMOKED_WAY, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, nextWake, forgetScratch, resetFogLadder } from './Effect.tsx';
 
 /* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them; and what a painter's call costs, for the ladder. */
 const { LINES, read, cost } = vi.hoisted(() => {
@@ -2430,6 +2430,18 @@ describe('the author airs it out', () => {
     expect(last(s).ends).toBe(`Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), NOW)}.`);
     const t = setup({ reader: AUTHOR, plays: [play({ playedAt: iso(NOW - 30 * HOUR) })] });
     expect(last(t).ends).toBe(`Hold Air it out to clear the smoke line by line, for good and for everyone. Let go and you keep what you cleared. ${endsWords(iso(ENDS), NOW)}.`);
+  });
+
+  test('a partly aired post gives a screen reader the aired lines, then the way to the rest; one with nothing aired keeps the whole-post line', () => {
+    const s = setup({ plays: [play()], states: kept({ aired: 0.5 }) });
+    expect(way(s)).toHaveTextContent(`First line of the post. Second line. ${SMOKED_REST_WAY}`);
+    expect(way(s)).not.toHaveTextContent('Third line.');
+    expect(way(s)).toHaveClass('kb-visually-hidden');
+    expect(way(s)!.closest('[inert]')).toBeNull();
+    expect(SMOKED_REST_WAY).toBe('The rest of this post is under smoke. To read it, open Hot Box in the cards on this post and hold Wave the smoke.');
+    const t = setup({ plays: [play()], states: kept({ aired: 0.05 }) });
+    expect(way(t)).toHaveTextContent(SMOKED_WAY);
+    expect(way(t)).not.toHaveTextContent('First line');
   });
 
   test('every view the author is shown passes viewProblems', async () => {
