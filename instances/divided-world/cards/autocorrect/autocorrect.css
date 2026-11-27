@@ -156,9 +156,10 @@
   white-space: break-spaces;
 }
 /* A whole stack (docs/plans/2026-11-27-autocorrect-whole-strip-design.md): its footprint fits its line, so its words and rooms never break
-   and the browser moves it to the next line as it would a long word. */
+   and the browser moves it to the next line as it would a long word. `pre`, not `nowrap`: the post keeps its runs of spaces (pre-wrap),
+   and nowrap would collapse them. */
 [data-kb-ac-seg][data-kb-ac-whole] {
-  white-space: nowrap;
+  white-space: pre;
 }
 .dw-ac-room[data-kb-ac-whole] {
   white-space: pre;

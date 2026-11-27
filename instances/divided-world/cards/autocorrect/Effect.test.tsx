@@ -167,7 +167,7 @@ beforeEach(() => {
   measures = vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: HTMLElement) {
     if (!this.hasAttribute('data-kb-ac-seg')) return [] as unknown as DOMRectList;
     const r = rectOf(this);
-    const unbroken = this.style.whiteSpace === 'nowrap' || this.hasAttribute('data-kb-ac-whole');
+    const unbroken = this.style.whiteSpace === 'pre' || this.hasAttribute('data-kb-ac-whole');
     return [unbroken || !wrapLoss ? r : { ...r, right: r.right - wrapLoss, width: r.width - wrapLoss }] as unknown as DOMRectList;
   });
   (Range.prototype as unknown as { getClientRects: () => unknown[] }).getClientRects = function (this: Range) {
@@ -546,6 +546,13 @@ describe('Autocorrect: a whole stack', () => {
     /* Forty letters is 400px of a 300px line. */
     const phrase = 'abcdefghij abcdefghij abcdefghij abcdefg';
     mount({ body: `see ${phrase} now`, plays: [playOf(1, phrase, 'Luigi')] });
+    expect(document.querySelectorAll('[data-kb-ac-seg]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+  });
+
+  test('a stack whose words span a newline is not whole, though its footprint fits the line', () => {
+    /* "Mario\nMario" is 100px of a 300px line, but a newline breaks the line, so it cannot lie on one. */
+    mount({ body: 'see Mario\nMario now', plays: [playOf(1, 'Mario\nMario', 'Luigi')] });
     expect(document.querySelectorAll('[data-kb-ac-seg]').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
   });

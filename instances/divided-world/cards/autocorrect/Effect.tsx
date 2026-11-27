@@ -940,13 +940,16 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     /*
      * The words' widths as they lie unbroken, whatever state each stack is in: a run that wraps loses the space collapsed at its
      * break, so its rects read narrower than the same words on one line, and a footprint tested on that read would flip the stack
-     * whole, then wider than its line, then not. So every segment is set to nowrap for one batched read (set all, read all,
+     * whole, then wider than its line, then not. So every segment is set to `pre` (spaces and newlines kept, never wrapped, as the whole rule below lays it) for one batched read (set all, read all,
      * restore all, inside the layout effect, so nothing paints), and the width tested never depends on the layout it decides.
      */
     const priorWrap = segs.map((s) => s.style.whiteSpace);
-    for (const s of segs) s.style.whiteSpace = 'nowrap';
-    segs.forEach((s) => width.set(s.dataset.kbAcSeg!, (width.get(s.dataset.kbAcSeg!) ?? 0) + [...s.getClientRects()].reduce((t, r) => t + r.width, 0)));
-    segs.forEach((s, i) => { s.style.whiteSpace = priorWrap[i]!; });
+    try {
+      for (const s of segs) s.style.whiteSpace = 'pre';
+      segs.forEach((s) => width.set(s.dataset.kbAcSeg!, (width.get(s.dataset.kbAcSeg!) ?? 0) + [...s.getClientRects()].reduce((t, r) => t + r.width, 0)));
+    } finally {
+      segs.forEach((s, i) => { s.style.whiteSpace = priorWrap[i]!; });
+    }
     /* The segments' widths ascending by start with running totals: the words from one offset to another are a run of them (the segments partition the text, so their ends ascend with their starts). */
     const byStart = [...width].map(([id, w]) => { const [a, b] = id.split('-').map(Number) as [number, number]; return { a, b, w }; }).sort((x, y) => x.a - y.a || x.b - y.b);
     const upTo = [0];
@@ -1031,6 +1034,9 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       if (firstIdx === undefined) continue;
       let foot = Math.max(0, upTo[endsAtOrBefore(to)]! - upTo[startsAtOrAfter(from)]!);
       for (const end of new Set(stack.map((s) => s.to))) foot += (nextRooms[String(end)] ?? 0) * spaceAt(end);
+      /* The words keep the player's newlines (the post is pre-wrap), and a newline breaks the line: such a stack cannot lie on one. */
+      const firstFrom = Math.min(...stack.map((s) => s.from)), lastTo = Math.max(...stack.map((s) => s.to));
+      if (text.slice(firstFrom, lastTo).includes('\n')) continue;
       if (foot <= lineWidth(segs[firstIdx]) + 0.5) {
         nextWhole[String(from)] = true;
         for (const s of stack) wholeEnds.add(s.to);
