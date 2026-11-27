@@ -402,6 +402,24 @@ red('schema has no --before check', edit(RELEASE, (d) => {
 red('schema has no --after check', edit(RELEASE, (d) => {
   for (const s of d.jobs.schema.steps) if (s.run) s.run = s.run.split('\n').filter((l) => !/--after/.test(l)).join('\n');
 }), /R13.*--after/);
+const seedDbIndex = (d) => d.jobs.schema.steps.findIndex((x) => /seed-database\.ts/.test(x.run ?? ''));
+red('schema runs the seed before the push', edit(RELEASE, (d) => {
+  const steps = d.jobs.schema.steps;
+  const [seed] = steps.splice(seedDbIndex(d), 1);
+  steps.splice(steps.findIndex((x) => /db push/.test(x.run ?? '')), 0, seed);
+}), /R13.*seed-database\.ts after --after/);
+red('schema runs the seed before the --after check', edit(RELEASE, (d) => {
+  const steps = d.jobs.schema.steps;
+  const [seed] = steps.splice(seedDbIndex(d), 1);
+  const run = steps.find((x) => /db push/.test(x.run ?? ''));
+  run.run = run.run.replace(/(node tools\/check-deployed-migrations\.mjs[^\n]*--after)/, `${seed.run}\n$1`);
+}), /R13.*seed-database\.ts after --after/);
+red('schema never seeds', edit(RELEASE, (d) => { d.jobs.schema.steps.splice(seedDbIndex(d), 1); }), /R13.*never runs tools\/release\/seed-database\.ts/);
+red('seed-database.ts is handed the secret inside its run line', edit(RELEASE, (d) => {
+  const st = d.jobs.schema.steps[seedDbIndex(d)];
+  st.run = st.run.replace('"$SUPABASE_DB_URL"', '"${{ secrets.SUPABASE_DB_URL }}"');
+}), /R11.*secrets/);
+red('seed-database.ts runs under a traced shell', edit(RELEASE, (d) => { d.jobs.schema.steps[seedDbIndex(d)].shell = 'bash -x {0}'; }), /R12.*traces/);
 red('seed does not check out the candidate', edit(RELEASE, (d) => {
   for (const s of d.jobs.seed.steps) if (String(s.uses ?? '').startsWith('actions/checkout')) delete s.with;
 }), /R13.*seed.*check out/);

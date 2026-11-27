@@ -90,6 +90,14 @@ jobs:
           node tools/check-deployed-migrations.mjs --db "$SUPABASE_DB_URL" --before
           npx supabase db push --yes --db-url "$SUPABASE_DB_URL"
           node tools/check-deployed-migrations.mjs --db "$SUPABASE_DB_URL" --after
+      # The seed now comes before the functions: the functions must never start on rows older than their code
+      # (docs/plans/2026-11-27-release-order-design.md, D3). It is the same payload the seed function builds, written by psql
+      # with the migrations just pushed; the seed job below re-seeds (idempotent) and stays the release's proof. An unset
+      # KAYFABB_PROFILE variable is empty, which is no profile, as chooseInstance reads it; it must match the seed function's secret.
+      - env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          KAYFABB_PROFILE: ${{ vars.KAYFABB_PROFILE }}
+        run: node --experimental-strip-types --no-warnings=ExperimentalWarning tools/release/seed-database.ts --db "$SUPABASE_DB_URL" --profile "$KAYFABB_PROFILE"
   functions:
     needs: [candidate, schema]
     if: needs.candidate.outputs.same != 'true'

@@ -29,8 +29,9 @@
  * Supabase and jobs-key secrets, and no other workflow does; they come through `env:`, never
  * inside a `run:` line. R12: no workflow runs `--include-all`, `db reset` or `functions delete`,
  * and no backend job traces its shell (`set -x`), which would print a secret. R13: `schema` runs
- * check-deployed-migrations --before, then `db push`, then the check --after, in that order, and
- * each backend job checks out the candidate. R11 also reads everything outside the jobs, release.yml's
+ * check-deployed-migrations --before, then `db push`, then the check --after, then
+ * tools/release/seed-database.ts (the seed before the functions, release-order design D3), in that
+ * order, and each backend job checks out the candidate. R11 also reads everything outside the jobs, release.yml's
  * top level included; R12 also reads a `bash -x` shell named by a step, a job's or the workflow's
  * `defaults.run.shell` and `--debug` in a backend job. R14 (the design's D8): the seed job goes red on
  * anything but a 200, so its curl writes the status (`-w '%{http_code}'`), the step compares it to 200,
@@ -478,7 +479,10 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
       if (before < 0) bad13.push('schema never runs check-deployed-migrations --before');
       if (push < 0) bad13.push('schema never runs supabase db push');
       if (after < 0) bad13.push('schema never runs check-deployed-migrations --after');
+      const seed = at(/tools\/release\/seed-database\.ts\b/);
+      if (seed < 0) bad13.push('schema never runs tools/release/seed-database.ts');
       if (before >= 0 && push >= 0 && after >= 0 && !(before < push && push < after)) bad13.push('schema must run --before, then db push, then --after, in that order');
+      else if (after >= 0 && seed >= 0 && seed < after) bad13.push('schema must run seed-database.ts after --after, in that order: --before, db push, --after, seed');
     }
     if (bad13.length) out.push(`${RELEASE}: R13 ${bad13.join('; ')}`);
   }
