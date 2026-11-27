@@ -4,6 +4,7 @@
  * where the same words were said again. The stack is fixed and centered above the HUD's seam (Hud.tsx sets --kb-hud-measured), the newest line nearest
  * it, 6px between lines; a tray is as wide as its words and never wider than the window less a 16px gutter on each side; a long caption wraps.
  * Over a dialog the stack is raised and, where it would meet the dialog's box, lifted clear of it as one box (Captions.tsx).
+ * On the Phone board the type, trays and gaps are a step smaller (the end of this file).
  * It lets every press through. A held caption (a loop's build-up) is italic.
  *
  * The caption's own black and white are glass tokens (--kb-glass-caption-ground and --kb-glass-caption-ink), so no literal lives here.
@@ -85,6 +86,35 @@
   opacity: 0.7;
 }
 
+/*
+ * On the Phone board the stack is compact (the owner's word on 2026-11-27, look A of the phone bench): the same trays, a step smaller, so three lines take
+ * about 90px of a phone rather than 150. The words drop to 13px (at the default text size) with no tracking, so a line as long as "a fire extinguisher clunks to
+ * the floor" sits on one row; the tray's edge, its chamfers and the gap between lines tighten with them.
+ */
+:where(:root[data-kb-layout='phone']) .kb-captions {
+  gap: 4px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-captions-bar {
+  padding: 4px;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-captions-bar::after {
+  clip-path: polygon(calc(6px - 0.5858px) 0, 100% 0, 100% calc(100% - 6px + 0.5858px), calc(100% - 6px + 0.5858px) 100%, 0 100%, 0 calc(6px - 0.5858px));
+}
+
 :where(:root[data-kb-layout='phone']) .kb-captions-text {
-  font-size: var(--kb-glass-size-phone-small);
+  padding: 2px 8px;
+  /* Its own size, not a glass size step: the glass's phone sizes set where the Phone board begins (engine/ui/glass/board.ts), and the captions must not move
+     it. In rem, so it follows the player's text size as every glass size does: 13px at the default. */
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  letter-spacing: normal;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-captions-dot {
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
 }

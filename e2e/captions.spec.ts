@@ -102,3 +102,24 @@ test('a held caption is italic and not announced', async ({ page }) => {
   await expect(page.locator('.kb-captions-text')).toHaveCSS('font-style', 'italic');
   await expect(page.getByRole('status', { name: 'Sound captions' })).toHaveText('');
 });
+
+/* The phone's stack is compact (the owner's word on 2026-11-27, look A of the phone bench): 13px words with no tracking in a 4px tray, 4px between lines,
+   so three fire-extinguisher lines each sit on one row and the stack stays near a hundred pixels rather than one and a half times that. */
+test('at 390 three captions stand compact: each on one row, the stack under a hundred pixels', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/b/general');
+  await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
+  const say = (text: string) => page.evaluate((t) => ((globalThis as unknown as { __kbCaptions: Says }).__kbCaptions).say({ text: t, ms: 60_000 }), text);
+  for (const t of ['A fire extinguisher thunks', 'A fire extinguisher hisses', 'A fire extinguisher clunks to the floor']) await say(t);
+  const bars = page.locator('.kb-captions-bar');
+  await expect(bars).toHaveCount(3);
+  await page.evaluate(() => document.fonts.ready);
+  const text = page.locator('.kb-captions-text').first();
+  await expect(text).toHaveCSS('font-size', '13px');
+  await expect(text).toHaveCSS('letter-spacing', 'normal');
+  await expect(async () => {
+    const heights = await page.locator('.kb-captions-text').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+    for (const h of heights) expect(h).toBeLessThan(13 * 1.25 * 1.5 + 4); /* one row of words and its padding, never two */
+    expect((await box(page, '.kb-captions')).height).toBeLessThan(100);
+  }).toPass({ timeout: 4000 });
+});
