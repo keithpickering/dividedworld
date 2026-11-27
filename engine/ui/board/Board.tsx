@@ -176,6 +176,8 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
           const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>() };
           const held = base.rows.get(row.id) ?? [...doc.threads, ...doc.stickies, ...doc.pins.map((p) => p.thread)].find((t) => t.id === row.id);
           if (held && (Date.parse(held.lastAt) > Date.parse(row.lastAt) || (held.lastAt === row.lastAt && held.lastSeq >= row.lastSeq))) return base;
+          /* A moved thread is no thread of this board: its stub never counts, and a late row for it neither waits nor replaces anything. */
+          if (doc.stubs.some((s) => s.thread === row.id)) return base;
           const rows = new Map(base.rows);
           const waiting = new Set(base.waiting);
           const slot = doc.threads.findIndex((t) => t.id === row.id);
@@ -184,7 +186,8 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
           else if (slot < 0) waiting.add(row.id);
           else {
             rows.set(row.id, row);
-            /* The row before it, as shown now; the first row of page 2 and after has the earlier pages above it. */
+            /* The row before it, as shown now. The first row of page 2 and after has no row above it to compare with (the earlier pages are other
+               documents), so any bump of it counts: a known over-count, where the bump may leave it below the last row of the page before. */
             const above = slot > 0 ? base.rows.get(doc.threads[slot - 1]!.id) ?? doc.threads[slot - 1]! : null;
             if (above ? Date.parse(row.lastAt) > Date.parse(above.lastAt) : doc.page > 1) waiting.add(row.id);
           }
@@ -202,11 +205,20 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   /*
    * Show reads the shown address again, in place (the router's own re-read: a navigation to the address already shown moves nothing and reads
    * nothing). The old page stays drawn until the new document lands, and that document starts the bar over; focus then lands on the heading,
-   * since the button it was on has gone. Page and address are kept, so a reader on page 2 stays on page 2.
+   * since the button it was on has gone. Page and address are kept, so a reader on page 2 stays on page 2. `refocus` holds the document shown
+   * when Show was pressed: only a different document landing after that press takes focus, and only if focus was lost (on the page's body,
+   * as it is when the button goes) and not moved by the reader since, so a read that failed or kept the old document never leaves a claim
+   * on focus for a later, unrelated one. It scrolls nothing: the reader is where they were.
    */
-  const refocus = useRef(false);
-  const show = () => { refocus.current = true; retry(); };
-  useEffect(() => { if (refocus.current) { refocus.current = false; heading.current?.focus(); } }, [doc]);
+  const refocus = useRef<BoardPage | null>(null);
+  const show = () => { refocus.current = doc; retry(); };
+  useEffect(() => {
+    const asked = refocus.current;
+    if (asked === null || asked === doc) return;
+    refocus.current = null;
+    const at = document.activeElement;
+    if (at === null || at === document.body) heading.current?.focus({ preventScroll: true });
+  }, [doc]);
   const waiting = fresh.waiting.size;
 
   /* After a page turn, focus goes to the board's heading, so a keyboard starts the new page at its top, never on the page's body. */
