@@ -3,7 +3,7 @@
  * board draws it (docs/research/2026-10-29-two-worlds/10-roster.html): a card for each character in
  * the order they joined, then New character and the slots still open, and the selected one's panel
  * beside them. A card shows the character's class in its own color, its rank and its Turn; the
- * panel holds everything a character offers: its class marked "only you" and since when, what it
+ * panel holds everything a character offers: its class and since when, marked Secret or Revealed as the HUD marks it, what it
  * was where a Turn said so in public, its rank and standing and pips, the wallet, its posts and the
  * month it joined, its pip style (the profile's, saved as it is chosen), and its Turn: the button,
  * the date it opens, a silent pending Turn with Change, Withdraw and Announce, or a committed (announced) Turn,
@@ -25,6 +25,7 @@ import { Carousel, carouselPanelId, carouselTabId } from '../glass/Carousel.tsx'
 import { Leaving } from '../glass/Held.tsx';
 import { swap, useFeel } from '../glass/motion.ts';
 import { PageHead } from '../glass/PageHead.tsx';
+import { SecretLock } from '../glass/SecretLock.tsx';
 import { SignInPrompt } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
@@ -306,7 +307,9 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           <dd>
             <ClassChip cls={c.class} name={className(c.class)} />{' '}
             {c.debutedAt === null ? `(chosen when ${words(c.pronouns).they} ${words(c.pronouns).was} made)` : `since ${shortDate(c.classSince)}`}{' '}
-            <span className="kb-private">no other player</span>
+            {c.classShownAt !== null
+              ? <span className="kb-roster-secret" tabIndex={-1} data-kb-revealed=""><SecretLock open />Revealed</span>
+              : <span className="kb-roster-secret"><SecretLock />Secret<span className="kb-visually-hidden">: no other player sees this</span></span>}
           </dd>
           {before && <><dt>Was</dt><dd>{className(before)}, announced publicly</dd></>}
           <dt>Rank</dt><dd>{standingLine(c)}</dd>
@@ -353,7 +356,6 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           <GlassButton to="/log" state={{ character: c.id }}>{c.name}'s log</GlassButton>
           {live && c.classShownAt === null && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}
         </div>
-        {live && c.classShownAt !== null && <p className="kb-roster-line" tabIndex={-1} data-kb-revealed="">Revealed</p>}
         <p className="kb-roster-line kb-roster-most">{per} characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.</p>
       </Leaving>
     );
