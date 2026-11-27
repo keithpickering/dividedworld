@@ -68,6 +68,11 @@ Model: sonnet
   main red within minutes, before the nightly release, while no database holds the migration. It names no secret and no
   Environment, which R10 and R11 of `tools/check-release-workflows.mjs` already require of every workflow but the
   release's three jobs. Run that check and its test.
+- **R6 is narrowed for this workflow alone**, per the owner's answer on issue #1215 (option 1, 2026-11-27), because R6 as
+  written refused any workflow that runs on push. The wording now in `tools/check-release-workflows.mjs`: "No workflow but
+  `release.yml` names `production` as a push target, and no workflow but `migration-order.yml` runs on `push`; that one runs
+  on `push` to `main` only, reads `contents` and nothing else, and names no secret and no Environment." The test drives each
+  clause red (another workflow on push, a wider branch filter, a wider permission, a secret, an Environment).
 - **Where a skill or note tells a session to compare migration numbers by hand before a merge** (`grep -rni
   "renumber\|lands second" .claude docs/working-rules`; none was found when this was planned), it now says the check
   does this in CI. The hand check stays as a habit, not as the guard.

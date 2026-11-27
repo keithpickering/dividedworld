@@ -19,6 +19,7 @@ const SQL = '.github/workflows/sql.yml';
 const WEB = '.github/workflows/web.yml';
 const REHEARSAL = '.github/workflows/rehearsal.yml';
 const JOB_HEALTH = '.github/workflows/job-health.yml';
+const MIGRATION_ORDER = '.github/workflows/migration-order.yml';
 const NETLIFY = 'netlify.toml';
 
 let failures = 0;
@@ -161,6 +162,34 @@ red('build.yml pushes a refspec held in a step env', edit(BUILD, (d) => {
 red('build.yml names production in a step input', edit(BUILD, (d) => {
   Object.values(d.jobs)[0].steps.push({ uses: 'actions/some-action@v1', with: { branch: 'production' } });
 }), /R6.*inputs/);
+/* ---- R6 again: migration-order.yml is the one workflow allowed to run on push, to main only, read-only, with no secret or Environment (#1215, owner's option 1) ---- */
+quiet('the real migration-order.yml passes', REAL);
+const moJob = (d) => Object.values(d.jobs)[0];
+red('migration-order.yml runs on push with no branches filter', edit(MIGRATION_ORDER, (d) => { d.on.push = null; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml runs on push to main and dev', edit(MIGRATION_ORDER, (d) => { d.on.push.branches = ['main', 'dev']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml runs on push to every branch', edit(MIGRATION_ORDER, (d) => { d.on.push.branches = ['**']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml runs on push to a branch other than main', edit(MIGRATION_ORDER, (d) => { d.on.push.branches = ['production']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml is also triggered by tags', edit(MIGRATION_ORDER, (d) => { d.on.push.tags = ['v*']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml widens itself with paths', edit(MIGRATION_ORDER, (d) => { d.on.push.paths = ['**']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml ignores a branch instead of naming main', edit(MIGRATION_ORDER, (d) => { d.on.push = { 'branches-ignore': ['production'] }; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml is also triggered by pull_request_target', edit(MIGRATION_ORDER, (d) => { d.on.pull_request_target = {}; }), /migration-order\.yml.*R6/);
+red('migration-order.yml is also triggered by a schedule', edit(MIGRATION_ORDER, (d) => { d.on.schedule = [{ cron: '0 * * * *' }]; }), /migration-order\.yml.*R6/);
+red('migration-order.yml runs on push as a bare string', edit(MIGRATION_ORDER, (d) => { d.on = 'push'; }), /migration-order\.yml.*R6/);
+red('migration-order.yml may write contents', edit(MIGRATION_ORDER, (d) => { d.permissions.contents = 'write'; }), /migration-order\.yml.*R6.*contents: read/);
+red('migration-order.yml takes an extra permission', edit(MIGRATION_ORDER, (d) => { d.permissions['pull-requests'] = 'read'; }), /migration-order\.yml.*R6.*contents: read/);
+red('migration-order.yml has no permissions key', edit(MIGRATION_ORDER, (d) => { delete d.permissions; }), /migration-order\.yml.*R6.*contents: read/);
+red('migration-order.yml\'s job widens its permissions', edit(MIGRATION_ORDER, (d) => { moJob(d).permissions = { contents: 'write' }; }), /migration-order\.yml.*R6.*contents: read/);
+red('migration-order.yml names a secret in a step', edit(MIGRATION_ORDER, (d) => { moJob(d).steps.push({ env: { T: '${{ secrets.GITHUB_PAT }}' }, run: 'true' }); }), /migration-order\.yml.*R6.*secret/);
+red('migration-order.yml names a secret in a run line', edit(MIGRATION_ORDER, (d) => { moJob(d).steps.push({ run: 'echo ${{ secrets.X }}' }); }), /migration-order\.yml.*R6.*secret/);
+red('migration-order.yml reads toJSON(secrets)', edit(MIGRATION_ORDER, (d) => { d.env = { ALL: '${{ toJSON(secrets) }}' }; }), /migration-order\.yml.*R6.*secret/);
+red('migration-order.yml names a secret at the workflow level', edit(MIGRATION_ORDER, (d) => { d.env = { T: '${{ secrets.X }}' }; }), /migration-order\.yml.*R6.*secret/);
+red('migration-order.yml\'s job names an Environment', edit(MIGRATION_ORDER, (d) => { moJob(d).environment = 'production'; }), /migration-order\.yml.*R(6|10).*nvironment/);
+red('migration-order.yml\'s job names an Environment in its object form', edit(MIGRATION_ORDER, (d) => { moJob(d).environment = { name: 'staging' }; }), /migration-order\.yml.*R6.*nvironment/);
+red('migration-order.yml pushes to production', edit(MIGRATION_ORDER, (d) => { moJob(d).steps.push({ run: 'git push origin HEAD:refs/heads/production' }); }), /migration-order\.yml.*R6.*production/);
+red('build.yml also runs on push to main', edit(BUILD, (d) => { d.on.push = { branches: ['main'] }; }), /build\.yml.*R6.*push/);
+red('web.yml also runs on push', edit(WEB, (d) => { d.on = { ...d.on, push: { branches: ['main'] } }; }), /web\.yml.*R6.*push/);
+red('a new workflow runs on push to main', { ...REAL, '.github/workflows/other.yml': 'name: Other\non:\n  push:\n    branches: [main]\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n' }, /other\.yml.*R6.*push/);
+red('release.yml runs on push', edit(RELEASE, (d) => { d.on.push = { branches: ['main'] }; }), /release\.yml.*R6.*push/);
 quiet('a shell comment line inside a run string is not a push', edit(BUILD, (d) => {
   Object.values(d.jobs)[0].steps.push({ run: '# git push origin HEAD:production\necho fine' });
 }));

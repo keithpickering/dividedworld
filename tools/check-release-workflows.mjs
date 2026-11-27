@@ -14,6 +14,9 @@
  * R10 to R13 are the backend design's section 4 (docs/plans/2026-11-12-release-backend-design.md),
  * whose own numbers R8 to R11 were taken here: its R8 is R10, its R9 is R11, its R10 is R12 and
  * its R11 is R13. R1's chain there grows to build, sql, web, schema, functions, seed, promote.
+ * R6 as the owner narrowed it (#1215, option 1, 2026-11-27): "No workflow but `release.yml` names `production` as a push target,
+ * and no workflow but `migration-order.yml` runs on `push`; that one runs on `push` to `main` only, reads `contents` and nothing
+ * else, and names no secret and no Environment."
  * R8: the Postgres every workflow's service starts is named by version and digest, and is one
  * string across all of them. The `postgres:17` tag moved from 17.11 to 17.12 on 2026-11-12 and
  * every SQL run failed (issue #596), and two workflows that must name one image are two lists
@@ -94,6 +97,11 @@ const JH_USES = ['actions/checkout', 'actions/setup-node'];
 const JH_USES_RE = { 'actions/checkout': /^actions\/checkout@[\w.-]+$/, 'actions/setup-node': /^actions\/setup-node@[\w.-]+$/ };
 const JH_WITH = { 'actions/checkout': [], 'actions/setup-node': ['node-version', 'cache'] };
 const JH_ENV = '${{ secrets.' + JH_SECRET + ' }}';
+/**
+ * The one workflow that may run on push (#1215, the owner's answer, option 1, 2026-11-27): the migration-order check on
+ * every push to main (docs/plans/2026-11-27-release-order-design.md, D2). R6 holds it to main only, read-only, no secret, no Environment.
+ */
+const MIGRATION_ORDER = `${WORKFLOWS}/migration-order.yml`;
 const JOBS = ['candidate', 'build', 'sql', 'web', ...BACKEND, 'promote', 'report'];
 const SECRET_NAMES = ['SUPABASE_ACCESS_TOKEN', 'SUPABASE_DB_URL', 'SUPABASE_PROJECT_REF', 'KAYFABB_JOBS_KEY'];
 const SECRET_NAME = new RegExp(`\\b(?:${SECRET_NAMES.join('|')})\\b`);
@@ -230,10 +238,28 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
     if (bad5.length) out.push(`${path}: R5 ${bad5.join('; ')}`);
   }
 
-  // R6: production moves in release.yml and nowhere else, and nothing runs on push.
+  // R6: production moves in release.yml and nowhere else, and nothing runs on push but migration-order.yml,
+  // which runs on push to main only, reads contents and nothing else, and names no secret and no Environment.
   for (const [path, doc] of Object.entries(docs)) {
     const bad6 = [];
-    if (triggers(doc).includes('push')) bad6.push('runs on push');
+    if (path !== MIGRATION_ORDER) {
+      if (triggers(doc).includes('push')) bad6.push('runs on push');
+    } else {
+      const on = triggers(doc);
+      const push = isObj(doc.on) ? doc.on.push : undefined;
+      const branches = isObj(push) ? push.branches : undefined;
+      if (on.join(',') !== 'push') bad6.push(`runs on ${on.join(', ') || 'nothing'}, not on push alone`);
+      if (!isObj(doc.on) || !isObj(push) || Object.keys(push).join(',') !== 'branches' || !Array.isArray(branches) || branches.length !== 1 || branches[0] !== 'main') {
+        bad6.push(`push must be exactly { branches: [main] }, with no other branch, tags, paths or ignore (it is ${JSON.stringify(isObj(doc.on) ? doc.on.push ?? null : doc.on)})`);
+      }
+      const readOnly = (perms) => isObj(perms) && Object.keys(perms).length === 1 && perms.contents === 'read';
+      if (!readOnly(doc.permissions)) bad6.push(`permissions are ${JSON.stringify(doc.permissions)}, not exactly { contents: read }`);
+      for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
+        if (job?.permissions !== undefined && !readOnly(job.permissions)) bad6.push(`job ${jobName} permissions are ${JSON.stringify(job.permissions)}, not exactly { contents: read }`);
+        if (job?.environment !== undefined) bad6.push(`job ${jobName} names an Environment`);
+      }
+      if (/\bsecrets\b/.test(JSON.stringify(doc))) bad6.push('names a secret (any `secrets` context)');
+    }
     if (path !== RELEASE) {
       for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
         for (const step of list(job?.steps)) {
