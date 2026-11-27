@@ -311,6 +311,24 @@ describe('mixer', () => {
     assert.deepEqual(log.slice(-3), ['cancel 10', 'set 0 10', 'target 0.5 10']);
   });
 
+  it('10c. a context running at once is unlocked though its resume() later rejects, with no unhandled rejection; a resume() returning nothing does not throw', async () => {
+    const seen: unknown[] = [];
+    const on = (e: unknown) => { seen.push(e); };
+    process.on('unhandledRejection', on);
+    try {
+      const m = make();
+      (ctx as { state?: string }).state = 'running';
+      ctx.resume = mock.fn(() => Promise.reject(new Error('late refusal')));
+      assert.equal(await m.unlock(), true);
+      for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+      assert.deepEqual(seen, [], 'the rejected resume is handled');
+      const legacy = make();
+      (ctx as { state?: string }).state = 'running';
+      ctx.resume = mock.fn(() => undefined as unknown as Promise<void>);
+      assert.equal(await legacy.unlock(), true);
+    } finally { process.off('unhandledRejection', on); }
+  });
+
   it('10b. two unlock() calls make one context and resume twice, and the first resolves true once the second resume resolves', async () => {
     const m = make();
     const resolvers: Array<() => void> = [];

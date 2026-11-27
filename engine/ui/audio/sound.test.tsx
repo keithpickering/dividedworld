@@ -174,26 +174,37 @@ describe('the page sound', () => {
     expect(fetchBytes).toHaveBeenCalledTimes(1);
   });
 
-  test('making the context sets navigator.audioSession.type to ambient where it exists, and nothing throws where it does not', async () => {
+  describe('navigator.audioSession', () => {
     const w = window as unknown as { AudioContext?: unknown };
-    const nav = navigator as unknown as { audioSession?: { type: string } };
-    const saved = w.AudioContext;
-    w.AudioContext = class { currentTime = 0; destination = {}; resume = async () => {}; suspend = async () => {}; };
-    try {
+    const nav = navigator as unknown as { audioSession?: unknown };
+    let saved: unknown;
+    let built = 0;
+    beforeEach(() => {
+      saved = w.AudioContext; built = 0;
+      w.AudioContext = class { currentTime = 0; destination = {}; constructor() { built++; } resume = async () => {}; suspend = async () => {}; };
       resetSound();
-      nav.audioSession = { type: 'auto' };
-      on('game');
-      renderHook(() => useSound(), { wrapper: wrap });
-      await gesture('pointerdown');
-      expect(nav.audioSession.type).toBe('ambient');
-      delete nav.audioSession;
-      resetSound();
-      on('game');
-      await expect(gesture('click')).resolves.not.toThrow();
-    } finally {
-      w.AudioContext = saved;
-      delete nav.audioSession;
-    }
+    });
+    afterEach(() => { w.AudioContext = saved; delete nav.audioSession; });
+    const unlockOnce = async () => { on('game'); renderHook(() => useSound(), { wrapper: wrap }); await gesture('pointerdown'); };
+
+    test('making the context sets its type to ambient where it exists', async () => {
+      const session = { type: 'auto' };
+      Object.defineProperty(nav, 'audioSession', { value: session, configurable: true });
+      await unlockOnce();
+      expect(session.type).toBe('ambient');
+      expect(built).toBe(1);
+    });
+
+    test('where it is absent the context is still made', async () => {
+      await unlockOnce();
+      expect(built).toBe(1);
+    });
+
+    test('where setting the type throws the context is still made', async () => {
+      Object.defineProperty(nav, 'audioSession', { value: { set type(_v: string) { throw new Error('no'); } }, configurable: true });
+      await unlockOnce();
+      expect(built).toBe(1);
+    });
   });
 
   test('a refused resume leaves the listeners, the next gesture unlocks, and the one after does nothing', async () => {

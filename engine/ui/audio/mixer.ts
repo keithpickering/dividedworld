@@ -68,6 +68,7 @@ export function createMixer(deps: MixerDeps): Mixer {
   let made: AudioContextLike | null = null;
   let ctx: AudioContextLike | null = null;
   /** The unlock() calls whose resume has not answered yet; the first resume that resolves (or a context seen running) settles them all as unlocked. */
+  /* Bounded by the gestures made before the first unlock; it is emptied then, and nothing is added after. */
   const waiting = new Set<(unlocked: boolean) => void>();
   const buses: Record<SoundBus, { on: boolean; volume: number; node: GainNodeLike | null }> = {
     game: { on: false, volume: 100, node: null },
@@ -261,7 +262,8 @@ export function createMixer(deps: MixerDeps): Mixer {
       try {
         made ??= deps.makeContext();
         c = made;
-        asked = c.resume();
+        asked = Promise.resolve(c.resume());
+        asked.catch(() => { /* a refusal is read below where it matters, and never left unhandled */ });
       } catch { /* a browser that refuses leaves the mixer locked; the next gesture tries again */ return Promise.resolve(false); }
       if (c.state === 'running') { open(c); return Promise.resolve(true); }
       return new Promise<boolean>((resolve) => {
