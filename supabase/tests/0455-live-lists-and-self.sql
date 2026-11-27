@@ -541,3 +541,140 @@ begin
     raise exception 'the roster thread''s first post should send its row on the board, queued %', rows;
   end if;
 end $$;
+
+-- M. A board move tells both boards (issue #1241): the new board hears the thread's `row`, the old board hears `moved` with the stub board_page lists for it, and the index hears each board's entry.
+-- M1. One moveThread queues one `row` on the new board equal to board_page's row there, one `moved` on the old board equal to board_page's stub there, and a `board` on `index` for each board.
+-- M2. The `moved` payload holds exactly the stub's keys, and neither event carries an owner, an account or a reader.
+-- M3. A reversal queues a `row` on the board the thread is back on and no `moved` (that board lists none for it); an update of threads that moves nothing queues none.
+-- M4. thread_stub is for the trigger alone.
+create function pg_temp.mv_board(slug text) returns uuid language sql as $$ select id from boards where slug = mv_board.slug $$;
+create function pg_temp.mv_queue(kind text, params jsonb) returns bigint language plpgsql as $$
+declare
+  m bigint;
+  q bigint;
+begin
+  insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id into m;
+  insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
+  values (m, 'mv-boss', kind, params, null, 'because', now() - interval '1 minute', now() - interval '1 minute', false) returning id into q;
+  return q;
+end $$;
+create function pg_temp.mv_land(q bigint) returns uuid language plpgsql as $$
+declare
+  r queued_moves;
+begin
+  perform system_tick();
+  select * into r from queued_moves where id = q;
+  if r.landed_act is null then raise exception 'the move did not land: refused % failure %', r.refused_at, r.failure; end if;
+  return r.landed_act;
+end $$;
+create function pg_temp.mv_stub(reader uuid, slug text, in_thread uuid) returns jsonb language plpgsql as $$
+declare
+  got jsonb;
+begin
+  perform tests.become(reader);
+  select s into got from jsonb_array_elements(board_page(slug, 1, array[]::text[]) -> 'stubs') s where s ->> 'id' = in_thread::text;
+  perform tests.unbecome();
+  return got;
+end $$;
+
+do $$
+declare
+  seed jsonb;
+  ann uuid := tests.account('mv-ann');
+  a uuid;
+  t uuid;
+  mv uuid;
+  one uuid;
+  two uuid;
+  got jsonb;
+  ev jsonb;
+  want jsonb;
+  keys text[];
+begin
+  seed := jsonb_build_object(
+    'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24, 'movedStubDays', 7, 'titleMaxLength', 100, 'postMaxLength', 5000,
+      'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.'), 'moveSuperseded', jsonb_build_array('Superseded: {move}.'), 'moveReversed', jsonb_build_array('Reversed: {move}.')),
+      'systemMoveWords', jsonb_build_object('moveThread', 'the moving of a thread to another board')),
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'mv-boss',
+      'staff', jsonb_build_array(jsonb_build_object('key', 'mv-boss', 'name', 'Move Boss', 'title', 'Boss', 'signature', 'Hi', 'beats', '[]'::jsonb)),
+      'firstStaff', '[]'::jsonb,
+      'moves', jsonb_build_array(jsonb_build_object('key', 'moveThread', 'structural', false, 'shapesBoard', false, 'lasting', true, 'offices', jsonb_build_array('boss'))),
+      'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard'))));
+  perform seed_instance(seed);
+  insert into boards (slug, name, created_at) values ('mv-one', 'Move One', now() - interval '9 days'), ('mv-two', 'Move Two', now() - interval '8 days');
+  one := pg_temp.mv_board('mv-one');
+  two := pg_temp.mv_board('mv-two');
+  a := tests.character(ann, 'Move Ann', 'alpha', now() - interval '60 days');
+  insert into threads (board, title) values (one, 'Wandering list') returning id into t;
+  perform tests.post(a, t, 'First post.');
+  perform tests.post(a, t, 'Second post.');
+  delete from broadcasts_due;
+
+  -- M1. The move.
+  mv := pg_temp.mv_land(pg_temp.mv_queue('moveThread', jsonb_build_object('thread', t, 'board', two)));
+  if (select board from threads where id = t) is distinct from two then raise exception 'the thread did not move, so this proves nothing'; end if;
+
+  got := pg_temp.queued('board:' || two);
+  if (select count(*) from jsonb_array_elements(got) e where e ->> 'event' = 'row' and e -> 'payload' ->> 'id' = t::text) is distinct from 1 then
+    raise exception 'a move should queue one row of the thread on the new board, queued %', got;
+  end if;
+  ev := (select e -> 'payload' from jsonb_array_elements(got) e where e ->> 'event' = 'row' and e -> 'payload' ->> 'id' = t::text);
+  if ev is distinct from pg_temp.page_row(ann, t) then
+    raise exception 'the row on the new board should equal board_page''s row there: queued % page %', ev, pg_temp.page_row(ann, t);
+  end if;
+  got := pg_temp.queued('board:' || one);
+  if (select count(*) from jsonb_array_elements(got) e where e ->> 'event' = 'moved') is distinct from 1 then
+    raise exception 'a move should queue one moved on the old board, queued %', got;
+  end if;
+  if exists (select 1 from jsonb_array_elements(got) e where e ->> 'event' = 'row' and e -> 'payload' ->> 'id' = t::text) then
+    raise exception 'the old board should hear no row of a thread that left it, queued %', got;
+  end if;
+  ev := (select e -> 'payload' from jsonb_array_elements(got) e where e ->> 'event' = 'moved');
+  want := pg_temp.mv_stub(ann, 'mv-one', t);
+  if want is null or ev is distinct from want then
+    raise exception 'the moved payload should equal the stub board_page lists on the old board: queued % page %', ev, want;
+  end if;
+  -- M2. The stub's keys, pinned; nothing private.
+  select array_agg(k order by k) into keys from jsonb_object_keys(ev) k;
+  if keys is distinct from array['id', 'moved_at', 'moved_to', 'moved_to_name', 'moved_to_slug', 'title'] then
+    raise exception 'the moved payload''s keys changed: %', keys;
+  end if;
+  if exists (select 1 from jsonb_array_elements(pg_temp.queued('board:' || one) || pg_temp.queued('board:' || two)) e
+             where e::text ~* '(owner|account|reader|views)' ) then
+    raise exception 'a move event carries something private: % %', pg_temp.queued('board:' || one), pg_temp.queued('board:' || two);
+  end if;
+  -- The index hears each board's entry, equal to index_page's.
+  foreach mv in array array[one, two] loop
+    if (select count(*) from jsonb_array_elements(pg_temp.queued('index')) e where e ->> 'event' = 'board' and e -> 'payload' ->> 'id' = mv::text) is distinct from 1 then
+      raise exception 'a move should queue one board entry on the index for each board, queued %', pg_temp.queued('index');
+    end if;
+    if (select e -> 'payload' from jsonb_array_elements(pg_temp.queued('index')) e where e ->> 'event' = 'board' and e -> 'payload' ->> 'id' = mv::text) is distinct from pg_temp.index_entry(ann, mv) then
+      raise exception 'the index entry should equal index_page''s: % %', pg_temp.queued('index'), pg_temp.index_entry(ann, mv);
+    end if;
+  end loop;
+
+  -- M3. A reversal: the thread is back on the first board, which hears its row; the second lists no stub of it. A non-move update queues nothing.
+  select id into mv from acts where kind = 'move' and thread is not null and payload ->> 'kind' = 'moveThread' order by created_at desc limit 1;
+  delete from broadcasts_due;
+  perform end_move(mv, 'reversed', 'admin');
+  if (select board from threads where id = t) is distinct from one then raise exception 'the reversal did not move the thread back, so this proves nothing'; end if;
+  if (select count(*) from jsonb_array_elements(pg_temp.queued('board:' || one)) e where e ->> 'event' = 'row' and e -> 'payload' ->> 'id' = t::text) is distinct from 1 then
+    raise exception 'a reversal should queue the thread''s row on the board it is back on, queued %', pg_temp.queued('board:' || one);
+  end if;
+  if exists (select 1 from broadcasts_due where event = 'moved') then raise exception 'a reversal queued a moved: %', (select jsonb_agg(payload) from broadcasts_due where event = 'moved'); end if;
+  delete from broadcasts_due;
+  update threads set title = title where id = t;
+  update threads set last_at = last_at where id = t;
+  if exists (select 1 from broadcasts_due where event in ('row', 'moved', 'board')) then
+    raise exception 'an update of threads that moves nothing queued %', (select jsonb_agg(topic || ':' || event) from broadcasts_due);
+  end if;
+end $$;
+
+do $$
+begin
+  if has_function_privilege('anon', 'thread_stub(uuid, uuid)', 'execute') or has_function_privilege('authenticated', 'thread_stub(uuid, uuid)', 'execute')
+     or has_function_privilege('public', 'thread_stub(uuid, uuid)', 'execute') then
+    raise exception 'an API role can call thread_stub';
+  end if;
+end $$;

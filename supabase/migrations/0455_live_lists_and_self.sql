@@ -358,3 +358,102 @@ begin
 end $$;
 revoke execute on function write_roster_entry(timestamptz, uuid[], text[], jsonb) from public, anon, authenticated;
 grant execute on function write_roster_entry(timestamptz, uuid[], text[], jsonb) to service_role;
+
+-- ---- A board move tells both boards (issue #1241; the design, section 2) ----
+--
+--   thread_stub(thread, board)  the stub board_stubs (0326) lists for one thread on one board, key for key: id, title, moved_to, moved_to_slug, moved_to_name, moved_at. Null where that board lists none (the thread
+--                               never left it by a moveThread, the move was reversed or overturned, it is past movedStubDays, it is back, or the board is closed).
+--   rebuild_thread_places       (0339) the one writer of threads.board (the guard trigger of 0339 refuses any other, and the import runs in replica role, which sends nothing), so the one place that hears a move. After its step 5 it queues,
+--                               for the threads it moved: `row` (thread_row) on `board:<new>`; `moved` (thread_stub) on `board:<old>`, where that board lists a stub of it; and `board` (board_summary) on `index` once for each board that
+--                               gained or lost a thread. It is a statement of its own, after the move, so the projections read the state the page's next read would. It is no trigger on threads: a transition-table trigger cannot be limited to
+--                               a column (0339 measured what firing on every reply cost), and a row trigger would ask board_summary once for each thread of a merge of ten thousand.
+--   Nothing private: a thread, its boards, its title and the time it moved are what the page lists to every signed-in player. No owner, account, reader, class or view count is read.
+-- A way out: nothing here holds a player in a state; a missed event is read again by the page's own reload.
+
+create function thread_stub(in_thread uuid, in_board uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  -- The keys are pinned in supabase/tests/0455-live-lists-and-self.sql, and are board_stubs' own.
+  return (select jsonb_build_object('id', s.thread, 'title', s.title, 'moved_to', s.board, 'moved_to_slug', n.slug, 'moved_to_name', n.name, 'moved_at', s.left_at)
+    from (
+      select distinct on (d.thread) d.thread, d.left_at, t.title, t.board
+      from thread_departures d
+      join threads t on t.id = d.thread
+      where d.thread = in_thread and d.from_board = in_board and d.left_at >= now() - moved_stub_days() * interval '1 day' and t.board <> in_board
+        and not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = d.act and e.payload ->> 'why' in ('reversed', 'overturned'))
+      order by d.thread, d.left_at desc
+    ) s
+    join boards_now n on n.id = s.board);
+end $$;
+revoke execute on function thread_stub(uuid, uuid) from public, anon, authenticated;
+
+create or replace function rebuild_thread_places(which uuid[] default null) returns integer
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  ids uuid[];
+  olds uuid[];
+  news uuid[];
+  d record;
+  changed integer;
+  listed jsonb;
+  stub jsonb;
+  summary jsonb;
+  b uuid;
+begin
+  -- 0. The one global key, before anything is read: what another writer committed is what this call computes from.
+  perform lock_thread_places();
+  -- 1. The moves, computed once. Three reads: every thread, a long list (one pass over every thread is cheaper than a probe per thread; REBUILD_SET_BASED_FROM), a short list.
+  if which is null then
+    select array_agg(t.id), array_agg(t.board), array_agg(c.place) into ids, olds, news
+    from threads t join thread_places_computed() c on c.thread = t.id where c.place is not null and t.board is distinct from c.place;
+  elsif cardinality(which) > 100 then
+    select array_agg(t.id), array_agg(t.board), array_agg(c.place) into ids, olds, news
+    from threads t join thread_places_computed() c on c.thread = t.id
+    where t.id in (select u from unnest(which) u) and c.place is not null and t.board is distinct from c.place;
+  else
+    select array_agg(p.id), array_agg(p.board), array_agg(p.place) into ids, olds, news
+    from (select x.id, x.board, thread_place(x.id) as place from threads x where x.id = any (which)) p where p.place is not null and p.board is distinct from p.place;
+  end if;
+  if ids is null then return 0; end if;
+
+  -- 2. The search copy, before threads is touched: a reply to a moved thread does not wait on these rows.
+  update post_search p set board = m.place from unnest(ids, news) as m(id, place) where p.thread = m.id and p.board is distinct from m.place;
+
+  -- 3. The counts, once per board by the net change, on the shard a row trigger would have taken; the system board's threads are never counted.
+  for d in
+    select x.board, sum(x.delta)::integer as delta from (
+      select o as board, -1 as delta from unnest(olds) o
+      union all
+      select n, 1 from unnest(news) n
+    ) x where not exists (select 1 from boards b where b.id = x.board and b.is_system) group by x.board having sum(x.delta) <> 0 order by x.board
+  loop
+    update board_thread_counts set threads = threads + d.delta
+     where board = d.board and shard = coalesce((select c.shard from board_thread_counts c where c.board = d.board order by c.shard for update skip locked limit 1), 0);
+  end loop;
+
+  -- 4. threads.board, last and in one statement, past the guard. A thread whose board is no longer the one this call read (another rebuild between the read and here) fails the call, which rolls the
+  -- counts and the search copy back with it, rather than leaving them counted for a move that was not made.
+  perform set_config('kayfabb.rebuilding_places', 'on', true);
+  update threads t set board = m.place from unnest(ids, olds, news) as m(id, old_board, place) where t.id = m.id and t.board = m.old_board;
+  get diagnostics changed = row_count;
+  perform set_config('kayfabb.rebuilding_places', 'off', true);
+  if changed <> cardinality(ids) then
+    raise exception 'rebuild_thread_places found % of % threads moved by another writer; nothing was written', cardinality(ids) - changed, cardinality(ids);
+  end if;
+
+  -- 5. The search rows a reply wrote in the meantime. It took its thread's row after step 2 and before step 4 and read the board the thread was leaving; step 4 waited for it, so it is visible now. Only stale rows.
+  update post_search p set board = m.place from unnest(ids, news) as m(id, place) where p.thread = m.id and p.board is distinct from m.place;
+
+  -- 6. Tell the boards, after the move (live lists). The new board hears the thread's row, the old board hears the stub its next read would draw (when it lists one), and the index hears each board's entry once.
+  for d in select m.id, m.old_board, m.place from unnest(ids, olds, news) as m(id, old_board, place) loop
+    listed := thread_row(d.id);
+    if listed is not null then perform broadcast_later('board:' || d.place, 'row', listed); end if;
+    stub := thread_stub(d.id, d.old_board);
+    if stub is not null then perform broadcast_later('board:' || d.old_board, 'moved', stub); end if;
+  end loop;
+  for b in select distinct x from (select unnest(olds) union all select unnest(news)) u(x) order by 1 loop
+    summary := board_summary(b);
+    if summary is not null then perform broadcast_later('index', 'board', summary); end if;
+  end loop;
+  return changed;
+end $$;
