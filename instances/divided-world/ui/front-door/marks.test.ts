@@ -81,6 +81,16 @@ test('a draw of marks passes Graffiti\'s validateDraw, with the anchors the post
   assert.deepEqual(draw.box, { w: 65.9, h: 38.5 });
 });
 
+test('each of onImage, onWords and drawOver alone passes Graffiti\'s validateDraw', () => {
+  const ring1 = ring([0, 0], 0.2, 0.13, 3);
+  const alone = [onImage(0, [0.5, 0.5], 12.5, 'red', 'stock', ring1), onWords(find('what you think!'), 15, [9.5, 0.7], 'pink', 'stock', heart([0, 0], 2.6, 7))];
+  for (const m of alone) {
+    const v = graffiti.surface!.validateDraw(drawOver(facts, m));
+    assert.equal(v.ok, true, `${m.kind}: ${String(!v.ok && v.why)}`);
+  }
+  assert.equal(graffiti.surface!.validateDraw(drawOver(facts, ...alone)).ok, true);
+});
+
 test('the same marks give the same draw', () => {
   assert.deepEqual(drawOver(facts, ...marks()), drawOver(facts, ...marks()));
 });

@@ -9,7 +9,7 @@
 export const CHECK_ORIGIN = 'https://front-door.test';
 
 /** A root-relative address made absolute against `origin`; every other address as it was. */
-export const absoluteSrc = (src: string, origin: string): string => (/^\/(?!\/)/u.test(src) ? new URL(src, origin).href : src);
+export const absoluteSrc = (src: string, origin: string): string => (/^\/(?![\/\\])/u.test(src) ? new URL(src, origin).href : src);
 
 /** A body's `[img]` pictures with a root-relative address made absolute against `origin`. */
 export const absolutePictures = (text: string, origin: string): string => text.replace(/\[img\](\/(?!\/)[^[]*)\[\/img\]/giu, (_m, src: string) => `[img]${absoluteSrc(src, origin)}[/img]`);

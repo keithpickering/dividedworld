@@ -378,6 +378,7 @@ describe('instanceUiProblems', () => {
       test('a draw whose marks are on its post\'s image, words and box has no problem', () => assert.deepEqual(run(image(), text(), { kind: 'box' }), []));
       test('names an image attachment on an image the post does not have', () => assert.deepEqual(run(image({ n: 3 })), ['front door post 1 play 0 draw 0 group 0 is on image 3, and the post has 1 image']));
       test('names an image attachment with another address than the post\'s image', () => assert.deepEqual(run(image({ src: '/x/b.png' })), ['front door post 1 play 0 draw 0 group 0 is on image 0 as "/x/b.png", and the post\'s image 0 is "/x/a.png"']));
+      test('names an image attachment on another copy of the picture than the post\'s', () => assert.deepEqual(run(image({ nth: 1 })), ['front door post 1 play 0 draw 0 group 0 is on image 0 as copy 1 of "/x/a.png", and the post\'s image 0 is copy 0']));
       test('names a text attachment past the end of the post\'s visible text', () => assert.deepEqual(run(text({ at: 20, len: 5 })), ['front door post 1 play 0 draw 0 group 0 is on the words 20 to 25, past the post\'s 10 characters of visible text']));
       test('names an attachment of another version than the post\'s', () => assert.deepEqual(run(image({ version: 'front-door:0' }), text({ version: 'elsewhere' })), [
         'front door post 1 play 0 draw 0 group 0 is on the version "front-door:0", and the post\'s is "front-door:1"',

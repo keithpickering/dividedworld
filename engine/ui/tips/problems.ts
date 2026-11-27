@@ -18,7 +18,7 @@ import { localKey, singleEmoji } from '../../rules/emoji.ts';
 import { CONDUCT_TEMPLATES, TEMPLATES } from '../../mail/conduct.ts';
 import { contentOf, type Attachment } from '../../rules/anchor.ts';
 import { frontDoorId } from '../front-door/ids.ts';
-import { absolutePictures, absoluteSrc, CHECK_ORIGIN } from '../front-door/pictures.ts';
+import { absolutePictures, absoluteSrc, CHECK_ORIGIN, writtenSrc } from '../front-door/pictures.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
 export const MARQUEE_MAX = 20;
@@ -213,7 +213,8 @@ function attachmentProblems(who: string, payload: Record<string, unknown>, post:
     if (a.kind === 'image') {
       const own = images[a.n];
       if (own === undefined) out.push(`${at} is on image ${a.n}, and the post has ${images.length} image${images.length === 1 ? '' : 's'}`);
-      else if (own.src !== absoluteSrc(a.src, CHECK_ORIGIN)) out.push(`${at} is on image ${a.n} as "${a.src}", and the post's image ${a.n} is "${own.src.startsWith(`${CHECK_ORIGIN}/`) ? own.src.slice(CHECK_ORIGIN.length) : own.src}"`);
+      else if (own.src !== absoluteSrc(a.src, CHECK_ORIGIN)) out.push(`${at} is on image ${a.n} as "${a.src}", and the post's image ${a.n} is "${writtenSrc(own.src)}"`);
+      else if (own.nth !== a.nth) out.push(`${at} is on image ${a.n} as copy ${a.nth} of "${a.src}", and the post's image ${a.n} is copy ${own.nth}`);
     } else if (a.at + a.len > text.length) out.push(`${at} is on the words ${a.at} to ${a.at + a.len}, past the post's ${text.length} characters of visible text`);
   });
   return out;
