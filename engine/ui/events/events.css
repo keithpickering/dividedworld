@@ -29,7 +29,8 @@
   gap: 10px;
   margin: 0 0 0 auto;
   font-size: var(--kb-glass-size-label);
-  letter-spacing: inherit;
+  /* The bar sets no tracking of its own, so the tag takes the glass's uppercase label tracking, as the menu's tabs do. */
+  letter-spacing: 1.5px;
   text-transform: uppercase;
   color: var(--kb-event-rarity-color);
 }
