@@ -34,8 +34,8 @@ const NEAR: readonly Spec[] = [...SOME, ['pink', 'stock', 0.82, 0.05, 0.6, 0.06]
  * Hands the demo player a Graffiti card (and a Whoops!, so the hand is not one card) before the app reads its hand, and, for `wall`, Mrs. Hooligan's play of
  * the card on post 2 with her tag on it (`by` Spritey, another player's mask, for a reader who is neither tagger nor author), as a real draw so the fake's surface model counts it. `__kbWall` settles to the play's id once it is written.
  */
-async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooligan' | 'spritey' = 'hooligan'): Promise<void> {
-  await page.addInitScript(([strokes, by, box]) => {
+async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooligan' | 'spritey' = 'hooligan', body: string | null = null): Promise<void> {
+  await page.addInitScript(([strokes, by, box, body]) => {
     let demo: unknown;
     Object.defineProperty(globalThis, '__kbDemo', {
       configurable: true,
@@ -50,6 +50,8 @@ async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooli
         w.__kbWall = (async () => {
           const fake = w.__kbFake;
           const target = (await fake.acts(v.thread, 1, 3)).find((a) => a.seq === 2)!;
+          /* A longer post, written by its own author before the play, so the wall is drawn against the words a reader sees. */
+          if (body) fake.seed.edit(target.id, target.character!, body);
           const tagger = v.characters[by];
           const play = fake.seed.card(tagger, target.id, 'graffiti', { layer: 1 });
           const wave = ([can, cap, y, x0, x1, amp]: readonly [string, string, number, number, number, number]) => ({
@@ -69,7 +71,7 @@ async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooli
         })();
       },
     });
-  }, [wall, by, BOX] as const);
+  }, [wall, by, BOX, body] as const);
 }
 
 async function openThread(page: Page): Promise<void> {
@@ -339,6 +341,46 @@ test.describe('on a Pixel 7', () => {
     await swipe();
     await expect(surface(page)).toHaveAttribute('data-kb-strokes', '0');
     await expect(dock(page).getByRole('button', { name: 'Tag it' })).toHaveAttribute('aria-disabled', 'true');
+  });
+});
+
+/*
+ * A mark never changes where a line breaks (design section 2; plan Review focus). Draw mode lays an empty mark at each word (Compose's `Marked`), so the words a reader sees
+ * are measured by them. At the narrowest width a mark that took any width, or was a block, would move a word to another line. Each word's line, the top of its first client
+ * rect, is read from the text itself before draw mode opens and again with the marks in, and the two are the same.
+ */
+test.describe('at 320px', () => {
+  test.use({ viewport: { width: 320, height: 640 }, reducedMotion: 'reduce' });
+  test('a mark at every word leaves every word on the line it was on', async ({ page }) => {
+    const long = Array.from({ length: 60 }, (_, i) => `word${i}${'x'.repeat((i * 7) % 11)}`).join(' ');
+    await world(page, SMALL, 'hooligan', long);
+    await openThread(page);
+    await expect(wallInk(page)).toBeVisible();
+    /* Each word's lines (the tops of the rects it occupies, from the content area's own top) in the post's visible text, read by range over the words' text nodes, marks and the dock aside. */
+    const lines = () => post(page).evaluate((root) => {
+      const area = root.querySelector('[data-kb-content-area]') ?? root;
+      const walker = document.createTreeWalker(area, NodeFilter.SHOW_TEXT, { acceptNode: (n) => n.parentElement?.closest('button, canvas, [aria-hidden="true"]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+      const top = area.getBoundingClientRect().top, out: string[] = [];
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const text = n.textContent ?? '';
+        for (const m of text.matchAll(/\S+/gu)) {
+          const range = document.createRange();
+          range.setStart(n, m.index!);
+          range.setEnd(n, m.index! + m[0].length);
+          out.push(`${m[0]}@${[...range.getClientRects()].map((r) => Math.round(r.top - top)).join(',')}`);
+        }
+      }
+      return out;
+    });
+    const marks = () => post(page).locator('[data-kb-word-mark]').count();
+    expect(await marks(), 'no mark before draw mode').toBe(0);
+    const without = await lines();
+    expect(without.filter((w) => w.startsWith('word')).length, 'the words are all there').toBe(60);
+    expect(new Set(without.map((w) => w.split('@')[1])).size, 'the post wraps over several lines at 320px').toBeGreaterThan(5);
+    await post(page).getByRole('button', { name: 'Draw' }).click();
+    await expect(dock(page)).toBeVisible();
+    expect(await marks(), 'a mark at every word').toBeGreaterThanOrEqual(60);
+    expect(await lines(), 'no word moved to another line').toEqual(without);
   });
 });
 

@@ -291,6 +291,60 @@ begin
   if r.covered is distinct from s.covered or r.live is distinct from s.live or r.washes is distinct from s.washes then raise exception 'after new Acts on a legacy wall, rebuild_surface still gives the stored row: % against %', r.covered, s.covered; end if;
 end $$;
 
+-- ---- 7b. A legacy wall keeps 0317's ownership: each cell belongs to its last legacy inker, a legacy wash leaves cells with no owner, and a legacy draw that owns no cell has left the wall. ----
+-- 0317's surface_step is gone by now, so the expectations are 0317's rule worked by hand: a draw is kept while it owns a cell, a wash is kept while a kept draw before it is cut by it and no kept wash after it covers
+-- that.
+do $$
+declare
+  ann uuid := tests.account('cw-7b-ann'); bob uuid := tests.account('cw-7b-bob');
+  a uuid := tests.character(ann, 'Cw SevenB Ann'); b uuid := tests.character(bob, 'Cw SevenB Bob');
+  t uuid := tests.thread('Cw sevenb'); w record; d1 uuid; d2 uuid; d3 uuid; w1 uuid; s surfaces%rowtype; r surfaces%rowtype;
+begin
+  -- A: d2 inks every cell d1 inked and more. 0317 pruned d1 (it owned nothing) and covered 200 cells.
+  w := pg_temp.wall(a, t);
+  d1 := pg_temp.legacy(b, 'draw', t, w.play, pg_temp.cells(0, 100));
+  d2 := pg_temp.legacy(b, 'draw', t, w.play, pg_temp.cells(0, 200));
+  perform surface_store(w.play);
+  select * into s from surfaces where play = w.play;
+  if s.live is distinct from array[d2] or s.covered is distinct from 200 then raise exception 'a legacy draw fully painted over has left the wall: live %, covered %', s.live, s.covered; end if;
+  if exists (select 1 from surface_coats where draw = d1) or (select painted from surface_coats where draw = d2) is distinct from 200 then raise exception 'the painted-over draw''s grid is cleared'; end if;
+  r := rebuild_surface(w.play);
+  if r.covered is distinct from s.covered or r.live is distinct from s.live or r.washes is distinct from s.washes then raise exception 'A: rebuild_surface gives the stored row: % %', r.covered, r.live; end if;
+
+  -- B: a legacy wash clears the cells d1 still owned (0..99) while d2 owns the rest (100..299). 0317: d1 owns nothing, so it is pruned, and the wash that only cut it goes with it; d2 covers 200.
+  w := pg_temp.wall(a, t);
+  d1 := pg_temp.legacy(b, 'draw', t, w.play, pg_temp.cells(0, 200));
+  d2 := pg_temp.legacy(b, 'draw', t, w.play, pg_temp.cells(100, 200));
+  w1 := pg_temp.legacy(a, 'wash', t, w.play, pg_temp.cells(0, 100));
+  perform surface_store(w.play);
+  select * into s from surfaces where play = w.play;
+  if s.live is distinct from array[d2] or s.covered is distinct from 200 or s.washes <> '{}'::jsonb then raise exception 'a legacy draw whose last cells a wash cleared does not come back: live %, covered %, washes %', s.live, s.covered, s.washes; end if;
+  if exists (select 1 from surface_coats where draw = d1) then raise exception 'B: the cleared draw''s grid is gone'; end if;
+  r := rebuild_surface(w.play);
+  if r.covered is distinct from s.covered or r.live is distinct from s.live or r.washes is distinct from s.washes then raise exception 'B: rebuild_surface gives the stored row: % %', r.covered, r.live; end if;
+
+  -- C: d2 paints over half of d1 (100..199) and d1 keeps 0..99, so both stay live. d1 keeps the whole of its grid (as 0317's screens drew it in full), so overlap is counted: 200 + 200.
+  w := pg_temp.wall(a, t);
+  d1 := pg_temp.legacy(b, 'draw', t, w.play, pg_temp.cells(0, 200));
+  d2 := pg_temp.legacy(b, 'draw', t, w.play, pg_temp.cells(100, 200));
+  perform surface_store(w.play);
+  select * into s from surfaces where play = w.play;
+  if s.live is distinct from array[d1, d2] or s.covered is distinct from 400 or (select painted from surface_coats where draw = d1) is distinct from 200 then raise exception 'C: a draw that owns a cell stays with its whole grid: live %, covered %', s.live, s.covered; end if;
+  r := rebuild_surface(w.play);
+  if r.covered is distinct from s.covered or r.live is distinct from s.live or r.washes is distinct from s.washes then raise exception 'C: rebuild_surface gives the stored row: % %', r.covered, r.live; end if;
+
+  -- D: the ownership rule is the legacy rule's alone. d1 and d2 as in A, then a new-shape draw over d2's cells: d1 stays gone, and the new draw is paid for beside d2.
+  w := pg_temp.wall(a, t);
+  d1 := pg_temp.legacy(b, 'draw', t, w.play, pg_temp.cells(0, 100));
+  d2 := pg_temp.legacy(b, 'draw', t, w.play, pg_temp.cells(0, 200));
+  perform surface_store(w.play);
+  d3 := (pg_temp.draw(bob, b, w.play, pg_temp.coats(0, 200))::jsonb ->> 'id')::uuid;
+  select * into s from surfaces where play = w.play;
+  r := rebuild_surface(w.play);
+  if s.live is distinct from array[d2, d3] or s.covered is distinct from 400 then raise exception 'D: a draw after the legacy ones is paid beside them: live %, covered %', s.live, s.covered; end if;
+  if r.covered is distinct from s.covered or r.live is distinct from s.live or r.washes is distinct from s.washes then raise exception 'D: rebuild_surface gives the stored row: % %', r.covered, r.live; end if;
+end $$;
+
 -- ---- 8. An edit writes its places against the edit's id; the Lens gives the current version's; the two reads for the server function ----
 do $$
 declare

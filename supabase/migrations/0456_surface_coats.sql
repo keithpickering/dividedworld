@@ -33,6 +33,12 @@
 -- it on its cells, so it shows as before; but `covered` is now a sum over draws, so a legacy wall whose draws overlapped counts the overlap, and a wall near its limit may sit over it until a wash. Nothing refuses it
 -- retroactively: only a new draw meets the limit. A legacy wash's `cut` (the draws that owned the cells it uncovered) is as it was stored; the replay may touch other draws under the same cells, and keeps them live.
 --
+-- What the rebuild preserves of a legacy wall. 0317 kept a draw live only while it owned a cell: each cell belonged to the last draw that inked it, a wash left its cells with no owner, and a draw that owned none was pruned.
+-- surface_replay applies that rule to the Acts of the old shape (a draw with `cells` and no `coats`, a wash with `cells` and no `takes`) up to the first Act of the new shape: a legacy draw that owns no cell after a legacy
+-- step leaves the live list, its grid is cleared, and the washes that only changed it go with it, so a draw 0317 had pruned does not come back. A draw that still owns a cell keeps the whole grid it inked, at 2 coats,
+-- less what legacy washes took: 0317's screens drew every live draw's strokes in full, so that is the paint the wall showed, and ownership decides only whether a draw is live. The cells it shares with a later draw are
+-- then counted twice in `covered`, as above. From the first new-shape Act on (or from a draw laid by lay_sprung, which is first on its wall) only the coats rules apply.
+--
 -- Privacy ("A response never proves a private fact"). Nothing here reads who owns a character except played_by (the caller's own mask) and the wash's author check, as before. A draw's places and a wash's takes are computed
 -- from the drawing, the post's words and the author's wash alone. surface_groups_on and surface_version_pair read Acts and the post's versions: no owner, no class, no reaction.
 --
@@ -553,11 +559,21 @@ declare
   lt smallint[];
   lat integer[];
   ids uuid[] := '{}';
+  legacy boolean := true;
+  lids uuid[] := '{}';
+  lown bit(10000)[] := '{}';
+  lcells bit(10000);
+  gone uuid[];
+  lkept uuid[];
 begin
   out.live := '{}';
   out.washes := '{}';
   for r in select a.id, a.kind, a.payload, a.created_at from acts a where a.target_act_id = in_play and a.kind in ('draw', 'wash') order by a.created_at, a.id loop
     out.updated_at := r.created_at;
+    -- The legacy phase is the Acts before the first of the new shape (a draw with `coats`, a wash with `takes`). In it 0317's ownership holds: a legacy draw owns the cells it inked until a later legacy draw inks
+    -- them or a legacy wash clears them, and it leaves the wall (grid and all) when it owns none. From the first new-shape Act on, the coats rules alone apply.
+    if legacy and (r.payload ? 'coats' or r.payload ? 'takes') then legacy := false; end if;
+    lcells := case when legacy then (r.payload ->> 'cells')::bit(10000) end;
     if r.kind = 'draw' then
       grid := case when r.payload ? 'coats' then surface_lay(r.payload ->> 'coats') else surface_legacy_coats(r.payload ->> 'cells') end;
       painted_new := surface_painted(grid);
@@ -565,6 +581,10 @@ begin
         rows := rows || row(r.id, grid, painted_new)::surface_coat_row;
         ids := ids || r.id;
         out.live := out.live || r.id;
+      end if;
+      if legacy then
+        lown := array(select u.o & ~lcells from unnest(lown) with ordinality u(o, i) order by u.i) || lcells;
+        lids := lids || r.id;
       end if;
     else
       touched := '{}';
@@ -595,6 +615,23 @@ begin
         out.washes := out.washes || jsonb_build_object(r.id::text, to_jsonb(touched));
       end if;
       if died then
+        pruned := surface_prune(out.live, out.washes, ids);
+        out.live := pruned.live;
+        out.washes := pruned.washes;
+      end if;
+      if legacy then
+        lown := array(select u.o & ~lcells from unnest(lown) with ordinality u(o, i) order by u.i);
+      end if;
+    end if;
+    if legacy then
+      -- A legacy draw that owns no cell has left the wall, its grid cleared, and the washes that only changed it go with it.
+      gone := coalesce(array(select l.id from unnest(lids, lown) l(id, o) where l.id = any (ids) and bit_count(l.o) = 0), '{}');
+      lkept := array(select l.id from unnest(lids, lown) with ordinality l(id, o, i) where bit_count(l.o) > 0 and l.id = any (ids) and not l.id = any (gone) order by l.i);
+      lown := array(select l.o from unnest(lids, lown) with ordinality l(id, o, i) where bit_count(l.o) > 0 and l.id = any (ids) and not l.id = any (gone) order by l.i);
+      lids := lkept;
+      if cardinality(gone) > 0 then
+        rows := coalesce(array(select row(x.draw, x.coats, x.painted)::surface_coat_row from unnest(rows) with ordinality x(draw, coats, painted, i) where not x.draw = any (gone) order by x.i), '{}');
+        ids := array(select u.id from unnest(ids) with ordinality u(id, i) where not u.id = any (gone) order by u.i);
         pruned := surface_prune(out.live, out.washes, ids);
         out.live := pruned.live;
         out.washes := pruned.washes;
@@ -1793,8 +1830,9 @@ begin
       raise exception 'a closed poll cannot change' using hint = 'kayfabb.refusal', errcode = '55000';
     end if;
   end if;
-  -- A draw applies under its post's advisory lock and reads the post's current version there (surface_apply). The edit takes the same lock before it is inserted, so a draw either commits before the edit (and its places
-  -- are seen by the edit's insert below) or waits for the edit and is refused as stale, a first draw included. No one takes a surfaces row while holding this lock, so the draws' order (row, then lock) cannot cycle with it.
+  -- A draw applies under its post's advisory lock and reads the post's current version there (surface_apply). The edit takes the same lock before it is inserted, so a draw either commits before the edit or waits for the
+  -- edit and is refused as stale, a first draw included. A draw that commits before the edit, after the Edge Function read the groups it sends, has no place in the edit's insert below (it writes only the places it was
+  -- sent), so that draw's groups have no row for the edit's version and fall to their box spots for it; the way out is the sponge and a new tag. No one takes a surfaces row while holding this lock, so the draws' order (row, then lock) cannot cycle with it.
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.surface_post.' || target::text, 0));
   insert into acts (character, kind, thread, target_act_id, payload) values (through, 'edit', in_thread, target, jsonb_build_object('body', body)) returning id into edit_act;
   -- Where each live group of the walls on this post sits in the new words, for the edit's own version: the Edge Function maps them (surface_groups_on gives it the groups). A malformed entry, a place that is not an
