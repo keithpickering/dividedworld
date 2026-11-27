@@ -537,6 +537,58 @@ describe('the HUD hears its own state', () => {
     expect(screen.getByTestId('failed').textContent, 'the player\'s own read reports failure as before').toBe('true');
   });
 
+  function gatedRows() {
+    type Gate = { resolve: (rows: ReturnType<typeof char>[]) => void; reject: () => void };
+    const gates: Gate[] = [];
+    let gating = false;
+    const w = heard(async () => {
+      if (!gating) return [char('a')];
+      return new Promise<ReturnType<typeof char>[]>((resolve, reject) => { gates.push({ resolve, reject: () => reject(new Error('down')) }); });
+    });
+    function Rows() {
+      const p = usePlayer();
+      return <div><span data-testid="ids">{p.characters.map((c) => c.id).join(',')}</span><span data-testid="failed">{String(p.charactersFailed)}</span><button onClick={() => void p.refresh()}>mine</button></div>;
+    }
+    return { w, gates, Rows, gate: () => { gating = true; } };
+  }
+
+  test('a quiet read started during the player\'s own failing read does not hide its failure (#1240)', async () => {
+    fakeTimers();
+    const { w, gates, Rows, gate } = gatedRows();
+    render(<PlayerProvider api={w.api}><Rows /></PlayerProvider>);
+    await settle();
+    gate();
+    await act(async () => { screen.getByText('mine').click(); });
+    await settle();
+    expect(gates.length, 'the own read is out').toBe(1);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(400);
+    expect(gates.length, 'the poke read is out beside it').toBe(2);
+    await act(async () => { gates[0]!.reject(); gates[1]!.reject(); });
+    await settle();
+    expect(screen.getByTestId('ids').textContent).toBe('a');
+    expect(screen.getByTestId('failed').textContent, 'the own read\'s failure shows').toBe('true');
+  });
+
+  test('the player\'s own read fails but a later quiet read lands: its rows, no error (#1240)', async () => {
+    fakeTimers();
+    const { w, gates, Rows, gate } = gatedRows();
+    render(<PlayerProvider api={w.api}><Rows /></PlayerProvider>);
+    await settle();
+    gate();
+    await act(async () => { screen.getByText('mine').click(); });
+    await settle();
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(400);
+    expect(gates.length).toBe(2);
+    await act(async () => { gates[1]!.resolve([char('b')]); });
+    await settle();
+    await act(async () => { gates[0]!.reject(); });
+    await settle();
+    expect(screen.getByTestId('ids').textContent, 'the later read\'s rows').toBe('b');
+    expect(screen.getByTestId('failed').textContent).toBe('false');
+  });
+
   test('a settled runs one read, at some moment within the spread', async () => {
     fakeTimers();
     const w = heard();
