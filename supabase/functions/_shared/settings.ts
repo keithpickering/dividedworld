@@ -11,26 +11,38 @@
  * settlement and the card actions loudly until an admin fixes it, rather than paying from
  * numbers nobody chose.
  */
-import { deepFreeze, instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
+import { deepFreeze, dropUnknownFields, instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import type { Instance, Settings } from '../../../engine/rules/types.ts';
 import type { Db } from './rpc.ts';
 
 /**
  * The instance the rows make, and what is wrong with it: the one reading both callers share. withDatabaseSettings throws the
  * problems; the seed (supabase/functions/seed/core.ts) answers them one by one.
+ *
+ * `unknownFields` says what a field the code's rules do not know becomes (docs/plans/2026-11-27-release-order-design.md, D4). 'drop' is
+ * for every job: rows from a newer release may hold a field this code predates, and the rest is judged as it stands (a missing field is
+ * never filled). 'report' is for the seed's proof, which runs when code and rows are from the same release, so an unknown field is a problem.
  */
-export async function databaseSettingsProblems(instance: Instance, db: Db): Promise<{ readonly tuned: Instance; readonly problems: string[] }> {
+export async function databaseSettingsProblems(instance: Instance, db: Db, { unknownFields }: { readonly unknownFields: 'drop' | 'report' }): Promise<{ readonly tuned: Instance; readonly problems: string[] }> {
   const rows = (await db.rpc<Record<string, unknown> | null>('instance_settings', {})) ?? {};
   // The System's words are their own row (copy), read by the SQL that posts them.
   const { copy: _copy, economy, ...settings } = rows;
   const laid = withOverrides(instance.settings, settings as Partial<Settings>);
   if (economy === undefined) throw new Error('the settings rows hold no economy; seed the instance (supabase/functions/seed/)');
-  const tuned: Instance = { ...instance, settings: deepFreeze({ ...laid, economy: economy as Settings['economy'] }) };
+  const whole = { ...laid, economy: economy as Settings['economy'] };
+  let kept: Settings = whole;
+  if (unknownFields === 'drop') {
+    const { settings: cleaned, dropped } = dropUnknownFields(whole);
+    // The path only, never a value: the function log shows the gap between the rows and this code.
+    for (const path of dropped) console.warn(`settings: dropped "${path}", a field this code does not know`);
+    kept = cleaned;
+  }
+  const tuned: Instance = { ...instance, settings: deepFreeze(kept) };
   return { tuned, problems: instanceProblems(tuned) };
 }
 
 export async function withDatabaseSettings(instance: Instance, db: Db): Promise<Instance> {
-  const { tuned, problems } = await databaseSettingsProblems(instance, db);
+  const { tuned, problems } = await databaseSettingsProblems(instance, db, { unknownFields: 'drop' });
   if (problems.length) throw new Error(`the settings rows make the instance not whole: ${problems.join('; ')}`);
   return tuned;
 }

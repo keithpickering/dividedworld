@@ -99,20 +99,19 @@ function phasesRule(v: unknown): string | null {
     const phase = given[p];
     if (typeof phase !== 'object' || phase === null || Array.isArray(phase)) return `${shape}; "${p}" is missing`;
     for (const key of PHASE_KEYS[p]) if (!isWhole(phase[key], 1)) return `${shape}; "${p}.${key}" is not`;
-    const extra = Object.keys(phase).filter((k) => !(PHASE_KEYS[p] as readonly string[]).includes(k));
-    if (extra.length) return `${shape}; "${p}.${extra[0]}" is not a number a phase holds`;
+    const extra = strayAt(phase, `phases.${p}`);
+    if (extra !== undefined) return `${shape}; "${p}.${extra}" is not a number a phase holds`;
   }
   return null;
 }
 const whole = (min: number, what: string, most?: number) => (v: unknown): string | null => (isWhole(v, min) && (most === undefined || v <= most) ? null : `a whole number of ${what}, at least ${min}${most === undefined ? '' : ` and at most ${most}`}`);
 
 /** A setting that gives each reach beyond a post (character, thread, board) one value, and nothing else. */
-function perReach(holds: (v: unknown) => boolean, shape: string) {
+function perReach(path: 'reachRarity' | 'reachLasts', holds: (v: unknown) => boolean, shape: string) {
   return (v: unknown): string | null => {
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
     const given = v as Record<string, unknown>;
-    const keys = Object.keys(given);
-    return keys.length === BEYOND_POST.length && BEYOND_POST.every((r) => r in given && holds(given[r])) ? null : shape;
+    return strayAt(given, path) === undefined && BEYOND_POST.every((r) => r in given && holds(given[r])) ? null : shape;
   };
 }
 
@@ -131,21 +130,21 @@ const minutesHeld = (m: unknown): boolean => {
   if (typeof m !== 'object' || m === null || Array.isArray(m)) return false;
   const o = m as Record<string, unknown>;
   const { least, most } = SESSION_BOUNDS.minutes;
-  return Object.keys(o).length === 2 && inRange(o.least, least, most) && inRange(o.most, least, most) && (o.least as number) <= (o.most as number);
+  return strayAt(o, 'pool.sessions.minutes') === undefined && inRange(o.least, least, most) && inRange(o.most, least, most) && (o.least as number) <= (o.most as number);
 };
 /** What `pool.turns` holds, as the migration's `setting_pool` does. */
 const turnsHeld = (t: unknown): boolean => {
   if (typeof t !== 'object' || t === null || Array.isArray(t)) return false;
   const o = t as Record<string, unknown>;
-  return Object.keys(o).length === 3 && inRange(o.waitHours, 1, 168) && inRange(o.perThread, 1, 6) && inRange(o.perSession, isWhole(o.perThread, 1) ? o.perThread : 1, 12);
+  return strayAt(o, 'pool.turns') === undefined && inRange(o.waitHours, 1, 168) && inRange(o.perThread, 1, 6) && inRange(o.perSession, isWhole(o.perThread, 1) ? o.perThread : 1, 12);
 };
 /** What `pool.sessions` holds, as the migration's `setting_pool` does. */
 const sessionsHeld = (x: unknown): boolean => {
   if (typeof x !== 'object' || x === null || Array.isArray(x)) return false;
   const o = x as Record<string, unknown>;
   const w = o.waking;
-  if (Object.keys(o).length !== 3 || !inRange(o.perDay, SESSION_BOUNDS.perDay.least, SESSION_BOUNDS.perDay.most) || !minutesHeld(o.minutes)) return false;
-  if (typeof w !== 'object' || w === null || Array.isArray(w) || Object.keys(w).length !== 2) return false;
+  if (strayAt(o, 'pool.sessions') !== undefined || !inRange(o.perDay, SESSION_BOUNDS.perDay.least, SESSION_BOUNDS.perDay.most) || !minutesHeld(o.minutes)) return false;
+  if (typeof w !== 'object' || w === null || Array.isArray(w) || strayAt(w as Record<string, unknown>, 'pool.sessions.waking') !== undefined) return false;
   const { from, to } = w as Record<string, unknown>;
   return inRange(from, SESSION_BOUNDS.hour.least, SESSION_BOUNDS.hour.most) && inRange(to, SESSION_BOUNDS.hour.least, SESSION_BOUNDS.hour.most);
 };
@@ -153,7 +152,7 @@ const sessionsHeld = (x: unknown): boolean => {
 export function habitsProblem(h: unknown): string | null {
   if (typeof h !== 'object' || h === null || Array.isArray(h)) return 'habits are not an object';
   const o = h as Record<string, unknown>;
-  const stray = Object.keys(o).find((k) => !['perDay', 'minutes', 'hours'].includes(k));
+  const stray = strayAt(o, 'habits');
   if (stray !== undefined) return `"${stray}" is not one of the habits (perDay, minutes, hours)`;
   if (o.perDay !== undefined && !inRange(o.perDay, SESSION_BOUNDS.perDay.least, SESSION_BOUNDS.perDay.most)) return `perDay is not a whole number from ${SESSION_BOUNDS.perDay.least} to ${SESSION_BOUNDS.perDay.most}`;
   if (o.minutes !== undefined && !minutesHeld(o.minutes)) return `minutes is not a least and a most, whole, from ${SESSION_BOUNDS.minutes.least} to ${SESSION_BOUNDS.minutes.most}, the least not above the most`;
@@ -168,7 +167,7 @@ function poolRule(v: unknown): string | null {
   const shape = 'an object giving weekly, priorityDays, notesRead and chatterThreadPosts (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of ' + POOL_TRIGGERS.join(', ') + ') sessions (perDay, a whole number from 0 to 8; minutes, least and most, whole, from 10 to 180, the least not above the most; waking, from and to, whole UTC hours from 0 to 23), turns (waitHours, a whole number from 1 to 168; perThread, from 1 to 6; perSession, from perThread to 12), charsPerDay (a whole number from 0 to 20,000,000), readMost (a whole number from 1,000 to 200,000) and chatterCron (a five-field cron expression, each field inside its range)';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
   const given = v as Record<string, unknown>;
-  const extra = Object.keys(given).find((k) => !POOL_KEYS.includes(k));
+  const extra = strayAt(given, 'pool');
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
   for (const [k, least] of Object.entries(POOL_WHOLE)) if (!isWhole(given[k], least)) return `${shape}; "${k}" is not`;
   if (!(typeof given.holdback === 'number' && given.holdback >= 0 && given.holdback <= 0.5)) return `${shape}; "holdback" is not`;
@@ -181,7 +180,7 @@ function poolRule(v: unknown): string | null {
   const strengths = given.strengths;
   if (typeof strengths !== 'object' || strengths === null || Array.isArray(strengths)) return `${shape}; "strengths" is not`;
   const s = strengths as Record<string, unknown>;
-  const stray = Object.keys(s).find((k) => !(POOL_TRIGGERS as readonly string[]).includes(k));
+  const stray = strayAt(s, 'pool.strengths');
   if (stray !== undefined) return `${shape}; "strengths.${stray}" is not a trigger`;
   for (const t of POOL_TRIGGERS) if (!isWhole(s[t], 1)) return `${shape}; "strengths.${t}" is not`;
   return null;
@@ -206,14 +205,14 @@ function modBotsRule(v: unknown): string | null {
   const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours, filingGraceMinutes, quizWriteMinutes and concessionWriteMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice, appealPrice, quizQuestionsPerDay and concessionsPerDay (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), patrolPool (a whole number from patrolSample to ${PATROL_POOL_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
   const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
   if (!object(v)) return shape;
-  const extra = Object.keys(v).find((k) => !MOD_BOTS_KEYS.includes(k));
+  const extra = strayAt(v, 'modBots');
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
   for (const [k, least] of Object.entries(MOD_BOTS_WHOLE)) if (!isWhole(v[k], least)) return `${shape}; "${k}" is not`;
   if (!isWhole(v.patrolSample, 1) || (v.patrolSample as number) > PATROL_SAMPLE_MOST) return `${shape}; "patrolSample" is not`;
   if (!isWhole(v.patrolPool, v.patrolSample as number) || (v.patrolPool as number) > PATROL_POOL_MOST) return `${shape}; "patrolPool" is not`;
   const pair = (name: 'visitHours' | 'cap', a: string, b: string): string | null => {
     const o = v[name];
-    if (!object(o) || Object.keys(o).length !== 2 || !isWhole(o[a], 1) || !isWhole(o[b], 1)) return `${shape}; "${name}" is not`;
+    if (!object(o) || strayAt(o, `modBots.${name}`) !== undefined || !isWhole(o[a], 1) || !isWhole(o[b], 1)) return `${shape}; "${name}" is not`;
     return null;
   };
   const hours = pair('visitHours', 'least', 'most');
@@ -236,11 +235,11 @@ function warnBarRule(v: unknown): string | null {
   const shape = 'an object giving size (a whole number, at least 1), bands (minor, moderate and severe, whole numbers from 1 to size), decay (a span: a unit of minute, day, week or month and a whole count from 1 to 1000) and banDays (a list of one or more whole numbers of days, each at least 1)';
   const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
   if (!object(v)) return shape;
-  const extra = Object.keys(v).find((k) => !['size', 'bands', 'decay', 'banDays'].includes(k));
+  const extra = strayAt(v, 'warnBar');
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
   if (!isWhole(v.size, 1)) return `${shape}; "size" is not`;
   const bands = v.bands;
-  if (!object(bands) || Object.keys(bands).length !== WARN_BAR_BANDS.length) return `${shape}; "bands" is not`;
+  if (!object(bands) || strayAt(bands, 'warnBar.bands') !== undefined) return `${shape}; "bands" is not`;
   for (const b of WARN_BAR_BANDS) if (!isWhole(bands[b], 1) || (bands[b] as number) > v.size) return `${shape}; "bands.${b}" is not`;
   if (!isSpan(v.decay, GRACE_UNITS)) return `${shape}; "decay" is not`;
   if (!Array.isArray(v.banDays) || v.banDays.length < 1 || !v.banDays.every((d) => isWhole(d, 1))) return `${shape}; "banDays" is not`;
@@ -255,7 +254,7 @@ const APOLOGY_KEYS = ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMa
 function apologyRule(v: unknown): string | null {
   const shape = 'an object giving apologyEveryHours (the hours between a character\'s apologies to one move), apologyJudgeBatch (the most apologies one run of the judge hears) and apologyRulingMaxWords (the most words of a ruling), each a whole number, at least 1';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
-  const extra = Object.keys(v).find((k) => !(APOLOGY_KEYS as readonly string[]).includes(k));
+  const extra = strayAt(v as Record<string, unknown>, 'apology');
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
   for (const k of APOLOGY_KEYS) if (!isWhole((v as Record<string, unknown>)[k], 1)) return `${shape}; "${k}" is not`;
   return null;
@@ -266,7 +265,7 @@ const OWED_LINES_BOUNDS = { graceMinutes: [1, 1440], perDay: [0, 10000], perRun:
 function owedLinesRule(v: unknown): string | null {
   const shape = 'an object giving graceMinutes (the minutes an owed line waits for the staff run, 1 to 1440), perDay (the most voiced owed lines a day, 0 to 10000) and perRun (the most owed lines one run takes, 1 to 200), each a whole number';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
-  const extra = Object.keys(v).find((k) => !(k in OWED_LINES_BOUNDS));
+  const extra = strayAt(v as Record<string, unknown>, 'owedLines');
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
   for (const [k, [least, most]] of Object.entries(OWED_LINES_BOUNDS)) {
     const n = (v as Record<string, unknown>)[k];
@@ -283,7 +282,7 @@ const STAFF_REQUESTS_KEYS = ['daysMost', 'meetingMost'] as const;
 function staffRequestsRule(v: unknown): string | null {
   const shape = 'an object giving daysMost (the most days a request waits for a ruling) and meetingMost (the most waiting requests one meeting rules on), each a whole number, at least 1';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
-  const extra = Object.keys(v).find((k) => !(STAFF_REQUESTS_KEYS as readonly string[]).includes(k));
+  const extra = strayAt(v as Record<string, unknown>, 'staffRequests');
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
   for (const k of STAFF_REQUESTS_KEYS) if (!isWhole((v as Record<string, unknown>)[k], 1)) return `${shape}; "${k}" is not`;
   return null;
@@ -294,7 +293,7 @@ const CONDUCT_KEYS = ['openReportsMost', 'adminAddress'] as const;
 function conductRule(v: unknown): string | null {
   const shape = 'an object giving openReportsMost (the most reports to admins one account holds open, a whole number, at least 1) and adminAddress (null, or an email address containing "@")';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
-  const extra = Object.keys(v).find((k) => !(CONDUCT_KEYS as readonly string[]).includes(k));
+  const extra = strayAt(v as Record<string, unknown>, 'conduct');
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
   const o = v as Record<string, unknown>;
   if (!isWhole(o['openReportsMost'], 1)) return `${shape}; "openReportsMost" is not`;
@@ -311,53 +310,113 @@ const COSMETICS_OUTCOMES = ['line', 'gear', 'card'] as const;
 function cosmeticsRule(v: unknown): string | null {
   const shape = 'an object giving gear (wornMost, a whole number, at least 1; reach, a fraction of the portrait\'s width from 0 to 2), trophies (shownMost, a whole number, at least 1) and events (windowMinutes, a whole number from 1 to 1440; dayMost, a whole number, at least 1; outcomes, a positive whole weight for line, gear and card and an optional whole weight, at least 0, for none; gearRarity and cardRarity, each a positive whole weight for one or more of ' + RARITIES.join(', ') + ')';
   const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
-  const exactly = (x: unknown, keys: readonly string[], name: string): string | null => {
+  const exactly = (x: unknown, path: string, name: string): string | null => {
+    const keys = SETTING_FIELDS[path]!;
     if (!object(x)) return name === 'cosmetics' ? shape : `"${name}" must be an object giving ${keys.join(', ')}`;
-    const extra = Object.keys(x).find((k) => !keys.includes(k));
+    const extra = strayAt(x, path);
     return extra === undefined ? null : `"${name}.${extra}" is not one of ${name}'s fields (${keys.join(', ')})`;
   };
-  const weights = (x: unknown, keys: readonly string[], name: string, zeroOk: readonly string[] = []): string | null => {
-    const bad = exactly(x, keys, name);
+  const weights = (x: unknown, path: string, name: string, zeroOk: readonly string[] = []): string | null => {
+    const bad = exactly(x, path, name);
     if (bad) return bad;
     const o = x as Record<string, unknown>;
     if (!Object.keys(o).length) return `"${name}" must give at least one weight`;
     for (const [k, w] of Object.entries(o)) if (!isWhole(w, zeroOk.includes(k) ? 0 : 1)) return `"${name}.${k}" has a weight of ${JSON.stringify(w)}, and a weight is a positive whole number`;
     return null;
   };
-  const top = exactly(v, ['gear', 'trophies', 'events'], 'cosmetics');
+  const top = exactly(v, 'cosmetics', 'cosmetics');
   if (top) return top;
   const c = v as Record<string, unknown>;
-  const gear = exactly(c.gear, ['wornMost', 'reach'], 'gear');
+  const gear = exactly(c.gear, 'cosmetics.gear', 'gear');
   if (gear) return gear;
   const g = c.gear as Record<string, unknown>;
   if (!isWhole(g.wornMost, 1)) return `"gear.wornMost" must be a whole number, at least 1`;
   if (!(typeof g.reach === 'number' && g.reach >= 0 && g.reach <= 2)) return `"gear.reach" must be a number from 0 to 2`;
-  const trophies = exactly(c.trophies, ['shownMost'], 'trophies');
+  const trophies = exactly(c.trophies, 'cosmetics.trophies', 'trophies');
   if (trophies) return trophies;
   if (!isWhole((c.trophies as Record<string, unknown>).shownMost, 1)) return `"trophies.shownMost" must be a whole number, at least 1`;
-  const events = exactly(c.events, ['windowMinutes', 'dayMost', 'outcomes', 'gearRarity', 'cardRarity'], 'events');
+  const events = exactly(c.events, 'cosmetics.events', 'events');
   if (events) return events;
   const e = c.events as Record<string, unknown>;
   if (!isWhole(e.windowMinutes, 1) || e.windowMinutes > 1440) return `"events.windowMinutes" must be a whole number from 1 to 1440`;
   if (!isWhole(e.dayMost, 1)) return `"events.dayMost" must be a whole number, at least 1`;
-  const outcomes = weights(e.outcomes, [...COSMETICS_OUTCOMES, 'none'], 'events.outcomes', ['none']);
+  const outcomes = weights(e.outcomes, 'cosmetics.events.outcomes', 'events.outcomes', ['none']);
   if (outcomes) return outcomes;
   const o = e.outcomes as Record<string, unknown>;
   for (const k of COSMETICS_OUTCOMES) if (!(k in o)) return `"events.outcomes.${k}" is missing; it must be a positive whole weight`;
-  return weights(e.gearRarity, RARITIES, 'events.gearRarity') ?? weights(e.cardRarity, RARITIES, 'events.cardRarity');
+  return weights(e.gearRarity, 'cosmetics.events.gearRarity', 'events.gearRarity') ?? weights(e.cardRarity, 'cosmetics.events.cardRarity', 'events.cardRarity');
 }
 
 /** The `jobGraceMinutes` setting: some of the scheduled jobs (engine/rules/jobs.ts), each a grace of whole minutes from 1 to 1440; a job left out keeps its default. */
 function jobGraceRule(v: unknown): string | null {
   const shape = 'an object giving some of the jobs (the names engine/rules/jobs.ts lists), each a grace of a whole number of minutes from 1 to 1440';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
-  const names = JOBS.map((j) => j.name) as string[];
   for (const [key, minutes] of Object.entries(v)) {
-    if (!names.includes(key)) return `${shape}; "${key}" is not a job`;
+    if (!SETTING_FIELDS.jobGraceMinutes!.includes(key)) return `${shape}; "${key}" is not a job`;
     if (!isWhole(minutes, 1) || (minutes as number) > 1440) return `${shape}; "${key}" is not a whole number of minutes from 1 to 1440`;
   }
   return null;
 }
+
+/**
+ * The fields each strict setting knows, by dotted path from the settings: the one table the rules below read their known fields from
+ * and `dropUnknownFields` drops against, so the rule that refuses a field and the drop that removes it cannot disagree
+ * (docs/plans/2026-11-27-release-order-design.md, D4). A setting whose rule does not refuse an unknown field (the economy, a card's
+ * settings, `hints`, `modelTiers`) has no entry. `habits` is a persona's, not the settings', so no setting holds it: `habitsProblem` reads
+ * it here and the drop never finds it.
+ */
+export const SETTING_FIELDS: { readonly [path: string]: readonly string[] } = {
+  'phases.honeymoon': PHASE_KEYS.honeymoon,
+  'phases.reign': PHASE_KEYS.reign,
+  'phases.meltdown': PHASE_KEYS.meltdown,
+  pool: POOL_KEYS,
+  'pool.strengths': POOL_TRIGGERS,
+  'pool.sessions': ['perDay', 'minutes', 'waking'],
+  'pool.sessions.minutes': ['least', 'most'],
+  'pool.sessions.waking': ['from', 'to'],
+  'pool.turns': ['waitHours', 'perThread', 'perSession'],
+  modBots: MOD_BOTS_KEYS,
+  'modBots.visitHours': ['least', 'most'],
+  'modBots.cap': ['punishments', 'days'],
+  warnBar: ['size', 'bands', 'decay', 'banDays'],
+  'warnBar.bands': WARN_BAR_BANDS,
+  apology: APOLOGY_KEYS,
+  owedLines: Object.keys(OWED_LINES_BOUNDS),
+  staffRequests: STAFF_REQUESTS_KEYS,
+  conduct: CONDUCT_KEYS,
+  cosmetics: ['gear', 'trophies', 'events'],
+  'cosmetics.gear': ['wornMost', 'reach'],
+  'cosmetics.trophies': ['shownMost'],
+  'cosmetics.events': ['windowMinutes', 'dayMost', 'outcomes', 'gearRarity', 'cardRarity'],
+  'cosmetics.events.outcomes': [...COSMETICS_OUTCOMES, 'none'],
+  'cosmetics.events.gearRarity': RARITIES,
+  'cosmetics.events.cardRarity': RARITIES,
+  jobGraceMinutes: JOBS.map((j) => j.name),
+  reachRarity: BEYOND_POST,
+  reachLasts: BEYOND_POST,
+  habits: ['perDay', 'minutes', 'hours'],
+};
+
+/** Settings without the fields the code does not know, at each path the table names, and each dropped path (`modBots.quizWriteMinutes`). Pure: the input is not changed, and a missing field is not filled. */
+export function dropUnknownFields(settings: Settings): { settings: Settings; dropped: string[] } {
+  const copy = structuredClone(settings) as Settings;
+  const dropped: string[] = [];
+  for (const [path, known] of Object.entries(SETTING_FIELDS)) {
+    const o = fieldsAt(copy, path);
+    if (o === undefined) continue;
+    for (const key of Object.keys(o)) if (!known.includes(key)) { delete o[key]; dropped.push(`${path}.${key}`); }
+  }
+  return { settings: copy, dropped };
+}
+/** The object at a dotted path, or undefined where the path leads to no object. */
+function fieldsAt(root: unknown, path: string): Record<string, unknown> | undefined {
+  let o: unknown = root;
+  for (const k of path.split('.')) o = isPlain(o) ? o[k] : undefined;
+  return isPlain(o) ? o : undefined;
+}
+const isPlain = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+/** The first key of an object that the table does not list for its path, or undefined. */
+const strayAt = (o: Record<string, unknown>, path: string): string | undefined => Object.keys(o).find((k) => !SETTING_FIELDS[path]!.includes(k));
 
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
@@ -399,8 +458,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   // At least 10, so no instance is polled into load; at most 300, so the window still means something.
   presencePollSeconds: (v) => (isWhole(v, 10) && (v as number) <= 300 ? null : 'a whole number of seconds from 10 to 300'),
   setLasts: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
-  reachRarity: perReach((r) => RARITIES.includes(r as never), 'an object giving character, thread and board each a rarity (common, uncommon, rare or legendary)'),
-  reachLasts: perReach((r) => isSpan(r), 'an object giving character, thread and board each a span: a unit of day, week or month and a whole count from 1 to 1000'),
+  reachRarity: perReach('reachRarity', (r) => RARITIES.includes(r as never), 'an object giving character, thread and board each a rarity (common, uncommon, rare or legendary)'),
+  reachLasts: perReach('reachLasts', (r) => isSpan(r), 'an object giving character, thread and board each a span: a unit of day, week or month and a whole count from 1 to 1000'),
   jobGraceMinutes: jobGraceRule,
   economy: namedNumbers,
   cardSettings: namedNumbers,
