@@ -234,8 +234,9 @@ test('mapPlaces gives, for every attachment, what mapPlace gives', () => {
   assert.deepEqual(mapPlaces(f, g, []), []);
 });
 
-test('mapPlace: the walk back reads the same path for many edits as for few (a fuzz against a plain diff check)', () => {
+test('mapPlace: over many random edits, every run that survives has its whole margin window unchanged, and many survive', () => {
   let seed = 99;
+  let survivors = 0, tried = 0;
   const rnd = (n: number): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
   for (let t = 0; t < 100; t++) {
     let from = '';
@@ -244,9 +245,12 @@ test('mapPlace: the walk back reads the same path for many edits as for few (a f
     for (let e = 0, k = 5 + rnd(30); e < k; e++) { const p = rnd(to.length + 1); to = to.slice(0, p) + (rnd(2) ? 'xyz'[rnd(3)]! : '') + to.slice(p + rnd(4)); }
     for (let at0 = 0; at0 + 2 <= from.length; at0 += 7) {
       const m = mapPlace(content(from), content(to), text(at0, 2)) as Extract<Attachment, { kind: 'text' }> | null;
+      tried++;
       if (!m) continue;
+      survivors++;
       const lo = Math.max(0, at0 - MARGIN), hi = Math.min(from.length, at0 + 2 + MARGIN), delta = m.at - at0;
       assert.equal(to.slice(lo + delta, hi + delta), from.slice(lo, hi));
     }
   }
+  assert.ok(survivors > tried / 2, `${survivors} of ${tried} runs survived; a walk back that cut stretches short would strand most of them`);
 });
