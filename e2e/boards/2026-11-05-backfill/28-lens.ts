@@ -87,7 +87,7 @@ export default manifest;
  * x = 20, 430 and 840; each screen's parts are held from a part of that screen (`origin`), so a screen's place on the page is never compared.
  *
  * By decision: the board is drawn in the desktop's sizes and the build sets a phone in the glass's phone tokens (as board 18's header says), so no phone type is compared and a part is
- * held by its place; the sheet's board has no role or name (its first screen is a `figure`), so its parts are found by their words and held from the WHOOPS! tab; the Lens's words
+ * held by its place; the sheet's board has no role or name (its first screen is a `figure`), so its parts are found by their words and held from the WHOOPS! tab (on the build the tab button itself, role `tab`, since its label is a trimmed span inside it; the button's left edge and the icon put the headline and hold's `x` shifts at 9.9 and 7.7); the Lens's words
  * are the build's (the state "33% washed for you" where the board's older "3 layers · top: Gloomba's yellow, 41% washed"; 33% and not the desktop's 32%, since the
  * share is of the post's body and a phone's body is the 22.5em min-height, engine/ui/thread/thread.css); the empty row's sentence is the one the desktop says, in the build's truer words
  * (the board's phone draws only its second half, which the build does not say, so the build's is found and not placed); the board's sheet is 420px tall, the build's 55% of the room above the HUD (the Float's SHEET_SHARE).
@@ -114,10 +114,10 @@ export const phone: BoardManifest = {
   size: { width: 390, height: 844 },
   build: { story: 'boards-01-lens--lens-whoops-phone' },
   landmarks: [
-    { id: 'tab', role: 'text', name: 'WHOOPS!', box: 'none', type: false },
-    sheet('tab-stick-around', 'text', 'STICK AROUND', { x: 8 + TAB_ICON_PHONE_SHIFT }),
-    sheet('headline', 'text', "3 layers · top: Gloomba's yellow, 41% washed", { x: -9, y: -8.5 }, { buildName: '33% washed for you' }),
-    sheet('hold', 'text', 'HOLD TO SCRUB', { x: -11.2, y: -25 }, { buildName: 'Hold to scrub' }),
+    { id: 'tab', role: 'text', name: 'WHOOPS!', buildRole: 'tab', box: 'none', type: false },
+    sheet('tab-stick-around', 'text', 'STICK AROUND', { x: 8 + TAB_ICON_PHONE_SHIFT }, { buildRole: 'tab' }),
+    sheet('headline', 'text', "3 layers · top: Gloomba's yellow, 41% washed", { x: 9.9, y: -8.5 }, { buildName: '33% washed for you' }),
+    sheet('hold', 'text', 'HOLD TO SCRUB', { x: 7.7, y: -25 }, { buildName: 'Hold to scrub' }),
     sheet('fold', 'text', '⌄ 3 plays · Gloomba, Pipewrench, Mrs. Hooligan', {}, { box: 'none', buildName: '3 plays · Gloomba, Pipewrench, Mrs. Hooligan' }),
   ],
   also: [
