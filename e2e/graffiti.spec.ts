@@ -19,21 +19,23 @@ const THREAD = 'Who keeps reacting with a thumbs up?';
 const POST = 2;
 const LIMIT = 40;
 
-/** A wave across the body about the height `y`, as a stroke of the card's own shape (aspect 3, the cells it covers are shares of the box). */
+/** The box the seeded strokes are drawn in, in ems (a body three times as wide as it is tall, at the board's 15px), as the stage and the wall stories draw. */
+const BOX = { w: 60, h: 20 } as const;
+/** A wave across the body about the height `y`, in shares of that box (0 to 1, across and down); the seed turns them into a group's ems from the box's center. */
 type Spec = readonly [can: string, cap: string, y: number, x0: number, x1: number, amp: number];
 /** One fat stroke: a wall of about 8%. */
 const SMALL: readonly Spec[] = [['red', 'fat', 0.3, 0.04, 0.7, 0.08]];
 /** Three: about 25%, enough paint to scrub and to see. */
 const SOME: readonly Spec[] = [['red', 'fat', 0.3, 0.04, 0.7, 0.08], ['orange', 'fat', 0.62, 0.2, 0.9, 0.1], ['lime', 'fat', 0.12, 0.4, 0.95, 0.05]];
-/** Five: the story's wall at 31% of its 40% limit. */
-const NEAR: readonly Spec[] = [...SOME, ['pink', 'stock', 0.82, 0.05, 0.6, 0.06], ['purple', 'fat', 0.45, 0.05, 0.54, 0.12]];
+/** Five: the story's wall at 31% of its 40% limit (the last stroke is short, as the story's: the new pen is wider, so each tag counts its own paint). */
+const NEAR: readonly Spec[] = [...SOME, ['pink', 'stock', 0.82, 0.05, 0.6, 0.06], ['purple', 'fat', 0.45, 0.05, 0.26, 0.12]];
 
 /**
  * Hands the demo player a Graffiti card (and a Whoops!, so the hand is not one card) before the app reads its hand, and, for `wall`, Mrs. Hooligan's play of
  * the card on post 2 with her tag on it (`by` Spritey, another player's mask, for a reader who is neither tagger nor author), as a real draw so the fake's surface model counts it. `__kbWall` settles to the play's id once it is written.
  */
 async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooligan' | 'spritey' = 'hooligan'): Promise<void> {
-  await page.addInitScript(([strokes, by]) => {
+  await page.addInitScript(([strokes, by, box]) => {
     let demo: unknown;
     Object.defineProperty(globalThis, '__kbDemo', {
       configurable: true,
@@ -51,12 +53,15 @@ async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooli
           const tagger = v.characters[by];
           const play = fake.seed.card(tagger, target.id, 'graffiti', { layer: 1 });
           const wave = ([can, cap, y, x0, x1, amp]: readonly [string, string, number, number, number, number]) => ({
-            can, cap, aspect: 3,
-            points: Array.from({ length: 25 }, (_, i) => [Math.round((x0 + (x1 - x0) * (i / 24)) * 1e4) / 1e4, Math.round((y + amp * Math.sin((i / 24) * Math.PI * 2)) * 1e4) / 1e4]),
+            can, cap,
+            points: Array.from({ length: 25 }, (_, i) => [
+              Math.round(((x0 + (x1 - x0) * (i / 24)) - 0.5) * box.w * 100) / 100,
+              Math.round(((y + amp * Math.sin((i / 24) * Math.PI * 2)) - 0.5) * box.h * 100) / 100,
+            ]),
           });
           /* Spritey is another player's: the draw is made as that account (the call reads the session as it starts), and the player is signed back in at once. */
           if (by === 'spritey') fake.signInAs(v.other);
-          const drawing = fake.draw(play, tagger, { strokes: strokes.map(wave) });
+          const drawing = fake.draw(play, tagger, { box, groups: [{ at: [0.5, 0.5], anchor: { kind: 'box' }, unit: 'em', strokes: strokes.map(wave) }] });
           if (by === 'spritey') fake.signInAs(v.me);
           const drawn = await drawing;
           if (!drawn.ok) throw new Error(drawn.error);
@@ -64,7 +69,7 @@ async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooli
         })();
       },
     });
-  }, [wall, by] as const);
+  }, [wall, by, BOX] as const);
 }
 
 async function openThread(page: Page): Promise<void> {
@@ -207,7 +212,8 @@ test.describe('on a wide screen', () => {
     });
     const saved = await wall();
     const figure = await meter(page);
-    await hold(page, 'Hold to scrub', 3000);
+    /* Washes take coats now, not cells: a pass over a stroke lifts part of its paint, so the hold runs longer than the cell-cutting scrub's 3s. */
+    await hold(page, 'Hold to scrub', 6000);
     await expect.poll(() => inked(page)).toBeLessThan(before * 0.9);
     /* The scrub is this screen's: the wall's own Acts and the covered figure are what they were, and the toolbar still reads them. */
     await page.waitForTimeout(1500);
@@ -243,8 +249,9 @@ test.describe('on a wide screen', () => {
     /* Not a guard the screen alone holds: the data refuses the same tag in the database's own words, with the figures. */
     const refused = await page.evaluate(async () => {
       const w = globalThis as E2eWindow;
-      const rows = Array.from({ length: 8 }, (_, i) => ({ can: 'black', cap: 'fat', aspect: 3, points: [[0.02, 0.05 + i * 0.12], [0.98, 0.05 + i * 0.12]] }));
-      return w.__kbFake.draw(await w.__kbWall!, w.__kbDemo.characters.hooligan, { strokes: rows });
+      const box = { w: 60, h: 20 };
+      const rows = Array.from({ length: 8 }, (_, i) => ({ can: 'black', cap: 'fat', points: [[(0.02 - 0.5) * box.w, (0.05 + i * 0.12 - 0.5) * box.h], [(0.98 - 0.5) * box.w, (0.05 + i * 0.12 - 0.5) * box.h]] }));
+      return w.__kbFake.draw(await w.__kbWall!, w.__kbDemo.characters.hooligan, { box, groups: [{ at: [0.5, 0.5], anchor: { kind: 'box' }, unit: 'em', strokes: rows }] });
     });
     expect(refused).toMatchObject({ ok: false });
     expect((refused as { error: string }).error).toMatch(/^this wall is 31% covered, and its limit is 40%; this tag would take it to \d+%$/u);
