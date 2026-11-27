@@ -1356,17 +1356,31 @@ function arcProblems(who: string, p: Persona, authoredMostParts: number | null, 
 }
 
 /**
- * The copy's two season titles (0439, 0440; the meetings one is optional): each has its words and names its season, and fills no other token, since copy_of fills `{season}` alone.
+ * The copy's season titles (0439, 0440; the meetings title is optional) and the Banlist's pair (the outcome posts design, section 8; optional, but both or neither): each title has its words and names
+ * its season, and fills no other token, since copy_of fills `{season}` alone. The ban entry's code line has its words, fills only the four tokens the ban gives it, and links the post it answers
+ * (`{post}` once, inside a `[url=…]`).
  */
 function copyProblems(copy: Instance['copy']): string[] {
   const out: string[] = [];
-  for (const key of ['rosterThreadTitle', 'meetingsThreadTitle'] as const) {
-    const title = (copy as unknown as Partial<Record<string, unknown>> | undefined)?.[key];
-    // The meetings title is optional (Copy.meetingsThreadTitle?; 0439 posts no minutes without it): absent is whole, present is held to the same words.
-    if (key === 'meetingsThreadTitle' && (title === undefined || title === null)) continue;
+  const at = copy as unknown as Partial<Record<string, unknown>> | undefined;
+  const absent = (v: unknown): boolean => v === undefined || v === null;
+  if (absent(at?.['banlistThreadTitle']) !== absent(at?.['banlistEntry'])) out.push('the copy for banlistThreadTitle and banlistEntry come as a pair: the Banlist needs both, or neither');
+  for (const key of ['rosterThreadTitle', 'meetingsThreadTitle', 'banlistThreadTitle'] as const) {
+    const title = at?.[key];
+    // The meetings title is optional (Copy.meetingsThreadTitle?; 0439 posts no minutes without it): absent is whole, present is held to the same words. The Banlist's is held in the pair above.
+    if (key !== 'rosterThreadTitle' && absent(title)) continue;
     if (typeof title !== 'string' || title.trim() === '') { out.push(`the instance has no copy for ${key}`); continue; }
     if (!title.includes('{season}')) out.push(`the copy for ${key} does not say which season ({season})`);
     for (const [, token] of title.matchAll(/\{([^{}]*)\}/g)) if (token !== 'season') out.push(`the copy for ${key} uses {${token}}, which that title is never given (it may use {season})`);
+  }
+  const entry = at?.['banlistEntry'];
+  if (!absent(entry)) {
+    if (typeof entry !== 'string' || entry.trim() === '') out.push('the instance has no copy for banlistEntry');
+    else {
+      for (const [, token] of entry.matchAll(/\{([^{}]*)\}/g)) if (!['character', 'days', 'rule', 'post'].includes(token!)) out.push(`the copy for banlistEntry uses {${token}}, which that entry is never given (it may use {character}, {days}, {rule} and {post})`);
+      const linked = [...entry.matchAll(/\[url=([^\]]*)\]/gi)].filter((m) => m[1]!.includes('{post}')).length;
+      if ((entry.match(/\{post\}/g) ?? []).length !== 1 || linked !== 1) out.push('the copy for banlistEntry does not link the post ({post} once, inside a [url=…])');
+    }
   }
   return out;
 }

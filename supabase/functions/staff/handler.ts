@@ -4,7 +4,7 @@
  * session (Authorization), as it calls the act function; nothing is done as the service before the database has taken the report AS THE PLAYER (`open_report` verifies the
  * session, that the caller plays the character, and that it is not banned), and a request with no session is answered 401 the same whoever its target is. A player's appeal is
  * the same door at `/staff/appeal` (`open_appeal`, which does not refuse a banned character: a ban is appealed by the banned). The work is
- * core.ts (the filing run), patrol.ts (the patrol run, on the same schedule: each patrol due is claimed once, judged, and its findings start visits), apology.ts (the apology run, on the same schedule: each waiting apology is judged by the move's staff member and ruled on or returned), owed.ts (the owed lines, on the same schedule: a move's end, a request's lapse and a Boss's arrival are owed by their speaker when they happen, and each is voiced here by its persona with one light call, or paid from that persona's own stock set, the instance's being the last resort; the tick's grace pays from stock what this run did not reach), report.ts (the report) and appeal.ts (the appeal), through door.ts; this is the edge: the environment, the model adapters
+ * core.ts (the filing run), patrol.ts (the patrol run, on the same schedule: each patrol due is claimed once, judged, and its findings start visits), apology.ts (the apology run, on the same schedule: each waiting apology is judged by the move's staff member and ruled on or returned), owed.ts (the owed lines, on the same schedule: a move's end, a request's lapse and a Boss's arrival are owed by their speaker when they happen, and each is voiced here by its persona with one light call, or paid from that persona's own stock set, the instance's being the last resort; the tick's grace pays from stock what this run did not reach), banlist.ts (the Banlist entries, after the filings: a ban's entry is a line owed for an act that has happened, voiced by the Mod whose infraction filled the bar, or posted from stock), report.ts (the report) and appeal.ts (the appeal), through door.ts; this is the edge: the environment, the model adapters
  * (supabase/functions/_shared/models/) and an answer that says what happened. No secret is ever logged or returned: the model key is read by the adapter from the environment accessor it is given
  * and appears in no message.
  *
@@ -17,6 +17,7 @@ import { runConcessions } from './concession.ts';
 import { runPatrolsAfterFilings } from './patrol.ts';
 import { runApologiesAfterFilings } from './apology.ts';
 import { runOwedLinesAfterFilings } from './owed.ts';
+import { runBanEntriesAfterFilings } from './banlist.ts';
 import { appealDoor } from './appeal.ts';
 import { reportDoor } from './report.ts';
 import { chooseInstance } from '../_shared/instance.ts';
@@ -29,7 +30,7 @@ import type { JobDeps } from '../_shared/handler.ts';
 import { asJob } from '../_shared/job.ts';
 
 /** The calls that write and are not idempotent: not sent again after an answer that may have been lost on the way back. */
-const WRITES = new Set(['record_model_call', 'record_staff_call', 'record_patrol_call', 'claim_patrol', 'pay_owed_line']);
+const WRITES = new Set(['record_model_call', 'record_staff_call', 'record_patrol_call', 'claim_patrol', 'pay_owed_line', 'post_ban_entry']);
 
 export const handle = asJob('kayfabb-staff', async (request: Request, deps: JobDeps): Promise<Response> => {
   const env = environment(deps.env);
@@ -65,10 +66,16 @@ export const handle = asJob('kayfabb-staff', async (request: Request, deps: JobD
     // The questions waited on by characters at a visit, before the filings and on their own terms: a question is wanted sooner than a filing line (quiz.ts).
     const quizzes = await runQuizzes(db, modelsNow, instance, slot);
     if (quizzes.quizzes.some((q) => q.status === 'left' || q.why !== undefined || q.trims.length > 0)) console.warn('quizzes from the bank, left, or trimmed', slot, JSON.stringify(quizzes.quizzes.filter((q) => q.status === 'left' || q.why !== undefined || q.trims.length > 0)));
-    // The concessions of the visits that are not quizzes (a bribe's, a distraction's), after the questions and before the filings, on their own terms (concession.ts).
+    // The concessions of the talk-downs (a quiz answered, a bribe, a distraction), after the questions and before the filings, on their own terms (concession.ts).
     const concessions = await runConcessions(db, modelsNow, instance, slot);
-    if (concessions.concessions.some((c) => c.status === 'left' || c.source === 'none' || c.trims.length > 0)) console.warn('concessions left, from stock, or trimmed', slot, JSON.stringify(concessions.concessions.filter((c) => c.status === 'left' || c.source === 'none' || c.trims.length > 0)));
+    if (concessions.concessions.some((c) => c.status !== 'posted' || c.trims.length > 0)) console.warn('concessions not posted, or trimmed', slot, JSON.stringify(concessions.concessions.filter((c) => c.status !== 'posted' || c.trims.length > 0)));
     const outcome = await runFilings(db, modelsNow, instance, slot);
+    // The bans' entries in the Banlist, after the filings (a filing that bans in this run owes its entry by now) and on their own: an entry's failure costs the filings nothing, and the tick's grace posts the stock (banlist.ts).
+    const banEntries = await runBanEntriesAfterFilings(db, modelsNow, instance, slot);
+    if (banEntries.status === 'ok') {
+      const odd = banEntries.entries.filter((b) => b.source !== 'model' || b.status !== 'posted' || b.trims.length > 0);
+      if (odd.length) console.warn('ban entries from stock, left, or trimmed', slot, JSON.stringify(odd));
+    }
     // The patrols due, after the filings and on their own: a patrol's failure costs the filings nothing, and a filing run's failure is thrown before any patrol is claimed.
     const patrols = await runPatrolsAfterFilings(db, modelsNow, instance, Date.now, begun, slot);
     // The apologies waiting for their judge, after the patrols and on their own: an apology's failure costs the filings nothing (a ledger failure is rethrown, as theirs is).
@@ -91,7 +98,7 @@ export const handle = asJob('kayfabb-staff', async (request: Request, deps: JobD
       const odd = outcome.filings.filter((f) => f.status === 'failed' || f.trims.length > 0 || f.dropped.length > 0 || f.why !== undefined);
       if (odd.length) console.warn('filings with a trim, a drop, a stock line or a failure', slot, JSON.stringify(odd.map((f) => ({ visit: f.visit, staff: f.staff, status: f.status, why: f.why, trims: f.trims, dropped: f.dropped }))));
     }
-    return json(200, { ...outcome, quizzes, concessions, patrols, apologies, owed });
+    return json(200, { ...outcome, quizzes, concessions, banEntries, patrols, apologies, owed });
   } catch (e) {
     // The details go to the function's log; the answer says only that it failed, and for which slot.
     console.error('staff failed', slot, e instanceof Error ? e.message : 'unknown');

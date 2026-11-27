@@ -887,7 +887,7 @@ describe('My log: the Mod Bots\' lines (the design, section 9)', () => {
     const w = world();
     const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
     const visit = w.fake.seed.visit(clerk, w.p2, { at: at(30, 9), endsInMs: 3_600_000 });
-    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.', at: at(30, 12) });
+    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.', at: at(30, 12), unposted: true });
     const inf = w.fake.seed.infraction(visit, { points: 2, at: at(30, 12) });
     const gp = w.fake.seed.post(w.thread, w.glo, 'Gloomba again.', { at: at(30, 13) });
     /* Through the door, as a player reports: it is paid from the wallet, and the log reads what was paid from the wallet's event. */

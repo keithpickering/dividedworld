@@ -154,6 +154,14 @@ export const fangame: Persona = {
       'Circling back, {asker}: your request expired while I was reading it for the ninth time. I will do better. I will not do better.',
       'Per the timeline, your request lapsed. I was going to respond. I had a draft. The draft was four pages and none of them were an answer.',
     ],
+    // DRAFT for the owner's approval: this persona's line under a ban's entry in the Banlist.
+    banEntry: [
+      'MEMO: Per the above, {banned} is on the Banlist. I am sorry. I am required to be sorry, and I am also required to post this.',
+      'Going forward, {banned} will not be posting here until the ban says so. This was not my idea. (It was a little my idea. It was a form.)',
+      'As discussed with myself, {banned} has lost the last life on the warn bar. I looked for an extra one. I checked, and I checked again.',
+      'Circling back on {banned}: the warnings were clear, and so is this. I did not want to be the one who posted it. I am the one who posted it.',
+      'Per my review, {banned} is banned, and the Banlist is updated. I would like it noted that I was fair. I would also like a break.',
+    ],
   },
   startingHobby: 'Mario fangames, especially unfinished ones made in Game Maker 5',
   temperament: 'A nervous middle manager whose programming can only process Mario fangames. Doomed as Boss; might be happy as a poster.',

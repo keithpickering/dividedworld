@@ -19,7 +19,7 @@ import { useLocation } from '../router.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
 const MINUTE = 60_000;
-type Which = 'quiz' | 'quizPending' | 'bribe' | 'distraction' | 'filed' | 'filedAuthor' | 'talkedDown' | 'talkedDownWithReply' | 'trapped' | 'report' | 'appeal' | 'presence';
+type Which = 'quiz' | 'quizPending' | 'bribe' | 'distraction' | 'filed' | 'filedAuthor' | 'talkedDown' | 'filedWithReply' | 'talkedDownWithReply' | 'trapped' | 'report' | 'appeal' | 'presence';
 
 const QUIZ: SeedChallenge = { kind: 'quiz', question: 'Which form is used to request another form?', choices: ['Form 1-A', 'Form 0', 'Form 27-B/6'], answer: 'Form 0' };
 
@@ -51,14 +51,21 @@ function useSeeded(thread: string | null, which: Which): boolean {
         at: Date.now(), endsInMs: 161 * MINUTE, line: 'Routine inspection.',
         challenge: which === 'bribe' ? { kind: 'bribe', price: 50 } : which === 'distraction' || which === 'trapped' ? { kind: 'distraction' } : which === 'quizPending' ? { kind: 'quiz', pending: true } : QUIZ,
       });
+      /* A filing posts its line in the thread as the Mod (`file_visit`), quoting the visited post; these three stories are of a filing whose post was refused, so the Lens's row shows the line itself. */
       if (which === 'filed' || which === 'filedAuthor' || which === 'appeal') {
+        fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.', at: Date.now() + MINUTE, unposted: true });
+        fake.seed.infraction(visit, { points: 2, at: Date.now() + MINUTE });
+      }
+      if (which === 'filedWithReply') {
         fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.', at: Date.now() + MINUTE });
         fake.seed.infraction(visit, { points: 2, at: Date.now() + MINUTE });
       }
       if (which === 'talkedDown') fake.seed.visitEnd(visit, { outcome: 'intercepted', line: 'Talked down.' });
       if (which === 'talkedDownWithReply') {
-        fake.seed.visitEnd(visit, { outcome: 'intercepted', line: 'Talked down.' });
-        fake.seed.concessionPost(visit, fake.seed.staffPost(clerk, thread, 'Fine. The hats were never mentioned in the changelog. I will let it go this once.'));
+        /* The talk-down itself, so the Mod's post is written as the database writes it: quoting the visited post, and carrying the visit's mark. */
+        if (!mask) throw new Error('the story needs a reader with a mask to talk the visit down');
+        fake.seed.concession(visit, 'Fine. The hats were never mentioned in the changelog. I will let it go this once.');
+        await fake.intercept(mask.id, visit, 'Form 0');
       }
       if (which === 'trapped') fake.seed.visitEnd(visit, { outcome: 'trapped', line: 'A trap set on this post sprang as the visit began, and the visit ended.' });
       if (live) setReady(true);
@@ -80,7 +87,7 @@ function Opened({ which }: { readonly which: Which }) {
       }, 100);
       return () => clearInterval(timer);
     }
-    const unfold = which === 'filed' || which === 'filedAuthor' || which === 'talkedDownWithReply';
+    const unfold = which === 'filed' || which === 'filedAuthor' || which === 'filedWithReply' || which === 'talkedDownWithReply';
     let step = 0;
     const timer = setInterval(() => {
       if (which === 'report') {
@@ -148,7 +155,9 @@ export const Filed: Story = { args: { which: 'filed' } };
 /** Filed, on a post of the reader's own mask: Appeal with its price and terms. */
 export const FiledAuthor: Story = { args: { which: 'filedAuthor' } };
 export const TalkedDown: Story = { args: { which: 'talkedDown' } };
-/** Talked down, and the Mod posted its concession in the thread: How it went unfolded, its ending row linking "The Clerk posted a reply". */
+/** Filed, and the Mod posted its filing in the thread: How it went unfolded, its ending row the Mod's post, with React, Spin thread and Go to post. */
+export const FiledWithReply: Story = { args: { which: 'filedWithReply' } };
+/** Talked down, and the Mod posted its concession in the thread, quoting the visited post and carrying the visit's mark: How it went unfolded, its ending row that post. */
 export const TalkedDownWithReply: Story = { args: { which: 'talkedDownWithReply' } };
 export const Trapped: Story = { args: { which: 'trapped' } };
 export const QuizPhone: Story = { args: { which: 'quiz' }, ...phone };

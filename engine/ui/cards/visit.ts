@@ -68,17 +68,31 @@ export function tabName(state: VisitState): string {
   }
 }
 
-/** The mark's name for a screen reader: the Mod, the time left or how it ended, and that it opens the visit. The open tile's visible words ("2:41") are in its name, so a voice command that says what it reads finds it (WCAG 2.5.3); an ended tile has none. */
-export function markLabel(mod: string, pronouns: PronounSet, state: VisitState, endsAt: string, now: number): string {
-  const how = {
+/** Which post a visit's mark is on: the post the visit was made to (`post`), or a Mod's outcome post that answers it (`answer`). */
+export type MarkOn = 'post' | 'answer';
+
+/**
+ * The mark's name for a screen reader: the Mod, the time left or how it ended, and that it opens the visit. The open tile's visible words ("2:41") are in its name, so a voice command that says what it reads finds it (WCAG 2.5.3); an ended tile has none.
+ * The mark on a Mod's outcome post is the same mark and says which post it is on ("the post this answers"). The two maps hold the same outcomes (tools/check-visit-outcome-words.mjs).
+ */
+export function markLabel(mod: string, pronouns: PronounSet, state: VisitState, endsAt: string, now: number, on: MarkOn = 'post'): string {
+  const post = {
     open: `${mod} is on a visit to this post, ${timeLeft(endsAt, now)} left, ${timeLeftWords(endsAt, now)}`,
     filed: `${mod} filed ${words(pronouns).their} visit to this post`,
     intercepted: `${mod}'s visit to this post was talked down`,
     trapped: `${mod}'s visit to this post was trapped, ended by a trap`,
     reversed: `${mod}'s visit to this post was ended by an admin`,
     dropped: `${mod}'s visit to this post could not be filed and was dropped`,
-  }[state];
-  return `${how}. Opens the visit.`;
+  };
+  const answer = {
+    open: `${mod} is on a visit to the post this answers, ${timeLeft(endsAt, now)} left, ${timeLeftWords(endsAt, now)}`,
+    filed: `${mod} filed ${words(pronouns).their} visit to the post this answers`,
+    intercepted: `${mod}'s visit to the post this answers was talked down`,
+    trapped: `${mod}'s visit to the post this answers was trapped, ended by a trap`,
+    reversed: `${mod}'s visit to the post this answers was ended by an admin`,
+    dropped: `${mod}'s visit to the post this answers could not be filed and was dropped`,
+  };
+  return `${(on === 'answer' ? answer : post)[state]}. Opens the visit.`;
 }
 
 const BAND_ORDER: Record<VisitBand, number> = { minor: 1, moderate: 2, severe: 3 };

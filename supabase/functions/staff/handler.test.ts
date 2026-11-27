@@ -21,13 +21,14 @@ test('staff: a body without a valid slot is a 400 and reads nothing', async () =
   }
 });
 
-test('staff: a good request runs the quizzes, then the concessions, then the filings, then the patrols, then the apologies, then the owed lines, on deps.db with the WRITES set and models built with the database tiers', async () => {
+test('staff: a good request runs the quizzes, then the concessions, then the filings, then the ban entries, then the patrols, then the apologies, then the owed lines, on deps.db with the WRITES set and models built with the database tiers', async () => {
   const d = fakeDeps((fn) => {
     switch (fn) {
       case 'refund_stale_reports': case 'refund_stale_appeals': return 0;
       case 'pending_quizzes': return [];
       case 'pending_concessions': return [];
       case 'filings_due': return [];
+      case 'pending_ban_entries': return [];
       case 'judgment_load_today': return 1_000_000; // the patrols' day is spent: they claim nothing
       case 'pending_apologies': return [];
       case 'owed_lines_due': return [];
@@ -40,15 +41,16 @@ test('staff: a good request runs the quizzes, then the concessions, then the fil
   assert.equal(body.status, 'ok');
   assert.equal(body.quizzes.status, 'ok');
   assert.equal(body.concessions.status, 'ok');
+  assert.equal(body.banEntries.status, 'ok');
   assert.equal(body.patrols.status, 'ok');
   assert.equal(body.apologies.status, 'ok');
   assert.equal(body.owed.status, 'ok');
   const order = d.calls.map((c) => c.fn).filter((fn) => fn !== 'instance_settings' && fn !== 'record_job_run');
-  assert.deepEqual(order, ['pending_quizzes', 'pending_concessions', 'refund_stale_reports', 'refund_stale_appeals', 'filings_due', 'judgment_load_today', 'pending_apologies', 'owed_lines_due']);
+  assert.deepEqual(order, ['pending_quizzes', 'pending_concessions', 'refund_stale_reports', 'refund_stale_appeals', 'filings_due', 'pending_ban_entries', 'judgment_load_today', 'pending_apologies', 'owed_lines_due']);
   assert.equal(d.dbs.length, 2, "the run's client, then the heartbeat's");
   assert.equal(d.dbs[0]!.env.secret, KEY);
   const safe = d.dbs[0]!.safeToRepeat!;
-  for (const w of ['record_model_call', 'record_staff_call', 'record_patrol_call', 'claim_patrol', 'pay_owed_line']) assert.equal(safe(w), false, w);
+  for (const w of ['record_model_call', 'record_staff_call', 'record_patrol_call', 'claim_patrol', 'pay_owed_line', 'post_ban_entry']) assert.equal(safe(w), false, w);
   assert.equal(safe('file_visit'), true);
   assert.deepEqual(d.built.map((b) => b.options.tiers), [TIERS]);
   assert.equal(d.built[0]!.options.fetch, d.deps.fetch);

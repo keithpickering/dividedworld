@@ -26,6 +26,15 @@ describe('a visit ended each way, in words', () => {
     assert.equal(markLabel('The Clerk', THEY, 'intercepted', ENDS, NOW), "The Clerk's visit to this post was talked down. Opens the visit.");
     assert.equal(markLabel('The Clerk', THEY, 'trapped', ENDS, NOW), "The Clerk's visit to this post was trapped, ended by a trap. Opens the visit.");
   });
+  test('the mark on a post that answers the visit says so for each outcome, and the open one keeps its time', () => {
+    assert.equal(markLabel('The Clerk', THEY, 'open', ENDS, NOW, 'answer'), 'The Clerk is on a visit to the post this answers, 2:41 left, 2 hours 41 minutes. Opens the visit.');
+    assert.equal(markLabel('The Clerk', THEY, 'filed', ENDS, NOW, 'answer'), 'The Clerk filed their visit to the post this answers. Opens the visit.');
+    assert.equal(markLabel('The Clerk', THEY, 'intercepted', ENDS, NOW, 'answer'), "The Clerk's visit to the post this answers was talked down. Opens the visit.");
+    assert.equal(markLabel('The Clerk', THEY, 'trapped', ENDS, NOW, 'answer'), "The Clerk's visit to the post this answers was trapped, ended by a trap. Opens the visit.");
+    assert.equal(markLabel('The Clerk', THEY, 'reversed', ENDS, NOW, 'answer'), "The Clerk's visit to the post this answers was ended by an admin. Opens the visit.");
+    assert.equal(markLabel('The Clerk', THEY, 'dropped', ENDS, NOW, 'answer'), "The Clerk's visit to the post this answers could not be filed and was dropped. Opens the visit.");
+    assert.equal(markLabel('The Clerk', THEY, 'filed', ENDS, NOW, 'post'), markLabel('The Clerk', THEY, 'filed', ENDS, NOW));
+  });
 });
 
 describe('the notice a filed visit leaves', () => {

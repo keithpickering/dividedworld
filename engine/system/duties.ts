@@ -6,7 +6,7 @@
 import type { DutyAssignee, SystemContent } from '../rules/types.ts';
 import type { Tier } from './model.ts';
 
-export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter', 'filing', 'reportJudge', 'patrolJudge', 'apologyJudge', 'conversation', 'roster', 'quizQuestion', 'concession'] as const;
+export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter', 'filing', 'reportJudge', 'patrolJudge', 'apologyJudge', 'conversation', 'roster', 'quizQuestion', 'concession', 'banEntry'] as const;
 export type Duty = (typeof DUTIES)[number];
 
 export interface DutySpec {
@@ -38,9 +38,12 @@ export const DUTY_SPECS: Readonly<Record<Duty, DutySpec>> = {
   roster: { mode: 'chat', tier: 'light' },
   // A quiz visit's question (the written quiz design, section 3): one chat call a visit, by the visit's own Mod in its voice, given only what every reader sees. Always the light tier.
   quizQuestion: { mode: 'chat', tier: 'light' },
-  // A visit's concession (the concession post design, section 5): one chat call for a bribe or distraction Mod when its visit opens, writing only the post it makes if it is talked down. As `filing` is, a chat call
+  // A visit's concession (the outcome posts design, section 5): one chat call written after the talk-down, by the visit's Mod, from the thread and the facts of the talk-down. As `filing` is, a chat call
   // for a persona on the chat voice and a raw completion (`concessionCompletion`) for one on the old voice, which its caller chooses by `persona.voice`; no spec field says so. Always the light tier.
   concession: { mode: 'chat', tier: 'light' },
+  // A ban's entry in the season's Banlist (the outcome posts design, section 8): one short line, written after the ban by the Mod whose infraction filled the bar, from the thread of the post that tipped it. As `filing`
+  // is, a chat call, and a raw completion (`banEntryCompletion`) for a persona on the old voice. Always the light tier.
+  banEntry: { mode: 'chat', tier: 'light' },
 };
 
 /**

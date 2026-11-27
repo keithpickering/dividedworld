@@ -2,6 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DUTIES, DUTY_SPECS, staffFor } from './duties.ts';
 
+test('banEntry is a duty, a light chat call as filing is: a persona on the old voice is asked in raw completion by its caller', () => {
+  assert.deepEqual(DUTY_SPECS.banEntry, { mode: 'chat', tier: 'light' });
+  assert.ok((DUTIES as readonly string[]).includes('banEntry'));
+});
+
 test('every duty has a mode and a default tier', () => {
   for (const d of DUTIES) assert.ok(DUTY_SPECS[d].mode === 'chat' || DUTY_SPECS[d].mode === 'completion', d);
   assert.equal(DUTY_SPECS.meeting.tier, 'strong');
@@ -38,7 +43,7 @@ test('a quiz visit\'s question is a light-tier chat duty of its own', () => {
 });
 
 test('staffFor returns the staff key the instance assigns the duty', () => {
-  const instance = { system: { duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer', concession: 'filer' } as const } };
+  const instance = { system: { duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer', concession: 'filer', banEntry: 'filer' } as const } };
   assert.equal(staffFor('meeting', instance), 'boss');
   assert.equal(staffFor('appeal', instance), 'beat');
 });

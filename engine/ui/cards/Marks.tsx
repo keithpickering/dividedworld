@@ -36,7 +36,7 @@ import { Lens, useLensFor, useLensHost, useLensStore, useMomentThen, useResolved
 import { GhostMark, ReachGhost, type ReachAt } from './PlayActions.tsx';
 import type { LensForm } from './Forms.tsx';
 import { VisitMark } from './Visit.tsx';
-import { VISIT_KIND } from './visit.ts';
+import { VISIT_KIND, type MarkOn } from './visit.ts';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
 import { asThen, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, shownPlays, usePlays, useRewound, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
@@ -219,7 +219,7 @@ export interface MarkStripProps {
   /** Plays shown as they stood in a moment and not as the post has them (`PostMarks.then`): their ends since are not shown. */
   readonly then?: ReadonlySet<Id>;
   /** The post's visit, if it has one: its mark is first in the strip, ahead of the card kinds (Visit.tsx), and takes a place of the room the cards have. */
-  readonly visit?: { readonly visit: Visit; readonly mod: string; readonly pronouns: PronounSet };
+  readonly visit?: { readonly visit: Visit; readonly mod: string; readonly pronouns: PronounSet; /** `answer` where the post is a Mod's outcome post that answers the visit, not the visited post. */ readonly on?: MarkOn };
 }
 
 /** One mark per kind of card played on the post, "+N" for the kinds past the strip's room, and the ghost mark while an armed card can land here. */
@@ -272,7 +272,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   const hidden = kinds.slice(shown.length);
   return (
     <span className="kb-marks" ref={strip}>
-      {visit && <VisitMark visit={visit.visit} mod={visit.mod} pronouns={visit.pronouns} expanded={open === VISIT_KIND} onOpen={press} />}
+      {visit && <VisitMark visit={visit.visit} mod={visit.mod} pronouns={visit.pronouns} on={visit.on ?? 'post'} expanded={open === VISIT_KIND} onOpen={press} />}
       {shown.map((kind) => (
         <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} postAt={postAt} then={then} hidden={out === null || isBack(kind) ? 0 : out.hidden.filter((p) => p.card === kind && !p.untaken).length} />
       ))}
@@ -288,7 +288,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
  * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
  * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', postAt, compare = true, moments = true, then, onSpin, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, author = null, thread, onSpinAct, ask = null, reportTo }: {
+export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', postAt, compare = true, moments = true, then, onSpin, visit, on = 'post', modPronouns = ENGINE_DEFAULT_PRONOUNS, author = null, thread, onSpinAct, ask = null, reportTo }: {
   readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly postAt?: string; readonly compare?: boolean; readonly plays: Plays;
   /** Where the Lens's Go to post leads: null where the Lens is on the page the post is on (a thread page's post, postbit and head), so none is drawn. */
   readonly to: string | null; readonly nameOf: (character: Id | null) => string;
@@ -303,6 +303,8 @@ export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghos
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
   /** The post's latest visit, with the post's author and thread (Visit.tsx): a mark ahead of the cards' and a tab in the Lens. */
   readonly visit?: Visit | undefined; readonly author?: Id | null; readonly thread?: Id;
+  /** `answer` where `visit` is the visit this post answers (a Mod's outcome post), not one made to this post: the mark names it so, and `author` is the visited post's. */
+  readonly on?: MarkOn;
   /** The visit's Mod's pronouns, as the thread knows them (the character holding the office now). */
   readonly modPronouns?: PronounSet;
   /** Spin a thread from one of the visit's Acts: the Lens has closed. */
@@ -334,7 +336,7 @@ export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghos
   const form = ask !== null && open?.card === ask.form.kind ? ask.form : undefined;
   return (
     <span className="kb-marks-anchor" ref={anchor}>
-      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} postAt={postAt} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} then={then} visit={current ? { visit: current, mod: nameOf(current.mod), pronouns: modPronouns } : undefined} />
+      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} postAt={postAt} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} then={then} visit={current ? { visit: current, mod: nameOf(current.mod), pronouns: modPronouns, on } : undefined} />
       <Layers>
       {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} author={author} faceOf={faceOf} modPronouns={modPronouns} strip={strip} onSpin={onSpin} where={where} postAt={postAt} moments={moments} then={then} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} onSpinAct={onSpinAct} reportTo={reportTo} />}
       </Layers>

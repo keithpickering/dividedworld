@@ -137,7 +137,7 @@ export interface ModBotSettings {
   readonly quizQuestionsPerDay: number;
   /** How long a quiz visit may wait for its written question before the bank's question is used, in minutes. */
   readonly quizWriteMinutes: number;
-  /** The most concession posts the instance pays a model to write in a day, for a visit that is not a quiz (a quiz's call writes its own); 0 means every talk-down posts the persona's stock. Counted from the ledger. */
+  /** The most concession posts the instance pays a model to write in a day; 0 means every talk-down posts the persona's stock. Counted from the ledger. */
   readonly concessionsPerDay: number;
   /** How long a visit may wait for its written concession before the stock is used, in minutes. */
   readonly concessionWriteMinutes: number;
@@ -897,6 +897,13 @@ export interface Copy {
   readonly rosterThreadTitle: string;
   /** The title of a season's Staff Meetings thread, with `{season}` (`seasons.meetings_thread`). Where it is left out, the minutes are not posted (0439). */
   readonly meetingsThreadTitle?: string;
+  /** The title of a season's Banlist thread in the staff announcements, with `{season}`; the season's first ban entry opens it. Comes with `banlistEntry`, or neither. */
+  readonly banlistThreadTitle?: string;
+  /**
+   * The code line of a ban's entry in the Banlist, which states the ban and links the post that tipped the bar: `{character}` (the banned character's name), `{days}`, `{rule}` (the rule in plain words) and
+   * `{post}` (the post's link target, once, inside a `[url=…]`). A persona's own line goes under it. Comes with `banlistThreadTitle`, or neither.
+   */
+  readonly banlistEntry?: string;
 }
 
 /**

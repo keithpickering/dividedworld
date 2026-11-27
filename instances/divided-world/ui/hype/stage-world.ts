@@ -166,9 +166,9 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
   fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Two stars. Filed.', at: day + 1.2 * HOUR });
   fake.seed.infraction(visit, { points: 6, at: day + 1.2 * HOUR });
   /* A post whose one use is off camera: the title cards' strip of tape is a real Autocorrect, landed on this post's "friends" and copied from it (tools/hype/shot-cards.mjs). */
-  fake.seed.post(thread, who('Chadluminum'), 'We are all friends here.', { at: day + 1.4 * HOUR });
-  const scenes = { kind: 7, recount: 8, review: 9, joke: 10, appeal: 11, filed: 12, friends: 13 };
-  void [kind, recount, review];
+  /* Named by the Act each is, never by a number: the Mod's outcome post under `filed` is a post of the thread too, and takes its place. */
+  const friends = fake.seed.post(thread, who('Chadluminum'), 'We are all friends here.', { at: day + 1.4 * HOUR });
+  const scenes = { kind: fake.seed.seqOf(kind), recount: fake.seed.seqOf(recount), review: fake.seed.seqOf(review), joke: fake.seed.seqOf(joke), appeal: fake.seed.seqOf(appeal), filed: fake.seed.seqOf(filed), friends: fake.seed.seqOf(friends) };
 
   /*
    * The commentary's posts, after the montage's, so no number of round 1 moves. D-Guy's review is the one the class node is filmed on; the
@@ -314,7 +314,7 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
     thread, target: { act: target, seq: 4, character: who('Snuckles') }, cast, me, scenes,
     threads: { main: thread, argued: argued.thread, goodbye: goodbye.thread }, staff: { fangame, qc, ontopic: mod },
     owners: { ...owner }, viewer, played,
-    posts: { first: 1, kind: 2, review: 14, hotBox: 15, glitter: 16, fab: 17, graffiti: 18, autocorrect: 19 },
+    posts: { first: 1, kind: fake.seed.seqOf(kindWords), review: fake.seed.seqOf(dguy), hotBox: fake.seed.seqOf(dressedActs[0]!), glitter: fake.seed.seqOf(dressedActs[1]!), fab: fake.seed.seqOf(dressedActs[2]!), graffiti: fake.seed.seqOf(dressedActs[3]!), autocorrect: fake.seed.seqOf(dressedActs[4]!) },
     acts: { first, kind: kindWords, review: dguy, hotBox: dressedActs[0]!, glitter: dressedActs[1]!, fab: dressedActs[2]!, graffiti: dressedActs[3]!, autocorrect: dressedActs[4]! },
     sets, crowd: CROWD, boards, ready,
   };

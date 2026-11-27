@@ -1578,7 +1578,7 @@ describe('a visit\'s tab', () => {
   }
   const openVisit = (w: ReturnType<typeof visited>, settings?: { readonly postsPerPage: number }) =>
     renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards, copy: { modRole: 'A Moderator' }, ...(settings ? { settings } : {}) });
-  const visitMark = async (seq: number) => within(await article(seq)).findByRole('button', { name: /Opens the visit\.$/u });
+  const visitMark = async (seq: number) => within(await article(seq)).findByRole('button', { name: /to this post.*Opens the visit\.$/u });
   const visitLens = () => screen.getByRole('dialog', { name: /^Visit/u });
   /** Tab until the control has the focus, as a keyboard reader reaches it (the Lens's tab, its close cross, then its controls). */
   const tabTo = async (el: HTMLElement) => { for (let i = 0; i < 8 && document.activeElement !== el; i++) await userEvent.tab(); expect(el).toHaveFocus(); };
@@ -2079,43 +2079,84 @@ describe('a visit\'s tab', () => {
       expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
     });
 
-    test('talked down with a reply, the row links the Mod\'s concession post', async () => {
+    test('talked down with a reply, the row is the Mod\'s post: its words, Go to post, and no "posted a reply" link', async () => {
       width(false);
       const w = visited({ challenge: QUIZ });
       const attempt = w.fake.seed.report(w.gloomba, w.second, 'unused');
       w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', by: attempt, line: 'Gloomba got past The Clerk\'s quiz.' });
-      const reply = w.fake.seed.staffPost(w.clerk, w.thread, 'Fine, Gloomba. Go.');
-      w.fake.seed.concessionPost(w.visit, reply);
+      const reply = w.fake.seed.staffPost(w.clerk, w.thread, 'Fine, [b]Gloomba[/b]. Go.');
+      w.fake.seed.outcomePost(w.visit, reply, 'intercepted');
       openVisit(w, { postsPerPage: 2 });
       const l = await press(w);
       await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
-      const link = within(l).getByRole('link', { name: /The Clerk posted a reply/u });
+      const row = [...l.querySelectorAll<HTMLElement>('.kb-lens-row')].find((r) => r.textContent!.includes('talked down'))!;
+      expect(row).toHaveTextContent('“Fine, Gloomba. Go.”');
+      expect(row).toHaveAttribute('data-kb-act', reply);
+      expect(within(l).queryByRole('link', { name: /posted a reply/u })).toBeNull();
       /* The thread holds posts 1 to 3 and the reply is post 4: with two to a page, page 2. */
-      expect(link.getAttribute('href')).toBe(`/t/${w.thread}?page=2#post-4`);
+      expect(within(row).getByRole('link', { name: 'Go to post' }).getAttribute('href')).toBe(`/t/${w.thread}?page=2#post-4`);
     });
 
-    test('a reply that has no place in the thread is named in plain words, with no link', async () => {
+    test('a post with no place in the thread has no Go to post, and a talk-down with no post shows its line, acts on its own Act and has no link', async () => {
       width(false);
       const w = visited({ challenge: QUIZ });
       const attempt = w.fake.seed.report(w.gloomba, w.second, 'unused');
-      w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', by: attempt, line: 'Gloomba got past The Clerk\'s quiz.' });
-      w.fake.seed.concessionPost(w.visit, w.visit);
+      const end = w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', by: attempt, line: 'Gloomba got past The Clerk\'s quiz.' });
       openVisit(w);
       const l = await press(w);
       await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
-      expect(within(l).queryByRole('link', { name: /posted a reply/u })).toBeNull();
-      expect(l).toHaveTextContent('The Clerk posted a reply');
+      const row = [...l.querySelectorAll<HTMLElement>('.kb-lens-row')].find((r) => r.textContent!.includes('talked down'))!;
+      expect(within(l).queryByRole('link', { name: /Go to post/u })).toBeNull();
+      expect(row).toHaveAttribute('data-kb-act', end);
     });
 
-    test('talked down with no reply posted, the row has no such link', async () => {
+    test('filed, its row is the Mod\'s post: React reacts to the post, and Go to post leads to it', async () => {
       width(false);
-      const w = visited({ challenge: QUIZ });
-      const attempt = w.fake.seed.report(w.gloomba, w.second, 'unused');
-      w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', by: attempt, line: 'Gloomba got past The Clerk\'s quiz.' });
+      const w = visited({ mine: true });
+      const end = w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.' });
+      const posted = (await w.fake.visitStory(w.thread, w.visit, w.post)).outcomePosts[0]!;
+      expect(posted).toMatchObject({ kind: 'filed', about: end });
       openVisit(w);
       const l = await press(w);
       await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
-      expect(within(l).queryByRole('link', { name: /posted a reply/u })).toBeNull();
+      const row = [...l.querySelectorAll<HTMLElement>('.kb-lens-row')].find((r) => r.textContent!.includes('filed'))!;
+      expect(row).toHaveAttribute('data-kb-act', posted.post.id);
+      expect(row).toHaveTextContent('“Stamped, initialed, and filed under D.”');
+      expect(within(row).getByRole('link', { name: 'Go to post' }).getAttribute('href')).toMatch(new RegExp(`^/t/${w.thread}\\?page=\\d+#post-${posted.post.seq}$`, 'u'));
+      const react = vi.spyOn(w.fake, 'react');
+      await userEvent.click(within(row).getByRole('button', { name: 'React' }));
+      await userEvent.click(within(screen.getByRole('dialog', { name: /^React to/u })).getByRole('button', { name: 'Tea, Calm' }));
+      await waitFor(() => expect(react).toHaveBeenCalledWith(posted.post.id, w.pipe, 'tea'));
+    });
+
+    test('filed with its post refused, the row shows the line and acts on the ending itself', async () => {
+      width(false);
+      const w = visited({ mine: true });
+      const end = w.fake.seed.visitEnd(w.visit, { outcome: 'filed' });
+      expect((await w.fake.visitStory(w.thread, w.visit, w.post)).outcomePosts).toEqual([]);
+      openVisit(w);
+      const l = await press(w);
+      await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
+      const row = [...l.querySelectorAll<HTMLElement>('.kb-lens-row')].find((r) => r.textContent!.includes('filed'))!;
+      expect(row).toHaveAttribute('data-kb-act', end);
+      expect(within(row).queryByRole('link', { name: 'Go to post' })).toBeNull();
+    });
+
+    test('an appeal ruling\'s row is its post too', async () => {
+      width(false);
+      const w = visited({ mine: true });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+      const inf = w.fake.seed.infraction(w.visit, { points: 2 });
+      const appeal = w.fake.seed.appeal(w.pipe, inf, 'Please.');
+      const ruling = w.fake.seed.ruling(appeal, w.clerk, 'upheld', { line: 'It stands.' });
+      const post = w.fake.seed.staffPost(w.clerk, w.thread, 'It stands.');
+      w.fake.seed.outcomePost(w.visit, post, 'ruling', ruling);
+      openVisit(w);
+      const l = await press(w);
+      await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
+      const row = [...l.querySelectorAll<HTMLElement>('.kb-lens-row')].find((r) => r.textContent!.includes('ruled on the appeal'))!;
+      expect(row).toHaveAttribute('data-kb-act', post);
+      expect(within(row).getByRole('link', { name: 'Go to post' })).toBeInTheDocument();
     });
 
     test('dropped, it says it could not be filed and that nothing landed', async () => {

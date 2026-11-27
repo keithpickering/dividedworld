@@ -158,6 +158,13 @@ export const qualityControl: Persona = {
       'REQUEST EXPIRED, {asker}. Status: unprocessed. I opened it. I read the first line. Then there was a shift change. There is no shift change.',
       '{asker}, your request fell off the end of the queue. The queue has an end, now. I did not know. Recounting.',
     ],
+    // DRAFT for the owner's approval: this persona's line under a ban's entry in the Banlist.
+    banEntry: [
+      'DECLINED. {banned} is on the Banlist. The warnings filled the form and I did not have a bigger form.',
+      'Submission from {banned}: rejected. Status: banned. Gameplay: n/a. Replay Value: n/a. Credits: see the Banlist.',
+      'Processed. {banned} is out. Submissions processed: 998. Wait. 997. I will recount after this one.',
+      'Final notice on {banned}: the warnings were all logged, in order, with notes. The queue is now one name shorter, and I am tired.',
+    ],
   },
   beats: ['video-games', 'arts-crafts'],
   petRules: ['noDuplicateTitle', 'minLength', 'noNecropost'],

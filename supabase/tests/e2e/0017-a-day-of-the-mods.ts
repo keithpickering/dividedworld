@@ -114,7 +114,7 @@ test('a meeting orders two Mods; visits are drawn, intercepted, reported and fil
     if (part) {
       duty = 'meeting';
       reply = partAnswer(scene.meeting as Record<string, unknown>, part);
-    } else if (last === 'Write the line you file.') {
+    } else if (last === 'Write the post you file.') {
       duty = 'filing';
       const movePossible = who === MONITOR && /Rule 1:/.test(asked) && /severe/.test(asked);
       reply = movePossible
@@ -129,6 +129,12 @@ test('a meeting orders two Mods; visits are drawn, intercepted, reported and fil
     } else if (last === 'Give your findings.') {
       duty = 'patrolJudge';
       reply = { findings: [{ post: scene.patrolPost, charge: { rule: 'premise', band: 'minor' } }] };
+    } else if (last === 'Write your concession.') {
+      duty = 'concession';
+      reply = { concession: 'Fine, {who}. This time.' };
+    } else if (last === 'Write your line.') {
+      duty = 'banEntry';
+      reply = { line: 'Mind the rules next time, {banned}.' };
     } else throw new Error(`the fake model does not know this call: ${last}`);
     log.push({ duty, staff: who });
     return new Response(JSON.stringify({ model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(reply) }], usage: { input_tokens: 1500, output_tokens: 80, service_tier: 'standard' } }), { status: 200 });

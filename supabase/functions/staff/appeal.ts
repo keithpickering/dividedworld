@@ -27,6 +27,7 @@
  */
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
+import { CHATTER_TOKENS } from '../../../engine/system/chatter.ts';
 import { APPEAL_RULE, appealPrompt, repairAppeal, type AppealPunishment, type RuleLine } from '../../../engine/system/judgment.ts';
 import { phaseAt, type SeasonSpan } from '../../../engine/system/phases.ts';
 import type { Models } from '../../../engine/system/model.ts';
@@ -149,7 +150,7 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
     names: (id) => hearer.names[id] ?? 'a character',
     board: opened.board, title: heard?.title ?? null, read: heard?.read ?? null,
     appellant: { name: opened.appellant.name, pronouns: await pronounsOfCharacter(db, opened.appellant.id, fallback) }, plea: opened.plea, punishment, filedByHearer: opened.details.filed_by === opened.staff,
-    limits: { titleMaxLength: settings.titleMaxLength },
+    limits: { titleMaxLength: settings.titleMaxLength, postMaxLength: settings.postMaxLength },
   });
 
   // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
@@ -159,9 +160,9 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   try {
     const out = await (await getModels()).chat({
       duty: 'appeal', tier: DUTY_SPECS.appeal.tier, staff: opened.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
-      schema: frame.schema, rules: APPEAL_RULE, maxTokens: 600,
+      schema: frame.schema, rules: APPEAL_RULE, maxTokens: CHATTER_TOKENS,
     });
-    repaired = repairAppeal(out.value);
+    repaired = repairAppeal(out.value, settings.postMaxLength);
     trims = repaired.trims;
   } catch (e) {
     failed = (e instanceof AnswerRejected ? 'the answer was rejected: ' : 'the call failed: ') + said(e);

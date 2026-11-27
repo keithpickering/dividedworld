@@ -8,6 +8,7 @@ import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
 
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
 import { AnswerRejected } from '../_shared/models/index.ts';
+import { CHATTER_TOKENS } from '../../../engine/system/chatter.ts';
 import type { ChatRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 
 const MON = 'placeholder-monitor';
@@ -129,6 +130,7 @@ test('an infraction\'s appeal: opened as the player, judged on the appeal duty b
   assert.equal(m.chats[0]!.duty, 'appeal');
   assert.equal(m.chats[0]!.staff, MON);
   assert.equal(m.chats[0]!.tier, 'light');
+  assert.equal(m.chats[0]!.maxTokens, CHATTER_TOKENS, 'the line may be a post, as the ruling\'s may be posted');
   assert.deepEqual(d.state.closed, [{ appeal_act: APPEAL, verdict: 'reduced', line: 'Half, then.', staff: MON }]);
   assert.equal(d.state.records.length, 1);
   assert.deepEqual([d.state.records[0].cause_act, d.state.records[0].duty, d.state.records[0].staff], [APPEAL, 'appeal', MON]);

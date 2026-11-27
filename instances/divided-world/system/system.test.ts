@@ -393,10 +393,6 @@ test('the staff board\'s titles and the Roster Report\'s words are the owner\'s,
   assert.equal('announcementsTitle' in system, false, 'no announcements thread is made from the system (0437)');
 });
 
-test('the copy holds the Roster Report\'s and the Staff Meetings\' titles, each with its season', () => {
-  assert.deepEqual(instance.copy, { rosterThreadTitle: 'Season {season}: Roster Report', meetingsThreadTitle: 'Season {season}: Staff Meetings' });
-});
-
 test('each persona keeps the habits the habits plan gives, in UTC hours, and the roster\'s rule accepts them', () => {
   const span = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
   const want = {
@@ -460,4 +456,33 @@ test('every roster persona carries five concessions that pass the instance check
     assert.equal(new Set(p.concessions).size, 5, `${p.key}: no line twice`);
   }
   assert.equal(system.duties.concession, 'filer');
+});
+
+test('Divided World\'s copy is exactly the three thread titles, each with its season, and the Banlist entry', () => {
+  assert.deepEqual(Object.keys(instance.copy).sort(), ['banlistEntry', 'banlistThreadTitle', 'meetingsThreadTitle', 'rosterThreadTitle']);
+  assert.equal(instance.copy.rosterThreadTitle, 'Season {season}: Roster Report');
+  assert.equal(instance.copy.meetingsThreadTitle, 'Season {season}: Staff Meetings');
+  assert.equal(instance.copy.banlistThreadTitle, 'Season {season}: Banlist');
+  assert.equal(instance.copy.banlistEntry, 'Banned: {character}, {days} days, {rule}. [url={post}]The post that did it.[/url]');
+});
+
+test('every persona, and the instance, carries banEntry lines of at most 280 characters using only {mod}, its forms and {banned}, and no persona repeats the instance\'s', () => {
+  const sets: Array<[string, readonly string[]]> = [['instance', system.stockLines.banEntry ?? []], ...[ontopic, fangame, qualityControl].map((p): [string, readonly string[]] => [p.key, p.stockLines?.banEntry ?? []])];
+  for (const [who, lines] of sets) {
+    if (who === 'instance') assert.equal(lines.length, 3, 'instance: three lines');
+    else assert.ok(lines.length >= 3 && lines.length <= 6, `${who}: three to six lines`);
+    assert.equal(new Set(lines).size, lines.length, `${who}: no line twice`);
+    for (const line of lines) {
+      assert.ok(line.length <= 280, `${who}: ${line.length} characters`);
+      assert.ok(!/DRAFT placeholder/.test(line), `${who}: written`);
+      for (const [, t] of line.matchAll(/\{([^}]+)\}/g)) {
+        const [name, form] = t!.split('.');
+        const ok = name === 'banned' ? form === undefined : name === 'mod' && (form === undefined || (PRONOUN_FORMS as readonly string[]).includes(form));
+        assert.ok(ok, `${who}: {${t}}`);
+      }
+    }
+  }
+  const own = new Set(sets[0]![1]);
+  for (const [who, lines] of sets.slice(1)) for (const line of lines) assert.ok(!own.has(line), `${who} repeats the instance's line`);
+  assert.deepEqual(instanceProblems(instance), []);
 });

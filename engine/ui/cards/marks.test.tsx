@@ -495,7 +495,7 @@ describe('a visit\'s mark', () => {
     const visit = w.fake.seed.visit(clerk, w.second, { at: w.fake.clock.now(), endsInMs: endsInMinutes * MINUTE });
     return { ...w, clerk, visit };
   };
-  const visitMark = async (seq = 2) => within(await article(seq)).findByRole('button', { name: /Opens the visit\.$/u });
+  const visitMark = async (seq = 2) => within(await article(seq)).findByRole('button', { name: /to this post.*Opens the visit\.$/u });
 
   test('is a button named for the Mod, the time left and what it opens, showing the time as h:mm', async () => {
     const w = visited();
@@ -606,6 +606,25 @@ describe('a visit\'s mark', () => {
     expect(mark).toHaveTextContent(/^$/u);
     expect(mark.querySelector('svg')).toHaveAttribute('data-kb-icon', icon);
     expect(mark).toHaveAccessibleName(label);
+  });
+
+  test.each([
+    ['filed', 'The Clerk filed her visit to the post this answers. Opens the visit.'],
+    ['intercepted', 'The Clerk\'s visit to the post this answers was talked down. Opens the visit.'],
+  ] as const)('the Mod\'s outcome post for a visit that ended %s carries the same mark, named for the post it answers', async (outcome, label) => {
+    const w = visited();
+    w.fake.seed.visitEnd(w.visit, { outcome, line: 'Done.' });
+    if (outcome === 'intercepted') w.fake.seed.outcomePost(w.visit, w.fake.seed.staffPost(w.clerk, w.thread, 'Fine.'), 'intercepted');
+    open(w);
+    const post = await article(4);
+    const mark = await within(post).findByRole('button', { name: /Opens the visit\.$/u });
+    expect(mark).toHaveAccessibleName(label);
+    expect(mark).toHaveAttribute('data-kb-visit', outcome);
+    expect(mark).toHaveClass('kb-meta-tile');
+    expect(mark.querySelector('svg')).toHaveAttribute('data-kb-icon', outcome === 'filed' ? 'bang' : 'slash');
+    expect(within(post).queryByText(/found in violation/u)).toBeNull();
+    await userEvent.click(mark);
+    expect(screen.getByRole('dialog', { name: 'Visit to this post' })).toBeInTheDocument();
   });
 
   test('opens the Lens on the visit\'s tab and the same mark closes it', async () => {

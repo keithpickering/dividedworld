@@ -127,8 +127,9 @@ declare
                            -- An interception (0108): the player's door, which verifies the caller plays the character, that it is not banned and its own wallet. And the question a quiz visit asks,
                            -- with its choices and never its answer, which thread_page (invoker) reads for the signed-in player.
                            'intercept(uuid,uuid,text)', 'visit_quiz(uuid)',
-                           -- A talked-down visit's concession post (0449): the id of a public post by the visit's Mod, never its source or a refusal, the same for every caller.
-                           'visit_concession_post(uuid)',
+                           -- A visit's outcome posts (0451): the ids of the public posts a Mod wrote for it, with their kinds, never a source or a refusal, the same for every caller; and the page's join from the
+                           -- posts on a page to the visits they answer (thread_page, an invoker, reads it), ids only, over the page's own posts.
+                           'visit_outcome_posts(uuid)', 'outcome_page_rows(uuid[])',
                            -- An appeal (0109): the punished character's door, which verifies the caller plays the character (and does not refuse a banned one: a ban is appealed by the banned).
                            -- Its ruling, its refund, its sweep and its helpers are the service's.
                            'open_appeal(uuid,uuid,text)',
@@ -198,8 +199,8 @@ declare
                            'kind_plays(uuid,text,timestampwithtimezone,uuid,integer)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
-                           -- A talked-down visit's concession post (0449): a visitor reads the thread and its Lens, and the answer is a public post's id, the same for every caller.
-                           'visit_concession_post(uuid)',
+                           -- A visit's outcome posts (0451): a visitor reads the thread and its Lens, and the answer is public posts' ids, the same for every caller; and the page's join thread_page reads for them.
+                           'visit_outcome_posts(uuid)', 'outcome_page_rows(uuid[])',
                            -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.
                            'admin_contact()',
                            -- Each kayfabb- job's schedule, whether it is active, its first and last good run and the grace (0450): jobs, the same for every caller, so a visitor's page can say a job is late.

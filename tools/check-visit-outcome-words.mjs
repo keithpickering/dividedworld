@@ -1,10 +1,10 @@
 /**
  * Holds the glass's words for how a visit ended to the outcomes the database allows ("Two lists that must agree are one list"). The
- * list is the latest `end_visit` check in supabase/migrations; the words are engine/ui/cards/visit.ts (`tabName`, `markLabel`,
- * `noticeWords`; `markIcon` holds icons, not words, and is held to the list all the same) and engine/ui/profile/modlog.ts
+ * list is the latest `end_visit` check in supabase/migrations; the words are engine/ui/cards/visit.ts (`tabName`, `markLabel`'s two maps, one for
+ * the mark on the visited post and one for the mark on a post that answers it, `noticeWords`; `markIcon` holds icons, not words, and is held to the list all the same) and engine/ui/profile/modlog.ts
  * (`endedModWords`). It refuses:
  *
- *   1. an outcome the SQL allows with no words (or, for `markIcon`, no icon) in one of the four places, or words for an
+ *   1. an outcome the SQL allows with no words (or, for `markIcon`, no icon) in one of the five places, or words for an
  *      outcome the SQL does not allow;
  *   2. words that say "admin" for an outcome some SQL writer ends with a null `by_act` and no writer names an Act for: nobody did that.
  *      (An outcome no writer ends at all may say admin; its words wait for the admin function that will write it.)
@@ -64,6 +64,14 @@ function wordsByOutcome(body, shape) {
   return out;
 }
 
+/** One of `markLabel`'s maps by its name (`const post = {` and `const answer = {`), from its opening line to the one that closes it; null where it is not there. */
+function labelMap(body, name) {
+  const at = body.search(new RegExp(`^\\s+const ${name} = \\{`, 'm'));
+  if (at < 0) return null;
+  const end = body.indexOf('\n  };', at);
+  return body.slice(at, end < 0 ? undefined : end);
+}
+
 /** @type {readonly (readonly [{ readonly cause: string; readonly rule: string; readonly ruleNumber: number | null }, string])[]} */
 const RULES = [
   [{ cause: 'rule', rule: 'Rule 1: x', ruleNumber: 1 }, 'Rule 1: x'],
@@ -97,7 +105,8 @@ export async function visitWordFaults({ sqlText, visitText, modlogText }) {
   const places = {
     markIcon: region(visitText, 'markIcon') === null ? null : wordsByOutcome(region(visitText, 'markIcon'), 'case'),
     tabName: region(visitText, 'tabName') === null ? null : wordsByOutcome(region(visitText, 'tabName'), 'case'),
-    markLabel: region(visitText, 'markLabel') === null ? null : wordsByOutcome(region(visitText, 'markLabel'), 'key'),
+    'markLabel (post)': ((r) => (r === null || labelMap(r, 'post') === null ? null : wordsByOutcome(labelMap(r, 'post'), 'key')))(region(visitText, 'markLabel')),
+    'markLabel (answer)': ((r) => (r === null || labelMap(r, 'answer') === null ? null : wordsByOutcome(labelMap(r, 'answer'), 'key')))(region(visitText, 'markLabel')),
     'modlog.ts endedModWords': region(modlogText, 'endedModWords') === null ? null : wordsByOutcome(region(modlogText, 'endedModWords').split("r.kind === 'report'")[0], 'case'),
   };
   for (const [place, found] of Object.entries(places)) {

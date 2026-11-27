@@ -36,6 +36,10 @@ export interface ThreadContext {
   readonly underOf?: (act: Id) => Id | undefined;
   /** Each post's latest visit, by the post's id, as the pages read carried it. */
   readonly visits?: ReadonlyMap<Id, Visit>;
+  /** Each outcome post's visit, by the outcome post's id (a visit's `answers`): the post carries the visit's mark though the visited post may be on another page. */
+  readonly answered?: ReadonlyMap<Id, Visit>;
+  /** The author of the post each outcome post answers, by the outcome post's id: read with the page, whether or not the visited post is on it. */
+  readonly authorOf?: ReadonlyMap<Id, Id | null>;
   /**
    * The reader's own veiled posts on the pages shown, by the post's id. A veiled post is drawn under the stand-in for everyone, its author's player included,
    * so only this says it is theirs: read it through `ownerOf`, never by comparing `act.character`. Absent where a post is drawn outside the thread screen (a story's lone post).
