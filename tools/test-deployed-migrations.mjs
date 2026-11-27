@@ -10,7 +10,9 @@
  * localhost refusal means the command cannot even be pointed at the local Postgres, on purpose).
  *
  * The poisons, each its own case: a remote version the repository lacks (under both modes); a
- * local version not yet remote (fine before, a complaint after); equal lists; the command with no
+ * local version not yet remote (fine before when it is above the database's newest, a complaint
+ * before when it is below it, since db push would refuse it and applying it by hand would run it
+ * out of the order the SQL suite tested; a complaint after either way); equal lists; an empty remote; the command with no
  * --db, no mode, both modes, and a database on this machine in each spelling; the real folder; and
  * the retry, which repeats a transport failure and throws a query error or any refusal by a server
  * that answered at once, with one case per class of psql message; and the environment the check
@@ -56,6 +58,23 @@ check('4a. equal lists are [] under before', problems(local, [...local], 'before
 check('4b. equal lists are [] under after', problems(local, [...local], 'after').length === 0);
 p = problems(['0001', '0500'], ['0001', '0003'], 'after');
 check('after names both directions at once', p.length === 2 && p.some((x) => x.includes('0003')) && p.some((x) => x.includes('0500')), JSON.stringify(p));
+
+/* The 25 Nov case: 0424 was written after 0425 was applied, so it is numbered below the database's newest. */
+p = problems(['0001', '0424', '0425'], ['0001', '0425'], 'before');
+check('9a. a stray version below the remote newest fails under before, naming it and the newest', p.length === 1 && p[0].includes('0424') && p[0].includes('0425'), JSON.stringify(p));
+p = problems(['0001', '0423', '0424', '0425'], ['0001', '0425'], 'before');
+check('9b. two stray versions give two problems, in order', p.length === 2 && p[0].includes('0423') && p[1].includes('0424'), JSON.stringify(p));
+p = problems(['0001', '0425', '0426'], ['0001', '0425'], 'before');
+check('9c. a local version above the remote newest is fine under before', p.length === 0, JSON.stringify(p));
+p = problems(['0001', '0424'], [], 'before');
+check('9d. an empty remote has no newest and adds nothing under before', p.length === 0, JSON.stringify(p));
+p = problems(['0001', '0424', '0425'], ['0001', '0425'], 'after');
+check('9e. the 25 Nov case under after is still exactly one problem, for 0424', p.length === 1 && p[0].includes('0424'), JSON.stringify(p));
+p = problems(['0001', '0424', '0425'], ['0001', '0425'], 'before');
+check('9f. the stray problem says db push would refuse it', p.length === 1 && /db push would refuse it/.test(p[0]) && /below the database's newest, 0425/.test(p[0]), JSON.stringify(p));
+const advice = checkModule.strayAdvice?.('0425');
+check('9g. the stray advice names the newest, renumbering and --include-all', typeof advice === 'string' && advice.includes('Renumber each of these above 0425') && advice.includes('--include-all'), String(advice));
+check('9h. strays names the stray versions and the newest, or null for none', JSON.stringify(checkModule.strays?.(['0001', '0423', '0424', '0425'], ['0001', '0425'], 'before')) === JSON.stringify({ newest: '0425', versions: ['0423', '0424'] }) && checkModule.strays?.(['0001', '0425', '0426'], ['0001', '0425'], 'before') === null && checkModule.strays?.(['0001', '0424'], ['0001', '0425'], 'after') === null);
 
 /* ----------------------------------------------------------------------- the command ---- */
 
