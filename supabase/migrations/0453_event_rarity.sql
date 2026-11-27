@@ -5,8 +5,8 @@
 -- a line of that rarity, uniformly by key (one draw); then the item, which is the line's own when it names one (no draw), else draw_by_rarity as before (two draws).
 -- A seeded test reads that order. A setting with no `eventRarity` (a database migrated and not yet re-seeded) weighs {"common": 1}, and every line it holds is common, so it rolls as before.
 --
--- Cost at a busy instance's scale: event_pool reads the instance's own lines and items and the settings it is handed, never an account's rows; a roll reads it twice (the rarity, then the line), so its cost is
--- in the instance's lines and items, whatever the accounts and events.
+-- Cost at a busy instance's scale: event_pool reads the instance's own lines and items and the settings it is handed, never an account's rows; a roll reads it a few times per weighted rarity (the rarities' total and pick, then the
+-- line), so its cost is in the instance's lines, items and four rarities, whatever the accounts and events.
 --
 --   1. event_lines     `rarity` (the four, default common) and `item` (only for a gear or card line).
 --   2. gear_kinds, card_kinds   `event_only`, default false.
