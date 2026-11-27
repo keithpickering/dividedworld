@@ -19,7 +19,7 @@
  * (`stageEffects`, unless the device asks for more contrast or forced colors) and, when a staged play's card has sounds, the game bus
  * (`stageSound`), both released when the door unmounts. The "Sound: on" toggle is the visitor's mute; its press is also the gesture that unlocks audio.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
 import { BYTES, cellsOf, count, GRID, hasCell, union, type Cells } from '../../rules/surface.ts';
@@ -122,7 +122,7 @@ function useHighContrast(): boolean {
 
 /** The visitor's own mute for the door's game sound; its press is the gesture that unlocks audio, so it needs no other code. */
 function SoundToggle({ on, set }: { readonly on: boolean; readonly set: (on: boolean) => void }) {
-  return <button type="button" className="kb-button kb-front-door-sound" aria-pressed={on} onClick={() => set(!on)}>Sound: {on ? 'on' : 'off'}</button>;
+  return <button type="button" className="kb-button" aria-pressed={on} onClick={() => set(!on)}>Sound: {on ? 'on' : 'off'}</button>;
 }
 
 export function FrontDoor() {
@@ -203,7 +203,7 @@ export function FrontDoor() {
   const [soundOn, setSoundOn] = useState(true);
   useEffect(() => (noisy ? stageSound({ gameSound: soundOn ? 'on' : 'off' }) : undefined), [noisy, soundOn]);
   const highContrast = useHighContrast();
-  useEffect(() => stageEffects(highContrast ? 'standard' : 'bright'), [highContrast]);
+  useLayoutEffect(() => stageEffects(highContrast ? 'standard' : 'bright'), [highContrast]);
 
   const note = useMemo(() => parse(door.note).filter((b) => b.t !== 'marker'), [door.note]);
   const noteFill: Fill = { settings, path, marker: () => null };

@@ -1,8 +1,9 @@
 import { lazy, useEffect } from 'react';
-import { act, screen, within } from '@testing-library/react';
+import { act, cleanup, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { resetSound } from '../audio/sound.ts';
+import { applyAppearance } from '../appearance.ts';
+import { resetSound, setSoundPreference } from '../audio/sound.ts';
 import type { MixerDeps } from '../audio/mixer.ts';
 import type { EffectProps, CardUi } from '../cards/types.ts';
 import { ok, refuse, type CardRules } from '../../rules/cards.ts';
@@ -27,7 +28,6 @@ vi.mock('../audio/mixer.ts', async (importOriginal) => {
 });
 const gameBus = () => mixers.calls.filter((c) => c.bus === 'game').at(-1)?.on;
 const fakeDeps = { makeContext: () => { throw new Error('no audio in a test'); }, fetchBytes: async () => new ArrayBuffer(8) } as unknown as MixerDeps;
-
 
 /* A card of the test's own with an effect: it wraps the words, says one control, and reports what save and release answer. */
 let seen: EffectProps | null = null;
@@ -83,7 +83,15 @@ function fakeMedia(initial: readonly string[] = []) {
 }
 const original = window.matchMedia;
 beforeEach(() => { mixers.calls.length = 0; resetSound(fakeDeps); });
-afterEach(() => { window.matchMedia = original; resetSound(); document.documentElement.removeAttribute('data-kb-effects'); });
+const themes = [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' as const, preview: {} }];
+const account = (effects: 'standard' | 'bright') => applyAppearance(document, { theme: 'default', motion: 'system', effects }, themes);
+afterEach(() => {
+  cleanup();
+  window.matchMedia = original; resetSound();
+  /* The account's own mark is module state a test may have set; with it standard, a stage a door leaked is the only thing that can be left. */
+  account('standard');
+  expect(document.documentElement.hasAttribute('data-kb-effects'), 'a mounted door left its effects staged').toBe(false);
+});
 
 describe('the front door\'s impact', () => {
   test('mounting with a card that has sounds turns the game bus on, and unmounting puts it back to the preference', () => {
@@ -117,6 +125,31 @@ describe('the front door\'s impact', () => {
     expect(document.documentElement.getAttribute('data-kb-effects')).toBe('bright');
     flip(q, true);
     expect(document.documentElement.hasAttribute('data-kb-effects')).toBe(false);
+  });
+
+  test('the effects are on the root before a card\'s own effect reads them at mount', () => {
+    let seenAtMount: string | null = null;
+    const reader: CardUi = { ...test_card, Effect: (props) => { useEffect(() => { seenAtMount = document.documentElement.getAttribute('data-kb-effects'); }, []); return <div>{props.children}</div>; } };
+    renderInWorld(<FrontDoor />, { cards: [reader] });
+    expect(seenAtMount).toBe('bright');
+  });
+
+  test('an account\'s sound preference told while the door is mounted is what the bus is after it unmounts, whatever the toggle did', async () => {
+    const { unmount } = drawNoisy();
+    await userEvent.click(screen.getByRole('button', { name: /^Sound: (on|off)$/ }));
+    setSoundPreference({ gameSound: 'on', gameVolume: 80, interfaceSound: 'off', interfaceVolume: 80 });
+    expect(gameBus(), 'the toggle is off and the door holds the bus').toBe(false);
+    unmount();
+    expect(gameBus()).toBe(true);
+  });
+
+  test('an account\'s bright effects applied while the door stages standard are on after it unmounts', () => {
+    fakeMedia(['(prefers-contrast: more)']);
+    const { unmount } = draw();
+    account('bright');
+    expect(document.documentElement.hasAttribute('data-kb-effects')).toBe(false);
+    unmount();
+    expect(document.documentElement.getAttribute('data-kb-effects')).toBe('bright');
   });
 
   test('the toggle is named by its visible text, reads "Sound: on", and a press turns the game bus off and on', async () => {
