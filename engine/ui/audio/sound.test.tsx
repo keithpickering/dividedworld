@@ -611,6 +611,17 @@ describe('the front door stages the game bus over the account\'s preference', ()
     sound.dispose();
   });
 
+  test('stage, release, stage (a StrictMode double effect): held after the second, back to the preference after its release', () => {
+    const { sound, last } = watch();
+    sound.setSoundPreference(pref('off'));
+    sound.stageSound({ gameSound: 'on' })();
+    const release = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')?.on).toBe(true);
+    release();
+    expect(last('game')?.on).toBe(false);
+    sound.dispose();
+  });
+
   test('while staged the volume is the last preference\'s, and the interface bus follows the preference alone', () => {
     const { sound, last } = watch();
     sound.setSoundPreference(pref('off', 30));

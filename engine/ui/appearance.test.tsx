@@ -219,7 +219,7 @@ describe('the front door stages the effects mark over the account\'s', () => {
   });
 
   test('a release twice, or after a newer stage, releases only its own', () => {
-    apply('standard');
+    apply('bright');
     const first = stageEffects('bright');
     const second = stageEffects('standard');
     expect(effects()).toBeNull();
@@ -227,6 +227,15 @@ describe('the front door stages the effects mark over the account\'s', () => {
     first();
     expect(effects()).toBeNull();
     second();
+    expect(effects()).toBe('bright');
+  });
+
+  test('stage, release, stage (a StrictMode double effect): held after the second, back to the preference after its release', () => {
+    apply('standard');
+    stageEffects('bright')();
+    const release = stageEffects('bright');
+    expect(effects()).toBe('bright');
+    release();
     expect(effects()).toBeNull();
   });
 });
