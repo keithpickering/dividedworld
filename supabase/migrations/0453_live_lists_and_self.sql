@@ -15,6 +15,7 @@
 create function thread_row(in_thread uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
+  -- The keys of the select list below are pinned in supabase/tests/0453-live-lists-and-self.sql; editing the list means editing that pin.
   return (select to_jsonb(l) from (
     select t.id, t.board, t.title, t.origin_act_id, t.created_at, t.last_at, t.last_seq, t.replies, t.first_act, t.first_character, t.last_act, t.last_character,
            t.replies_this_week, t.origin_thread, t.origin_place
@@ -43,13 +44,19 @@ declare
   one record;
   listed jsonb;
   summary jsonb;
+  boards uuid[] := '{}';
+  b uuid;
 begin
+  -- A board is sent only when a thread thread_list lists produced a row on it: an unlisted thread (the Updates thread) changes neither the list nor the board's entry.
   for one in select distinct n.thread from new_acts n where n.thread is not null and n.seq is not null loop
     listed := thread_row(one.thread);
-    if listed is not null then perform broadcast_later('board:' || (listed ->> 'board'), 'row', listed); end if;
+    if listed is not null then
+      perform broadcast_later('board:' || (listed ->> 'board'), 'row', listed);
+      boards := boards || (listed ->> 'board')::uuid;
+    end if;
   end loop;
-  for one in select distinct t.board from new_acts n join threads t on t.id = n.thread where n.thread is not null and n.seq is not null loop
-    summary := board_summary(one.board);
+  for b in select distinct x from unnest(boards) x loop
+    summary := board_summary(b);
     if summary is not null then perform broadcast_later('index', 'board', summary); end if;
   end loop;
   return null;

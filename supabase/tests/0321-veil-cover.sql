@@ -507,9 +507,10 @@ begin
   perform tests.act(b, 'post', t, jsonb_build_object('body', 'A quote of the veiled post.'), p);
   perform tests.act(b, 'card', t, jsonb_build_object('card', 'vcmove', 'message', '', 'config', '{}'::jsonb, 'layer', 9), p);
   scans_after := (select coalesce(sum(x.seq_scan + coalesce(x.idx_scan, 0)), 0) from pg_stat_xact_user_tables x where x.relname = 'post_veils');
-  -- Since 0453 an Act with a place number (the reply and the quote; the card has none) also sends its thread's row to the board's list, which names the thread's first and latest post's author as thread_list does (0444): a constant number of probes of
-  -- post_veils (nine here, for the thread's row and the board's entry) for each of them, however long the thread (this one holds 600 Acts). The cost this guard is for stays: nothing here reads the thread's Acts or every veil, and the card, which sends no row, reads none.
-  if scans_after - scans_before > 24 then raise exception 'a reply, a quote and a card by a character who is not the post''s author read post_veils % time(s)', scans_after - scans_before; end if;
+  -- Since 0453 an Act with a place number (the reply and the quote; the card has none) also sends its thread's row to the board's list, which names the thread's first and latest post's author as thread_list does (0444): nine probes of
+  -- post_veils for each of them (first and latest post, for the thread's row and for the board's entry, nine in all), so 18 for the reply and the quote together, however long the thread (this one holds 600 Acts). The card sends no row and reads none.
+  -- Measured: 18; a bound of 17 fails. The cost this guard is for stays: nothing here reads the thread's Acts or every veil.
+  if scans_after - scans_before > 18 then raise exception 'a reply, a quote and a card by a character who is not the post''s author read post_veils % time(s)', scans_after - scans_before; end if;
   -- The author's own edit does read it (the probe of post_veils_post), so the count above measures something.
   perform tests.act(a, 'edit', t, jsonb_build_object('body', 'Edited.'), p);
   scans_after := (select coalesce(sum(x.seq_scan + coalesce(x.idx_scan, 0)), 0) from pg_stat_xact_user_tables x where x.relname = 'post_veils');

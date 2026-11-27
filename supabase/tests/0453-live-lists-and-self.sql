@@ -103,6 +103,7 @@ begin
 
   -- 3. What the row and the board carry.
   select array_agg(k order by k) into row_keys from jsonb_object_keys(rows -> 0 -> 'payload') k;
+  -- A message aid: it names a private or batched field plainly when one is added. The exact pin of the keys below is the check.
   if exists (select 1 from unnest(row_keys) k where k ~* 'view|reading|owner|account|reactor|class') then
     raise exception 'the row carries a private or batched field: %', row_keys;
   end if;
@@ -129,7 +130,7 @@ begin
   end if;
 end $$;
 
--- 4. A thread no list shows queues nothing: the Updates thread is left out of thread_list.
+-- 4. A thread no list shows queues nothing (no row, and no board entry either, which would change nothing): the Updates thread is left out of thread_list.
 do $$
 declare
   ann uuid := tests.account('live-unlisted');
@@ -139,8 +140,8 @@ begin
   insert into unlisted_threads (thread) values (t);
   delete from broadcasts_due;
   perform tests.post(a, t, 'Nobody lists me.');
-  if exists (select 1 from broadcasts_due where topic like 'board:%') then
-    raise exception 'an unlisted thread queued a row: %', (select jsonb_agg(topic || ' ' || event) from broadcasts_due);
+  if exists (select 1 from broadcasts_due where topic like 'board:%' or topic = 'index') then
+    raise exception 'an unlisted thread queued a row or a board: %', (select jsonb_agg(topic || ' ' || event) from broadcasts_due);
   end if;
   if thread_row(t) is not null then raise exception 'thread_row answered for a thread thread_list does not list'; end if;
   if board_summary(gen_random_uuid()) is not null then raise exception 'board_summary answered for a board that is not there'; end if;
