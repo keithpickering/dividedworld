@@ -91,7 +91,9 @@ describe('the thread', () => {
     expect(authors.get(made.posts['review']!)).toBe(made.cast['D-Guy']);
     expect(authors.get(made.posts['kind']!)).toBe(made.cast['Chadluminum']);
     /* Round 1's posts are where its shots left them. */
-    expect(made.scenes).toEqual({ kind: 7, recount: 8, review: 9, joke: 10, appeal: 11, filed: 12, friends: 13 });
+    expect(made.scenes).toEqual({ kind: 7, recount: 8, review: 9, joke: 10, appeal: 11, filed: 12, friends: 14 });
+    /* The Mod's outcome post answers the filing, at 13: the posts after it moved down by that one, and are found by the Act they are. */
+    expect(authors.get(13)).toBe(made.staff['ontopic']);
     for (const key of ['hotBox', 'glitter', 'fab', 'graffiti', 'autocorrect']) expect(made.posts[key]).toBeGreaterThan(made.posts['review']!);
   });
 

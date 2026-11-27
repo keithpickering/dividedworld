@@ -108,6 +108,8 @@ export interface Seed {
   /** A thread with its first Act; a null character is The System's, on its board only. */
   thread(board: string, character: Id | null, title: string, body?: string, options?: SeedAct): { thread: Id; act: Id };
   post(thread: Id, character: Id | null, body: string, options?: SeedAct & { quote?: Id }): Id;
+  /** The place a seeded Act holds in its thread (its `seq`), so a story names a post by the Act it seeded and not by a number that the posts seeded before it (a Mod's outcome post among them) move. */
+  seqOf(act: Id): number;
   /** A poll on a post, written by the post's own character dated `at` (else now) and closing at `at` plus `draft.lasts`; returns the poll's Act. A draft the settings refuse is thrown. */
   poll(post: Id, draft: PollDraft, options?: { readonly at?: number }): Id;
   /** A ballot of a character's on a poll, as its player, dated `at` (else now); refused in the server's words like any other. */
@@ -6146,6 +6148,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       else seasons.push(next);
     },
     nextSettlementAt(at) { nextSettlement = at; },
+    seqOf(act) {
+      const seq = acts.get(act)?.seq;
+      if (seq === null || seq === undefined) throw new Error(`no placed Act ${act}`);
+      return seq;
+    },
     views(thread, count) { views.set(thread, count); },
     legacyNumber(act) {
       const a = acts.get(act);
