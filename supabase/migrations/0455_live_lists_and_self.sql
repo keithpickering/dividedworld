@@ -57,39 +57,71 @@ begin
 end $$;
 revoke execute on function board_summary(uuid) from public, anon, authenticated;
 
--- One statement, not one row: a statement that writes many Acts (a settlement's announcements, a backfill, a test that writes twenty thousand) sends each thread's row and each board's entry once, as the state after the statement,
--- and costs two projections for each thread and board it touched and not one for each Act. A row of one Act is the same row: the transition table holds that Act alone.
+-- The rows are built at commit, not at the end of the statement that wrote the Act. post() writes the post and only then springs its quote traps, and a face-down author veil lands on the quoting post later in the same
+-- transaction (0357): a row built at the statement's end would name the quoter's real character where acts_public, board_page and post()'s own answer name the stand-in ("A response never proves a private fact").
+-- start_thread and the spin writers likewise do work after their insert. So the statement trigger only records what it touched in live_list_queue, and a DEFERRABLE INITIALLY DEFERRED constraint trigger on the queue
+-- (live_lists_flush) builds each thread's row and each board's entry from the state the transaction will commit, and queues them with broadcast_later, still inside the transaction. The first firing drains the whole
+-- queue; the firings after it find nothing. A rolled-back transaction takes its queue with it and sends nothing. The queue is empty between transactions (a drained row is deleted before commit), so an export carries it empty.
+-- A test, which never commits, reads the rows after `set constraints all immediate` (supabase/tests/0455-live-lists-and-self.sql, pg_temp.flush).
+create table live_list_queue (
+  id bigint generated always as identity primary key,
+  threads uuid[] not null default '{}',   -- threads whose placed Acts, or move, changed their row
+  boards uuid[] not null default '{}'     -- boards whose index entry changed without a row to name them (a move's old board)
+);
+alter table live_list_queue enable row level security;
+revoke all on live_list_queue from anon, authenticated;
+
+-- One statement, one row of the queue: a statement that writes many Acts (a settlement's announcements, a backfill, a test that writes twenty thousand) costs one queue row, and the transaction two projections for each
+-- thread and board it touched and not one for each Act. A row of one Act is the same row: the transition table holds that Act alone.
 create function acts_live_lists() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  insert into live_list_queue (threads)
+    select array_agg(distinct n.thread) from new_acts n where n.thread is not null and n.seq is not null having count(*) > 0;
+  return null;
+end $$;
+revoke execute on function acts_live_lists() from public, anon, authenticated;
+
+create trigger acts_live_lists after insert on acts referencing new table as new_acts for each statement execute function acts_live_lists();
+
+create function live_lists_flush() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
 declare
+  q record;
+  ts uuid[] := '{}';
+  extra uuid[] := '{}';
   listed jsonb;
   summary jsonb;
   boards uuid[] := '{}';
   bulk uuid[];
   b uuid;
 begin
-  -- A board that more than live_bulk_threads() of its threads got a placed Act in, in this statement, hears one `changed` and no per-thread `row` (5,000 rows to every reader, and 15 ms each to project).
+  for q in delete from live_list_queue d returning d.threads, d.boards loop
+    ts := ts || q.threads;
+    extra := extra || q.boards;
+  end loop;
+  if cardinality(ts) = 0 and cardinality(extra) = 0 then return null; end if;
+  -- A board that more than live_bulk_threads() of its threads got a placed Act in, in this transaction, hears one `changed` and no per-thread `row` (5,000 rows to every reader, and 15 ms each to project).
   select coalesce(array_agg(x.board), array[]::uuid[]) into bulk from (
-    select t.board from threads t where t.id in (select n.thread from new_acts n where n.thread is not null and n.seq is not null)
+    select t.board from threads t where t.id in (select u from unnest(ts) u)
     group by t.board having count(*) > live_bulk_threads()) x;
   foreach b in array bulk loop
     perform broadcast_later('board:' || b, 'changed', '{}'::jsonb);
   end loop;
   -- A board is sent only when a thread thread_list lists produced a row on it: an unlisted thread (the Updates thread) changes neither the list nor the board's entry.
-  for listed in select r from thread_rows((select coalesce(array_agg(distinct n.thread), array[]::uuid[]) from new_acts n join threads t on t.id = n.thread
-                                           where n.seq is not null and t.board <> all (bulk))) r loop
+  for listed in select r from thread_rows((select coalesce(array_agg(distinct t.id), array[]::uuid[]) from threads t where t.id in (select u from unnest(ts) u) and t.board <> all (bulk))) r loop
     perform broadcast_later('board:' || (listed ->> 'board'), 'row', listed);
     boards := boards || (listed ->> 'board')::uuid;
   end loop;
-  for b in select distinct x from unnest(boards || bulk) x loop
+  for b in select distinct x from unnest(boards || bulk || extra) x order by 1 loop
     summary := board_summary(b);
     if summary is not null then perform broadcast_later('index', 'board', summary); end if;
   end loop;
   return null;
 end $$;
-revoke execute on function acts_live_lists() from public, anon, authenticated;
+revoke execute on function live_lists_flush() from public, anon, authenticated;
 
-create trigger acts_live_lists after insert on acts referencing new table as new_acts for each statement execute function acts_live_lists();
+create constraint trigger live_lists_flush after insert on live_list_queue deferrable initially deferred for each row execute function live_lists_flush();
 
 -- masks_change (0436), without the `thread` broadcast: the first Act of the thread it opens sends the board its row. Everything else as 0436 wrote it.
 create or replace function masks_change(window_end timestamptz) returns uuid
@@ -422,9 +454,7 @@ declare
   news uuid[];
   d record;
   changed integer;
-  listed jsonb;
   stub jsonb;
-  summary jsonb;
   b uuid;
   bulk uuid[];
 begin
@@ -481,9 +511,10 @@ begin
   foreach b in array bulk loop
     perform broadcast_later('board:' || b, 'changed', '{}'::jsonb);
   end loop;
-  for listed in select r from thread_rows((select coalesce(array_agg(m.id), array[]::uuid[]) from unnest(ids, news) as m(id, place) where m.place <> all (bulk))) r loop
-    perform broadcast_later('board:' || (listed ->> 'board'), 'row', listed);
-  end loop;
+  -- The new boards' rows and every touched board's entry are built at commit (live_lists_flush), from the state the transaction ends in: work after this call (a veil, a later Act) can change them.
+  insert into live_list_queue (threads, boards)
+    select coalesce(array_agg(m.id) filter (where m.place <> all (bulk)), '{}'), (select coalesce(array_agg(distinct x), '{}') from (select unnest(olds) union all select unnest(news)) u(x))
+    from unnest(ids, news) as m(id, place);
   for d in select m.id, m.old_board,
                   exists (select 1 from thread_departures x where x.thread = m.id and x.from_board = m.old_board) as departed
            from unnest(ids, olds) as m(id, old_board) where m.old_board <> all (bulk) loop
@@ -493,10 +524,6 @@ begin
     else
       perform broadcast_later('board:' || d.old_board, 'gone', jsonb_build_object('id', d.id));
     end if;
-  end loop;
-  for b in select distinct x from (select unnest(olds) union all select unnest(news)) u(x) order by 1 loop
-    summary := board_summary(b);
-    if summary is not null then perform broadcast_later('index', 'board', summary); end if;
   end loop;
   return changed;
 end $$;

@@ -293,6 +293,9 @@ begin
   if (select count(*) from acts a join characters c on c.id = a.character where a.kind = 'announce' and c.name like 'Many Masks %') is distinct from 150::bigint then
     raise exception 'every announced Turn is announced, once';
   end if;
+  -- The board's rows are built at commit (0455, live_lists_flush), and this file never commits: fire them now.
+  set constraints all immediate;
+  set constraints all deferred;
   perform set_config('role', 'service_role', true);
   due := due_broadcasts();
   perform tests.unbecome();

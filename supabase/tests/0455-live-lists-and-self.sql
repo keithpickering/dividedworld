@@ -27,10 +27,20 @@ exception when others then
   return sqlstate || ': ' || sqlerrm;
 end $$;
 
+-- The live lists are built at commit (live_lists_flush, a deferred constraint trigger), and a test never commits: `set constraints all immediate` fires what is pending, and the constraints are deferred again after,
+-- so that the rest of the file runs as a transaction does.
+create function pg_temp.flush() returns void language plpgsql as $$
+begin
+  set constraints all immediate;
+  set constraints all deferred;
+end $$;
+
 -- The events waiting to be sent on a topic, as [{event, payload}], oldest first.
-create function pg_temp.queued(on_topic text) returns jsonb language sql as $$
-  select coalesce(jsonb_agg(jsonb_build_object('event', b.event, 'payload', b.payload) order by b.id), '[]'::jsonb) from broadcasts_due b where b.topic = on_topic
-$$;
+create function pg_temp.queued(on_topic text) returns jsonb language plpgsql as $$
+begin
+  perform pg_temp.flush();
+  return (select coalesce(jsonb_agg(jsonb_build_object('event', b.event, 'payload', b.payload) order by b.id), '[]'::jsonb) from broadcasts_due b where b.topic = on_topic);
+end $$;
 
 -- The thread's row as board_page lists it to a signed-in reader, and the board's entry as index_page builds it.
 create function pg_temp.page_row(reader uuid, in_thread uuid) returns jsonb language plpgsql as $$
@@ -70,6 +80,7 @@ declare
 begin
   select x.board into board from threads x where x.id = t;
   first_post := tests.post(a, t, 'The first post.');
+  perform pg_temp.flush();
   delete from broadcasts_due;
 
   -- 1. A post queues one row on its board and one board entry on the index, equal to what the readers give.
@@ -94,11 +105,13 @@ begin
   if (boards -> 0 -> 'payload' ->> 'last_thread')::uuid is distinct from t or (boards -> 0 -> 'payload' ->> 'last_character')::uuid is distinct from b then
     raise exception 'the board entry does not show the post that was just written: %', boards -> 0 -> 'payload';
   end if;
+  perform pg_temp.flush();
   if (select count(*) from broadcasts_due where topic like 'board:%' or topic = 'index') is distinct from 2 then
     raise exception 'a post queued more than its row and its board: %', (select jsonb_agg(topic || ' ' || event) from broadcasts_due);
   end if;
 
   -- A new thread's first post is a row too.
+  perform pg_temp.flush();
   delete from broadcasts_due;
   declare
     fresh uuid := tests.thread('A fresh thread');
@@ -120,21 +133,26 @@ begin
   if row_keys is distinct from array['board', 'created_at', 'first_act', 'first_character', 'id', 'last_act', 'last_at', 'last_character', 'last_seq', 'origin_act_id', 'origin_place', 'origin_thread', 'replies', 'replies_this_week', 'title'] then
     raise exception 'the row''s keys are not the list: %', row_keys;
   end if;
+  perform pg_temp.flush();
   select array_agg(k order by k) into entry_keys from jsonb_object_keys((select payload from broadcasts_due where topic = 'index')) k;
   if entry_keys is distinct from array['description', 'id', 'is_system', 'last_at', 'last_character', 'last_thread', 'last_title', 'move_act', 'name', 'slug', 'thread_count'] then
     raise exception 'the board entry''s keys are not index_page''s: %', entry_keys;
   end if;
 
   -- 2. An edit has no place number and queues neither; a reaction is not an Act in a thread.
+  perform pg_temp.flush();
   delete from broadcasts_due;
   perform tests.act(a, 'edit', t, jsonb_build_object('body', 'The first post, edited.'), first_post);
+  perform pg_temp.flush();
   if exists (select 1 from broadcasts_due where topic like 'board:%' or topic = 'index') then
     raise exception 'an edit queued a list event: %', (select jsonb_agg(topic || ' ' || event) from broadcasts_due);
   end if;
+  perform pg_temp.flush();
   delete from broadcasts_due;
   perform tests.become(bob);
   perform react(first_post, b, 'up');
   perform tests.unbecome();
+  perform pg_temp.flush();
   if exists (select 1 from broadcasts_due where topic like 'board:%' or topic = 'index') then
     raise exception 'a reaction queued a list event: %', (select jsonb_agg(topic || ' ' || event) from broadcasts_due);
   end if;
@@ -148,8 +166,10 @@ declare
   t uuid := tests.thread('The Updates thread');
 begin
   insert into unlisted_threads (thread) values (t);
+  perform pg_temp.flush();
   delete from broadcasts_due;
   perform tests.post(a, t, 'Nobody lists me.');
+  perform pg_temp.flush();
   if exists (select 1 from broadcasts_due where topic like 'board:%' or topic = 'index') then
     raise exception 'an unlisted thread queued a row or a board: %', (select jsonb_agg(topic || ' ' || event) from broadcasts_due);
   end if;
@@ -167,11 +187,14 @@ declare
 begin
   select x.board into board from threads x where x.id = t;
   perform tests.post(a, t, 'Opening.');
+  perform pg_temp.flush();
   delete from broadcasts_due;
   insert into acts (character, kind, thread, payload) select a, 'post', t, jsonb_build_object('body', 'Again ' || g) from generate_series(1, 50) g;
+  perform pg_temp.flush();
   if (select count(*) from broadcasts_due where topic = 'board:' || board) is distinct from 1 or (select count(*) from broadcasts_due where topic = 'index') is distinct from 1 then
     raise exception 'fifty Acts in one statement queued % rows and % board entries, not one of each', (select count(*) from broadcasts_due where topic = 'board:' || board), (select count(*) from broadcasts_due where topic = 'index');
   end if;
+  perform pg_temp.flush();
   if (select payload ->> 'replies' from broadcasts_due where topic = 'board:' || board) is distinct from '50' then raise exception 'the row of a bulk statement is not the state after it'; end if;
 end $$;
 
@@ -193,6 +216,7 @@ begin
     ts := ts || t;
   end loop;
   select x.board into board from threads x where x.id = ts[1];
+  perform pg_temp.flush();
   delete from broadcasts_due;
   insert into acts (character, kind, thread, payload) select a, 'post', x, jsonb_build_object('body', 'Reply again') from unnest(ts) x;
   got := pg_temp.queued('board:' || board);
@@ -209,16 +233,66 @@ begin
     perform tests.post(a, t, 'Opening ' || i);
     ts := ts || t;
   end loop;
+  perform pg_temp.flush();
   delete from broadcasts_due;
   insert into acts (character, kind, thread, payload) select a, 'post', x, jsonb_build_object('body', 'Reply') from unnest(ts) x;
   got := pg_temp.queued('board:' || board);
   if jsonb_array_length(got) is distinct from 1 or got -> 0 is distinct from jsonb_build_object('event', 'changed', 'payload', '{}'::jsonb) then
     raise exception '51 threads of one board in one statement should send one changed {} and no row, queued % events, first %', jsonb_array_length(got), got -> 0 ->> 'event';
   end if;
+  perform pg_temp.flush();
   if (select count(*) from broadcasts_due where topic = 'index' and event = 'board') is distinct from 1 then
     raise exception 'the index should hear the board once, queued %', pg_temp.queued('index');
   end if;
 
+end $$;
+
+-- 1d. The row and the entry are built at commit, after the work the writer does behind its insert: a post that quotes a face-down author veil takes the veil after the post is inserted (post() springs the trap
+-- afterwards), and the row and the board's entry name the stand-in, as post()'s answer, acts_public, board_page and index_page do. (0304-post-veils.sql, section 5, is the setup.)
+do $$
+declare
+  ann uuid := tests.account('live-vann');
+  bob uuid := tests.account('live-vbob');
+  a uuid := tests.character(ann, 'Live Vann', 'alpha', now() - interval '60 days');
+  b uuid := tests.character(bob, 'Live Vbob', 'alpha', now() - interval '60 days');
+  t uuid;
+  stand uuid;
+  held uuid;
+  made jsonb;
+  q uuid;
+  board uuid;
+  rows jsonb;
+  boards jsonb;
+begin
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Anonymous', 'anonymous', 'anonymous', now()) returning characters.id into stand;
+  insert into character_profiles (character, title, signature) values (stand, 'Could be anyone.', '');
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack, gimmick) values ('lvauthor', 'Lv Whodunnit', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1, null);
+  insert into card_ledger (account, card, kind, price) values (ann, 'lvauthor', 'bought', 0);
+  -- A board of its own, so that its entry's last thread is this one (every thread of the file was written at one instant).
+  insert into boards (slug, name) values ('live-veil', 'Live veil') returning id into board;
+  insert into threads (board, title) values (board, 'Live veil') returning id into t;
+  held := tests.post(a, t, 'A back lies here.');
+  perform tests.become_service();
+  perform set_card(ann, 'lvauthor', a, held, '{}', 0);
+  perform tests.unbecome();
+  perform pg_temp.flush();
+  delete from broadcasts_due;
+  perform tests.become(bob);
+  made := post(t, b, 'Quoting the back.', held);
+  perform tests.unbecome();
+  q := (made ->> 'id')::uuid;
+  if not exists (select 1 from post_veils v where v.post = q) then raise exception 'the face-down veil did not land on the quoting post, so this proves nothing: %', made; end if;
+  rows := pg_temp.queued('board:' || board);
+  boards := pg_temp.queued('index');
+  if (rows -> 0 -> 'payload' ->> 'last_character')::uuid is distinct from stand then
+    raise exception 'the queued row names % as the last character, not the stand-in %', rows -> 0 -> 'payload' ->> 'last_character', stand;
+  end if;
+  if (boards -> 0 -> 'payload' ->> 'last_character')::uuid is distinct from stand then
+    raise exception 'the queued board entry names % as the last character, not the stand-in %: %', boards -> 0 -> 'payload' ->> 'last_character', stand, boards;
+  end if;
+  if jsonb_array_length(rows) is distinct from 1 or jsonb_array_length(boards) is distinct from 1 then raise exception 'the quote queued % rows and % entries, not one each', jsonb_array_length(rows), jsonb_array_length(boards); end if;
+  if (rows -> 0 -> 'payload') is distinct from pg_temp.page_row(bob, t) then raise exception 'the row is not board_page''s after the veil: % vs %', rows -> 0 -> 'payload', pg_temp.page_row(bob, t); end if;
+  if (boards -> 0 -> 'payload') is distinct from pg_temp.index_entry(bob, board) then raise exception 'the entry is not index_page''s after the veil: % vs %', boards -> 0 -> 'payload', pg_temp.index_entry(bob, board); end if;
 end $$;
 
 -- 6. Only the trigger calls the two projections.
@@ -246,14 +320,17 @@ begin
   perform tests.queue_old_turn(turner, 'beta', false, true);
   update pending_turns set asked_at = s - interval '1 hour' where character = turner;
   update seasons set turns_thread = null where ends_at is null;
+  perform pg_temp.flush();
   delete from broadcasts_due;
   perform set_config('role', 'service_role', true);
   perform apply_settlement(s, s + interval '1 day', '[]');
   perform tests.unbecome();
   if not exists (select 1 from acts where kind = 'announce' and character = turner) then raise exception 'the Turn was not announced, so this proves nothing'; end if;
+  perform pg_temp.flush();
   if exists (select 1 from broadcasts_due where topic like 'board:%' and event = 'thread') then
     raise exception 'masks_change still sends a thread event: %', (select jsonb_agg(topic || ' ' || event) from broadcasts_due where event = 'thread');
   end if;
+  perform pg_temp.flush();
   select (payload ->> 'thread')::uuid into opened from broadcasts_due where topic like 'thread:%' and event = 'act' and (payload ->> 'character')::uuid = turner limit 1;
   due := pg_temp.queued('board:' || system_board());
   if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'row' and (m -> 'payload' ->> 'id')::uuid = opened) then
