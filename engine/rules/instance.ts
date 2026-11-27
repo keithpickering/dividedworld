@@ -155,7 +155,7 @@ export function habitsProblem(h: unknown): string | null {
   if (typeof h !== 'object' || h === null || Array.isArray(h)) return 'habits are not an object';
   const o = h as Record<string, unknown>;
   const stray = Object.keys(o).find((k) => !HABIT_FIELDS.includes(k));
-  if (stray !== undefined) return `"${stray}" is not one of the habits (perDay, minutes, hours)`;
+  if (stray !== undefined) return `"${stray}" is not one of the habits (${HABIT_FIELDS.join(', ')})`;
   if (o.perDay !== undefined && !inRange(o.perDay, SESSION_BOUNDS.perDay.least, SESSION_BOUNDS.perDay.most)) return `perDay is not a whole number from ${SESSION_BOUNDS.perDay.least} to ${SESSION_BOUNDS.perDay.most}`;
   if (o.minutes !== undefined && !minutesHeld(o.minutes)) return `minutes is not a least and a most, whole, from ${SESSION_BOUNDS.minutes.least} to ${SESSION_BOUNDS.minutes.most}, the least not above the most`;
   if (o.hours !== undefined) {
