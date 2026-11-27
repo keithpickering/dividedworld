@@ -452,7 +452,8 @@ test('the Lens opens from the card\'s mark and shows the state, the way out and 
   const lens = page.getByRole('dialog', { name: 'Cards on this post' });
   await expect(lens).toBeVisible();
   await expect(lens.getByText('Smoke over the words')).toBeVisible();
-  await expect(lens.locator('.kb-lens-ends')).toContainText('Point at the words, or hold Wave the smoke, to read.');
+  /* The page's reader is the post's author, and the play landed just now: the hold is on, so the author is told when they can air it out and reads through as any reader does until then. */
+  await expect(lens.locator('.kb-lens-ends')).toContainText(/^You can air it out for good in \d+h \d+m\. Until then, point at the words, or hold Wave the smoke, to read\./u);
   await expect(lens.locator('.kb-lens-ends')).toContainText(/Ends/u);
   await expect(lens.getByRole('button', { name: 'Wave the smoke' })).toBeVisible();
 });
@@ -780,7 +781,8 @@ test.describe('under forced colors', () => {
       const sign = page.locator(`${POST} .dw-hotbox-sign`);
       await expect(sign).toBeVisible();
       await expect(sign).toContainText('Smoke over the words');
-      await expect(sign).toContainText('Point at the words, or hold Wave the smoke, to read.');
+      /* The page's reader is the post's author, inside the hold: the sign says when they can air it out, and the way through until then. */
+      await expect(sign).toContainText(/You can air it out for good in \d+h \d+m\. Until then, point at the words, or hold Wave the smoke, to read\./u);
       const text = await systemColor(page, 'CanvasText');
       const frame = page.locator(`${POST} .dw-hotbox-frame`);
       await expect(frame).toBeVisible();
