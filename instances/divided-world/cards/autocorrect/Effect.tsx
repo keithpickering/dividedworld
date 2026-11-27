@@ -940,8 +940,9 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     /*
      * The words' widths as they lie unbroken, whatever state each stack is in: a run that wraps loses the space collapsed at its
      * break, so its rects read narrower than the same words on one line, and a footprint tested on that read would flip the stack
-     * whole, then wider than its line, then not. So every segment is set to `pre` (spaces and newlines kept, never wrapped, as the whole rule below lays it) for one batched read (set all, read all,
-     * restore all, inside the layout effect, so nothing paints), and the width tested never depends on the layout it decides.
+     * whole, then wider than its line, then not. So every segment is set to `pre` (spaces and newlines kept, never wrapped, as the
+     * whole rule below lays it) for one batched read (set all, read all, restore all, inside the layout effect, so nothing paints),
+     * and the width tested never depends on the layout it decides.
      */
     const priorWrap = segs.map((s) => s.style.whiteSpace);
     try {
