@@ -55,7 +55,7 @@ const STENCIL_BOX = { w: 65.9, h: 46.7 } as const;
 const BOX = { w: [5, 200], h: [1, 4000] } as const;
 const EM_UNIT = { least: 0.5, most: 400 } as const;
 /** How far a point may lie from its group's center: in ems, and in image widths. */
-const REACH = { em: 200, image: 10 } as const;
+export const REACH = { em: 200, image: 10 } as const;
 /** A payload's most, as Postgres writes it. */
 const PAYLOAD_BYTES = 65_536;
 

@@ -568,3 +568,36 @@ begin
   -- The constraint was added not valid and validated.
   if not (select convalidated from pg_constraint where conname = 'acts_surface_payload' and conrelid = 'acts'::regclass) then raise exception 'acts_surface_payload is validated'; end if;
 end $$;
+
+-- ---- 13. thread_page gives each post its current version: its own id, then its latest edit's ----
+do $$
+declare
+  ann uuid := tests.account('cw-13-ann'); a uuid := tests.character(ann, 'Cw Thirteen Ann');
+  t uuid := tests.thread('Cw thirteen'); w record := pg_temp.wall(a, t); other uuid := tests.post(a, t, 'Another post.');
+  page jsonb; e1 uuid; e2 uuid;
+begin
+  perform tests.become(ann);
+  page := thread_page(t, 1, null, 20, array[]::text[]);
+  perform tests.unbecome();
+  if (select x ->> 'version' from jsonb_array_elements(page -> 'acts') x where x ->> 'id' = w.post::text) is distinct from w.post::text then raise exception 'an unedited post is its own version: %', page -> 'acts'; end if;
+  perform tests.become(ann);
+  perform edit_post(w.post, a, 'Words one.', null, '[]'::jsonb);
+  perform tests.unbecome();
+  e1 := (select id from acts where kind = 'edit' and target_act_id = w.post order by created_at desc, id desc limit 1);
+  perform tests.become(ann);
+  page := thread_page(t, 1, null, 20, array[]::text[]);
+  perform tests.unbecome();
+  if (select x ->> 'version' from jsonb_array_elements(page -> 'acts') x where x ->> 'id' = w.post::text) is distinct from e1::text then raise exception 'an edited post is at its edit: %', page -> 'acts'; end if;
+  perform tests.become(ann);
+  perform edit_post(w.post, a, 'Words two.', null, '[]'::jsonb);
+  perform tests.unbecome();
+  e2 := (select id from acts where kind = 'edit' and target_act_id = w.post order by created_at desc, id desc limit 1);
+  perform tests.become(ann);
+  page := thread_page(t, 1, null, 20, array[]::text[]);
+  perform tests.unbecome();
+  if e2 = e1 or (select x ->> 'version' from jsonb_array_elements(page -> 'acts') x where x ->> 'id' = w.post::text) is distinct from e2::text then raise exception 'a second edit moves the version on: %', page -> 'acts'; end if;
+  if (select x ->> 'version' from jsonb_array_elements(page -> 'acts') x where x ->> 'id' = other::text) is distinct from other::text then raise exception 'another post is untouched by the edit: %', page -> 'acts'; end if;
+  -- The field is what surface_version_pair names as current, which is what a draw is checked against.
+  if (select (surface_version_pair(w.post, w.post) -> 'current' ->> 'version') from (select tests.become_service()) z) is distinct from e2::text then raise exception 'the page and the draw agree on the current version'; end if;
+  perform tests.unbecome();
+end $$;

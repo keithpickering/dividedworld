@@ -20,8 +20,8 @@
  * **Tagging** (docs/plans/2026-11-27-graffiti-everywhere-design.md, sections 1 to 4). While draw mode is open the post's words carry a `TextLayer` of
  * `mark` runs (`Marked`), an empty `data-kb-word-mark` element at each word's first character, words split on whitespace in the visible text, so every
  * word's left edge and line can be measured; images carry `data-kb-img`. At Tag it the drawing is measured against them (`measureTagging`) and `inputOf`
- * (draft.ts) groups it and attaches each group to what is under it. The post's version is its own Act while it is unedited, or what the page holds of
- * its latest edit; where the page does not hold it a group is attached to the box, which any version accepts.
+ * (draft.ts) groups it and attaches each group to what is under it. The post's version is what the page's read carries with the post (`version`: its latest edit, or its own Act), or the tails' version
+ * after an edit lands in the page; where neither says (a post edited since the page read it) a group is attached to the box, which any version accepts.
  *
  * **The meter** is the wall's `covered` plus this drawing's own painted cells, counted in full (draft.ts). A refusal from the server is shown in the
  * toolbar in its words and the drawing is kept.
@@ -64,6 +64,12 @@ const MARK = 'data-kb-word-mark';
 
 /** The post's visible text and images as the screen draws them (the renderer's verdict on its quotes included). */
 const contentFor = (post: Act) => contentOf(String(post.currentPayload.body ?? ''), forgedSet(forgedList(post.currentPayload)));
+
+/** The version a post is at as its own Act says: the page's `version` unless the post has been edited since (an `editedAt` the version does not account for), else its own id while it has no edit; null where it is not known. */
+const currentVersionOf = (post: Act): string | null => {
+  if (post.editedAt === null) return post.version ?? post.id;
+  return post.version !== undefined && post.version !== post.id ? post.version : null;
+};
 
 /** A mark at each word's first character: the empty element a word's left and line are measured by. */
 function marksOf(text: string): readonly TextRun[] {
@@ -186,9 +192,10 @@ export function DrawMode(p: DrawModeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [p.covered, p.most, frame, tab, stencil, can, spot, version, strokes.current.length],
   );
-  /* The post's current version: its own Act while it has no edit, else the latest edit the page holds (null where it does not). */
+  /* The post's current version: what the tails the page holds say (they are read again after an edit), else the version the page's read carried with the post (`version`, thread_page 0455: its latest edit, or its own Act), else its own
+     Act while it has no edit. A post edited since the page read it (an edit that lands in it, `editedAt` set while `version` is still its own id or absent) with no tails is not known: its groups are attached to the box, which any version accepts. */
   const heldVersion = usePostVersion(p.post?.id ?? '');
-  const postVersion = p.post ? (p.post.editedAt === null ? p.post.id : heldVersion) : null;
+  const postVersion = p.post ? (heldVersion ?? currentVersionOf(p.post)) : null;
   const held = strokes.current.length > 0 || stencil !== null;
 
   const now = useRef({ can, cap, box: p.box, locked: false, busy: false, asking: null as string | null, tab });
@@ -475,7 +482,7 @@ export function Compose({ post, box, under, submit, cancel, hold, ready, childre
       <Marked post={post}>{children}</Marked>
       {under && size && createPortal(<canvas ref={canvasRef} className="kb-graffiti-ink" data-kb-effect-ink aria-hidden="true" style={onBox} />, under)}
       <DrawMode
-        box={size} post={post} covered={0} most={most} dockHost={dockHost} dockPending={dockHost === null} asks={false}
+        box={size} post={post} covered={0 /* a play makes its own wall: a post holds one live wall at a time (stack 1), so a new wall covers nothing; a Draw on a wall that is there is DrawMode with its `covered` */} most={most} dockHost={dockHost} dockPending={dockHost === null} asks={false}
         submit={(first) => submit({}, first)} cancel={cancel} hold={hold} onDraft={setDraft} overlayStyle={onBox} overlayHost={under}
       />
       <div ref={setFallback} className="kb-graffiti-dockhost" />

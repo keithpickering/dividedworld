@@ -950,6 +950,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
       hidden: cur,
+      ...(isPost(a.kind) ? { version: edits(a).at(-1)?.id ?? a.id } : {}),
       ...(own ? { payloadHidden: true } : {}),
       ...(concealingActs.has(a.id) && !own ? { payloadConcealing: true } : {}),
       ...(concealingActs.has(latest?.id ?? a.id) && !cur ? { concealing: true } : {}),
@@ -2343,10 +2344,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The id of a post's current version: its latest edit, or the post. */
   const versionOf = (post: ActRec): ActRec => edits(post).at(-1) ?? post;
   /** A version's words as the wall reads them: the text and the images the renderer draws, under the verdict that version holds. */
-  const contentAt = (v: ActRec) => contentOf(String(v.payload.body ?? ''), forgedSet(forgedList(v.payload)));
+  const contentAt = (v: ActRec) => (hiddenVersions.has(v.id) ? contentOf('', forgedSet(undefined)) : contentOf(String(v.payload.body ?? ''), forgedSet(forgedList(v.payload))));
   /**
    * Where each group of a draw sits in the post's current version, as the act function works it out (core.ts, placesOfDraw): a group drawn on the current version is where it was drawn; one drawn on an older version is
-   * mapped through the words' diff, null where its words were touched; a box group has no row; a version the post never had, or one an admin hid, is refused.
+   * mapped through the words' diff, null where its words were touched; a box group has no row; a version the post never had is refused. A version an admin hid keeps its row with no words (surface_version_pair reads acts_public),
+   * so a group drawn on it, or on a post whose current version is hidden, is mapped against no words and its place is null, never refused.
    */
   function placesOfDraw(post: ActRec, payload: Readonly<Record<string, unknown>>): Answer<Map<number, Attachment | null>> {
     const groups = Array.isArray(payload.groups) ? payload.groups as unknown[] : [];
@@ -2359,7 +2361,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const placed = new Map<number, Attachment | null>();
     for (const { grp, at } of anchored) {
       const drawn = at.version === post.id ? post : edits(post).find((e) => e.id === at.version);
-      if (!drawn || hiddenVersions.has(drawn.id) || hiddenVersions.has(current.id)) return refuse(NOT_THOSE_WORDS);
+      if (!drawn) return refuse(NOT_THOSE_WORDS);
       placed.set(grp, drawn.id === current.id ? at : mapPlace(contentAt(drawn), contentAt(current), at));
     }
     return ok(placed);

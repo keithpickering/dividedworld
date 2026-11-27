@@ -785,7 +785,8 @@ begin
 end
 $function$;
 
--- thread_page (0451), from its latest definition, changing only what is said.
+-- thread_page (0451), from its latest definition, changing what is said and giving each post of the page a `version`: the post's current version, the id of its latest edit through acts_public (by created_at, id: the order surface_groups_on
+-- reads), or the Act's own id where it has none. Edits are public Acts and every reader sees the same id, so it is no private fact; a hidden edit still has its row, so it is still the version, and its words are what acts_public gives.
 CREATE OR REPLACE FUNCTION public.thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[])
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -1413,7 +1414,7 @@ begin
                 FROM s), 'page', ( SELECT rng.page
                 FROM rng), 'boardCards', ( SELECT COALESCE(jsonb_agg(to_jsonb(o.*) ORDER BY o.created_at, o.id), '[]'::jsonb) AS "coalesce"
                 FROM on_posts o
-               WHERE (o.target_act_id IS NULL)), 'acts', ( SELECT COALESCE(jsonb_agg(to_jsonb(a.*) ORDER BY a.seq), '[]'::jsonb) AS "coalesce"
+               WHERE (o.target_act_id IS NULL)), 'acts', ( SELECT COALESCE(jsonb_agg((CASE WHEN post_kind(a.kind) THEN to_jsonb(a.*) || jsonb_build_object('version', COALESCE(( SELECT e.id FROM acts_public e WHERE e.kind = 'edit' AND e.target_act_id = a.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1), a.id)) ELSE to_jsonb(a.*) END) ORDER BY a.seq), '[]'::jsonb) AS "coalesce"
                 FROM page_acts a), 'people', ( SELECT COALESCE(jsonb_agg((c.head || jsonb_build_object('posts', COALESCE(( SELECT n.posts
                         FROM character_post_counts n
                        WHERE (n."character" = c.id)), 0), 'standing', COALESCE(( SELECT st.standing

@@ -19,7 +19,7 @@
  */
 import { paintedCount, coatsOf, type SurfaceStroke } from '../../../../engine/rules/surface.ts';
 import { groupsOf, type Attachment, type Img } from '../../../../engine/rules/anchor.ts';
-import { BOUNDS, CANS, CAPS_EM, COATS, graffiti, type Can, type Cap } from '../graffiti.ts';
+import { BOUNDS, CANS, CAPS_EM, COATS, REACH, graffiti, type Can, type Cap } from '../graffiti.ts';
 import type { StencilKey } from './stencils.ts';
 
 /**
@@ -127,7 +127,10 @@ function drawOf(strokes: readonly Stroke[], t: Tagging): { box: { w: number; h: 
   const groups = groupsIn(strokes, t).map((g) => {
     const [cx, cy] = g.center;
     const at: Pt = [tenThousandth(clamp(cx / box.w, 0, 1)), tenThousandth(clamp(cy / box.h, 0, 1))];
-    const under = underneath(g.center, t);
+    /* The rules take a point only so far from its group's center, in the group's own unit (REACH): a group whose strokes reach past it in the unit of what it would be attached to (a small image under long strokes) is attached to the box. */
+    const reaches = (unit: number, most: number) => g.strokes.every((s) => s.points.every(([x, y]) => Math.abs(x - cx) / unit <= most && Math.abs(y - cy) / unit <= most));
+    const found = underneath(g.center, t);
+    const under = found && ('pic' in found ? (reaches(found.pic.w, REACH.image) ? found : null) : (reaches(emPx, REACH.em) ? found : null));
     const strokesIn = (unit: number, keep: (n: number) => number) =>
       g.strokes.map((s) => ({ can: s.can, cap: s.cap, points: s.points.map(([x, y]): Pt => [keep((x - cx) / unit), keep((y - cy) / unit)]) }));
     if (under && 'pic' in under) {

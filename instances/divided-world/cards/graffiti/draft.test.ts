@@ -67,6 +67,19 @@ test('a ring over an image tags as an image attachment in image widths', () => {
   assert.deepEqual(group(input).strokes[0]!.points[0], [0.2, 0], 'forty px on a 200 px image is 0.2 of its width');
 });
 
+test('long strokes over a small image are attached to the box, since the rules take a point only so far from its group\'s center in the image\'s own widths', () => {
+  const small = { images: [{ src: 'https://x.test/a.png', nth: 0 }], pictures: [{ n: 0, x: 290, y: 100, w: 20, h: 20 }] };
+  const long = freehand(stroke([[0, 110], [600, 110]]));
+  const input = inputOf(long, tagging(small));
+  accepted(input);
+  assert.deepEqual(group(input).anchor, { kind: 'box' }, 'ten image widths either way is 200 px here, and these reach 300');
+  assert.equal(group(input).unit, 'em');
+  // The same stroke over an image it fits within stays an image group.
+  const wide = inputOf(long, tagging({ ...small, pictures: [{ n: 0, x: 200, y: 50, w: 200, h: 120 }] }));
+  accepted(wide);
+  assert.equal(group(wide).anchor.kind, 'image');
+});
+
 test('a tag in the blank space right of the last line attaches to that line\'s last word, with a positive dx', () => {
   const input = inputOf(freehand(stroke([[300, 50], [330, 50]])), tagging());
   accepted(input);

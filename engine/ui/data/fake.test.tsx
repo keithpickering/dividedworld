@@ -6045,6 +6045,26 @@ describe('a surface, as the server keeps it', () => {
       expect(await placesOf(fake, play)).toEqual([[{ grp: 0, place: null }, { grp: 1, place: null }]]);
     });
 
+    test('a post on the page carries its current version: its own id, then its latest edit\'s, a hidden one included (thread_page, 0455)', async () => {
+      const { fake, post, thread, anaFace } = placed();
+      const versionOnPage = async () => (await fake.threadPage(thread, { page: 1 }, 20, []))!.acts.find((a) => a.id === post)!.version;
+      expect(await versionOnPage()).toBe(post);
+      const first = fake.seed.edit(post, anaFace, `Oh. ${BODY}`);
+      expect(await versionOnPage()).toBe(first);
+      const second = fake.seed.edit(post, anaFace, `Again. ${BODY}`);
+      expect(await versionOnPage()).toBe(second);
+      fake.seed.hide(second, 'hide');
+      expect(await versionOnPage()).toBe(second);
+    });
+
+    test('a draw whose current version an admin hid is mapped against no words, as surface_version_pair gives it, and is not refused: a group drawn on an older version has a null place', async () => {
+      const { fake, post, play, anaFace, anaHeel } = placed();
+      const edit = fake.seed.edit(post, anaFace, `Oh. ${BODY}`);
+      fake.seed.hide(edit, 'hide');
+      must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], groups: [group(text(post)), group({ kind: 'box' })] }));
+      expect(await placesOf(fake, play)).toEqual([[{ grp: 0, place: null }]]);
+    });
+
     test('a wash and a later draw leave an earlier draw\'s places as they were', async () => {
       const { fake, ana, post, play, anaFace, anaHeel } = placed();
       const tag = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], groups: [group(text(post))] }));

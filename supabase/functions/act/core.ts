@@ -205,7 +205,8 @@ async function placesOfDraw(service: Db, postOf: () => Promise<string | null>, p
   const places: Row[] = [];
   for (const version of new Set(anchored.map((a) => a.at.version))) {
     const read = await service.rpc<{ current: Version | null; drawn: Version | null } | null>('surface_version_pair', { p_post: post, p_version: version });
-    // `current` is null when the post's current version is hidden (a hidden version is given to no one), and `drawn` when the draw's version is none of the post's.
+    // surface_version_pair reads acts_public, where a hidden version keeps its row with an empty body, so `current` and `drawn` are not null for one: it is mapped against no words and a group moved onto or off it has a null place, never a refusal.
+    // `drawn` is null when the draw's version is none of the post's, and `current` for a post that is none (the guard below is for a read that gives nothing).
     if (!read || !read.current || !read.drawn) return { ok: false, why: NOT_THOSE_WORDS };
     const { current, drawn } = read;
     const own = anchored.filter((a) => a.at.version === version);
