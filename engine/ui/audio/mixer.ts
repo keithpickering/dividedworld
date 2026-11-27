@@ -67,8 +67,8 @@ export function createMixer(deps: MixerDeps): Mixer {
   /** The context once made; `ctx` is the same context once it has resumed, and only then may anything sound. */
   let made: AudioContextLike | null = null;
   let ctx: AudioContextLike | null = null;
-  /** The unlock() calls whose resume has not answered yet; the first resume that resolves (or a context seen running) settles them all as unlocked. */
-  /* Bounded by the gestures made before the first unlock; it is emptied then, and nothing is added after. */
+  /** The unlock() calls whose resume has not answered yet; the first resume that resolves (or a context seen running) settles them all as unlocked.
+   * Bounded by the gestures made before the first unlock; it is emptied then, and nothing is added after. */
   const waiting = new Set<(unlocked: boolean) => void>();
   const buses: Record<SoundBus, { on: boolean; volume: number; node: GainNodeLike | null }> = {
     game: { on: false, volume: 100, node: null },
