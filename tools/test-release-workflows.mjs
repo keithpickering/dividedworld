@@ -19,6 +19,7 @@ const SQL = '.github/workflows/sql.yml';
 const WEB = '.github/workflows/web.yml';
 const REHEARSAL = '.github/workflows/rehearsal.yml';
 const JOB_HEALTH = '.github/workflows/job-health.yml';
+const MIGRATION_ORDER = '.github/workflows/migration-order.yml';
 const NETLIFY = 'netlify.toml';
 
 let failures = 0;
@@ -161,6 +162,34 @@ red('build.yml pushes a refspec held in a step env', edit(BUILD, (d) => {
 red('build.yml names production in a step input', edit(BUILD, (d) => {
   Object.values(d.jobs)[0].steps.push({ uses: 'actions/some-action@v1', with: { branch: 'production' } });
 }), /R6.*inputs/);
+/* ---- R6 again: migration-order.yml is the one workflow allowed to run on push, to main only, read-only, with no secret or Environment (#1215, owner's option 1) ---- */
+quiet('the real migration-order.yml passes', REAL);
+const moJob = (d) => Object.values(d.jobs)[0];
+red('migration-order.yml runs on push with no branches filter', edit(MIGRATION_ORDER, (d) => { d.on.push = null; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml runs on push to main and dev', edit(MIGRATION_ORDER, (d) => { d.on.push.branches = ['main', 'dev']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml runs on push to every branch', edit(MIGRATION_ORDER, (d) => { d.on.push.branches = ['**']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml runs on push to a branch other than main', edit(MIGRATION_ORDER, (d) => { d.on.push.branches = ['production']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml is also triggered by tags', edit(MIGRATION_ORDER, (d) => { d.on.push.tags = ['v*']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml widens itself with paths', edit(MIGRATION_ORDER, (d) => { d.on.push.paths = ['**']; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml ignores a branch instead of naming main', edit(MIGRATION_ORDER, (d) => { d.on.push = { 'branches-ignore': ['production'] }; }), /migration-order\.yml.*R6.*main/);
+red('migration-order.yml is also triggered by pull_request_target', edit(MIGRATION_ORDER, (d) => { d.on.pull_request_target = {}; }), /migration-order\.yml.*R6/);
+red('migration-order.yml is also triggered by a schedule', edit(MIGRATION_ORDER, (d) => { d.on.schedule = [{ cron: '0 * * * *' }]; }), /migration-order\.yml.*R6/);
+red('migration-order.yml runs on push as a bare string', edit(MIGRATION_ORDER, (d) => { d.on = 'push'; }), /migration-order\.yml.*R6/);
+red('migration-order.yml may write contents', edit(MIGRATION_ORDER, (d) => { d.permissions.contents = 'write'; }), /migration-order\.yml.*R6.*contents: read/);
+red('migration-order.yml takes an extra permission', edit(MIGRATION_ORDER, (d) => { d.permissions['pull-requests'] = 'read'; }), /migration-order\.yml.*R6.*contents: read/);
+red('migration-order.yml has no permissions key', edit(MIGRATION_ORDER, (d) => { delete d.permissions; }), /migration-order\.yml.*R6.*contents: read/);
+red('migration-order.yml\'s job widens its permissions', edit(MIGRATION_ORDER, (d) => { moJob(d).permissions = { contents: 'write' }; }), /migration-order\.yml.*R6.*contents: read/);
+red('migration-order.yml names a secret in a step', edit(MIGRATION_ORDER, (d) => { moJob(d).steps.push({ env: { T: '${{ secrets.GITHUB_PAT }}' }, run: 'true' }); }), /migration-order\.yml.*R6.*secret/);
+red('migration-order.yml names a secret in a run line', edit(MIGRATION_ORDER, (d) => { moJob(d).steps.push({ run: 'echo ${{ secrets.X }}' }); }), /migration-order\.yml.*R6.*secret/);
+red('migration-order.yml reads toJSON(secrets)', edit(MIGRATION_ORDER, (d) => { d.env = { ALL: '${{ toJSON(secrets) }}' }; }), /migration-order\.yml.*R6.*secret/);
+red('migration-order.yml names a secret at the workflow level', edit(MIGRATION_ORDER, (d) => { d.env = { T: '${{ secrets.X }}' }; }), /migration-order\.yml.*R6.*secret/);
+red('migration-order.yml\'s job names an Environment', edit(MIGRATION_ORDER, (d) => { moJob(d).environment = 'production'; }), /migration-order\.yml.*R(6|10).*nvironment/);
+red('migration-order.yml\'s job names an Environment in its object form', edit(MIGRATION_ORDER, (d) => { moJob(d).environment = { name: 'staging' }; }), /migration-order\.yml.*R6.*nvironment/);
+red('migration-order.yml pushes to production', edit(MIGRATION_ORDER, (d) => { moJob(d).steps.push({ run: 'git push origin HEAD:refs/heads/production' }); }), /migration-order\.yml.*R6.*production/);
+red('build.yml also runs on push to main', edit(BUILD, (d) => { d.on.push = { branches: ['main'] }; }), /build\.yml.*R6.*push/);
+red('web.yml also runs on push', edit(WEB, (d) => { d.on = { ...d.on, push: { branches: ['main'] } }; }), /web\.yml.*R6.*push/);
+red('a new workflow runs on push to main', { ...REAL, '.github/workflows/other.yml': 'name: Other\non:\n  push:\n    branches: [main]\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n' }, /other\.yml.*R6.*push/);
+red('release.yml runs on push', edit(RELEASE, (d) => { d.on.push = { branches: ['main'] }; }), /release\.yml.*R6.*push/);
 quiet('a shell comment line inside a run string is not a push', edit(BUILD, (d) => {
   Object.values(d.jobs)[0].steps.push({ run: '# git push origin HEAD:production\necho fine' });
 }));
@@ -370,6 +399,14 @@ red('job-health\'s step has an id', edit(JOB_HEALTH, (d) => { jhStep(d).id = 'x'
 // R8 reads only workflows that declare a Postgres service: job-health.yml declares none, and says nothing of R8.
 red('job-health.yml given an unpinned postgres service is named by R8', edit(JOB_HEALTH, (d) => { jhJob(d).services = { db: { image: 'postgres:17' } }; }), /job-health\.yml.*R8/);
 
+/* ---- the seed tool's database test is run where a Postgres service is (not a rule of the checker: a fact about the files) ---- */
+{
+  const job = Object.values(parse(REAL[REHEARSAL] ?? '').jobs ?? {}).find((j) => j.services?.postgres);
+  const step = (job?.steps ?? []).find((s) => /\bnpm run test:release-db\b/.test(s.run ?? ''));
+  if (step?.env?.DATABASE_URL) console.log('ok    rehearsal.yml runs test:release-db, with DATABASE_URL, in the job that has the Postgres service');
+  else { failures += 1; console.error('FAIL  rehearsal.yml does not run `npm run test:release-db` with DATABASE_URL in a job with a Postgres service'); }
+}
+
 /* ---- R14: the seed goes red on anything but a 200 ---- */
 const seedStep = (d) => d.jobs.seed.steps.find((x) => /curl/.test(x.run ?? ''));
 red('the seed step is the old --fail-with-body form with no status comparison', edit(RELEASE, (d) => {
@@ -402,6 +439,24 @@ red('schema has no --before check', edit(RELEASE, (d) => {
 red('schema has no --after check', edit(RELEASE, (d) => {
   for (const s of d.jobs.schema.steps) if (s.run) s.run = s.run.split('\n').filter((l) => !/--after/.test(l)).join('\n');
 }), /R13.*--after/);
+const seedDbIndex = (d) => d.jobs.schema.steps.findIndex((x) => /seed-database\.ts/.test(x.run ?? ''));
+red('schema runs the seed before the push', edit(RELEASE, (d) => {
+  const steps = d.jobs.schema.steps;
+  const [seed] = steps.splice(seedDbIndex(d), 1);
+  steps.splice(steps.findIndex((x) => /db push/.test(x.run ?? '')), 0, seed);
+}), /R13.*seed-database\.ts after --after/);
+red('schema runs the seed before the --after check', edit(RELEASE, (d) => {
+  const steps = d.jobs.schema.steps;
+  const [seed] = steps.splice(seedDbIndex(d), 1);
+  const run = steps.find((x) => /db push/.test(x.run ?? ''));
+  run.run = run.run.replace(/(node tools\/check-deployed-migrations\.mjs[^\n]*--after)/, `${seed.run}\n$1`);
+}), /R13.*seed-database\.ts after --after/);
+red('schema never seeds', edit(RELEASE, (d) => { d.jobs.schema.steps.splice(seedDbIndex(d), 1); }), /R13.*never runs tools\/release\/seed-database\.ts/);
+red('seed-database.ts is handed the secret inside its run line', edit(RELEASE, (d) => {
+  const st = d.jobs.schema.steps[seedDbIndex(d)];
+  st.run = st.run.replace('"$SUPABASE_DB_URL"', '"${{ secrets.SUPABASE_DB_URL }}"');
+}), /R11.*secrets/);
+red('seed-database.ts runs under a traced shell', edit(RELEASE, (d) => { d.jobs.schema.steps[seedDbIndex(d)].shell = 'bash -x {0}'; }), /R12.*traces/);
 red('seed does not check out the candidate', edit(RELEASE, (d) => {
   for (const s of d.jobs.seed.steps) if (String(s.uses ?? '').startsWith('actions/checkout')) delete s.with;
 }), /R13.*seed.*check out/);

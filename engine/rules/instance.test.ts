@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ANONYMOUS_STAFF_KEY, BRIBE_BOUNDS, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER, deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
+import { ANONYMOUS_STAFF_KEY, BRIBE_BOUNDS, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER, SETTING_FIELDS, deepFreeze, dropUnknownFields, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
 import type { Instance, Persona, Settings, SystemContent } from './types.ts';
 import { PHASE_CAPS } from '../system/phases.ts';
 import { ANNOUNCE_MOST, LEAD_IN_BRIEF_MOST, MOOD_MOST, PITCH_MOST, PUSH_MOST } from '../system/beats.ts';
@@ -2071,4 +2071,84 @@ test('a quiz persona\'s quizBrief is at most 300 characters, and the problem nam
   assert.match(said(quiz(7)), /"bot-a".*quizBrief/);
   assert.deepEqual(instanceProblems(quiz('x'.repeat(300))), []);
   assert.deepEqual(instanceProblems(quiz('Ask whether it is on topic.')), []);
+});
+
+/** The object at a dotted path of the settings, or undefined where the path leads nowhere. */
+const at = (root: unknown, path: string): Record<string, unknown> | undefined => {
+  let o: unknown = root;
+  for (const k of path.split('.')) o = typeof o === 'object' && o !== null ? (o as Record<string, unknown>)[k] : undefined;
+  return typeof o === 'object' && o !== null && !Array.isArray(o) ? (o as Record<string, unknown>) : undefined;
+};
+const withExtra = (path: string): Settings => {
+  const copy = structuredClone(settings) as Settings;
+  at(copy, path)!['aFieldFromANewerRelease'] = 1;
+  return copy;
+};
+
+test('every strict setting in SETTING_FIELDS: one extra field is refused, dropped by name, and the rest passes (2026-11-27, D4)', () => {
+  const paths = Object.keys(SETTING_FIELDS).filter((p) => at(settings, p) !== undefined);
+  assert.ok(paths.length >= 25, `the table reaches ${paths.length} paths of the valid settings`);
+  assert.deepEqual(Object.keys(SETTING_FIELDS).filter((p) => at(settings, p) === undefined), [], 'every entry is a path of the settings');
+  for (const path of paths) {
+    const given = withExtra(path);
+    assert.ok(settingsProblems(given).length > 0, `${path}: an extra field is refused`);
+    const { settings: cleaned, dropped } = dropUnknownFields(given);
+    assert.deepEqual(dropped, [`${path}.aFieldFromANewerRelease`], path);
+    assert.deepEqual(settingsProblems(cleaned), [], `${path}: whole after the drop`);
+    assert.deepEqual(cleaned, settings, `${path}: nothing else changed`);
+  }
+});
+
+test('a key under pool.strengths the code does not know is dropped, and a known one stays', () => {
+  const given = structuredClone(settings) as Settings;
+  (given.pool.strengths as Record<string, number>).newTrigger = 3;
+  const { settings: cleaned, dropped } = dropUnknownFields(given);
+  assert.deepEqual(dropped, ['pool.strengths.newTrigger']);
+  assert.deepEqual(cleaned.pool.strengths, settings.pool.strengths);
+});
+
+test('dropUnknownFields does not change its input, and settings with nothing unknown come back equal and drop nothing', () => {
+  const given = withExtra('modBots');
+  const before = structuredClone(given);
+  dropUnknownFields(given);
+  assert.deepEqual(given, before);
+  const clean = dropUnknownFields(settings);
+  assert.deepEqual(clean.dropped, []);
+  assert.deepEqual(clean.settings, settings);
+});
+
+test('the economy is not touched: an unknown key in it is no problem and is never dropped', () => {
+  const given = { ...settings, economy: { ...settings.economy, 'a.newer.bonus': 3 } };
+  const { settings: cleaned, dropped } = dropUnknownFields(given);
+  assert.deepEqual(dropped, []);
+  assert.deepEqual(cleaned.economy, given.economy);
+});
+
+test('a missing field is never filled: a modBots row without quizWriteMinutes still fails after the drop', () => {
+  const { quizWriteMinutes: _gone, ...row } = settings.modBots;
+  const given = { ...settings, modBots: { ...row, aFieldFromANewerRelease: 1 } } as unknown as Settings;
+  const { settings: cleaned, dropped } = dropUnknownFields(given);
+  assert.deepEqual(dropped, ['modBots.aFieldFromANewerRelease']);
+  assert.match(settingsProblems(cleaned).join('\n'), /"quizWriteMinutes" is not/);
+  assert.ok(!('quizWriteMinutes' in cleaned.modBots));
+});
+
+test('malformed shapes pass through dropUnknownFields without a throw, drop nothing, and settingsProblems still names them', () => {
+  const bad: [string, (c: Record<string, any>) => void][] = [
+    ['modBots', (c) => { c.modBots = null; }],
+    ['pool', (c) => { c.pool = 'x'; }],
+    ['pool.sessions.minutes', (c) => { c.pool.sessions.minutes = 5; }],
+    ['pool.strengths', (c) => { c.pool.strengths = []; }],
+    ['warnBar.bands', (c) => { c.warnBar.bands = []; }],
+    ['cosmetics.events', (c) => { c.cosmetics.events = null; }],
+    ['jobGraceMinutes', (c) => { c.jobGraceMinutes = 7; }],
+  ];
+  for (const [name, mangle] of bad) {
+    const given = structuredClone(settings) as Settings;
+    mangle(given as unknown as Record<string, any>);
+    const out = dropUnknownFields(given);
+    assert.deepEqual(out.dropped, [], name);
+    assert.deepEqual(out.settings, given, name);
+    assert.ok(settingsProblems(out.settings).length > 0, name);
+  }
 });
