@@ -64,8 +64,10 @@ test('Hot Box takes a share aired or clean, and refuses anything else', () => {
   assert.deepEqual(v({ clean: true }), { ok: true, value: { clean: true } });
   assert.deepEqual(v({ aired: 0.5 }), { ok: true, value: { aired: 0.5 } });
   assert.deepEqual(v({ aired: 0.123456, junk: 1 }), { ok: true, value: { aired: 0.1235 } }, 'rounded to a ten-thousandth, other keys dropped');
+  assert.deepEqual(v({ clean: true, aired: 0.3 }), { ok: true, value: { clean: true } }, 'clean wins, and the share is dropped');
+  assert.deepEqual(v({ clean: false, aired: 0.3 }), { ok: true, value: { aired: 0.3 } }, 'a clean that is false says nothing');
   const refusal = { ok: false, why: 'the smoke is aired out to a share of the post, more than 0 and less than 1, or clean' };
-  for (const bad of [{ aired: 0 }, { aired: 1 }, { aired: -0.5 }, { aired: NaN }, { aired: '0.5' }, { clean: false }, {}, null, undefined, { aired: 0.00001 }]) assert.deepEqual(v(bad), refusal, JSON.stringify(bad));
+  for (const bad of [{ aired: 0 }, { aired: 1 }, { aired: -0.5 }, { aired: NaN }, { aired: '0.5' }, { clean: false }, {}, null, undefined, { aired: 0.00001 }, { aired: 0.99999 }, { aired: Infinity }]) assert.deepEqual(v(bad), refusal, JSON.stringify(bad));
 });
 
 test('Hot Box is cleared, for everyone, only once aired out clean, and that is final', () => {
@@ -84,6 +86,7 @@ test('Hot Box holds its author\'s saves for hotBox.holdHours after the play land
   for (const bad of [-1, 169, 1.5]) {
     assert.match(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'hotBox.holdHours': bad } }) }).join('\n'), /hotBox\.holdHours/, String(bad));
   }
+  assert.deepEqual(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'hotBox.holdHours': 168 } }) }), []);
 });
 
 test('what the staff read says of the smoke: thick, part aired out, or all aired out', () => {
