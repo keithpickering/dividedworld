@@ -8498,7 +8498,9 @@ describe('a clear that is final (lasting gags, section 2.4)', () => {
     const final = fake.seed.card(boFace, opener, 'forever');
     const soft = fake.seed.card(boFace, opener, 'passing');
     must(await fake.saveEffect(final, anaFace, { clean: false }));
-    must(await fake.saveEffect(final, anaFace, { clean: true }));
+    const cleared = must(await fake.saveEffect(final, anaFace, { clean: true }));
+    expect(must(await fake.saveEffect(final, anaFace, { clean: true }))).toEqual(cleared);
+    expect(await fake.saveEffect(final, anaFace, { clean: false, aired: 0.5 })).toEqual(refused('that effect was cleared for good, and stays cleared'));
     expect(await fake.saveEffect(final, anaFace, { clean: false })).toEqual(refused('that effect was cleared for good, and stays cleared'));
     expect((await fake.effectStates([final]))[final]!.state).toEqual({ clean: true });
     must(await fake.saveEffect(soft, anaFace, { clean: true }));

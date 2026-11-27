@@ -7,7 +7,7 @@
 --   3. place_cast                  copied whole from 0438_board_cards_on_their_board.sql: the post stack count leaves out a play of a kind that clears for good that effect_cleared(play, null) says is cleared. The layer and the count beyond a post are unchanged.
 --   4. spring_facts                copied whole from 0438_board_cards_on_their_board.sql: its subquery `l` gains `cleared_for_good`, and `up` and `quadrant_up` leave those plays out. `layer` is unchanged, so no layer is taken twice.
 --   5. save_effect_state           copied whole from 0411_post_effects.sql (no later migration redefines it): after the didn't-take refusal, a play of a kind that clears for good that is cleared for every version is refused
---                                  in the words 'that effect was cleared for good, and stays cleared' (errcode 55000). It sits after the author check, so only the post's author meets it. The post's row is locked for no key update
+--                                  in the words 'that effect was cleared for good, and stays cleared' (errcode 55000), unless the save repeats the kept state exactly (jsonb equality), which succeeds, writes nothing and returns the kept row. It sits after the author check, so only the post's author meets it. The post's row is locked for no key update
 --                                  as place_cast locks it, first, before that check, so two saves of one play cannot both pass it and a later save cannot overwrite the clear. Grants as 0411 gave them (service role only).
 -- Grants and settings as each copied definition states them. No later migration redefines place_cast, spring_facts or save_effect_state, and seed_instance's latest is 0449.
 --
@@ -1153,6 +1153,11 @@ begin
   end if;
   -- A play whose card clears for good, once cleared for every version of the post, stays cleared: its stack and the post's slot were given up on that word.
   if exists (select 1 from acts k join card_kinds ck on ck.key = k.payload ->> 'card' where k.id = on_play and ck.clears_for_good) and effect_cleared(on_play, null) then
+    -- An exact repeat of the state that was kept (a retry, a double send) is a quiet success that writes nothing, and answers as a save does, from the row as it stands.
+    if exists (select 1 from effect_state e where e.play = on_play and e.state = save_effect_state.state) then
+      return (select jsonb_build_object('play', e.play, 'thread', (select thread from acts where id = on_play), 'state', e.state, 'saved_at', e.saved_at)
+              from effect_state e where e.play = on_play);
+    end if;
     raise exception 'that effect was cleared for good, and stays cleared' using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
   -- Timed when written, after any save it waited on, so the newest saved_at is the state kept.

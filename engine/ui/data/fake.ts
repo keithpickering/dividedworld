@@ -2554,6 +2554,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const movedPrice = (seen: SlotRec): boolean => seen.move?.kind === 'repriceSlot' && seen.price !== seen.move.was;
   const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
 
+  /** A value with every object's keys in order, so two equal JSON values stringify alike. */
+  const sortedKeys = (v: unknown): unknown => Array.isArray(v) ? v.map(sortedKeys) : v !== null && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, x]) => [k, sortedKeys(x)])) : v;
+
   function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
     const bad = request({ action: 'saveEffect', character, play, state });
     if (bad) return bad;
@@ -2571,7 +2574,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
     /* A final clear stays: the card says its saved state clears the play for every version (drawsEffect.final), and nothing saves over it. */
     const rule = instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.drawsEffect;
-    if (rule?.final === true && rule.cleared?.(effects.get(play)?.state) === true) return refuse('that effect was cleared for good, and stays cleared');
+    if (rule?.final === true && rule.cleared?.(effects.get(play)?.state) === true) {
+      /* An exact repeat of the kept state is a quiet success that changes nothing. */
+      const kept = effects.get(play)!;
+      if (JSON.stringify(sortedKeys(kept.state)) === JSON.stringify(sortedKeys(state))) return ok({ play, savedAt: iso(kept.at) });
+      return refuse('that effect was cleared for good, and stays cleared');
+    }
     const at = now();
     effects.set(play, { state, at });
     send(`thread:${played.thread}`, 'effect', () => { for (const l of [...(threadListeners.get(played.thread) ?? [])]) l.onEffect?.(play, iso(at)); });

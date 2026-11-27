@@ -84,7 +84,7 @@ do $$
 declare
   ann uuid := pg_temp.fix('ann'); bob uuid := pg_temp.fix('bob'); cat uuid := pg_temp.fix('cat'); dan uuid := pg_temp.fix('dan');
   a uuid := pg_temp.fix('a'); b uuid := pg_temp.fix('b'); c uuid := pg_temp.fix('c'); d uuid := pg_temp.fix('d'); t uuid := pg_temp.fix('t');
-  p uuid := tests.post(a, t, 'A post for a final card.'); first_play uuid; second_play uuid; r record; said text;
+  p uuid := tests.post(a, t, 'A post for a final card.'); first_play uuid; second_play uuid; r record; said text; kept jsonb;
 begin
   r := pg_temp.cast_of(bob, 'fgfinal', b, p); perform pg_temp.expect(r.said is null, format('the first cast was refused: %s', r.said)); first_play := r.id;
   r := pg_temp.cast_of(cat, 'fgfinal', c, p); perform pg_temp.expect(r.said = '23505 this post already carries that card', format('a second cast on an uncleared play is not refused: %s', r.said));
@@ -105,9 +105,14 @@ begin
   -- A later save on the cleared play is refused in the words; the new play can still be saved.
   said := pg_temp.save_of(ann, a, first_play, '{"clean": false}', false, null);
   perform pg_temp.expect(said = '55000 that effect was cleared for good, and stays cleared', format('a save on a play cleared for good was not refused in the words: %s', said));
+  -- The exact repeat of the save that cleared it is a quiet no-op success: nothing is rewritten, not even saved_at.
+  kept := (select to_jsonb(e) from effect_state e where e.play = first_play);
   said := pg_temp.save_of(ann, a, first_play, '{"clean": true}', true, null);
-  perform pg_temp.expect(said = '55000 that effect was cleared for good, and stays cleared', format('a clear saved again was not refused: %s', said));
-  perform pg_temp.expect((select e.cleared and e.cleared_for is null and e.state = '{"clean": true}' from effect_state e where e.play = first_play), 'the refused save changed what was kept');
+  perform pg_temp.expect(said is null, format('the exact repeat of the clearing save was refused: %s', said));
+  perform pg_temp.expect((select to_jsonb(e) from effect_state e where e.play = first_play) = kept, 'the repeat of the clearing save rewrote the row');
+  said := pg_temp.save_of(ann, a, first_play, '{"aired": 0.5}', false, null);
+  perform pg_temp.expect(said = '55000 that effect was cleared for good, and stays cleared', format('a partial save on a play cleared for good was not refused in the words: %s', said));
+  perform pg_temp.expect((select to_jsonb(e) from effect_state e where e.play = first_play) = kept, 'the refused save changed what was kept');
   said := pg_temp.save_of(ann, a, second_play, '{"clean": false}', false, null);
   perform pg_temp.expect(said is null, format('a save on the live play was refused: %s', said));
   -- Only the author meets it: a stranger is refused as ever.
