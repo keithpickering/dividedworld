@@ -116,6 +116,10 @@ declare
   w text;
   r text;
   lim integer;
+  vbody text;
+  tail text;
+  m text[];
+  depth integer;
 begin
   if target is null or room is null or room < 1 then return null; end if;
   -- A live No quote: the quote could not be written without the post being refused (acts_quote_guard), and write_staff_act drops the target the same way.
@@ -129,11 +133,30 @@ begin
   loop
     continue when version_hidden(v.id, outcome_quote.target);
     select q.source into src from quote_sources q where q.act = v.id;
+    select a.payload ->> 'body' into vbody from acts a where a.id = v.id;
     exit;
   end loop;
   if src is null then return null; end if;
   -- The words stop at a cut mark (a quote's own cut inside the version): a cut is no word, and a quote cannot hold it.
   s := btrim(split_part(src, cutc, 1), ' ');
+  -- They open at the target's own words: where the version opens (after whitespace) with a [quote...]...[/quote], that quote's words are dropped from the front and the quote is of what follows, as long as what follows is still a
+  -- verbatim run of the source, so it is not forged (engine/bbcode/outcome-quote.ts withoutLeadingQuote, the same depth count). Nothing after it, or no verbatim run, leaves the words as they stand.
+  if vbody ~* '^[[:space:]]*\[quote(=[^\]]*)?\]' then
+    depth := 0;
+    tail := vbody;
+    loop
+      m := regexp_match(tail, '^(.*?)(\[(/)?quote(=[^\]]*)?\])', 'i');
+      exit when m is null;
+      tail := substr(tail, length(m[1]) + length(m[2]) + 1);
+      depth := depth + case when m[3] is null then 1 else -1 end;
+      if depth = 0 then
+        select w.source into r from bbcode_walk(tail, null, '{}', true) w;
+        r := btrim(split_part(coalesce(r, ''), cutc, 1), ' ');
+        if r <> '' and strpos(src, r) > 0 then s := r; end if;
+        exit;
+      end if;
+    end loop;
+  end if;
   if s = '' then return null; end if;
   lim := least(most, room);
   loop

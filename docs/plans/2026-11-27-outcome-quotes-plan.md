@@ -26,7 +26,7 @@ a refused post takes the best-effort path #1202 built.
   they fit; otherwise the first `OUTCOME_QUOTE_MOST` (280) characters cut at a word, followed by `…`. They are
   wrapped in `[noparse]` when they hold what the parser would read as a tag (a `[` then `/`, a letter or `*`), by the one `asTyped()` (`engine/bbcode/quoted.ts`) that wraps a player's selection. They pass the
   forged-quote check (`0393_forged_quotes.sql`) by construction: they are a verbatim run of the version's words, and
-  `quote_norm` drops the trailing `…`. A test holds that no outcome post is recorded `forged`.
+  `quote_norm` drops the trailing `…`. A test holds that no outcome post is recorded `forged`. The words open at the target's own: where the version opens (after whitespace) with a real `[quote…]…[/quote]`, that quote's words are dropped from the front and the quote is of what follows (so a ban's ruling quotes "Banned: …", not the tipped post the entry quotes), only where what follows is still a verbatim run of the source, and a post that is only a quote quotes its words.
 - **What each outcome quotes:**
   - a filing, a talked-down visit's concession (model or stock): the visited post;
   - an infraction's ruling: the punished post;

@@ -122,3 +122,40 @@ test('asTyped covers what reads as a tag only: a lone bracket that no tag name f
   assert.equal(asTyped('a [/noparse] b'), '[noparse]a [/noparse[/noparse][noparse]] b[/noparse]');
   assert.equal(outcomeQuote('a1', 'item [1] done'), '[quote=a1]item [1] done[/quote]\n');
 });
+
+test('a quote opens at the target\'s own words: a leading quote is skipped, a post that is only a quote quotes its words', () => {
+  const q = '11111111-2222-3333-4444-555555555555';
+  assert.equal(outcomeQuote('a1', `[quote=${q}]x[/quote] my reply`), '[quote=a1]my reply[/quote]\n');
+  assert.equal(outcomeQuote('a1', `  \n[quote=${q}]x[/quote]\nmy reply`), '[quote=a1]my reply[/quote]\n');
+  assert.equal(outcomeQuote('a1', `[quote=${q}]a [quote=${q}]x[/quote] b[/quote] after both`), '[quote=a1]after both[/quote]\n');
+  assert.equal(outcomeQuote('a1', `[quote=${q}]just this[/quote]`), '[quote=a1]just this[/quote]\n');
+  assert.equal(outcomeQuote('a1', `my reply [quote=${q}]x[/quote] more`), '[quote=a1]my reply x more[/quote]\n');
+  // A ban entry opens with its own quote of the tipped post: the ruling quotes the entry's words, not the tipped post's.
+  assert.equal(outcomeQuote('a1', `[quote=${q}]The tipped post.[/quote]\nBanned: Bob, 1 days.`), '[quote=a1]Banned: Bob, 1 days.[/quote]\n');
+});
+
+test('what a leading-quote skip quotes is still a run of the source', () => {
+  const q = '11111111-2222-3333-4444-555555555555';
+  const body = `[quote=${q}]their words[/quote] my reply, and more of it`;
+  const words = wordsOf(outcomeQuote('a1', body));
+  assert.ok(quoteSource(parse(body)).includes(quoteNorm(words)));
+});
+
+// One contract for room, held to the same table as the database's outcome_quote (supabase/tests/0452-outcome-quotes.sql): room is what the words, the ellipsis and the cover may take in all; the 53 of the markup are out already.
+const PARITY: readonly (readonly [string, string, number, string | null])[] = [
+  ["whole", "Hello  [b]big\nworld[/b]", 100, "Hello big world"],
+  ["cut at a word", "alpha beta gamma", 9, "alpha…"],
+  ["hard cut, shrunk by the ellipsis", "abcdefghijklmnop", 6, "abcde…"],
+  ["noparse wrap", "[noparse]see [b] now[/noparse]", 40, "[noparse]see [b] now[/noparse]"],
+  ["a [/noparse] escape", "a [/noparse] b", 60, "[noparse]a [/noparse[/noparse][noparse]] b[/noparse]"],
+  ["astral characters", "😀😁😂 😃😄😅", 5, "😀😁😂…"],
+  ["leading quote skipped", "[quote={Q}]first words[/quote] my reply", 100, "my reply"],
+  ["no room", "some words", 1, null],
+];
+
+test('the parity table: the same (body, room) cases give the same words as the database', () => {
+  const Q = '11111111-2222-3333-4444-555555555555';
+  for (const [name, body, room, words] of PARITY) {
+    assert.equal(outcomeQuote('a1', body.replaceAll('{Q}', Q), room), words === null ? '' : `[quote=a1]${words}[/quote]\n`, name);
+  }
+});

@@ -2,7 +2,7 @@
 --
 -- 1. Every kind of outcome post (a filing, an infraction's ruling, a model and a stock concession, a ban's entry, a ban's ruling, a move's ruling) opens with a real `[quote=<target>]` of its target's opening words and a line break,
 --    then the Mod's words; the post's target is that Act; and its payload is never `forged`.
--- 2. The words: a short target whole, a long one cut at a word to at most 280 characters then `…`, markup and whitespace as a reader sees them, `[noparse]` around words that hold a `[`, a literal `[/noparse]` held, a target
+-- 2. The words (they open at the target's own: a leading quote is skipped, and one table of (body, room) cases is held by the TS mirror too): a short target whole, a long one cut at a word to at most 280 characters then `…`, markup and whitespace as a reader sees them, `[noparse]` around words that hold a `[`, a literal `[/noparse]` held, a target
 --    with markup or nested quotes or an edit (the latest eligible version), none of it forged.
 -- 3. A ban's entry quotes the post that tipped the bar (in another thread), and its target is that post; a ban's ruling quotes the entry; a move's ruling quotes the move's said line.
 -- 4. The forged-quote check counts a move with a text body as a version of itself: a player's quote of it is real, a doctored one is forged; posts, spins and edits read as they did.
@@ -256,7 +256,7 @@ begin
   closed := close_appeal(ap, 'upheld', 'The ban stands.', null, null);
   select * into ruling from outcome_posts where about_act = (closed ->> 'ruling_act')::uuid;
   perform pg_temp.expect(ruling.post_act is not null and pg_temp.target(ruling.post_act) = entry.post_act, 'the ban ruling does not target the entry: ' || to_jsonb(ruling)::text);
-  perform pg_temp.expect(pg_temp.said_quote(ruling.post_act, entry.post_act) like 'A post that fills the bar for a quote. Banned: Op Banned Q, 1 days%', 'the ban ruling does not quote the entry''s opening words: ' || pg_temp.body(ruling.post_act));
+  perform pg_temp.expect(pg_temp.said_quote(ruling.post_act, entry.post_act) like 'Banned: Op Banned Q, 1 days%' and pg_temp.said_quote(ruling.post_act, entry.post_act) not like 'A post that fills%', 'the ban ruling does not quote the entry''s own opening words (not the quote it opens with): ' || pg_temp.body(ruling.post_act));
   perform pg_temp.expect(pg_temp.after_quote(ruling.post_act) = 'The ban stands.' and not pg_temp.forged(ruling.post_act), 'the ban ruling is forged or its words changed');
 end $$;
 
@@ -325,11 +325,44 @@ begin
     perform pg_temp.expect(strpos(pg_temp.body(marked), E'\ufdd0') = 0, 'a cut mark reached a post: ' || src);
   end loop;
 
-  -- A nested quote in the target: its words are words a reader sees.
+  -- A quote the target opens with is not its own words: the quote is of what follows it.
   other := tests.post(pg_temp.chr('Op Ann A'), t, 'Their words here');
   nested := pg_temp.filed(t, '[quote=' || other || E']Their words here[/quote]\nMy reply words');
-  perform pg_temp.expect(pg_temp.said_quote(nested, pg_temp.target(nested)) = 'Their words here My reply words' and not pg_temp.forged(nested), 'a nested quote is wrong or forged: ' || pg_temp.body(nested));
+  perform pg_temp.expect(pg_temp.said_quote(nested, pg_temp.target(nested)) = 'My reply words' and not pg_temp.forged(nested), 'a leading quote is not skipped or is forged: ' || pg_temp.body(nested));
 
+end $$;
+
+-- The words open at the target's own: a leading quote is skipped (a player's reply, a ban entry), a post that is only a quote quotes its words, and the rule holds for one table of cases the TS mirror holds too.
+do $$
+declare
+  t uuid := tests.thread('Op quote leading');
+  other uuid := tests.post(pg_temp.chr('Op Ann A'), t, 'x');
+  qp uuid; reply uuid; only_q uuid; nested uuid; p uuid; got text; i integer;
+  parity text[][] := array[
+    [$n$whole$n$, $b$Hello  [b]big
+world[/b]$b$, '100', $e$Hello big world$e$],
+    [$n$cut at a word$n$, $b$alpha beta gamma$b$, '9', $e$alpha…$e$],
+    [$n$hard cut, shrunk by the ellipsis$n$, $b$abcdefghijklmnop$b$, '6', $e$abcde…$e$],
+    [$n$noparse wrap$n$, $b$[noparse]see [b] now[/noparse]$b$, '40', $e$[noparse]see [b] now[/noparse]$e$],
+    [$n$a [/noparse] escape$n$, $b$a [/noparse] b$b$, '60', $e$[noparse]a [/noparse[/noparse][noparse]] b[/noparse]$e$],
+    [$n$astral characters$n$, $b$😀😁😂 😃😄😅$b$, '5', $e$😀😁😂…$e$],
+    [$n$leading quote skipped$n$, $b$[quote={Q}]first words[/quote] my reply$b$, '100', $e$my reply$e$],
+    [$n$no room$n$, $b$some words$b$, '1', null]];
+begin
+  reply := pg_temp.filed(t, '[quote=' || other || ']x[/quote] my reply');
+  perform pg_temp.expect(pg_temp.said_quote(reply, pg_temp.target(reply)) = 'my reply' and not pg_temp.forged(reply), 'a leading quote is not skipped: ' || pg_temp.body(reply));
+  only_q := pg_temp.filed(t, '[quote=' || other || ']x[/quote]');
+  perform pg_temp.expect(pg_temp.said_quote(only_q, pg_temp.target(only_q)) = 'x' and not pg_temp.forged(only_q), 'a post that is only a quote does not quote its words: ' || pg_temp.body(only_q));
+  nested := pg_temp.filed(t, '[quote=' || other || ']a [quote=' || other || ']x[/quote] b[/quote] after both');
+  perform pg_temp.expect(pg_temp.said_quote(nested, pg_temp.target(nested)) = 'after both' and not pg_temp.forged(nested), 'a nested leading quote is not skipped whole: ' || pg_temp.body(nested));
+  -- One table of (body, room) cases, with the same expected words in engine/bbcode/outcome-quote.test.ts (PARITY): room is what the words, the ellipsis and the cover may take in all.
+  qp := tests.post(pg_temp.chr('Op Ann A'), t, 'first words');
+  for i in 1..array_length(parity, 1) loop
+    p := tests.post(pg_temp.chr('Op Bob A'), t, replace(parity[i][2], '{Q}', qp::text));
+    got := outcome_quote(p, parity[i][3]::integer);
+    perform pg_temp.expect(got is not distinct from case when parity[i][4] is null then null else '[quote=' || p || ']' || parity[i][4] || E'[/quote]\n' end,
+      'parity case "' || parity[i][1] || '": ' || coalesce(got, 'no quote'));
+  end loop;
 end $$;
 
 -- An edited target quotes its latest version; a later edit is the latest; an edit an admin hid is skipped for the one before it.
@@ -354,6 +387,19 @@ begin
   perform post_visit_concession(v2, 'Fine.');
   o := (select x.post_act from outcome_posts x where x.visit_act = v2 and x.kind = 'intercepted');
   perform pg_temp.expect(pg_temp.said_quote(o, p) = 'Second edit with a tag in it.' and not pg_temp.forged(o), 'a twice-edited target is not quoted at its latest version: ' || pg_temp.body(o));
+  -- The latest edit an admin hid: the quote falls back to the earlier visible version (an edit is hidden by a decision of its own, as 0393's tests write one).
+  p := tests.post(bob, t, 'Hidden-case words before the edits.', now() - interval '3 hours');
+  e1 := tests.act(bob, 'edit', t, '{"body": "Hidden-case words after the first edit."}', p, now() - interval '2 hours');
+  e2 := tests.act(bob, 'edit', t, '{"body": "Hidden-case latest edit an admin hides."}', p, now() - interval '1 hour');
+  insert into admins (account) values (pg_temp.eve()) on conflict do nothing;
+  perform tests.become(pg_temp.eve());
+  perform decide(null, e2, 'hide', null, 'op hidden latest edit');
+  perform tests.unbecome();
+  perform pg_temp.expect(version_hidden(e2, p) and not version_hidden(e1, p), 'the test did not hide the latest edit alone');
+  v3 := pg_temp.visit(p, 'op-m1');
+  perform file_visit(v3, 'Filed.');
+  o := (select x.post_act from outcome_posts x where x.about_act = (pg_temp.end_of(v3)).id);
+  perform pg_temp.expect(pg_temp.said_quote(o, p) = 'Hidden-case words after the first edit.' and not pg_temp.forged(o), 'a hidden latest edit is quoted, or the earlier visible version is not: ' || pg_temp.body(o));
 end $$;
 
 -- ---- 3. No quote and a quote trap ----
