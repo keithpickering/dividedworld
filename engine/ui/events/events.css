@@ -43,8 +43,8 @@
   --kb-gem-color: var(--kb-event-rarity-color);
   width: 16px;
   height: 16px;
-  /* gem.css sizes the glyph at 0.8em of the gem's own type, which here would be the tag's 20px label, a 16px glyph in a 16px tile. 15px makes it 12px, the proportion (about 0.75) of the 22px tile's ~17px glyph. */
-  font-size: 15px;
+  /* gem.css sizes the glyph at 0.8em of the gem's own type, which here would be the tag's 20px label, a 16px glyph in a 16px tile. 0.75em of the label (15px at the default text size) makes it 12px, the proportion (about 0.75) of the 22px tile's ~17px glyph. In em, not px, so it follows the player's text size as every glass font size does. */
+  font-size: 0.75em;
 }
 
 .kb-event {
