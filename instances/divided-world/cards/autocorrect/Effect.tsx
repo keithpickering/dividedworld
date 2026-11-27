@@ -6,9 +6,10 @@
  * - **The line.** The post's words are cut at every strip's ends into `wrap` runs (engine/ui/bbcode/layers.tsx), each drawn as a
  *   `span[data-kb-ac-seg]`, so the words stay in the line in their own formatting. At a strip's end the run's `trail` holds the
  *   strip's room: break-spaces, as many as the replacement needs past the words (tape.ts `roomOf`), measured in the formatting
- *   the room sits in. A strip the author peeled before this load gets no room. While tape covers a segment its words are
- *   `aria-hidden` and `data-kb-quotable="hidden"`; at each taped strip's start a visually hidden anchor stands in the line, named
- *   for what its role can do and quoted as the replacement (design section 10).
+ *   the room sits in. A stack whose footprint fits its line is laid whole (it does not wrap) and moves to the next line as a
+ *   long word does; one wider than its line wraps and is cut into pieces. A strip the author peeled before this load gets no
+ *   room. While tape covers a segment its words are `aria-hidden` and `data-kb-quotable="hidden"`; at each taped strip's start a
+ *   visually hidden anchor stands in the line, named for what its role can do and quoted as the replacement (design section 10).
  * - **The eye.** A `div.dw-ac-tape` over the post draws each live strip as one piece per line it crosses, measured from a Range
  *   over its first segment to its room, with its paper on a canvas drawn when it first comes near the viewport (a plain fill until
  *   then, so the words under it are never seen) and the replacement's words dealt across the pieces (`dealWords`). Under it, one
@@ -52,7 +53,7 @@ import { register, unregister, wake, SPAN_MARGIN } from '../../../../engine/ui/s
 import { seeded } from '../../ui/seeded.ts';
 import type { Stretch } from '../autocorrect.ts';
 import { economyNow } from '../../../../engine/ui/economy.ts';
-import { heldUntil } from '../autocorrect.ts';
+import { heldUntil, holdLeft } from '../hold.ts';
 import { dropRoll } from './drop.ts';
 import { Hands, type HandEvent, type HandSettings, type PieceSpec, type PieceView } from './hands.ts';
 import { drawPaper, PAPER, tearJag, type PaperContext } from './paper.ts';
@@ -94,14 +95,6 @@ export const LENS = Object.freeze({
   authorEnds: 'Drag a strip by one end to read under it; it lays back down. To peel it off for good, hold one end still until the corner lifts, then pull slowly. Pull too fast and it tears. Push a roll back to stick the tape down again.',
   authorHeld: (left: string) => `Stuck on for ${left}. Until then, drag a strip by one end to read under it. After that you can peel strips off for good: hold one end still until the corner lifts, then pull slowly.`,
 });
-
-/** How long a hold has left, rounded up to the minute: "5h 12m", "12m", or "less than a minute". */
-function left(ms: number): string {
-  if (ms < 60_000) return 'less than a minute';
-  const minutes = Math.ceil(ms / 60_000);
-  const h = Math.floor(minutes / 60);
-  return h > 0 ? `${h}h ${minutes % 60}m` : `${minutes}m`;
-}
 
 /** What a saved state names: the places peeled whole, the stretches still stuck of those half peeled, and where rolls fell on those. Anything else is none. */
 function savedOf(state: unknown): SavedTape {
@@ -638,13 +631,13 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
    */
   /* The economy as the server holds it now over the compiled one: a screen that has not read the server's holds the compiled hours. */
   const economy = useMemo(() => ({ economy: economyNow(instance.settings, settings.economy) }), [instance, settings.economy]);
-  const holds = useMemo(() => new Map(plays.map((p) => [p.id, heldUntil(economy, p.playedAt)?.getTime()] as const)), [plays, economy]);
+  const holds = useMemo(() => new Map(plays.map((p) => [p.id, heldUntil(economy, 'autocorrect.holdHours', p.playedAt)?.getTime()] as const)), [plays, economy]);
   const [clock, setClock] = useState(() => Date.now());
   const heldAt = (s: TapeStrip): number | undefined => {
     const until = author ? holds.get(s.play) : undefined;
     return until !== undefined && until > clock ? until : undefined;
   };
-  const heldLeft = (s: TapeStrip): string | undefined => { const until = heldAt(s); return until === undefined ? undefined : left(until - clock); };
+  const heldLeft = (s: TapeStrip): string | undefined => { const until = heldAt(s); return until === undefined ? undefined : holdLeft(until - clock); };
   const latestHold = live.reduce((m, s) => Math.max(m, heldAt(s) ?? 0), 0);
   useEffect(() => {
     if (!latestHold) return;
@@ -904,9 +897,11 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
 
   /* Rooms: break-spaces after a strip's words, by the end offset they follow, as this screen's measuring last found them. */
   const [rooms, setRooms] = useState<Rooms>({});
+  /* Whole stacks (design docs/plans/2026-11-27-autocorrect-whole-strip-design.md), by their first strip's start: found from widths only. */
+  const [whole, setWhole] = useState<Record<string, true>>({});
   const [laid, setLaid] = useState<Layout | null>(null);
-  const world = useRef({ strips, stacks, loaded, rooms, key: '' });
-  world.current = { strips, stacks, loaded, rooms, key: `${text}\u0000${configsKey}` };
+  const world = useRef({ strips, stacks, loaded, rooms, whole, key: '' });
+  world.current = { strips, stacks, loaded, rooms, whole, key: `${text}\u0000${configsKey}` };
   const extra = useRef<{ key: string; at: Record<string, number> }>({ key: '', at: {} });
 
   /*
@@ -918,7 +913,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   const layout = useCallback(() => {
     const host = box.current;
     if (!host) return;
-    const { strips: all, stacks: groups, loaded: before, rooms: have, key } = world.current;
+    const { strips: all, stacks: groups, loaded: before, rooms: have, whole: haveWhole, key } = world.current;
     const hostRect = host.getBoundingClientRect();
     const base = Number.parseFloat(getComputedStyle(host).fontSize) || 16;
     const ruler = rulerOf();
@@ -933,8 +928,21 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       const [a, b] = edge(s);
       if (!firstAt.has(a)) firstAt.set(a, i);
       lastAt.set(b, i);
-      width.set(s.dataset.kbAcSeg!, (width.get(s.dataset.kbAcSeg!) ?? 0) + [...s.getClientRects()].reduce((t, r) => t + r.width, 0));
     });
+    /*
+     * The words' widths as they lie unbroken, whatever state each stack is in: a run that wraps loses the space collapsed at its
+     * break, so its rects read narrower than the same words on one line, and a footprint tested on that read would flip the stack
+     * whole, then wider than its line, then not. So every segment is set to `pre` (spaces and newlines kept, never wrapped, as the
+     * whole rule below lays it) for one batched read (set all, read all, restore all, inside the layout effect, so nothing paints),
+     * and the width tested never depends on the layout it decides.
+     */
+    const priorWrap = segs.map((s) => s.style.whiteSpace);
+    try {
+      for (const s of segs) s.style.whiteSpace = 'pre';
+      segs.forEach((s) => width.set(s.dataset.kbAcSeg!, (width.get(s.dataset.kbAcSeg!) ?? 0) + [...s.getClientRects()].reduce((t, r) => t + r.width, 0)));
+    } finally {
+      segs.forEach((s, i) => { s.style.whiteSpace = priorWrap[i]!; });
+    }
     /* The segments' widths ascending by start with running totals: the words from one offset to another are a run of them (the segments partition the text, so their ends ascend with their starts). */
     const byStart = [...width].map(([id, w]) => { const [a, b] = id.split('-').map(Number) as [number, number]; return { a, b, w }; }).sort((x, y) => x.a - y.a || x.b - y.b);
     const upTo = [0];
@@ -996,7 +1004,39 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
      * the strip's pieces are known, and kept (it only grows, up to the replacement's own width) until the post's text or plays change.
      */
     if (extra.current.key !== key) extra.current = { key, at: {} };
-    for (const [end, n] of Object.entries(extra.current.at)) nextRooms[end] = (nextRooms[end] ?? 0) + n;
+    /*
+     * A stack whose footprint (its words and its rooms, as set above) is no wider than its line is whole: it does not wrap and takes no
+     * extra. The line is the content box of the nearest block around its first segment, so a quote or a spun thread's ORIGIN box is
+     * measured as it is. Found from widths alone, never from where the lines broke, so it cannot flip between two layouts.
+     */
+    const lineWidth = (el: HTMLElement | undefined): number => {
+      let e: HTMLElement | null = el?.parentElement ?? null;
+      while (e && e !== host.parentElement && ['inline', 'contents'].includes(String(getComputedStyle(e).display ?? ''))) e = e.parentElement;
+      if (!e) return hostRect.width;
+      const cs = getComputedStyle(e);
+      const px = (k: string) => Number.parseFloat(cs.getPropertyValue(k)) || 0;
+      return e.getBoundingClientRect().width - px('padding-left') - px('padding-right') - px('border-left-width') - px('border-right-width');
+    };
+    const nextWhole: Record<string, true> = {};
+    const wholeEnds = new Set<number>();
+    for (const stack of groups) {
+      if (stack.every((s) => before.has(s.key))) continue;
+      const from = stack[0]!.from;
+      const to = Math.max(...stack.map((s) => s.to));
+      const firstIdx = firstAt.get(from);
+      if (firstIdx === undefined) continue;
+      let foot = Math.max(0, upTo[endsAtOrBefore(to)]! - upTo[startsAtOrAfter(from)]!);
+      for (const end of new Set(stack.map((s) => s.to))) foot += (nextRooms[String(end)] ?? 0) * spaceAt(end);
+      /* The words keep the player's newlines (the post is pre-wrap), and a newline breaks the line: such a stack cannot lie on one. */
+      const firstFrom = Math.min(...stack.map((s) => s.from)), lastTo = Math.max(...stack.map((s) => s.to));
+      if (text.slice(firstFrom, lastTo).includes('\n')) continue;
+      if (foot <= lineWidth(segs[firstIdx]) + 0.5) {
+        nextWhole[String(from)] = true;
+        for (const s of stack) wholeEnds.add(s.to);
+      }
+    }
+    for (const [end, n] of Object.entries(extra.current.at)) if (!wholeEnds.has(Number(end))) nextRooms[end] = (nextRooms[end] ?? 0) + n;
+    if (!sameJson(nextWhole, haveWhole)) { setWhole(nextWhole); return; }
     if (!sameJson(nextRooms, have)) { setRooms(nextRooms); return; }
 
     const out: Record<string, Laid> = {};
@@ -1035,7 +1075,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       const dealt = dealWords(s.replacement, boxes.map((b) => b.w - 2 * pad), (t, scale) => ruler(marker(scale), t));
       const lack = ruler(marker(dealt.scale), dealt.words.at(-1) ?? '') - (boxes.at(-1)!.w - 2 * pad);
       const grown = extra.current.at[String(s.to)] ?? 0;
-      if (lack > 0.5 && !before.has(s.key) && grown * spaceAt(s.to) < 2 * ruler(marker(1), s.replacement)) {
+      if (lack > 0.5 && !before.has(s.key) && !wholeEnds.has(s.to) && grown * spaceAt(s.to) < 2 * ruler(marker(1), s.replacement)) {
         const more = Math.ceil(lack / spaceAt(s.to));
         extra.current.at[String(s.to)] = grown + more;
         bump[String(s.to)] = Math.max(bump[String(s.to)] ?? 0, more);
@@ -1052,7 +1092,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   const layoutNow = useRef(layout);
   layoutNow.current = layout;
   /* A new version of the post, a new set of plays, or new rooms in the line: measured before the page paints. */
-  useLayoutEffect(() => { layoutNow.current(); }, [text, configsKey, rooms]);
+  useLayoutEffect(() => { layoutNow.current(); }, [text, configsKey, rooms, whole]);
   /* A resize of the post's box, and fonts that arrive late. */
   useEffect(() => {
     let live = true;
@@ -1073,6 +1113,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       const covered = stack.some((s) => liveKeys.has(s.key) && s.from <= start && s.to >= end);
       const anchors = stack.filter((s) => s.from === start && liveKeys.has(s.key)).sort((a, b) => b.z - a.z);
       const room = rooms[String(end)] ?? 0;
+      const wholeAttr = whole[String(stack[0]!.from)] ? { 'data-kb-ac-whole': '' } : null;
       return {
         start, end, key: `ac:${id}`, z: 0, mode: 'wrap',
         render: ({ text: words, key }) => (
@@ -1080,13 +1121,13 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
             {key === `ac:${id}@${start}` ? anchors.map((s) => (
               <Anchor key={s.key} strip={s} author={author} heldLeft={heldLeft(s)} open={openKeys.has(s.key)} onKey={onKey} onFocus={setFocused} />
             )) : null}
-            <span data-kb-ac-seg={id} {...(covered ? { 'aria-hidden': true, 'data-kb-quotable': 'hidden' } : null)}>{words}</span>
+            <span data-kb-ac-seg={id} {...wholeAttr} {...(covered ? { 'aria-hidden': true, 'data-kb-quotable': 'hidden' } : null)}>{words}</span>
           </Fragment>
         ),
-        ...(room > 0 ? { trail: (key: string) => <span key={key} className="dw-ac-room" aria-hidden="true" data-kb-quotable="hidden" data-kb-ac-room={end}>{' '.repeat(room)}</span> } : null),
+        ...(room > 0 ? { trail: (key: string) => <span key={key} className="dw-ac-room" aria-hidden="true" data-kb-quotable="hidden" data-kb-ac-room={end} {...wholeAttr}>{' '.repeat(room)}</span> } : null),
       };
     });
-  }), [stacks, liveKeys, live, rooms, author, onKey, clock, holds]);
+  }), [stacks, liveKeys, live, rooms, whole, author, onKey, clock, holds]);
 
   /*
    * What a strip's drawing and hands need of its stretches, made once for the stretches it has (by identity) and this layout, so a
@@ -1212,7 +1253,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   const view: CardView = {
     progress: author && progress.current !== null ? Math.round(progress.current * 1000) / 1000 : null,
     state: all ? `${all} ${all === 1 ? 'strip' : 'strips'}, ${done} peeled${author && started > 0 ? `, ${started} started` : ''}` : 'Phrase not in this version',
-    ends: author ? (latestHold ? LENS.authorHeld(left(latestHold - clock)) : LENS.authorEnds) : LENS.readerEnds,
+    ends: author ? (latestHold ? LENS.authorHeld(holdLeft(latestHold - clock)) : LENS.authorEnds) : LENS.readerEnds,
     yours: live.length > 0,
     controls: [],
     notes: Object.fromEntries(configs.map((c) => {

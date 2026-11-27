@@ -95,7 +95,7 @@ export interface CardEffect {
   readonly quadrant?: Quadrant;
   /** The play draws an effect (`CardRules.drawsEffect`) and counts toward the post's limit unless `cleared`. */
   readonly drawing?: true;
-  /** A drawing play whose card says it is cleared, for the post as it is now; it counts none. */
+  /** A drawing play whose card says it is cleared, for the post as it is now; it counts none, and where the card's `drawsEffect.final` is true it holds no stack place either. */
   readonly cleared?: true;
   /** A play of a rewind card (`CardRules.rewind`): while it is up, no card up to `upTo` lands on the post. Carried by card_target for a live play, so a refusal is the same for every caster. */
   readonly rewind?: { readonly upTo: Rarity };
@@ -380,6 +380,11 @@ export interface CardRules<Config = unknown> {
    */
   readonly retired?: true;
   /**
+   * Found only through the Random Events that name it: never drawn by a pack's pull or an event that names no item, never sold by the machine, never in a fixed pack.
+   * An admin may still give it.
+   */
+  readonly eventOnly?: true;
+  /**
    * The keys and names this card went by before, when it is a renamed card: the old key is gone, and every copy of it is this card's.
    * It is one-way (a key that has been renamed away is never a card again), and a name here is how old log lines and cards still say it.
    */
@@ -472,8 +477,10 @@ export interface CardRules<Config = unknown> {
    * The card draws an effect on the post it lands on, and counts toward `Settings.postEffects` while its play is in force and not cleared.
    * `cleared` reads the play's saved state: true is cleared, `{ version }` is cleared for that version of the post only. It is not `draws`,
    * which is what the server draws one of at each play. Only a card that reaches a post and is not a set card declares it (instanceProblems).
+   * `final`: once the play's saved state is cleared for every version of the post (`cleared` answers `true`), the clear is final. No later save on the
+   * play is taken, and the play holds no place in its card's stack (`landsOn`). It names no card, and a card that says it gives `cleared` (instanceProblems).
    */
-  readonly drawsEffect?: { readonly cleared?: (state: unknown) => boolean | { readonly version: string } };
+  readonly drawsEffect?: { readonly cleared?: (state: unknown) => boolean | { readonly version: string }; readonly final?: true };
   /**
    * The plays of this card on one post share a drive, which closes `lasts` after its latest play. `gifts` are the economy keys of the
    * amounts a gift to the drive may be, and `overhead` the economy key of the percentage The System keeps of every gift. Only a Cast
@@ -980,7 +987,7 @@ export const listed = (reaches: readonly Reach[]): string => {
  * carries at most its stack of it (one unless the card says more) that are still up, each its own play, counting only the
  * effects on that same target, never those above it. A board carries one board card at a time, of any card, until it ends.
  */
-export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches' | 'discipline' | 'cuts'> & { readonly surface?: unknown }, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
+export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches' | 'discipline' | 'cuts' | 'drawsEffect'> & { readonly surface?: unknown }, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
   const reaches = reachesOf(rules);
   if (!reaches.includes(target.reach)) return refuse(`this card lands on ${listed(reaches)}`);
   if (target.reach === 'post' && !isPost(target.kind)) return refuse('a card lands on a post');
@@ -993,7 +1000,9 @@ export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches' | 'di
     if (held) return refuse(`this board already carries a board card until ${held.ends ? refusalTime(held.ends) : 'it ends'}`);
   }
   const stack = rules.stack ?? 1;
-  if (here.filter((e) => e.card === rules.key).length >= stack) {
+  // A final card's cleared play holds no place in its stack (`drawsEffect.final`); any other cleared play still does.
+  const final = rules.drawsEffect?.final === true;
+  if (here.filter((e) => e.card === rules.key && !(final && e.cleared === true)).length >= stack) {
     // A surface card's play is the post's wall: a second says so, in the database's words (place_cast).
     if (rules.surface !== undefined && target.reach === 'post') return refuse('This post is already a wall. Draw on it instead.');
     const where = target.reach === 'post' ? 'this post' : `this ${target.reach}`;

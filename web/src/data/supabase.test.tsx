@@ -673,7 +673,7 @@ describe('reads and their rows', () => {
 
   it('saves an outfit, the shown trophies and rolls an event through the wardrobe function, as the player\'s own session; null is a roll that found nothing', async () => {
     const piece = { gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0, view: null };
-    const found = { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'You find {item}.', lineKey: 'found', character: B };
+    const found = { event: A, outcome: 'gear', item: 'hat', rarity: 'common', eventRarity: 'rare', line: 'You find {item}.', lineKey: 'found', character: B };
     const h = harness((r) => {
       const body = r.body as { action?: string } | null;
       if (r.url.pathname !== '/functions/v1/wardrobe') return undefined;
@@ -683,19 +683,19 @@ describe('reads and their rows', () => {
     });
     expect(await h.api.setOutfit(B, [piece])).toEqual({ ok: true, value: { worn: 1 } });
     expect(await h.api.showTrophies(B, [A, T, C])).toEqual({ ok: false, error: '3 trophies are shown; at most 2' });
-    expect(await h.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'You find {item}.', lineKey: 'found', character: B } });
+    expect(await h.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'gear', item: 'hat', rarity: 'common', eventRarity: 'rare', line: 'You find {item}.', lineKey: 'found', character: B } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/wardrobe').map((r) => r.body)).toEqual([
       { action: 'setOutfit', character: B, pieces: [piece] }, { action: 'showTrophies', character: B, awards: [A, T, C] }, { action: 'randomEvent', character: B },
     ]);
     const none = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: null }) : undefined));
     expect(await none.api.randomEvent(B)).toEqual({ ok: true, value: null });
     /* An answer that is not an event (an outcome or rarity it does not know) is no event, and nothing is invented from it. */
-    for (const bad of [{ ...found, outcome: 'jackpot' }, { ...found, rarity: 'mythic' }, { ...found, outcome: 'gear', item: 3 }]) {
+    for (const bad of [{ ...found, outcome: 'jackpot' }, { ...found, rarity: 'mythic' }, { ...found, eventRarity: 'mythic' }, { ...found, outcome: 'gear', item: 3 }]) {
       const odd = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: bad }) : undefined));
       expect(await odd.api.randomEvent(B), JSON.stringify(bad)).toMatchObject({ ok: false });
     }
     const noKey = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: { event: A, outcome: 'line', item: null, rarity: null, line: 'Nothing.', character: B } }) : undefined));
-    expect(await noKey.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'line', item: null, rarity: null, line: 'Nothing.', character: B } });
+    expect(await noKey.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'line', item: null, rarity: null, eventRarity: 'common', line: 'Nothing.', character: B } });
     const lost = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? new TypeError('network') : undefined));
     expect(await lost.api.randomEvent(B)).toMatchObject({ ok: false, uncertain: true });
   });

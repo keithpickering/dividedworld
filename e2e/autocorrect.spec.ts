@@ -5,7 +5,9 @@ import { expect, test, type Page } from '@playwright/test';
  * on its stories ("Boards/11 Autocorrect", instances/divided-world/ui/autocorrect/Autocorrect.board.stories.tsx):
  *  - a strip peeled by a held key takes at least the pick and the width at the pace, and the post's words do not move by a pixel;
  *  - three short drags of a reader's, on a phone, lift a stack of three off the words under it;
- *  - a strip the author peeled before this load takes its words' own width: no room after them, and its residue stands on the words.
+ *  - a strip the author peeled before this load takes its words' own width: no room after them, and its residue stands on the words;
+ *  - a strip short enough to fit a line stays on one line at every phone width from 320 to 430px (docs/plans/2026-11-27-autocorrect-whole-strip-design.md),
+ *    on the front door's post (`door`) and on `one`: a strip at a line's end moves to the next line whole, never cut in two.
  */
 const STORY = (name: string) => `/?fixture=boards&story=boards-11-autocorrect--${name}`;
 /* The card's settings as the Effect defaults them (Effect.tsx DEFAULTS; autocorrect.pace, pickMs). */
@@ -221,3 +223,37 @@ test.describe('a peek at the window\'s right edge', () => {
     expect(seen).toEqual({ overflow: 0, inner: 390, hud: 390 });
   });
 });
+
+/*
+ * A strip that fits a line stays whole (docs/plans/2026-11-27-autocorrect-whole-strip-plan.md, Task 1): at every phone width, each strip is
+ * drawn on exactly one line. The line is laid once the pieces' lines stop changing, so the sweep sets a width, waits for that, and reads.
+ */
+for (const story of ['door-phone', 'one-phone']) {
+  test(`a short strip at a line's end moves to the next line whole, at every phone width (${story})`, async ({ page }) => {
+    await open(page, story, { width: 320, height: 844 });
+    const lines = () => page.evaluate(() => {
+      const by: Record<string, string[]> = {};
+      for (const p of document.querySelectorAll<HTMLElement>('[data-kb-ac-piece]')) (by[p.dataset.kbAcPiece!] ??= []).push(p.dataset.kbAcLine!);
+      return JSON.stringify(by);
+    });
+    const broken: string[] = [];
+    for (let width = 320; width <= 430; width += 2) {
+      await page.setViewportSize({ width, height: 844 });
+      /* Two frames, so the resize has reached the effect's observer and the first read is of this width's layout. */
+      await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+      /* Settled: the same lines on three reads in a row, 60 ms apart. */
+      let last = '', same = 0;
+      for (let i = 0; i < 100 && same < 3; i++) {
+        await page.waitForTimeout(60);
+        const now = await lines();
+        same = now === last ? same + 1 : 0;
+        last = now;
+      }
+      if (same < 3) broken.push(`${width}px: the lines never settled`);
+      const by = JSON.parse(last) as Record<string, string[]>;
+      expect(Object.keys(by).length).toBeGreaterThan(0);
+      for (const [key, ls] of Object.entries(by)) if (new Set(ls).size !== 1) broken.push(`${width}px: strip ${key} on lines ${[...new Set(ls)].join(', ')}`);
+    }
+    expect(broken).toEqual([]);
+  });
+}

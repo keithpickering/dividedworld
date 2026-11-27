@@ -69,7 +69,7 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'jabroni.saltyLanded': 20, 'jabroni.groanVotes': 2,
     'technician.evergreen': 5, 'technician.evergreenDays': 3,
     'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostAdded': 200,
-    'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostAdded': 200, 'autocorrect.holdHours': 24,
+    'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostAdded': 200, 'autocorrect.holdHours': 24, 'hotBox.holdHours': 24,
     'laughTrack.perPlace': 5, 'laughTrack.freePlaces': 5, 'laughTrack.mostAdded': 100,
     'youWereSaying.baseTokens': 50, 'youWereSaying.stepTokens': 50, 'youWereSaying.stepPrice': 25, 'youWereSaying.mostTokens': 300,
     'itsCurtains.secondAdd': 100, 'itsCurtains.thirdAdd': 200,
@@ -207,6 +207,10 @@ test('hints: the words claim no more than the threshold proves (a lead is "most"
 
 test('a Random Event finds a card rarely: about one in thirty', () => {
   assert.deepEqual(defaults.cosmetics.events.outcomes, { line: 70, gear: 20, card: 3 });
+});
+
+test('a Random Event\'s rarity is rolled among the rarities that hold its outcome: common 80, uncommon 15, rare 4, legendary 1', () => {
+  assert.deepEqual(defaults.cosmetics.events.eventRarity, { common: 80, uncommon: 15, rare: 4, legendary: 1 });
 });
 
 test('Laugh Track\'s mark is set, the dropped numbers are gone, and every held number is inside its bounds', () => {

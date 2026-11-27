@@ -167,3 +167,20 @@ export function sweepAt(lines: readonly SweepLine[], elapsedMs: number, boxWidth
   }
   return { x: ((t - index * per) / per) * boxWidth, y: (line.top + line.bottom) / 2, finished: index - 1, done: false };
 }
+
+/** Whether a saved state says the post is aired out for good (`{ clean: true }`). */
+export function airedOut(state: unknown): boolean {
+  return typeof state === 'object' && state !== null && !Array.isArray(state) && (state as { clean?: unknown }).clean === true;
+}
+
+/**
+ * How tall the band the author has aired out is, in px of a content area `boxHeight` tall, measured from its top border: the saved share (`{ aired }`,
+ * more than 0 and less than 1) of the height, the whole box for a play aired out clean, and 0 for none or for a state the card would not keep. The band is
+ * the area's full width, and no smoke is drawn, cleared into, or masked over in it.
+ */
+export function airedTop(state: unknown, boxHeight: number): number {
+  if (!(Number.isFinite(boxHeight) && boxHeight > 0)) return 0;
+  if (airedOut(state)) return boxHeight;
+  const aired = typeof state === 'object' && state !== null ? (state as { aired?: unknown }).aired : undefined;
+  return typeof aired === 'number' && aired > 0 && aired < 1 ? aired * boxHeight : 0;
+}

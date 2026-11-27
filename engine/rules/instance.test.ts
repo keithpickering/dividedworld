@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ANONYMOUS_STAFF_KEY, BRIBE_BOUNDS, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER, deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
+import { ANONYMOUS_STAFF_KEY, BRIBE_BOUNDS, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER, SETTING_FIELDS, deepFreeze, dropUnknownFields, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
 import type { Instance, Persona, Settings, SystemContent } from './types.ts';
 import { PHASE_CAPS } from '../system/phases.ts';
 import { ANNOUNCE_MOST, LEAD_IN_BRIEF_MOST, MOOD_MOST, PITCH_MOST, PUSH_MOST } from '../system/beats.ts';
@@ -99,7 +99,7 @@ const settings: Settings = {
   cosmetics: {
     gear: { wornMost: 12, reach: 0.4 },
     trophies: { shownMost: 3 },
-    events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 } },
+    events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 }, eventRarity: { common: 80, uncommon: 15, rare: 4, legendary: 1 } },
   },
   setLasts: { unit: 'day', count: 7 },
   reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
@@ -955,6 +955,12 @@ test('a card that draws an effect reaches a post and is not a set card', () => {
   assert.match(instanceProblems(withCards({ drawsEffect: {}, play: 'set', trap: { trigger: { on: 'visit' } } })).join('\n'), /card "splat" draws an effect and is a set card/);
 });
 
+test('a card whose clear is final gives a cleared', () => {
+  assert.deepEqual(instanceProblems(withCards({ drawsEffect: { final: true, cleared: () => true } })), []);
+  assert.deepEqual(instanceProblems(withCards({ drawsEffect: { cleared: () => true } })), []);
+  assert.match(instanceProblems(withCards({ drawsEffect: { final: true } })).join('\n'), /card "splat" says its clear is final and gives no cleared; a clear is read from cleared/);
+});
+
 test('a card carries one of the four rarities', () => {
   assert.deepEqual(instanceProblems(withCards({ rarity: 'legendary' })), []);
   assert.match(instanceProblems(withCards({ rarity: undefined })).join('\n'), /card "splat" has no rarity/);
@@ -1694,10 +1700,124 @@ test('an event outcome has a line, and a gear or card line says {item}', () => {
 });
 
 test('the event odds are never a promise the draw cannot keep: a rarity with no item at it is a problem', () => {
-  assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: { legendary: 1 } }) }), /events\.gearRarity names legendary, and the instance has no gear of that rarity/);
-  assert.match(said({ ...good, settings: cosmeticsSettings({ cardRarity: { legendary: 1 } }) }), /events\.cardRarity names legendary, and the instance has no card of that rarity/);
-  assert.match(said({ ...good, gear: good.gear.filter((g) => g.rarity !== 'rare') }), /events\.gearRarity names rare, and the instance has no gear of that rarity/);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: { legendary: 1 } }) }), /events\.gearRarity names legendary, and the instance has no gear of that rarity that can be drawn/);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ cardRarity: { legendary: 1 } }) }), /events\.cardRarity names legendary, and the instance has no card of that rarity that can be drawn/);
+  assert.match(said({ ...good, gear: good.gear.filter((g) => g.rarity !== 'rare') }), /events\.gearRarity names rare, and the instance has no gear of that rarity that can be drawn/);
   assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: {} }) }), /setting "cosmetics"/);
+});
+
+// Event rarity (docs/plans/2026-11-26-event-rarity-plan.md, Task 1).
+test('events.eventRarity is required, weighs one or more known rarities, and each weight is a positive whole number', () => {
+  const bad = (events: unknown) => settingsProblems({ ...settings, cosmetics: { ...settings.cosmetics, events } } as unknown as Settings).join('\n');
+  const { eventRarity: _gone, ...without } = settings.cosmetics.events;
+  assert.match(bad(without), /"events\.eventRarity"/);
+  assert.match(bad({ ...settings.cosmetics.events, eventRarity: {} }), /"events\.eventRarity" must give at least one weight/);
+  assert.match(bad({ ...settings.cosmetics.events, eventRarity: { epic: 1 } }), /"events\.eventRarity\.epic" is not one of events\.eventRarity.s fields \(common, uncommon, rare, legendary\)/);
+  assert.match(bad({ ...settings.cosmetics.events, eventRarity: { common: 0 } }), /"events\.eventRarity\.common" has a weight of 0/);
+  assert.equal(bad(settings.cosmetics.events), '');
+  assert.match(settingsProblems({ ...settings, cosmetics: 5 } as unknown as Settings).join('\n'), /eventRarity/, 'the shape sentence names it');
+});
+
+const attic = { key: 'attic', outcome: 'gear', rarity: 'rare', item: 'hat', text: 'You find the {item}.' } as const;
+const hat = { key: 'hat', name: 'Hat', line: 'A hat.', rarity: 'rare', eventOnly: true } as const;
+const withEvents = (over: Partial<Instance> & { lines: Instance['events']['lines'] }): Instance => ({ ...good, ...over, events: { lines: over.lines } });
+const lineOf = (over: Record<string, unknown>) => [...good.events.lines, { key: 'x', outcome: 'gear', text: 'A {item}.', ...over }] as Instance['events']['lines'];
+
+test('an event-only piece of gear that an event names is whole', () => {
+  assert.deepEqual(instanceProblems(withEvents({ gear: [...good.gear, hat], lines: [...good.events.lines, attic] })), []);
+});
+
+test('a rare event naming common gear passes', () => {
+  assert.deepEqual(instanceProblems(withEvents({ lines: lineOf({ rarity: 'rare', item: 'cap' }) })), []);
+});
+
+test('an uncommon event naming uncommon gear passes', () => {
+  assert.deepEqual(instanceProblems(withEvents({ lines: lineOf({ rarity: 'uncommon', item: 'monocle' }) })), []);
+});
+
+test('an event line\'s rarity is one of the four', () => {
+  assert.match(said(withEvents({ lines: lineOf({ rarity: 'mythic' }) })), /event line "x" has the rarity "mythic"; a rarity is common, uncommon, rare or legendary/);
+});
+
+test('only a gear or card event gives an item', () => {
+  assert.match(said(withEvents({ lines: [...good.events.lines, { key: 'x', outcome: 'line', text: 'Hi.', item: 'cap' }] as Instance['events']['lines'] })), /event line "x" is a line event and names the item "cap"; only a gear or card event gives an item/);
+});
+
+test('a gear event names gear the instance has', () => {
+  assert.match(said(withEvents({ lines: lineOf({ item: 'ghost' }) })), /event line "x" names the gear "ghost", and the instance has no such gear/);
+});
+
+test('a card\'s key is no gear', () => {
+  assert.match(said(withEvents({ lines: lineOf({ item: 'a' }) })), /event line "x" names the gear "a", and the instance has no such gear/);
+});
+
+test('a card event names a card the instance has', () => {
+  assert.match(said(withEvents({ lines: lineOf({ outcome: 'card', item: 'ghost' }) })), /event line "x" names the card "ghost", and the instance has no such card/);
+});
+
+test('a gear\'s key is no card', () => {
+  assert.match(said(withEvents({ lines: lineOf({ outcome: 'card', item: 'cap' }) })), /event line "x" names the card "cap", and the instance has no such card/);
+});
+
+test('a common gear event may not name rare gear', () => {
+  assert.match(said(withEvents({ lines: lineOf({ item: 'crown' }) })), /event line "x" is common and names the rare gear "crown"; an event is at least as rare as the item it gives/);
+});
+
+test('a common card event may not name a rare card', () => {
+  assert.match(said(withEvents({ lines: lineOf({ outcome: 'card', item: 'c' }) })), /event line "x" is common and names the rare card "c"; an event is at least as rare as the item it gives/);
+});
+
+const onlyCard = [packCards[0]!, { ...packCards[1]!, eventOnly: true }, packCards[2]!] as Instance['cards'];
+
+test('an event-only piece of gear that no event names could never be found', () => {
+  assert.match(said({ ...good, gear: [...good.gear, hat] }), /gear "hat" is event-only and no event line names it, so it could never be found/);
+});
+
+test('an event-only card that no event names could never be found', () => {
+  assert.match(said({ ...good, cards: onlyCard }), /card "b" is event-only and no event line names it, so it could never be found/);
+});
+
+test('an event-only piece of gear named only at a rarity eventRarity does not weigh could never be found', () => {
+  const lines = [...good.events.lines, { ...attic, rarity: 'legendary' }] as Instance['events']['lines'];
+  assert.match(said({ ...withEvents({ gear: [...good.gear, hat], lines }), settings: cosmeticsSettings({ eventRarity: { common: 1 } }) }), /gear "hat" is event-only and no event line at a rarity events\.eventRarity weighs names it, so it could never be found/);
+});
+
+test('an event-only card named only at a rarity eventRarity does not weigh could never be found', () => {
+  assert.match(said({ ...withEvents({ cards: onlyCard, lines: lineOf({ outcome: 'card', rarity: 'legendary', item: 'b' }) }), settings: cosmeticsSettings({ eventRarity: { common: 1 }, cardRarity: { common: 1 } }) }), /card "b" is event-only and no event line at a rarity events\.eventRarity weighs names it, so it could never be found/);
+});
+
+test('an event-only card named only by a gear event could never be found', () => {
+  const lines = [...good.events.lines, { key: 'x', outcome: 'gear', text: 'A {item}.', item: 'b' }] as Instance['events']['lines'];
+  assert.match(said({ ...withEvents({ cards: onlyCard, lines }), settings: cosmeticsSettings({ cardRarity: { common: 1 } }) }), /card "b" is event-only and no event line names it, so it could never be found/);
+});
+
+test('an event-only card that is also retired and named by no event passes', () => {
+  assert.deepEqual(instanceProblems({ ...good, cards: [packCards[0]!, { ...packCards[1]!, eventOnly: true, retired: true }, packCards[2]!] as Instance['cards'], settings: cosmeticsSettings({ cardRarity: { common: 1 } }) }), []);
+});
+
+test('an event-only card that an event names passes', () => {
+  assert.deepEqual(instanceProblems({ ...withEvents({ cards: onlyCard, lines: lineOf({ outcome: 'card', rarity: 'uncommon', item: 'b' }) }), settings: cosmeticsSettings({ cardRarity: { common: 1 } }) }), []);
+});
+
+const onlyCommon = { ...settings, cosmetics: { ...settings.cosmetics, events: { ...settings.cosmetics.events, eventRarity: { common: 1 } } } };
+const rareGearLines = good.events.lines.map((l) => (l.outcome === 'gear' ? { ...l, rarity: 'rare' as const } : l));
+
+test('an outcome whose events all sit at rarities eventRarity does not weigh would have nothing to say', () => {
+  assert.match(said({ ...withEvents({ lines: rareGearLines }), settings: onlyCommon }), /the events' outcome "gear" has no event line at a rarity events\.eventRarity weighs, and a Random Event that picks it would have nothing to say/);
+});
+
+test('an outcome with one event at a rarity eventRarity weighs passes', () => {
+  assert.deepEqual(instanceProblems({ ...withEvents({ lines: [...rareGearLines, { key: 'also', outcome: 'gear', text: 'A {item}.' }] }), settings: onlyCommon }), []);
+});
+
+test('a gear rarity every piece of is event-only cannot be named by the event odds', () => {
+  const onlyRare = [...good.gear.filter((g) => g.rarity !== 'rare'), { ...hat, key: 'crown' }];
+  assert.match(said({ ...good, gear: onlyRare, events: { lines: [...good.events.lines, { ...attic, item: 'crown' }] } }), /events\.gearRarity names rare, and the instance has no gear of that rarity that can be drawn/);
+});
+
+test('a card rarity every card of is event-only cannot be named by the event odds', () => {
+  const cards = [packCards[0]!, packCards[1]!, { ...packCards[2]!, eventOnly: true }] as Instance['cards'];
+  assert.match(said(withEvents({ cards, lines: lineOf({ outcome: 'card', rarity: 'rare', item: 'c' }) })), /events\.cardRarity names rare, and the instance has no card of that rarity that can be drawn/);
 });
 
 test('an event weight is a positive whole number, and only none may be 0', () => {
@@ -2007,6 +2127,27 @@ test('a machine slot never names a card that is out of print', () => {
   assert.match(said(leftWith({ cards: retiredB, machine: [slot] })), /the slot for card "b" names a card that is out of print/);
 });
 
+// Event-only cards (docs/plans/2026-11-26-event-rarity-plan.md, Task 1).
+const eventOnlyC = [packCards[0]!, packCards[1]!, { ...packCards[2]!, eventOnly: true }] as Instance['cards'];
+const catches = lineOf({ outcome: 'card', rarity: 'rare', item: 'c' });
+
+test('a fixed pack never holds an event-only card', () => {
+  assert.match(said({ ...leftWith({ cards: eventOnlyC, packs: [{ key: 'p', contents: ['a', 'c'] }] }), events: { lines: catches } }), /pack "p" holds "c", which is event-only; an event-only card is found only through its events/);
+});
+
+test('the machine never sells an event-only card', () => {
+  const slot = { item: { card: 'c' }, availability: 'onSale', price: 100 } as const;
+  assert.match(said({ ...leftWith({ cards: eventOnlyC, machine: [slot] }), events: { lines: catches } }), /the slot for card "c" names an event-only card; an event-only card is found only through its events/);
+});
+
+test('a pull never reaches an event-only card', () => {
+  assert.match(said({ ...leftWith({ cards: eventOnlyC, packs: [{ key: 'p', pulls: [{ weights: { rare: 1 } }] }] }), events: { lines: catches } }), /pack "p", pull 1 names rare, and the pack has no eligible card of that rarity/);
+});
+
+test('a pack may leave an event-only card out', () => {
+  assert.deepEqual(instanceProblems({ ...leftWith({ cards: eventOnlyC, packs: [{ key: 'p', pulls: [{ weights: { common: 1 } }], leaves: ['c'] }] }), events: { lines: catches }, settings: cosmeticsSettings({ cardRarity: { common: 1 } }) }), []);
+});
+
 test('a persona\'s concessions are three to eight lines, each text of at most 280 characters with no brace token but {who}, each problem naming the persona', () => {
   const lines = (n: number) => Array.from({ length: n }, (_, i) => `Line ${i + 1}, {who}.`);
   assert.deepEqual(instanceProblems(withBot({ concessions: lines(3) })), []);
@@ -2065,4 +2206,84 @@ test('a quiz persona\'s quizBrief is at most 300 characters, and the problem nam
   assert.match(said(quiz(7)), /"bot-a".*quizBrief/);
   assert.deepEqual(instanceProblems(quiz('x'.repeat(300))), []);
   assert.deepEqual(instanceProblems(quiz('Ask whether it is on topic.')), []);
+});
+
+/** The object at a dotted path of the settings, or undefined where the path leads nowhere. */
+const at = (root: unknown, path: string): Record<string, unknown> | undefined => {
+  let o: unknown = root;
+  for (const k of path.split('.')) o = typeof o === 'object' && o !== null ? (o as Record<string, unknown>)[k] : undefined;
+  return typeof o === 'object' && o !== null && !Array.isArray(o) ? (o as Record<string, unknown>) : undefined;
+};
+const withExtra = (path: string): Settings => {
+  const copy = structuredClone(settings) as Settings;
+  at(copy, path)!['aFieldFromANewerRelease'] = 1;
+  return copy;
+};
+
+test('every strict setting in SETTING_FIELDS: one extra field is refused, dropped by name, and the rest passes (2026-11-27, D4)', () => {
+  const paths = Object.keys(SETTING_FIELDS).filter((p) => at(settings, p) !== undefined);
+  assert.ok(paths.length >= 25, `the table reaches ${paths.length} paths of the valid settings`);
+  assert.deepEqual(Object.keys(SETTING_FIELDS).filter((p) => at(settings, p) === undefined), [], 'every entry is a path of the settings');
+  for (const path of paths) {
+    const given = withExtra(path);
+    assert.ok(settingsProblems(given).length > 0, `${path}: an extra field is refused`);
+    const { settings: cleaned, dropped } = dropUnknownFields(given);
+    assert.deepEqual(dropped, [`${path}.aFieldFromANewerRelease`], path);
+    assert.deepEqual(settingsProblems(cleaned), [], `${path}: whole after the drop`);
+    assert.deepEqual(cleaned, settings, `${path}: nothing else changed`);
+  }
+});
+
+test('a key under pool.strengths the code does not know is dropped, and a known one stays', () => {
+  const given = structuredClone(settings) as Settings;
+  (given.pool.strengths as Record<string, number>).newTrigger = 3;
+  const { settings: cleaned, dropped } = dropUnknownFields(given);
+  assert.deepEqual(dropped, ['pool.strengths.newTrigger']);
+  assert.deepEqual(cleaned.pool.strengths, settings.pool.strengths);
+});
+
+test('dropUnknownFields does not change its input, and settings with nothing unknown come back equal and drop nothing', () => {
+  const given = withExtra('modBots');
+  const before = structuredClone(given);
+  dropUnknownFields(given);
+  assert.deepEqual(given, before);
+  const clean = dropUnknownFields(settings);
+  assert.deepEqual(clean.dropped, []);
+  assert.deepEqual(clean.settings, settings);
+});
+
+test('the economy is not touched: an unknown key in it is no problem and is never dropped', () => {
+  const given = { ...settings, economy: { ...settings.economy, 'a.newer.bonus': 3 } };
+  const { settings: cleaned, dropped } = dropUnknownFields(given);
+  assert.deepEqual(dropped, []);
+  assert.deepEqual(cleaned.economy, given.economy);
+});
+
+test('a missing field is never filled: a modBots row without quizWriteMinutes still fails after the drop', () => {
+  const { quizWriteMinutes: _gone, ...row } = settings.modBots;
+  const given = { ...settings, modBots: { ...row, aFieldFromANewerRelease: 1 } } as unknown as Settings;
+  const { settings: cleaned, dropped } = dropUnknownFields(given);
+  assert.deepEqual(dropped, ['modBots.aFieldFromANewerRelease']);
+  assert.match(settingsProblems(cleaned).join('\n'), /"quizWriteMinutes" is not/);
+  assert.ok(!('quizWriteMinutes' in cleaned.modBots));
+});
+
+test('malformed shapes pass through dropUnknownFields without a throw, drop nothing, and settingsProblems still names them', () => {
+  const bad: [string, (c: Record<string, any>) => void][] = [
+    ['modBots', (c) => { c.modBots = null; }],
+    ['pool', (c) => { c.pool = 'x'; }],
+    ['pool.sessions.minutes', (c) => { c.pool.sessions.minutes = 5; }],
+    ['pool.strengths', (c) => { c.pool.strengths = []; }],
+    ['warnBar.bands', (c) => { c.warnBar.bands = []; }],
+    ['cosmetics.events', (c) => { c.cosmetics.events = null; }],
+    ['jobGraceMinutes', (c) => { c.jobGraceMinutes = 7; }],
+  ];
+  for (const [name, mangle] of bad) {
+    const given = structuredClone(settings) as Settings;
+    mangle(given as unknown as Record<string, any>);
+    const out = dropUnknownFields(given);
+    assert.deepEqual(out.dropped, [], name);
+    assert.deepEqual(out.settings, given, name);
+    assert.ok(settingsProblems(out.settings).length > 0, name);
+  }
 });

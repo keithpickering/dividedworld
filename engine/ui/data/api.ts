@@ -912,7 +912,10 @@ export interface RandomEvent {
   readonly event: Id;
   readonly outcome: 'line' | 'gear' | 'card';
   readonly item: string | null;
+  /** The found item's own rarity (null for a line); the event's is `eventRarity`. */
   readonly rarity: Rarity | null;
+  /** The event's own rarity, how rare the happening was, beside `rarity`, the item's. Never below the item's; common for a plain line. */
+  readonly eventRarity: Rarity;
   readonly line: string | null;
   readonly lineKey?: string;
   readonly character: Id;

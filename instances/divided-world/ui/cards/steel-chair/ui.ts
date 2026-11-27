@@ -1,11 +1,11 @@
 /** Steel Chair's entry in the screens' card list (`InstanceUi.cards`): its face and its rules in words. */
 import { lazy } from 'react';
 import type { CardUi } from '../../../../../engine/ui/cards/types.ts';
-import { steelChair, STEEL_CHAIR_LASTS } from '../../../cards/steel-chair.ts';
+import { steelChair } from '../../../cards/steel-chair.ts';
 import steelChairCanvas from './art.webp?url';
 import steelChairMark from './mark.svg?url';
 import steelChairArt from './art.json';
-import { setMoveWords, spanWords } from '../words.ts';
+import { setMoveWords } from '../words.ts';
 import { dentedBy } from './dented.ts';
 
 /* Loaded the first time a post wears it, as every card's effect is (engine/ui/cards/Effects.tsx draws it inside a Suspense). */
@@ -29,5 +29,5 @@ export const ui: CardUi = {
   status: (plays) => dentedBy(plays),
   hint: 'Someone took a chair to this post. The Lens says who.',
   describe: () =>
-    `A Salty card, ${steelChair.rarity}. Something is thrown at a post and dents it, usually a folding chair, sometimes a trash can, a step ladder or a fire extinguisher: the words bend into the dent, and the thing drops to the floor under them. A trash can's lid flies off, and a fire extinguisher fills the post with spray that clears by itself in a few seconds. Once it lands it covers none of the words, and it holds nobody. It plays again each time the post scrolls into view, somewhere else each time, and with Game sounds on it clangs each time, unless motion is reduced. Up to ${steelChair.stack} can stack on one post, each with its own dent, and each is gone ${spanWords(STEEL_CHAIR_LASTS)} after it lands. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    `A Salty card, ${steelChair.rarity}. Something is thrown at a post and dents it, usually a folding chair, sometimes a trash can, a step ladder or a fire extinguisher: the words bend into the dent, and the thing drops to the floor under them. A trash can's lid flies off, and a fire extinguisher fills the post with spray that clears by itself in a few seconds. Once it lands it covers none of the words, and it holds nobody. It plays again each time the post scrolls into view, somewhere else each time, and with Game sounds on it clangs each time, unless motion is reduced. Up to ${steelChair.stack} can stack on one post, each with its own dent, and they stay. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
 };

@@ -1,0 +1,42 @@
+# The migration-order check on every push to main (docs/plans/2026-11-27-release-order-design.md, D2).
+# `supabase db push` refuses a migration numbered below one the database already holds. A merge made after main moved,
+# by anyone (the owner, an orchestrating session, a button), can land a migration under main's newest; the pull-request
+# check (build.yml) ran before main moved and cannot see it. This runs when the merge lands, so main turns red within
+# minutes, before the nightly release, while no database holds the migration and a renumbering PR still fixes it.
+# It compares this push's tree with the commit main was at before it. It reads no secret and names no Environment,
+# and it needs no `npm ci`: tools/check-migration-order.mjs imports only node built-ins and
+# tools/check-migration-versions.mjs.
+name: Migration order
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The whole history, so the `before` commit is readable.
+      - uses: actions/checkout@v4
+        with: { ref: '${{ github.event.after }}', fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      # The event's commit goes through env, never into the script text. Forty zeros is a new branch: nothing to
+      # compare. After a force-push the `before` commit is on no ref, so the checkout lacks it: fetch it by its SHA,
+      # which GitHub still serves, so that a missing commit is never reported as a migration out of order.
+      - env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No earlier commit on this push (a new branch), so there is nothing to compare." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BEFORE" || {
+              echo "migration-order: the commit main was at before this push ($BEFORE) cannot be fetched" >&2
+              exit 2
+            }
+          fi
+          node tools/check-migration-order.mjs --base "$BEFORE"

@@ -14,7 +14,10 @@
  *   --before, run ahead of `supabase db push`: a version the database holds and the repository
  *     does not is SQL applied by hand, or a migration renamed after it was applied, and the push
  *     would go on top of a database the repository cannot rebuild. A version the repository has and
- *     the database lacks is simply what the push is about to apply.
+ *     the database lacks is simply what the push is about to apply, unless it is numbered below the
+ *     database's newest: `db push` refuses such a version, and applying it by hand would run it after
+ *     migrations the SQL suite ran it before, so it is a problem, with the advice to renumber it
+ *     above the newest (strayAdvice).
  *   --after, run behind it: the two lists must be equal.
  *
  * It reads a live database, so it runs only in the release and is not a step of tools/build.mjs;
@@ -54,8 +57,26 @@ export function localVersions(dir) {
 }
 
 /**
+ * Under `before`, the local versions the remote lacks that are numbered below the remote's newest
+ * (four-digit strings compare as text), sorted, with that newest; null when there are none.
+ */
+export function strays(local, remote, mode) {
+  if (mode !== 'before' || !remote.length) return null;
+  const newest = [...remote].sort().at(-1);
+  const there = new Set(remote);
+  const versions = [...new Set(local)].filter((v) => !there.has(v) && v < newest).sort();
+  return versions.length ? { newest, versions } : null;
+}
+
+/** What main() prints after the list when strays() found any. */
+export function strayAdvice(newest) {
+  return `Renumber each of these above ${newest} in a PR (no database holds it yet), so production applies it in the order the SQL suite tests. Only if you have checked that it shares no objects with the newer migrations, apply it by hand with supabase db push --include-all.`;
+}
+
+/**
  * What is wrong between the repository's versions and the database's, each naming its versions.
- * `before` complains of what only the database holds; `after` of every difference.
+ * `before` complains of what only the database holds, and of a version it lacks that is below its
+ * newest; `after` of every difference.
  */
 export function problems(local, remote, mode) {
   if (mode !== 'before' && mode !== 'after') throw new Error(`mode is before or after, not ${mode}`);
@@ -64,6 +85,10 @@ export function problems(local, remote, mode) {
   const out = [];
   for (const v of [...there].filter((x) => !here.has(x)).sort()) {
     out.push(`the database holds migration ${v}, which the repository does not have (SQL applied by hand, or a migration renamed after it was applied)`);
+  }
+  const stray = strays(local, remote, mode);
+  for (const v of stray?.versions ?? []) {
+    out.push(`the repository has migration ${v}, which the database does not hold and which is numbered below the database's newest, ${stray.newest}: db push would refuse it, and applying it now would run it after migrations the SQL suite ran it before`);
   }
   if (mode === 'after') {
     for (const v of [...here].filter((x) => !there.has(x)).sort()) {
@@ -164,6 +189,8 @@ async function main() {
   if (found.length) {
     console.error(`  deployed-migrations: ${found.length} problem(s) ${a.mode} the push:`);
     for (const f of found) console.error(`    ${f}`);
+    const stray = strays(local, remote, a.mode);
+    if (stray) console.error(`  ${strayAdvice(stray.newest)}`);
     process.exit(1);
   }
   console.log(`  deployed-migrations: ${remote.length} migration(s) in the database, ${local.length} in the repository: nothing wrong ${a.mode} the push`);

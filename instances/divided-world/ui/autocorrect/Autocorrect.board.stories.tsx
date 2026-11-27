@@ -2,9 +2,10 @@
  * Autocorrect's masking tape as stories for the owner's word (docs/plans/2026-11-11-autocorrect-tape-design.md; plan Task 10): the
  * bench's five posts (docs/research/2026-11-11-autocorrect-tape-bench/01-bench.html) written for the Main board's moment, each with
  * the plays the bench gives it: `one` (a short word, three times), `covered` (the words wider than the replacement), `wider` (the
- * replacement wider than the words), `across` (a long phrase that breaks across lines at a phone's width) and `stack` (three strips
- * pressed one over another). `half` is `one` with the first strip half peeled by its author, saved as a `stuck` stretch, so the
- * residue and a tape end stand on screen; `reloaded` is `wider` visited again after its author peeled the strip whole (saved as `peeled`),
+ * replacement wider than the words), `across` (a long phrase that breaks across lines at a phone's width), `stack` (three strips
+ * pressed one over another) and `door` (the front door's own post and play, whose short strip lands at a line's end at some phone
+ * widths). `half` is `one` with the first strip half peeled by its author, saved as a `stuck` stretch, so the residue and a tape end
+ * stand on screen; `reloaded` is `wider` visited again after its author peeled the strip whole (saved as `peeled`),
  * which takes its words' own width with no room after them.
  *
  * `viewer` is `reader`, a new account that wrote none of the thread (it can only peek, and nothing it does is saved), or `author`,
@@ -23,7 +24,7 @@ import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
-type Case = 'one' | 'covered' | 'wider' | 'across' | 'stack' | 'half' | 'reloaded' | 'held';
+type Case = 'one' | 'covered' | 'wider' | 'across' | 'stack' | 'half' | 'reloaded' | 'held' | 'door';
 type Viewer = 'reader' | 'author';
 
 interface Args {
@@ -42,6 +43,7 @@ const BODY: Record<Case, string> = {
   half: 'Finally beat the last castle in my Mario fangame. Mario controls a lot better than he did in the demo, and the new Mario sprites are all by Sloopy.',
   reloaded: 'My review, for what it is worth: the boss fight is fine. Music slaps though.',
   held: 'Finally beat the last castle in my Mario fangame. Mario controls a lot better than he did in the demo, and the new Mario sprites are all by Sloopy.',
+  door: 'Who was that react from?! Come fight me like a man and I\'ll show ya where to put that thumbs up.',
 };
 const MARIO = [{ phrase: 'Mario', replacement: 'Luigi' }];
 const PLAYS: Record<Case, readonly { phrase: string; replacement: string }[]> = {
@@ -53,10 +55,11 @@ const PLAYS: Record<Case, readonly { phrase: string; replacement: string }[]> = 
   half: MARIO,
   reloaded: [{ phrase: 'the boss fight is fine', replacement: 'the boss fight is the single greatest achievement in the history of fangames' }],
   held: MARIO,
+  door: [{ phrase: 'a man', replacement: 'a Goomba' }],
 };
 /** How long before now each case's plays landed: two days, past the author's hold, so the author peels; `held` an hour, inside it. The screen's clock is the real one, as the fake's own is a fixed day. */
 const HOUR = 3_600_000;
-const LANDED_AGO: Record<Case, number> = { one: 48 * HOUR, covered: 48 * HOUR, wider: 48 * HOUR, across: 48 * HOUR, stack: 48 * HOUR, half: 48 * HOUR, reloaded: 48 * HOUR, held: HOUR };
+const LANDED_AGO: Record<Case, number> = { one: 48 * HOUR, covered: 48 * HOUR, wider: 48 * HOUR, across: 48 * HOUR, stack: 48 * HOUR, half: 48 * HOUR, reloaded: 48 * HOUR, held: HOUR, door: 48 * HOUR };
 /** The first Mario's strip half peeled: its first 45% gone, ending at a peel line (a Stretch is [from, to, edges], edges = startKind * 3 + endKind; 0 an end of the strip, 1 a peel line, 2 a tear). */
 const HALF = { peeled: [] as number[], stuck: { '0': [[0, 0.45, 1]] } };
 
@@ -178,6 +181,7 @@ export const HalfPhoneDark: Story = { args: { shown: 'half', viewer: 'author', m
 export const ReloadedLight: Story = { args: { shown: 'reloaded', viewer: 'reader', mode: 'light' } };
 export const ReloadedDark: Story = { args: { shown: 'reloaded', viewer: 'reader', mode: 'dark' } };
 export const ReloadedPhone: Story = { args: { shown: 'reloaded', viewer: 'reader', mode: 'light' }, ...phone };
+export const DoorPhone: Story = { args: { shown: 'door', viewer: 'reader', mode: 'light' }, ...phone };
 export const StillLight: Story = { args: { shown: 'one', viewer: 'author', reduced: true } };
 export const StillPhone: Story = { args: { shown: 'stack', viewer: 'reader', reduced: true }, ...phone };
 

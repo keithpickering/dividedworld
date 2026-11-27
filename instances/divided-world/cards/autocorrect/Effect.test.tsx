@@ -119,6 +119,8 @@ const sizeOf = (el: Element) => { for (let e: Element | null = el; e; e = e.pare
 let phone: number | null = null;
 /* How much wider every segment is than its text says: a resize that changes a piece's width without changing the line. */
 let grow = 1;
+/* How much narrower a segment's rects read while it wraps (a wrapped run loses the collapsed space at its break) than laid unbroken. */
+let wrapLoss = 0;
 let measures: ReturnType<typeof vi.spyOn>;
 let laid: number[] = [];
 let resizes: { cb: () => void; watching: Set<Element> }[] = [];
@@ -141,6 +143,7 @@ beforeEach(() => {
   registrations.unregister.mockClear();
   phone = null;
   grow = 1;
+  wrapLoss = 0;
   laid = [];
   radials.length = 0;
   paintFails = false;
@@ -161,7 +164,12 @@ beforeEach(() => {
   };
   const canvas = new Proxy(ctx, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => { t[k] = v; return true; } });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => canvas) as never);
-  measures = vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) { return (this.hasAttribute('data-kb-ac-seg') ? [rectOf(this)] : []) as unknown as DOMRectList; });
+  measures = vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: HTMLElement) {
+    if (!this.hasAttribute('data-kb-ac-seg')) return [] as unknown as DOMRectList;
+    const r = rectOf(this);
+    const unbroken = this.style.whiteSpace === 'pre' || this.hasAttribute('data-kb-ac-whole');
+    return [unbroken || !wrapLoss ? r : { ...r, right: r.right - wrapLoss, width: r.width - wrapLoss }] as unknown as DOMRectList;
+  });
   (Range.prototype as unknown as { getClientRects: () => unknown[] }).getClientRects = function (this: Range) {
     return [...document.querySelectorAll('[data-kb-ac-seg], .dw-ac-room')].filter((e) => this.intersectsNode(e)).map((e) => {
       const r = rectOf(e);
@@ -517,6 +525,85 @@ describe('Autocorrect: the room', () => {
     expect(seg).toHaveTextContent('Mario');
     expect(seg).not.toHaveAttribute('aria-hidden');
     expect(seg).not.toHaveAttribute('data-kb-quotable');
+  });
+});
+
+describe('Autocorrect: a whole stack', () => {
+  /* Design docs/plans/2026-11-27-autocorrect-whole-strip-design.md: a stack whose footprint fits its line is laid as one unbreakable unit. */
+  const parts = () => [...document.querySelectorAll<HTMLElement>('[data-kb-ac-seg], .dw-ac-room')];
+  const strips = () => parts().filter((e) => e.classList.contains('dw-ac-room') || e.getAttribute('data-kb-ac-seg') === '0-5' || e.getAttribute('data-kb-ac-seg') === '10-15');
+
+  test('a stack whose footprint fits the line has every segment and room whole', () => {
+    /* "Mario" is 50px and its room two 8px spaces: 66px of a 300px line. */
+    mount({ body: 'Mario and mario', plays: [playOf(1, 'mario', 'Luigi')] });
+    expect(rooms()).toHaveLength(2);
+    expect(strips()).toHaveLength(4);
+    for (const e of strips()) expect(e).toHaveAttribute('data-kb-ac-whole');
+    for (const e of parts().filter((x) => !strips().includes(x))) expect(e).not.toHaveAttribute('data-kb-ac-whole');
+  });
+
+  test('a stack wider than its line is not whole', () => {
+    /* Forty letters is 400px of a 300px line. */
+    const phrase = 'abcdefghij abcdefghij abcdefghij abcdefg';
+    mount({ body: `see ${phrase} now`, plays: [playOf(1, phrase, 'Luigi')] });
+    expect(document.querySelectorAll('[data-kb-ac-seg]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+  });
+
+  test('a stack whose words span a newline is not whole, though its footprint fits the line', () => {
+    /* "Mario\nMario" is 100px of a 300px line, but a newline breaks the line, so it cannot lie on one. */
+    mount({ body: 'see Mario\nMario now', plays: [playOf(1, 'Mario\nMario', 'Luigi')] });
+    expect(document.querySelectorAll('[data-kb-ac-seg]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+  });
+
+  test('a stack whose only strip was peeled before this load is not whole', () => {
+    mount({ body: 'Mario', states: { k1: savedOf({ peeled: [0] }) } });
+    expect(document.querySelectorAll('[data-kb-ac-seg]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+  });
+
+  test('a whole stack takes no extra: the room after a resize that fits is the one roomOf sets', () => {
+    const bounds = vi.spyOn(Element.prototype, 'getBoundingClientRect');
+    const lineOf = (w: number) => bounds.mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: w, bottom: 60, width: w, height: 60, toJSON: () => ({}) }));
+    /* A 55px line: the 66px footprint is wider, and with the room on a second line the last piece lacks, so the room grows. */
+    lineOf(55);
+    phone = 40;
+    mount({ body: 'Mario', plays: [playOf(1, 'mario', 'a Luigi')] });
+    expect(rooms()[0]!.textContent!.length).toBeGreaterThan(5);
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+    lineOf(300);
+    resize();
+    expect(document.querySelectorAll('[data-kb-ac-whole]').length).toBeGreaterThan(0);
+    expect(rooms()[0]!.textContent).toBe(' '.repeat(5));
+  });
+});
+
+describe('Autocorrect: a stack at its line\'s threshold', () => {
+  test('a stack that is wider unbroken than its line settles not whole, and stays so, whatever its wrapped read says', () => {
+    /* "Mario" is 50px laid unbroken and 49px while it wraps (the break's collapsed space is lost), with a room of two 8px spaces either way:
+       65px wrapped, 66px unbroken, on a 65px line. */
+    const bounds = vi.spyOn(Element.prototype, 'getBoundingClientRect');
+    bounds.mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: 65, bottom: 60, width: 65, height: 60, toJSON: () => ({}) }));
+    wrapLoss = 1;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mount({ body: 'Mario', plays: [playOf(1, 'mario', 'Luigi')] });
+    /* Each layout pass reads the one segment once: the stack settles in at most two passes, and a re-layout adds one and changes nothing. */
+    const passes = () => measures.mock.calls.length;
+    expect(passes()).toBeLessThanOrEqual(2);
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+    const shown = document.body.innerHTML;
+    const before = passes();
+    resize();
+    expect(passes() - before).toBe(1);
+    resize();
+    expect(document.querySelectorAll('[data-kb-ac-whole]')).toHaveLength(0);
+    expect(document.body.innerHTML).toBe(shown);
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/Maximum update depth/u);
+    /* The same stack on a line that holds the unbroken width is whole. */
+    bounds.mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: 80, bottom: 60, width: 80, height: 60, toJSON: () => ({}) }));
+    resize();
+    expect(document.querySelectorAll('[data-kb-ac-whole]').length).toBeGreaterThan(0);
   });
 });
 
