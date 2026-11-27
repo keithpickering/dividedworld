@@ -1,10 +1,9 @@
 // seed-database.ts: the release's own seed, written by psql before the functions move. Its arguments' refusals, a payload
 // that is the seed function's own, and, against a scratch database built from the migrations on this machine's Postgres, a
 // first run that seeds an empty instance and a second that changes nothing. It never touches a deployed database.
-import { test, before, after } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
-import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { seedArgs, seedSql, seedPayload } from './seed-database.ts';
 import { runSeed } from '../../supabase/functions/seed/core.ts';
@@ -71,51 +70,17 @@ test('without --db the tool exits 2 and connects nowhere', () => {
   assert.match(r.stderr, /--db/);
 });
 
-/* ---- against this machine's Postgres, in a scratch database ---- */
-
-const ADMIN = process.env.DATABASE_URL;
-const local = Boolean(ADMIN) && ['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(ADMIN as string).hostname);
-const skip = local ? false : 'DATABASE_URL does not name this machine';
-const scratch = `kayfabb_seeddb_${process.pid}_${Date.now()}`;
-const at = (db: string) => { const u = new URL(ADMIN as string); u.pathname = `/${db}`; return u.toString(); };
-const sql = (url: string, text: string) => execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 1 << 28 }).trim();
-const run = (...extra: string[]) => spawnSync(process.execPath, [...NODE, '--db', at(scratch), ...extra], { encoding: 'utf8' });
-/** Every public table's row count and a hash of its rows, so a second run's effect is read off the tables themselves. */
-const picture = () => sql(at(scratch), `
-  select string_agg(format('%s %s', t.table_name, x.h), E'\\n' order by t.table_name)
-  from information_schema.tables t,
-  lateral (select md5(query_to_xml(format('select * from public.%I t order by t::text', t.table_name), false, false, '')::text) as h) x
-  where t.table_schema = 'public' and t.table_type = 'BASE TABLE';`);
-
-before(() => {
-  if (!local) return;
-  sql(at('postgres'), `create database ${scratch};`);
-  const root = fileURLToPath(new URL('../../', import.meta.url));
-  const files = [`${root}supabase/tests/setup/auth-shim.sql`, ...fs.readdirSync(`${root}supabase/migrations`).filter((f) => f.endsWith('.sql')).sort().map((f) => `${root}supabase/migrations/${f}`)];
-  for (const f of files) sql(at(scratch), fs.readFileSync(f, 'utf8'));
-});
-after(() => { if (local) sql(at('postgres'), `drop database if exists ${scratch} with (force);`); });
-
-test('a run seeds an empty instance, and a second run changes nothing', { skip, timeout: 600_000 }, () => {
-  assert.equal(sql(at(scratch), 'select count(*) from card_kinds'), '0', 'the instance starts empty');
-  const first = run();
-  assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stdout, /localhost/);
-  assert.ok(!first.stdout.includes('postgres://') && !first.stdout.includes(':pg@'), 'no URL is printed');
-  assert.ok(Number(sql(at(scratch), 'select count(*) from card_kinds')) > 0, 'the cards were written');
-  assert.ok(Number(sql(at(scratch), 'select count(*) from settings')) > 0, 'the settings were written');
-  assert.equal(sql(at(scratch), 'select count(*) from settings where tuned_at is not null'), '0', 'a seed through psql marks no row tuned');
-  const afterFirst = picture();
-  const second = run();
-  assert.equal(second.status, 0, second.stderr);
-  assert.equal(picture(), afterFirst, 'the second run changed no row');
-  assert.equal(sql(at(scratch), 'select count(*) from settings where tuned_at is not null'), '0');
-  assert.equal(second.stdout, first.stdout, 'and printed the same counts');
+test('a connection that cannot be made sense of is refused with exit 2, before any payload is built', () => {
+  for (const url of ['postgres:///postgres', 'postgres://u:pw@somewhere/postgres?host=elsewhere']) {
+    const r = spawnSync(process.execPath, [...NODE, '--db', url, '--profile', 'nope'], { encoding: 'utf8' });
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /seed-database: refused: /);
+    assert.ok(!r.stderr.includes('pw'), 'no password');
+  }
 });
 
-test('a refusal exits 1 with its reason, and the URL stays out of it', { skip }, () => {
-  const r = run('--profile', 'nope');
+test('an unknown profile is not a refusal of the arguments: it exits 1', () => {
+  const r = spawnSync(process.execPath, [...NODE, '--db', 'postgres://u:pw@localhost:1/postgres', '--profile', 'nope'], { encoding: 'utf8' });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /profiles are/);
-  assert.ok(!r.stderr.includes('postgres://'));
 });

@@ -68,7 +68,7 @@ export function seedPayload(profile: string | undefined) {
 export function seedSql(payload: unknown): string {
   const body = JSON.stringify(payload);
   let tag = 'seed';
-  while (body.includes(`$${tag}$`) || body.includes(`$${tag}`) ) tag = `seed${crypto.randomBytes(4).toString('hex')}`;
+  while (body.includes(`$${tag}`)) tag = `seed${crypto.randomBytes(4).toString('hex')}`;
   return `select seed_instance($${tag}$${body}$${tag}$::jsonb);`;
 }
 
@@ -79,11 +79,12 @@ async function main(): Promise<number> {
     return 2;
   }
   let c;
+  try { c = connectOptions(connection(a.db as string)); } catch (e) {
+    console.error(`  seed-database: refused: ${scrub((e as Error).message)}`);
+    return 2;
+  }
   let sql: string;
-  try {
-    c = connectOptions(connection(a.db as string));
-    sql = seedSql(seedPayload(a.profile));
-  } catch (e) {
+  try { sql = seedSql(seedPayload(a.profile)); } catch (e) {
     console.error(`  seed-database: ${scrub((e as Error).message)}`);
     return 1;
   }

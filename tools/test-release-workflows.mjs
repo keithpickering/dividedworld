@@ -399,6 +399,14 @@ red('job-health\'s step has an id', edit(JOB_HEALTH, (d) => { jhStep(d).id = 'x'
 // R8 reads only workflows that declare a Postgres service: job-health.yml declares none, and says nothing of R8.
 red('job-health.yml given an unpinned postgres service is named by R8', edit(JOB_HEALTH, (d) => { jhJob(d).services = { db: { image: 'postgres:17' } }; }), /job-health\.yml.*R8/);
 
+/* ---- the seed tool's database test is run where a Postgres service is (not a rule of the checker: a fact about the files) ---- */
+{
+  const job = Object.values(parse(REAL[REHEARSAL] ?? '').jobs ?? {}).find((j) => j.services?.postgres);
+  const step = (job?.steps ?? []).find((s) => /\bnpm run test:release-db\b/.test(s.run ?? ''));
+  if (step?.env?.DATABASE_URL) console.log('ok    rehearsal.yml runs test:release-db, with DATABASE_URL, in the job that has the Postgres service');
+  else { failures += 1; console.error('FAIL  rehearsal.yml does not run `npm run test:release-db` with DATABASE_URL in a job with a Postgres service'); }
+}
+
 /* ---- R14: the seed goes red on anything but a 200 ---- */
 const seedStep = (d) => d.jobs.seed.steps.find((x) => /curl/.test(x.run ?? ''));
 red('the seed step is the old --fail-with-body form with no status comparison', edit(RELEASE, (d) => {
