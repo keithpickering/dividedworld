@@ -615,11 +615,11 @@ describe('a hold, and the order of a scrub', () => {
 
   let latest: NonNullable<EffectProps['surface']> | null = null;
   const lastSurface = () => latest;
-  function hosted(o: { author?: boolean } = {}) {
+  function hosted(o: { author?: boolean; wash?: NonNullable<EffectProps['surface']>['wash'] } = {}) {
     const ink = createClaims().at('post:graffiti', 0);
     let set: (acts: readonly SurfaceAct[]) => void = () => {};
     let bump: () => void = () => {};
-    const wash = vi.fn(answered('w1'));
+    const wash = vi.fn(o.wash ?? answered('w1'));
     function Host() {
       const [acts, setActs] = useState<readonly SurfaceAct[]>(MIDDLE);
       const [n, setN] = useState(0);
@@ -655,6 +655,25 @@ describe('a hold, and the order of a scrub', () => {
     const before = lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h);
     setActs([...MIDDLE, saved]);
     expect(lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h)).toBeCloseTo(before, 1);
+  });
+
+  test('a wash answered without an id keeps its presses until the acts hold a wash newer than they were sent, not at any change of the acts', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const noId = async () => ({ ok: true as const, value: { kind: 'wash' } as unknown as SurfaceAct });
+    const { frame, setActs } = hosted({ author: true, wash: noId });
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS + 10); });
+    const cuts = (vi.mocked(lastSurface()!.wash).mock.calls[0]![1] as { cuts: unknown[] }).cuts;
+    const at = () => lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h);
+    const thinned = at();
+    expect(thinned).toBeLessThan(COATS.line);
+    /* Another act arrives: it is not the wash that was sent, so the paint does not come back. */
+    setActs([...MIDDLE, draw('other', 0.8)]);
+    expect(at()).toBeCloseTo(thinned, 1);
+    /* The wash arrives: the presses are replayed from it, and the wall is the same. */
+    const saved: SurfaceAct = { id: 'w9', kind: 'wash', character: 'c', createdAt: '2026-10-29T21:09:00.000Z', payload: { cuts } } as unknown as SurfaceAct;
+    setActs([...MIDDLE, draw('other', 0.8), saved]);
+    expect(at()).toBeCloseTo(thinned, 1);
   });
 });
 

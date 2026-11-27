@@ -73,9 +73,9 @@ const ENDS = 'Ends on your screen when you scrub it off. The author can wash it 
 type Pt = readonly [number, number];
 /**
  * What this screen's sponge took from one group: in the group's units, as the wash keeps them. It stays while the wall is rebuilt, and is sent (the author's) once closed.
- * `sent` says the wash that holds it was saved (its Act's id, or true where the answer had none): it is dropped once the wall's Acts hold that wash.
+ * `sent` says the wash that holds it was saved (its Act's id, or true where the answer had none): it is dropped once the wall's Acts hold that wash. Where the answer had no id, `sentWashes` is how many wash Acts the wall held when it was sent, and the chunk stays until the wall holds more (a wash Act newer than the press).
  */
-interface MChunk { draw: string; group: number; presses: [number, number][]; save: boolean; open: boolean; sent?: string | true; sentActs?: unknown }
+interface MChunk { draw: string; group: number; presses: [number, number][]; save: boolean; open: boolean; sent?: string | true; sentWashes?: number }
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
 /** A stroke of the sponge under way, in the chunks it has filled. */
 interface Live { readonly walker: Walker; readonly chunks: Map<string, MChunk>; readonly pointer: number | null; readonly touch?: true; readonly save: boolean }
@@ -163,7 +163,8 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
     if (had && had.acts === a && had.w === b.w && had.h === b.h && had.em === emRef.current && had.rev === revRef.current && had.chunkRev === chunkRev.current) return had.wall;
     /* A scrub this visit sent is dropped once the wall's Acts hold the wash that saved it, which replays the same presses. */
     const ids = new Set(a.flatMap((x) => (x.id === undefined ? [] : [x.id])));
-    const kept = chunks.current.filter((c) => !(c.sent !== undefined && (typeof c.sent === 'string' ? ids.has(c.sent) : c.sentActs !== a)));
+    const washes = a.reduce((n, x) => n + (x.kind === 'wash' ? 1 : 0), 0);
+    const kept = chunks.current.filter((c) => !(c.sent !== undefined && (typeof c.sent === 'string' ? ids.has(c.sent) : washes > (c.sentWashes ?? 0))));
     if (kept.length !== chunks.current.length) { chunks.current = kept; chunkRev.current += 1; }
     const next = Wall.of(a, { box: b, emPx: emRef.current, measured: (g) => measuredRef.current.get(markKey(g)) ?? null }, chunks.current as readonly Chunk[]);
     built.current = { acts: a, w: b.w, h: b.h, em: emRef.current, rev: revRef.current, chunkRev: chunkRev.current, wall: next };
@@ -394,7 +395,7 @@ export function Effect({ post, plays, reader, surface, ink: registry, place, sho
       return;
     }
     const id = (answer.value as { id?: unknown } | null)?.id;
-    for (const c of batch) { c.sent = typeof id === 'string' ? id : true; c.sentActs = now.current.acts; }
+    for (const c of batch) { c.sent = typeof id === 'string' ? id : true; c.sentWashes = (now.current.acts ?? EMPTY).reduce((n, x) => n + (x.kind === 'wash' ? 1 : 0), 0); }
     failures.current = 0;
     say('');
     if (toSend().length > 0) queueWash(gone.current ? 0 : WASH_AFTER_MS);

@@ -15,8 +15,11 @@
  * **The sponge.** A press is a disc of radius `R = 2r` (`r` is `SPONGE_EM / 2` ems of this screen's text) taking `10 * per * (1 - d^2/R^2)^3` tenths from
  * the cell it is over: presses every third of `r` along a straight line take one coat under the center, the rule `takesOf` (engine/rules/surface.ts)
  * counts for the server. A press goes to the top group of the wall with paint under its center (wall order: a later draw over an earlier, a later group
- * over an earlier), and takes from that group alone; where no group has paint under the center, from the top one with paint within the sponge's
- * radius, so a pass that runs beside the last scraps still finishes them. A cell under `CLEAN` tenths is clean and is kept as 0.
+ * over an earlier), and takes from that group alone; a press with no paint under its center goes to the top group in that order with paint within
+ * the sponge radius of its center (`r`; for a legacy group, its own radius), and takes from that group alone, so a pass that runs beside the last
+ * scraps still finishes them. A cell under `CLEAN` tenths is clean and is kept as 0. A legacy group's sponge is the old one: a disc of `SPONGE / 2`
+ * of the box's width (`r`), as the server counts a draw of the old shape, and its presses are spaced by that, so the screen replays and predicts
+ * what the server computes.
  *
  * **What a screen replays.** The saved washes are `{ cuts: [{ draw, group, presses }] }`, presses in the group's own units, replayed at the group's
  * placed scale: that is what keeps the fine edge. This visit's own presses follow, as `chunks`. A legacy wash (`{ strokes }`) is an instant cut, as it
@@ -30,7 +33,7 @@
  */
 import type { Attachment } from '../../../../engine/rules/anchor.ts';
 import { placeGroups, type Measured, type PlaceGroup } from '../../../../engine/ui/cards/place.ts';
-import { CANS, CAPS, CAPS_EM, COATS, SPONGE_EM } from '../graffiti.ts';
+import { CANS, CAPS, CAPS_EM, COATS, SPONGE, SPONGE_EM } from '../graffiti.ts';
 import { MAX_CANVAS_PX, MAX_DPR } from '../whoops/paint.ts';
 import { mulberry32 } from '../whoops/splat.ts';
 
@@ -418,6 +421,8 @@ export class Wall {
   readonly groups: readonly Field[];
   /** The sponge's radius, px: `SPONGE_EM / 2` ems of this screen's text. */
   readonly spongePx: number;
+  /** A group's sponge radius, px: the screen's, or for a legacy group `SPONGE / 2` of the box's width, as the server takes it. */
+  radiusOf(f: Field): number { return f.legacy ? (SPONGE / 2) * this.layout.box.w : this.spongePx; }
   private readonly byKey = new Map<string, Field>();
 
   private constructor(readonly layout: Layout, groups: Field[]) {
@@ -470,7 +475,7 @@ export class Wall {
   private replayChunk(c: Chunk): void {
     const f = this.byKey.get(`${c.draw}/${c.group}`);
     if (!f) return;
-    for (const [u, v] of c.presses) f.disc(f.ox + u * f.sx, f.oy + v * f.sy, this.spongePx);
+    for (const [u, v] of c.presses) f.disc(f.ox + u * f.sx, f.oy + v * f.sy, this.radiusOf(f));
   }
 
   /** Whether the wall has paint under the point: some group's core holds `CLEAN` tenths there. */
@@ -490,26 +495,30 @@ export class Wall {
   /** The top group a press at a px point goes to: the topmost with paint under the point, else the topmost with paint within the sponge's radius. */
   topAt(x: number, y: number): Field | null {
     for (let i = this.groups.length - 1; i >= 0; i--) if (this.groups[i]!.inked(x, y)) return this.groups[i]!;
-    for (let i = this.groups.length - 1; i >= 0; i--) if (this.groups[i]!.inkedNear(x, y, this.spongePx)) return this.groups[i]!;
+    for (let i = this.groups.length - 1; i >= 0; i--) if (this.groups[i]!.inkedNear(x, y, this.radiusOf(this.groups[i]!))) return this.groups[i]!;
     return null;
   }
 
   /** One press of the sponge at a px point: it thins the top group with paint there, and says what it took in that group's units; null when there was none. */
-  press(x: number, y: number): Press | null {
+  press(x: number, y: number): Press | null { return this.pressed(x, y)?.press ?? null; }
+
+  private pressed(x: number, y: number): { press: Press; r: number } | null {
     const f = this.topAt(x, y);
     if (!f) return null;
-    f.disc(x, y, this.spongePx);
-    return { draw: f.draw, group: f.group, u: f.keep((x - f.ox) / f.sx), v: f.keep((y - f.oy) / f.sy) };
+    const r = this.radiusOf(f);
+    f.disc(x, y, r);
+    return { press: { draw: f.draw, group: f.group, u: f.keep((x - f.ox) / f.sx), v: f.keep((y - f.oy) / f.sy) }, r };
   }
 
-  /** A sponge pass: presses every third of its radius along the way from the last point to `to` (the first press at the first point). */
+  /** A sponge pass: presses every third of the radius along the way from the last point to `to` (the first press at the first point); a press on a legacy group is spaced by that group's radius. */
   walk(w: Walker, to: Pt): Press[] {
-    const step = this.spongePx / PRESSES_PER_RADIUS, out: Press[] = [];
-    const take = (p: Pt) => { const press = this.press(p[0], p[1]); if (press) out.push(press); };
-    if (!w.last) { take(to); w.last = to; w.left = step; return out; }
+    const out: Press[] = [];
+    let step = this.spongePx / PRESSES_PER_RADIUS;
+    const take = (p: Pt) => { const made = this.pressed(p[0], p[1]); if (made) { out.push(made.press); step = made.r / PRESSES_PER_RADIUS; } return step; };
+    if (!w.last) { w.left = take(to); w.last = to; return out; }
     const [ax, ay] = w.last, len = Math.hypot(to[0] - ax, to[1] - ay);
     let d = w.left;
-    while (d <= len) { const t = d / len; take([ax + t * (to[0] - ax), ay + t * (to[1] - ay)]); d += step; }
+    while (d <= len) { const t = d / len; d += take([ax + t * (to[0] - ax), ay + t * (to[1] - ay)]); }
     w.left = d - len; w.last = to;
     return out;
   }

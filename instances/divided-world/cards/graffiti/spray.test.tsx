@@ -5,7 +5,8 @@
  * The wall's own fields (coats, takes, placement, the press that goes to the top group) are read from `Wall` (docs/plans/2026-11-27-graffiti-everywhere-plan.md, Task 7).
  */
 import { afterEach, describe, expect, test } from 'vitest';
-import { CAPS, CAPS_EM, COATS, SPONGE_EM } from '../graffiti.ts';
+import { takesOf, GRID } from '../../../../engine/rules/surface.ts';
+import { CAPS, CAPS_EM, COATS, SPONGE, SPONGE_EM } from '../graffiti.ts';
 import { Wall, hitAt, paintWall, wallDensity, type GroupSrc, type Press, type WallAct, type Walker } from './spray.ts';
 import { MAX_CANVAS_PX } from '../whoops/paint.ts';
 
@@ -372,6 +373,30 @@ describe('a draw and a wash from before groups', () => {
     const w = wallB([old]);
     const made = w.press(200, 100)!;
     expect(made).toMatchObject({ draw: 'old', group: 0, u: 0.5, v: 0.5 });
+  });
+
+  test.each([{ w: 340, h: 200 }, { w: 1000, h: 560 }])('a pass over a legacy draw on a $w px box takes what the server takes: its disc is SPONGE / 2 of the box wide', (B2) => {
+    const aspect = B2.w / B2.h;
+    const draw1 = legacy('old', { can: 'red', cap: 'fat', aspect, points: [[0.2, 0.5], [0.8, 0.5]] });
+    const w = Wall.of([draw1], { box: B2, emPx: EM });
+    const walker: Walker = { last: null, left: 0 };
+    const presses: [number, number][] = [];
+    for (const x of [0.3, 0.55]) for (const p of w.walk(walker, [x * B2.w, 0.5 * B2.h])) presses.push([p.u, p.v]);
+    expect(presses.length).toBeGreaterThan(3);
+    /* The step is a third of the disc's radius, as the server counts it. */
+    expect(Math.abs(presses[1]![0] - presses[0]![0]) * B2.w).toBeCloseTo((SPONGE / 2 * B2.w) / 3, 0);
+    const server = takesOf(presses, SPONGE / 2, aspect);
+    const f = w.groups[0]!;
+    let compared = 0, taken = 0;
+    for (const gx of [30, 35, 40, 45, 50, 55]) for (const gy of [49, 50]) {
+      const x = ((gx + 0.5) / GRID) * B2.w, y = ((gy + 0.5) / GRID) * B2.h;
+      const left = f.coatsAt(x, y);
+      const expected = Math.max(0, COATS.line - server[gy * GRID + gx]!);
+      expect(Math.abs(left - expected), `cell ${gx},${gy}: ${left} against ${expected}`).toBeLessThanOrEqual(1);
+      compared++; if (server[gy * GRID + gx]! > 0) taken++;
+    }
+    expect(compared).toBe(12);
+    expect(taken).toBeGreaterThan(6);
   });
 });
 
