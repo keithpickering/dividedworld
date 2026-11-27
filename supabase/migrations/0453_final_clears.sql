@@ -1135,7 +1135,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare author uuid;
 begin
   -- The post's row is locked first, as place_cast locks it (for no key update, before it counts anything): saves of one play, and a cast beside them, are laid one at a time, so the check below for a clear that is final
-  -- reads every save that came before it, and a later save never overwrites the clear. The post's row is the only lock taken before the effect_state row, which place_cast takes after the post's, so the order is the same.
+  -- reads every save that came before it, and a later save never overwrites the clear. The post's row is the only lock taken before the effect_state row, and place_cast takes the same post row first and only reads effect_state, so no order between them can cycle.
   select t.character into author from acts k join acts t on t.id = k.target_act_id where k.id = on_play and k.kind = 'card'
     and coalesce(k.payload ->> 'reach', 'post') = 'post' for no key update of t;
   -- The post's own player answers for the mask that wrote it, retired or not.
