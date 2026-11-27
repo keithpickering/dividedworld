@@ -54,10 +54,11 @@ a refused post takes the best-effort path #1202 built.
   the model writes anyway, recorded as a trim (`quote(model)`).
 - **The Lens row shows the Mod's words.** The row's opening words (`excerpt`, `engine/ui/profile/record.ts`) skip the
   post's leading quote. Otherwise every outcome row would open with the visited post's words.
-- **Pool and chatter staff replies with a target are not changed by this plan.** Whether they also draw a quote is a
-  scope question for the owner: they are conversation, not outcomes, and a quote on every chatter reply changes how
-  the Mods talk everywhere. It was put to the orchestrating session on 2026-11-27, and its answer is recorded in the
-  PR. A "yes" is a task added to this plan, or its own plan.
+- **Pool and chatter staff replies get no rendered quote.** They keep their target and post the model's words as
+  written. The question was put to the owner through the orchestrating session on 2026-11-27, and the owner answered:
+  "Agreed. Ordinary chatter can just be replies, and it seems they often respond to multiple characters within one
+  post, so the quote of only one post would be a bit odd in those cases." The owner saw the plan's other decisions
+  (the quote's words, the bound, the move ruling, the ban entry and the No quote) and raised nothing on them.
 
 **Masks.** The quote is the target's public words, written as a player's quote. Nothing in it, in when it lands or in
 whether it is left out turns on who owns any character. A No quote's check reads the target's public No quote, as
