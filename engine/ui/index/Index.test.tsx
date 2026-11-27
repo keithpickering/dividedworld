@@ -380,7 +380,7 @@ describe('the index rows\' units and last post (list-rows plan, Task 1)', () => 
       expect(frames.at(-1)).toBe('7 threads');
     });
 
-    test('an older summary, or the same one twice, does not overwrite a newer one', async () => {
+    test('the latest summary to arrive wins, even where its Last post goes back (a reversal) or to none (the board emptied)', async () => {
       const fake = buildWorld();
       const me = fake.seed.account('me');
       const spritey = fake.seed.character(me, 'Spritey', 'face', { at: T0 });
@@ -394,14 +394,50 @@ describe('the index rows\' units and last post (list-rows plan, Task 1)', () => 
       const general = doc.boards.find((b) => b.lastAt !== null)!;
       const at = (ms: number) => new Date(Date.parse(general.lastAt!) + ms).toISOString();
       await act(async () => { taps.listener.onBoard!(summary(general, { threadCount: 5, lastAt: at(2000), lastTitle: 'Newer' })); });
-      await act(async () => { taps.listener.onBoard!(summary(general, { threadCount: 3, lastAt: at(1000), lastTitle: 'Older' })); });
       let row = screen.getByRole('link', { name: 'General' }).closest('tr')!;
-      expect(row).toHaveTextContent('5 threads');
       expect(row).toHaveTextContent('Newer');
-      /* Older than the document's own entry is dropped too, on a board with nothing live yet. */
-      await act(async () => { taps.listener.onBoard!(summary(general, { threadCount: 1, lastAt: at(-1000), lastTitle: 'Ancient' })); });
+      /* The last post was reversed: the summary sent later has the earlier Last post. */
+      await act(async () => { taps.listener.onBoard!(summary(general, { threadCount: 3, lastAt: at(-1000), lastTitle: 'Earlier' })); });
       row = screen.getByRole('link', { name: 'General' }).closest('tr')!;
-      expect(row).toHaveTextContent('Newer');
+      expect(row).toHaveTextContent('3 threads');
+      expect(row).toHaveTextContent('Earlier');
+      /* The board was emptied. */
+      await act(async () => { taps.listener.onBoard!(summary(general, { threadCount: 0, lastAt: null, lastTitle: null, lastThread: null, lastCharacter: null })); });
+      row = screen.getByRole('link', { name: 'General' }).closest('tr')!;
+      expect(row).toHaveTextContent('0 threads');
+      expect(row).toHaveTextContent('None yet');
+    });
+
+    test('a summary for an unlisted board heard while a re-read is in flight is not lost: the index is read again', async () => {
+      const fake = buildWorld();
+      fake.signInAs(fake.seed.account('me'));
+      let loads = 0;
+      let gate: Promise<void> = Promise.resolve();
+      let release: () => void = () => {};
+      const env: LoadEnv = { api: fake, signedIn: () => true, postsPerPage: () => 20, effects: [] };
+      const routes: readonly Route[] = [{ path: '/', load: async () => { loads++; const read = await loadIndex(env); await gate; return read; }, render: (_, doc) => <IndexScreen doc={doc as ScreenDoc<IndexPage>} /> }];
+      const taps = tapIndex(fake);
+      renderIn(fake, <Routes routes={routes} />);
+      await screen.findByRole('link', { name: 'General' });
+      await act(async () => {});
+      const general = (await fake.indexPage()).boards[0]!;
+      gate = new Promise<void>((r) => { release = r; });
+      await act(async () => {
+        taps.listener.onBoard!(summary(general, { id: 'x-1', slug: 'x1' }));
+        await new Promise((r) => setTimeout(r, 120));
+      });
+      expect(loads).toBe(2);
+      /* X arrives while the re-read is held, then the re-read lands with a document that predates X. */
+      fake.seed.board('xray', 'Xray');
+      gate = Promise.resolve();
+      /* Released at once, so the stale document lands while X's own timer is still waiting. */
+      await act(async () => { taps.listener.onBoard!(summary(general, { id: 'x-2', slug: 'xray' })); release(); await new Promise((r) => setTimeout(r, 5)); });
+      await act(async () => { await new Promise((r) => setTimeout(r, 250)); });
+      expect(loads).toBe(3);
+      expect(await screen.findByRole('link', { name: 'Xray' })).toBeInTheDocument();
+      /* x-1 never appears: it was let go after one re-read, so the reads stop. */
+      await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+      expect(loads).toBe(3);
     });
 
     test('the subscription is made once; a retry that is new on every render does not rebuild it', async () => {

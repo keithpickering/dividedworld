@@ -42,12 +42,25 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
   const docRef = useRef(doc);
   const retryRef = useRef(retry);
   const rereading = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* Boards heard of that the shown document does not list, and those among them the re-read now in flight was asked for. */
+  const unlisted = useRef<Set<Id>>(new Set());
+  const inFlight = useRef<Set<Id>>(new Set());
   docRef.current = doc;
   retryRef.current = retry;
-  /* A new document answers any re-read asked for, and starts the character reads again. */
+  const armReread = () => {
+    if (rereading.current !== null) return;
+    rereading.current = setTimeout(() => { rereading.current = null; inFlight.current = new Set(unlisted.current); retryRef.current(); }, REREAD_AFTER);
+  };
+  const armRef = useRef(armReread);
+  armRef.current = armReread;
+  /* A new document answers the ids it lists, and the ones a re-read was asked for (a board that is closed never appears: one re-read each, then it is let go). A board heard of while that re-read was in flight stays, and the index is read again for it. */
   useEffect(() => {
     asked.current = new Set();
-    if (rereading.current !== null) { clearTimeout(rereading.current); rereading.current = null; }
+    const ids = new Set((page?.boards ?? []).map((b) => b.id));
+    for (const id of [...unlisted.current]) if (ids.has(id) || inFlight.current.has(id)) unlisted.current.delete(id);
+    inFlight.current = new Set();
+    if (unlisted.current.size === 0 && rereading.current !== null) { clearTimeout(rereading.current); rereading.current = null; }
+    else if (unlisted.current.size > 0) armReread();
   }, [doc]);
   useEffect(() => () => { if (rereading.current !== null) clearTimeout(rereading.current); }, []);
   known.current = new Set([...docCharacters.keys(), ...extra.keys()]);
@@ -60,17 +73,15 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
     const over = (cur: typeof mine): typeof mine => (cur.doc === docRef.current ? cur : { doc: docRef.current, live: new Map(), extra: new Map() });
     return api.subscribeIndex({
       onBoard(b) {
-        const shown = listed.current.get(b.id);
-        if (!shown) {
+        if (!listed.current.has(b.id)) {
           /* A burst of them (one per post) is one re-read, a moment after the first. */
-          if (rereading.current === null) rereading.current = setTimeout(() => { rereading.current = null; retryRef.current(); }, REREAD_AFTER);
+          unlisted.current.add(b.id);
+          armRef.current();
           return;
         }
         setMine((s) => {
           const base = over(s);
-          const held = base.live.get(b.id) ?? shown;
-          /* A summary may come twice or out of order: the one with the later Last post is kept. */
-          if (held.lastAt !== null && (b.lastAt === null || Date.parse(held.lastAt) > Date.parse(b.lastAt))) return base;
+          /* A summary is the board's whole state when it was sent, and one channel delivers in send order: the latest to arrive wins, even where Last post goes back or to none (a post reversed or moved). */
           return { ...base, live: new Map([...base.live, [b.id, b]]) };
         });
         const c = b.lastCharacter;
