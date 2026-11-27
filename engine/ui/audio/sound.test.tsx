@@ -602,6 +602,15 @@ describe('the front door stages the game bus over the account\'s preference', ()
     sound.dispose();
   });
 
+  test('a release with no preference ever told puts the game bus back to the mixer\'s default, off', () => {
+    const { sound, last } = watch();
+    const release = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')?.on).toBe(true);
+    release();
+    expect(last('game')).toEqual({ on: false, volume: 100 });
+    sound.dispose();
+  });
+
   test('while staged the volume is the last preference\'s, and the interface bus follows the preference alone', () => {
     const { sound, last } = watch();
     sound.setSoundPreference(pref('off', 30));

@@ -84,8 +84,9 @@ export function createSound(deps: MixerDeps): SoundPage {
     const p = preference;
     const top = stages.at(-1);
     if (!p) {
-      /* Before any preference is told, only a stage speaks: it sets whether the game bus is on, at full volume. */
-      if (top) mixer.setBus('game', { on: top.gameSound === 'on', volume: 100 });
+      /* Before any preference is told, only a stage speaks: it sets whether the game bus is on, at full volume; with none held, the
+         bus goes back to the mixer's default, off at full volume. */
+      mixer.setBus('game', { on: top?.gameSound === 'on', volume: 100 });
       return;
     }
     mixer.setBus('game', { on: (top ? top.gameSound : p.gameSound) === 'on', volume: p.gameVolume });
