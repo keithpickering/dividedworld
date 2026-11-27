@@ -91,3 +91,88 @@ export function fromBits(bits: string): Cells {
   for (let i = 0; i < bits.length; i++) if (bits[i] === '1') out[i >> 3]! |= 0x80 >> (i & 7);
   return out;
 }
+
+/**
+ * Coats (docs/plans/2026-11-27-graffiti-everywhere-design.md, section 5): the paint's depth, one byte per cell in tenths of a coat, 0 to 40, row-major as
+ * `toBits`. A cell is painted while it holds 2 tenths or more; at 1 or less it is clean and is kept as 0. Pure, so the browser, the server and the tests
+ * count the same coats.
+ */
+export type Coats = Uint8Array;
+/** The most tenths a cell holds: four coats. */
+export const COAT_MAX = 40;
+/** A cell holding at least this many tenths is painted. */
+export const PAINTED = 2;
+/** The coat string's alphabet: the index of a character is the tenths it names. */
+export const COAT_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDE';
+
+/** The coats of a drawing's strokes: each stroke adds `line` tenths to the cells of its own core, once however often it crosses itself, and a cell holds at most `most`. */
+export function coatsOf(strokes: readonly SurfaceStroke[], rules: { readonly line: number; readonly most: number }): Coats {
+  const out = new Uint8Array(GRID * GRID);
+  const cap = Math.min(rules.most, COAT_MAX);
+  for (const s of strokes) {
+    const cells = cellsOf([s]);
+    for (let i = 0; i < out.length; i++) if (hasCell(cells, i)) out[i] = Math.min(cap, out[i]! + rules.line);
+  }
+  return out;
+}
+
+/**
+ * What a wash's presses take, in tenths per cell. Each press is a disc of radius `R = 2 * radius` (a share of the box's width; the y axis is divided by
+ * `aspect`, as `cellsOf` does) taking `10 * PER * (1 - d^2/R^2)^3` at each cell center within R. `PER` is set so that presses every third of the radius
+ * along a straight line take one coat (10 tenths) under its center: the integral of (1 - t^2)^3 over -1..1 is 32/35. The sum is rounded to whole tenths.
+ */
+export function takesOf(presses: readonly (readonly [number, number])[], radius: number, aspect: number): Coats {
+  const out = new Uint8Array(GRID * GRID);
+  if (!finite(radius) || !finite(aspect) || !(radius > 0) || !(aspect > 0)) return out;
+  const R = 2 * radius, per = (radius / 3) / ((R * 32) / 35);
+  const sum = new Float64Array(GRID * GRID);
+  for (const p of presses) {
+    if (!finite(p[0]) || !finite(p[1])) continue;
+    const py = p[1] / aspect;
+    const y0 = Math.max(0, Math.floor((p[1] - R * aspect) * GRID - 0.5)), y1 = Math.min(GRID - 1, Math.ceil((p[1] + R * aspect) * GRID - 0.5));
+    const x0 = Math.max(0, Math.floor((p[0] - R) * GRID - 0.5)), x1 = Math.min(GRID - 1, Math.ceil((p[0] + R) * GRID - 0.5));
+    for (let y = y0; y <= y1; y++) {
+      const dy = (y + 0.5) / GRID / aspect - py;
+      for (let x = x0; x <= x1; x++) {
+        const dx = (x + 0.5) / GRID - p[0];
+        const q = (dx * dx + dy * dy) / (R * R);
+        if (q >= 1) continue;
+        sum[y * GRID + x]! += 10 * per * (1 - q) ** 3;
+      }
+    }
+  }
+  for (let i = 0; i < out.length; i++) out[i] = Math.min(COAT_MAX, Math.round(sum[i]!));
+  return out;
+}
+
+/** The coats left once `b` is taken off `a`: each cell `max(0, a - b)`, with 1 or less set to 0. A new grid. */
+export function minusCoats(a: Coats, b: Coats): Coats {
+  return a.map((v, i) => { const left = Math.max(0, v - (b[i] ?? 0)); return left < PAINTED ? 0 : left; });
+}
+
+/** How many cells are painted: the ones holding 2 tenths or more. */
+export function paintedCount(c: Coats): number { let n = 0; for (const v of c) if (v >= PAINTED) n++; return n; }
+
+/** A coat string: one character per cell, row-major, over `COAT_ALPHABET`. */
+export function toCoatString(c: Coats): string {
+  let out = '';
+  for (let i = 0; i < GRID * GRID; i++) out += COAT_ALPHABET[Math.min(COAT_MAX, c[i] ?? 0)]!;
+  return out;
+}
+/** The coats a coat string names; a string that is not 10,000 characters of the alphabet throws. */
+export function fromCoatString(s: string): Coats {
+  if (s.length !== GRID * GRID) throw new Error(`a coat string is ${GRID * GRID} characters of ${COAT_ALPHABET}`);
+  const out = new Uint8Array(GRID * GRID);
+  for (let i = 0; i < s.length; i++) {
+    const v = COAT_ALPHABET.indexOf(s[i]!);
+    if (v < 0) throw new Error(`a coat string is ${GRID * GRID} characters of ${COAT_ALPHABET}`);
+    out[i] = v;
+  }
+  return out;
+}
+/** The coats of a drawing that had only cells: `line` tenths on each set cell. */
+export function legacyCoats(cells: Cells, line: number): Coats {
+  const out = new Uint8Array(GRID * GRID);
+  for (let i = 0; i < out.length; i++) if (hasCell(cells, i)) out[i] = Math.min(COAT_MAX, line);
+  return out;
+}
