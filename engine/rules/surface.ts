@@ -121,7 +121,8 @@ export function coatsOf(strokes: readonly SurfaceStroke[], rules: { readonly lin
  * What a wash's presses take, in tenths per cell. Each press is a disc of radius `R = 2 * radius` (a share of the box's width; the y axis is divided by
  * `aspect`, as `cellsOf` does) taking `10 * PER * (1 - d^2/R^2)^3` at each cell center within R. `PER` is set so that presses every third of the radius
  * along a straight line take one coat (10 tenths) under its center: the integral of (1 - t^2)^3 over -1..1 is 32/35. The sum is rounded to whole tenths.
- * The cost is presses x (4R * GRID)^2 cells, so the card's `validateWash` is what bounds it: it caps the radius and the number of presses before this runs.
+ * The cost is presses x (4R * GRID)^2 cells, held to the grid (at most presses x GRID^2), so the card bounds it: its `validateWash` caps the number of presses,
+ * and the radius comes from the draw's own box, which its `validateDraw` keeps wide enough that the radius stays small.
  */
 export function takesOf(presses: readonly (readonly [number, number])[], radius: number, aspect: number): Coats {
   const out = new Uint8Array(GRID * GRID);
