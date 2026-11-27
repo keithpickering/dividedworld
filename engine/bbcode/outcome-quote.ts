@@ -2,10 +2,10 @@
  * The quote a Mod's outcome post opens with (docs/plans/2026-11-27-outcome-quotes-plan.md, "Decided here"): a real `[quote=<act>]` of the target's opening words, then a line break, in the
  * form a player's quote is written (`quoteText`, engine/ui/composer/text.ts). The words are a selection's: the words the forged-quote check reads from the target's current version (`quoteSource`, quoted.ts: links, code, nested quotes and a spoiler's title included; normalized; the first run before any cut mark),
  * all of them when they fit and otherwise the first `OUTCOME_QUOTE_MOST` characters cut at a word, followed by `…` (which `quoteNorm` drops, so the forged-quote check holds). They are
- * wrapped in `[noparse]` when they hold a `[`, as a selection's are. The database's `outcome_quote` is this, in plain SQL; the fake's copy is this function, held to the same cases.
+ * wrapped in `[noparse]` when they hold what reads as a tag (`asTyped`, quoted.ts), as a selection's are. The database's `outcome_quote` is this, in plain SQL; the fake's copy is this function, held to the same cases.
  */
 import { parse } from './parse.ts';
-import { CUT, quoteSource } from './quoted.ts';
+import { CUT, asTyped, quoteSource } from './quoted.ts';
 
 /** The most words an outcome's quote holds before the cut mark. */
 export const OUTCOME_QUOTE_MOST = 280;
@@ -19,13 +19,15 @@ export function outcomeQuote(target: string, body: string, room: number = OUTCOM
   const plain = quoteSource(parse(body)).split(CUT).map((p) => p.trim()).find((p) => p !== '') ?? '';
   if (most < 1 || plain === '') return '';
   let words = plain;
-  if (plain.length > most) {
-    const head = plain.slice(0, most + 1);
+  // Counted and cut by code points, as the database counts, so a pair of UTF-16 units is never split.
+  const cps = Array.from(plain);
+  if (cps.length > most) {
+    const head = cps.slice(0, most + 1);
     const at = head.lastIndexOf(' ');
-    const cut = (at > 0 ? head.slice(0, at) : plain.slice(0, most)).trimEnd();
+    const cut = (at > 0 ? head.slice(0, at) : cps.slice(0, most)).join('').trimEnd();
     words = `${cut}…`;
   }
-  const kept = /\[/u.test(words) ? `[noparse]${words.replace(/\[\/noparse\]/giu, (closer) => `${closer.slice(0, -1)}[/noparse][noparse]]`)}[/noparse]` : words;
+  const kept = asTyped(words);
   return `[quote=${target}]${kept}[/quote]\n`;
 }
 

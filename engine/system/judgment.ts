@@ -604,28 +604,23 @@ export const PREMISE_MEANING = 'A board\'s premise says what belongs there. Char
 
 /**
  * A model's words with every `[quote]` block taken out, nested ones with their outer (the outcome quotes plan, "Decided here": the database writes an outcome post's quote, so the model's is never
- * wanted). The tag is read as the BBCode parser reads it: any case, `[quote]` or `[quote=name]`. A quote opened and never closed loses its opener tag only, and a closer with no opener
- * is left as it stands.
+ * wanted). The tag is read as the BBCode parser reads it: any case, `[quote]` or `[quote=name]`. Every closed pair goes, one inside another with the outer; an opener never closed loses its
+ * tag only, so an unclosed outer cannot keep a closed inner; a closer with no opener is left as it stands, inert. A `[quote]` inside `[noparse]` or `[code]` is stripped too: the parser would show it
+ * as text, but a model's words have no use for one there.
  */
 export function stripQuotes(text: string): string {
-  const tag = /\[(\/)?quote(?:=[^\]]*)?\]/giu;
-  const opens: number[] = [];
-  const spans: [number, number][] = [];
-  const stray: [number, number][] = [];
-  for (const m of text.matchAll(tag)) {
+  const opens: [number, number][] = [];
+  const pairs: [number, number][] = [];
+  for (const m of text.matchAll(/\[(\/)?quote(?:=[^\]]*)?\]/giu)) {
     const at = m.index!;
-    if (m[1] === undefined) opens.push(at);
-    else if (opens.length > 0) {
-      const from = opens.pop()!;
-      if (opens.length === 0) spans.push([from, at + m[0].length]);
+    if (m[1] === undefined) opens.push([at, at + m[0].length]);
+    else {
+      const open = opens.pop();
+      if (open !== undefined) pairs.push([open[0], at + m[0].length]);
     }
   }
-  // An opener left open is a quote to the end of the words in the parser's reading; only its tag goes, so the words are not lost with it.
-  for (const from of opens) {
-    const m = /^\[quote(?:=[^\]]*)?\]/iu.exec(text.slice(from));
-    if (m) stray.push([from, from + m[0].length]);
-  }
-  const cuts = [...spans, ...stray].filter(([a]) => !spans.some(([x, y]) => a > x && a < y)).sort((a, b) => a[0] - b[0]);
+  const inside = (a: number, b: number) => pairs.some(([x, y]) => (x < a || y > b) && x <= a && b <= y);
+  const cuts = [...pairs, ...opens].filter(([a, b]) => !inside(a, b)).sort((a, b) => a[0] - b[0]);
   let out = '';
   let at = 0;
   for (const [from, to] of cuts) { out += text.slice(at, from); at = to; }

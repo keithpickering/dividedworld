@@ -24,7 +24,7 @@ a refused post takes the best-effort path #1202 built.
   copies the body with its markup; a player's selection copies words. A server quote is a selection: the plain words
   of the target's current visible version (the latest edit, else the Act), with whitespace collapsed. All of them when
   they fit; otherwise the first `OUTCOME_QUOTE_MOST` (280) characters cut at a word, followed by `…`. They are
-  wrapped in `[noparse]` when they hold a `[`, as `asTyped()` wraps a selection that looks like a tag. They pass the
+  wrapped in `[noparse]` when they hold what the parser would read as a tag (a `[` then `/`, a letter or `*`), by the one `asTyped()` (`engine/bbcode/quoted.ts`) that wraps a player's selection. They pass the
   forged-quote check (`0393_forged_quotes.sql`) by construction: they are a verbatim run of the version's words, and
   `quote_norm` drops the trailing `…`. A test holds that no outcome post is recorded `forged`.
 - **What each outcome quotes:**

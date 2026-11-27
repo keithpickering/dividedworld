@@ -24,6 +24,7 @@ import {
   repairFiling,
   repairModMove,
   repairReport,
+  stripQuotes,
   reportPrompt,
   ruleWords,
   type AppealInput,
@@ -1082,4 +1083,29 @@ test('a [quote] an appeal ruling\'s words carry is stripped and recorded as quot
   assert.equal(out.line, 'Denied.');
   assert.deepEqual(out.trims.map((t) => [t.path, t.predicate]), [['line', 'quote(model)']]);
   assert.equal(repairAppeal({ verdict: 'upheld', line: '[quote]x[/quote]' }, 4000).line, null);
+});
+
+test('stripQuotes takes every closed quote, nested ones with their outer, in any case and either form', () => {
+  const uuid = '11111111-2222-3333-4444-555555555555';
+  assert.equal(stripQuotes('a [quote]b[/quote] c'), 'a  c');
+  assert.equal(stripQuotes(`a [QUOTE=${uuid}]b [quote]c[/Quote] d[/quote] e`), 'a  e');
+  assert.equal(stripQuotes('no quotes [b]here[/b]'), 'no quotes [b]here[/b]');
+});
+
+test('stripQuotes: an outer opener never closed loses its tag only, and a closed inner still goes', () => {
+  assert.equal(stripQuotes('[quote]a[quote]b[/quote]c'), 'ac');
+  const uuid = '11111111-2222-3333-4444-555555555555';
+  assert.equal(stripQuotes(`[quote=${uuid}]a[quote=${uuid}]b[/quote]c`), 'ac');
+  assert.equal(stripQuotes('[quote]a[quote]b[quote]c[/quote]d'), 'abd');
+  assert.equal(stripQuotes('only [quote]opened'), 'only opened');
+});
+
+test('stripQuotes: a closer with no opener is kept as it stands, and one closer closes only the nearest opener', () => {
+  assert.equal(stripQuotes('a[/quote]b'), 'a[/quote]b');
+  assert.equal(stripQuotes('[quote]a[/quote]b[/quote]'), 'b[/quote]');
+});
+
+test('stripQuotes strips a quote inside noparse or code as well (acceptable: a model has no use for one there)', () => {
+  assert.equal(stripQuotes('[noparse][quote]x[/quote][/noparse]'), '[noparse][/noparse]');
+  assert.equal(stripQuotes('[code][quote]x[/quote][/code] y'), '[code][/code] y');
 });
