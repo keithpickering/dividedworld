@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
@@ -125,6 +126,24 @@ describe('the Random Event dialog', () => {
     const head = within(dialog).getByRole('heading', { name: 'SOMETHING HAPPENED!' });
     expect(head.compareDocumentPosition(tag) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(head.parentElement).toContainElement(tag as HTMLElement);
+  });
+
+  test('an uncommon event says "Uncommon event" with the uncommon gem', async () => {
+    const { fake } = world();
+    fake.seed.nextEvent({ outcome: 'line', line: 'statue', eventRarity: 'uncommon' });
+    open(fake);
+    const dialog = await screen.findByRole('dialog', { name: 'SOMETHING HAPPENED!' });
+    expect(within(dialog).getByText('Uncommon event')).toBeInTheDocument();
+    expect(dialog.querySelector('.kb-gem')).toHaveAttribute('data-kb-gem', gemOf('uncommon'));
+  });
+
+  test('the tag takes each rarity\'s color, and the bar wraps so the tag drops under the title', () => {
+    const css = readFileSync('engine/ui/events/events.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (selector: string) => css.match(new RegExp(`${selector.replace(/[.[\]()':=>~-]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    expect(rule(".kb-event-rarity[data-kb-rarity='uncommon']")).toMatch(/--kb-event-rarity-color:\s*var\(--kb-glass-sweet\)/);
+    expect(rule(".kb-event-rarity[data-kb-rarity='rare']")).toMatch(/--kb-event-rarity-color:\s*var\(--kb-glass-ready\)/);
+    expect(rule(".kb-event-rarity[data-kb-rarity='legendary']")).toMatch(/--kb-event-rarity-color:\s*var\(--kb-glass-salty-text\)/);
+    expect(rule('.kb-glass-dialog-bar:has(> .kb-event-rarity)')).toMatch(/flex-wrap:\s*wrap/);
   });
 
   test('a legendary line alone says "Legendary event" and still has no found-item sentence', async () => {
