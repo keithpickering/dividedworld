@@ -832,9 +832,12 @@
 }
 
 /* Every kind of card: two columns at the dock's width, one under 40em; each an outlined chamfer in the neutral line an unselected tab has (ink is the selected tab's and the rows'), its count at the right. */
+/* Every row as tall as the tallest: where one name wraps to two lines, every entry takes that height and centers its contents, so the
+   grid keeps one rhythm. Each item is a grid of its one button, which stretches to fill it. */
 .kb-lens-kinds {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: 8px;
   margin: 4px 0 0;
   padding: 0;
@@ -846,7 +849,7 @@
 }
 
 .kb-lens-kinds > li {
-  display: block;
+  display: grid;
   min-width: 0;
 }
 
