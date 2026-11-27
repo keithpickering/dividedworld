@@ -100,6 +100,28 @@ test('Graffiti: a wash press at a group\'s point lands on the same framed spot a
   v.value.cuts[0]!.presses.forEach((p, i) => { const q = d.value.strokes[0]!.points[i]!; assert.ok(Math.abs(p[0] - q[0]) < 1e-9 && Math.abs(p[1] - q[1]) < 1e-9, `${i}: ${p} against ${q}`); });
 });
 
+test('Graffiti: lone surrogates in a version or a src are refused, and a pair is kept', () => {
+  for (const bad of ['a\uD800b', 'a\uDC00b', 'a\uD800', '\uDFFFa']) {
+    assert.equal(draw(drawn([group({ anchor: { ...text, version: bad } })])).ok, false, JSON.stringify(bad));
+    assert.equal(draw(drawn([group({ anchor: { ...image, src: bad }, unit: 'image', em: 10 })])).ok, false, JSON.stringify(bad));
+  }
+  assert.equal(draw(drawn([group({ anchor: { ...image, src: 'https://x.test/\u{1F600}.png' }, unit: 'image', em: 10 })])).ok, true);
+});
+
+test('Graffiti: an image-unit group is placed in the box, and a press at a point frames to that point', () => {
+  const box = { w: 20, h: 30 };
+  const g = { at: [0.5, 0.5] as [number, number], unit: 'image' as const, em: 10, strokes: [{ cap: 'stock', points: [[-40, 0], [40, 0], [0, -40], [0, 40]] }] };
+  const t = sizes.placementOf(box, g);
+  assert.ok(t.k < 1 && t.k > 0, `k ${t.k}`);
+  const pts = g.strokes[0]!.points as [number, number][];
+  const fr = sizes.framed(box, g, t, pts);
+  const half = (1.07 / 2) * t.k;
+  const [xs, ys] = [fr.map((p) => p[0]), fr.map((p) => p[1])];
+  assert.ok(Math.min(...xs) - half / box.w >= -1e-9 && Math.max(...xs) + half / box.w <= 1 + 1e-9, `${xs}`);
+  assert.ok(Math.min(...ys) - half / box.h >= -1e-9 && Math.max(...ys) + half / box.h <= 1 + 1e-9, `${ys}`);
+  assert.deepEqual(sizes.framed(box, g, t, [pts[1]!]), [fr[1]]);
+});
+
 test('Graffiti: control characters in a version or a src are refused', () => {
   for (const bad of ['a\u0000b', 'a\u001fb', 'a\u007fb', 'a\nb']) {
     assert.equal(draw(drawn([group({ anchor: { ...text, version: bad } })])).ok, false, JSON.stringify(bad));
@@ -296,11 +318,11 @@ test('Graffiti: the largest draw fits 64 KiB as Postgres writes it, and one that
   const input = drawn([group({ strokes })]);
   const v = draw(input);
   assert.equal(v.ok, true, why(v));
-  const asPostgres = JSON.stringify(v.ok && v.value.payload).replace(/([,:])/g, '$1 ');
-  assert.ok(Buffer.byteLength(asPostgres) < 65_536, `${Buffer.byteLength(asPostgres)} bytes`);
+  const asPostgres = sizes.bytesOf(v.ok && v.value.payload);
+  assert.ok(asPostgres < 65_536, `${asPostgres} bytes`);
   const fat = drawn(Array.from({ length: 120 }, () => group({ anchor: { ...text, version: 'v'.repeat(36) }, strokes: [stroke({ points: Array(25).fill([-123.456789, 98.7654321]) })] })));
   const f = draw(fat);
-  if (f.ok) assert.ok(Buffer.byteLength(JSON.stringify(f.value.payload).replace(/([,:])/g, '$1 ')) <= 65_536);
+  if (f.ok) assert.ok(sizes.bytesOf(f.value.payload) <= 65_536);
   else assert.match(why(f), /64 KiB/);
   const huge = draw(drawn([group({ anchor: { ...text, version: 'v'.repeat(70_000) } })]));
   assert.equal(huge.ok, false);
@@ -331,7 +353,7 @@ test('Graffiti: every stencil at the last spot fits 64 KiB as Postgres writes it
   for (const key of STENCIL_KEYS) {
     const v = draw({ stencil: key, can: 'orange', spot: 8 });
     assert.equal(v.ok, true, key);
-    assert.ok(Buffer.byteLength(JSON.stringify(v.ok && v.value.payload).replace(/([,:])/g, '$1 ')) < 65_536, key);
+    assert.ok(sizes.bytesOf(v.ok && v.value.payload) < 65_536, key);
   }
   const top = draw({ stencil: 'x', can: 'black', spot: 0 });
   const cells = cellsOf(top.ok ? top.value.strokes : []);

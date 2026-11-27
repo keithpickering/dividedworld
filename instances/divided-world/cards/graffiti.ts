@@ -85,15 +85,20 @@ const scaleOf = (box: Box, g: { unit: Unit; em?: number }): [number, number] => 
   const em = g.unit === 'image' ? g.em ?? 1 : 1;
   return [em / box.w, em / box.h];
 };
-/** Where a group lands in its drawer's box: scaled evenly about its center by `k`, then moved by `dx` and `dy`, all in shares of the box. */
+/** Where a group lands in its drawer's box: scaled evenly about its `at` by `k`, then moved by `dx` and `dy`, all in shares of the box. */
 export type Placement = { readonly k: number; readonly dx: number; readonly dy: number };
 type Placed = { readonly at: readonly [number, number]; readonly unit: Unit; readonly em?: number; readonly strokes: readonly { readonly cap?: unknown; readonly points?: unknown }[] };
 const CAPS_WIDEST = (g: Placed) => g.strokes.reduce((m, s) => Math.max(m, typeof s.cap === 'string' && Object.hasOwn(CAPS_EM, s.cap) ? CAPS_EM[s.cap as Cap] : 0), 0);
 /**
  * The one transform a group is framed by, for the count and for a wash's takes, so takes line up with coats: the screen's placement steps 3 and 4
  * (docs/plans/2026-11-27-graffiti-everywhere-design.md, section 4) in the drawer's frame. The group's extent is its points' bounds plus half the
- * widest cap; where that is wider or taller than the box, the whole group (its stroke widths too) is shrunk evenly about its center, and then it
- * is moved to lie inside 0 to 1 (centered where it still cannot). The payload keeps the points as drawn.
+ * widest cap; where that is wider or taller than the box, the whole group (its stroke widths too) is shrunk evenly about its `at` (the point
+ * `at + point * scale` is fixed when the point is the group's origin), and then it is moved to lie inside 0 to 1. The payload keeps the points as drawn.
+ *
+ * It also shrinks a group taller than the box, which a screen's placement (shrink only when wider) never meets: the count is in the drawer's own
+ * frame, where a drawn group always fits, so only a sent group larger than the drawer's own box is shrunk, and the count cannot be dodged by sending
+ * one. An honest drawer never sends such a group, so the screens' placement and this one agree on every group they both see. Screens replay a
+ * wash's presses in the group's own units, not through this transform.
  */
 export function placementOf(box: Box, g: Placed): Placement {
   const [sx, sy] = scaleOf(box, g);
@@ -108,13 +113,12 @@ export function placementOf(box: Box, g: Placed): Placement {
   const k = Math.min(1, 1 / (hix - lx), 1 / (hiy - ly));
   const pull = (at: number, lo: number, hi: number) => {
     const [a, b] = [at + lo * k, at + hi * k];
-    if (b - a > 1 + 1e-9) return 0.5 - (a + b) / 2;
     return a < 0 ? -a : b > 1 ? 1 - b : 0;
   };
   return { k, dx: pull(g.at[0], lx, hix), dy: pull(g.at[1], ly, hiy) };
 }
 /** A group's points in shares of the drawer's box, placed by `placementOf`: for the engine's count and a wash's takes, never the payload. */
-const framed = (box: Box, g: { at: readonly [number, number]; unit: Unit; em?: number }, t: Placement, points: readonly (readonly [number, number])[]): [number, number][] => {
+export const framed = (box: Box, g: { at: readonly [number, number]; unit: Unit; em?: number }, t: Placement, points: readonly (readonly [number, number])[]): [number, number][] => {
   const [sx, sy] = scaleOf(box, g);
   return points.map(([x, y]) => [g.at[0] + x * sx * t.k + t.dx, g.at[1] + y * sy * t.k + t.dy]);
 };
@@ -130,8 +134,8 @@ const jsonb = (v: unknown): string => {
   if (typeof v === 'object' && v !== null) return `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${jsonb(x)}`).join(', ')}}`;
   return JSON.stringify(v);
 };
-const bytesOf = (payload: unknown) => Buffer.byteLength(jsonb(payload));
-const plain = (s: string) => !/[\u0000-\u001f\u007f]/.test(s);
+export const bytesOf = (payload: unknown) => Buffer.byteLength(jsonb(payload));
+const plain = (s: string) => !/[\u0000-\u001f\u007f]/.test(s) && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
 
 /** An attachment's shape (the screens find it; the server checks only this), kept with its known keys. */
 function attachmentOf(a: unknown, unit: Unit): Verdict<Attachment> {
