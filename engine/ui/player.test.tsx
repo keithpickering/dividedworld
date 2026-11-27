@@ -470,6 +470,7 @@ describe('the HUD hears its own state', () => {
     fake.seed.wallet(ana, 100);
     fake.seed.wallet(bo, 562);
     /* The HUD is Bo's: every call the provider makes is answered as Bo, and the session never changes under it. Ana's gift is made beside it, as another player's tab would. */
+    /* signInAs(bo) runs before every call, so a provider read is never answered as Ana. */
     const asBo = new Proxy(fake, {
       get: (target, prop, receiver) => {
         if (prop === 'onSession') return () => () => {};
@@ -487,7 +488,7 @@ describe('the HUD hears its own state', () => {
     fake.signInAs(bo);
     await settle();
     await ms(400);
-    expect((await fake.wallet()).balance).toBe(582);
+    expect((await fake.wallet()).balance, 'Bo\'s wallet holds the 25 Ana gave').toBe(582);
     expect(screen.getByTestId('wallet').textContent).toBe('582');
   });
 
@@ -586,5 +587,57 @@ describe('the HUD hears its own state', () => {
     await ms(1000);
     expect(w.reads.mock.calls.length).toBe(base + 2);
     expect(most).toBe(1);
+  });
+
+  test('a poke whose read is out when the account switches files nothing under the new account, and the new one reads once', async () => {
+    fakeTimers();
+    let account = 'acc-a';
+    let emit: (s: Session) => void = () => {};
+    const listeners: { l: AccountListener | null } = { l: null };
+    const outs: { for: string; release: () => void }[] = [];
+    const reads: string[] = [];
+    const { api } = stubApi({
+      session: async () => ({ signedIn: true, account, bar: null, conductAccepted: true }),
+      onSession: (l) => { emit = l; return () => {}; },
+      subscribeAccount: (l) => { listeners.l = l; return () => { listeners.l = null; }; },
+      myCharacters: () => new Promise<MyCharacter[]>((r) => {
+        const mine = account;
+        reads.push(mine);
+        outs.push({ for: mine, release: () => r([char(mine === 'acc-a' ? 'a' : 'z')]) });
+      }),
+    });
+    const commits: string[] = [];
+    function Record() {
+      const p = usePlayer();
+      useLayoutEffect(() => { commits.push(`${p.session.account}|${p.characters.map((c) => c.id).join(',')}`); });
+      return null;
+    }
+    render(<PlayerProvider api={api}><Record /></PlayerProvider>);
+    await settle();
+    await act(async () => { outs.splice(0).forEach((o) => o.release()); });
+    await settle();
+    /* A's poke starts a read for A, and it is held. */
+    act(() => { listeners.l?.onSelf?.(); });
+    await ms(400);
+    const aRead = outs.find((o) => o.for === 'acc-a');
+    expect(aRead, 'the poke started a read for A').toBeDefined();
+    /* The account switches to B before A's read resolves. */
+    account = 'acc-b';
+    act(() => { emit({ signedIn: true, account: 'acc-b', bar: null, conductAccepted: true }); });
+    await settle();
+    await act(async () => { outs.filter((o) => o.for === 'acc-b').forEach((o) => o.release()); });
+    await settle();
+    await act(async () => { aRead?.release(); });
+    await settle();
+    expect(commits.filter((c) => c.startsWith('acc-b|') && c.split('|')[1]!.split(',').includes('a'))).toEqual([]);
+    expect(commits.at(-1)).toBe('acc-b|z');
+    /* One poke on B runs exactly one read for B. */
+    const before = reads.filter((r) => r === 'acc-b').length;
+    act(() => { listeners.l?.onSelf?.(); });
+    await ms(400);
+    expect(reads.filter((r) => r === 'acc-b').length).toBe(before + 1);
+    await act(async () => { outs.filter((o) => o.for === 'acc-b').forEach((o) => o.release()); });
+    await ms(1000);
+    expect(reads.filter((r) => r === 'acc-b').length).toBe(before + 1);
   });
 });
