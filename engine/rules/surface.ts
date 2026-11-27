@@ -108,10 +108,11 @@ export const COAT_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDE';
 /** The coats of a drawing's strokes: each stroke adds `line` tenths to the cells of its own core, once however often it crosses itself, and a cell holds at most `most`. */
 export function coatsOf(strokes: readonly SurfaceStroke[], rules: { readonly line: number; readonly most: number }): Coats {
   const out = new Uint8Array(GRID * GRID);
-  const cap = Math.min(rules.most, COAT_MAX);
+  // Static card config, but a Uint8Array wraps: the cap is held to 0..COAT_MAX and a negative or non-finite line adds nothing.
+  const cap = Math.max(0, Math.min(finite(rules.most) ? rules.most : 0, COAT_MAX)), line = finite(rules.line) ? Math.max(0, rules.line) : 0;
   for (const s of strokes) {
     const cells = cellsOf([s]);
-    for (let i = 0; i < out.length; i++) if (hasCell(cells, i)) out[i] = Math.min(cap, out[i]! + rules.line);
+    for (let i = 0; i < out.length; i++) if (hasCell(cells, i)) out[i] = Math.min(cap, out[i]! + line);
   }
   return out;
 }
@@ -120,6 +121,7 @@ export function coatsOf(strokes: readonly SurfaceStroke[], rules: { readonly lin
  * What a wash's presses take, in tenths per cell. Each press is a disc of radius `R = 2 * radius` (a share of the box's width; the y axis is divided by
  * `aspect`, as `cellsOf` does) taking `10 * PER * (1 - d^2/R^2)^3` at each cell center within R. `PER` is set so that presses every third of the radius
  * along a straight line take one coat (10 tenths) under its center: the integral of (1 - t^2)^3 over -1..1 is 32/35. The sum is rounded to whole tenths.
+ * The cost is presses x (4R * GRID)^2 cells, so the card's `validateWash` is what bounds it: it caps the radius and the number of presses before this runs.
  */
 export function takesOf(presses: readonly (readonly [number, number])[], radius: number, aspect: number): Coats {
   const out = new Uint8Array(GRID * GRID);

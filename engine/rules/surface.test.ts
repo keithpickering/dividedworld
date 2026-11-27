@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GRID, cellsOf, count, fromBits, minus, toBits, union, type Cells, type SurfaceStroke } from './surface.ts';
+import { COAT_ALPHABET, GRID, cellsOf, coatsOf, count, fromBits, fromCoatString, legacyCoats, minus, minusCoats, paintedCount, takesOf, toBits, toCoatString, union, type Cells, type SurfaceStroke } from './surface.ts';
 
 const has = (c: Cells, x: number, y: number): boolean => (c[(y * GRID + x) >> 3]! & (0x80 >> ((y * GRID + x) & 7))) !== 0;
 const rowCount = (c: Cells, y: number): number => { let n = 0; for (let x = 0; x < GRID; x++) if (has(c, x, y)) n++; return n; };
@@ -141,7 +141,6 @@ test('fromBits refuses ten thousand characters that are not all zeros and ones',
 });
 
 // Coats (docs/plans/2026-11-27-graffiti-everywhere-design.md, section 5).
-import { COAT_ALPHABET, coatsOf, fromCoatString, legacyCoats, minusCoats, paintedCount, takesOf, toCoatString } from './surface.ts';
 const RULES = { line: 20, most: 40 };
 const at = (c: Uint8Array, x: number, y: number): number => c[y * GRID + x]!;
 const fat = (points: [number, number][], width = 0.06): SurfaceStroke => ({ width, aspect: 1, points });
@@ -207,4 +206,49 @@ test('legacyCoats lays line on exactly the set cells', () => {
   const c = legacyCoats(cells, 20);
   assert.equal(paintedCount(c), 3);
   assert.deepEqual([at(c, 3, 4), at(c, 99, 99), at(c, 0, 0), at(c, 1, 1)], [20, 20, 20, 0]);
+});
+
+/** The all-cells reference for `takesOf`: every cell center tested against every press, no bounding box. */
+function bruteTakes(presses: [number, number][], radius: number, aspect: number): Uint8Array {
+  const R = 2 * radius, per = (radius / 3) / ((R * 32) / 35);
+  const out = new Uint8Array(GRID * GRID);
+  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
+    let sum = 0;
+    for (const p of presses) {
+      const dx = (x + 0.5) / GRID - p[0], dy = (y + 0.5) / GRID / aspect - p[1] / aspect;
+      const q = (dx * dx + dy * dy) / (R * R);
+      if (q < 1) sum += 10 * per * (1 - q) ** 3;
+    }
+    out[y * GRID + x] = Math.min(40, Math.round(sum));
+  }
+  return out;
+}
+
+test('takesOf matches an all-cells reference at aspects 0.5 and 2, with presses at the edges and corners', () => {
+  const presses: [number, number][] = [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0], [0, 0.5], [1, 0.5], [0.5, 1], [0.37, 0.61], [0.03, 0.97], [0.5, 0.5], [0.5, 0.5]];
+  for (const aspect of [0.5, 1, 2]) for (const radius of [0.02, 0.05]) {
+    assert.deepEqual(takesOf(presses, radius, aspect), bruteTakes(presses, radius, aspect), `aspect ${aspect} radius ${radius}`);
+  }
+});
+
+test('takesOf divides y by the aspect as cellsOf does: aspect 0.5 spans fewer rows than aspect 1, and aspect 2 more', () => {
+  const rows = (c: Uint8Array): number => { let n = 0; for (let y = 0; y < GRID; y++) { let any = false; for (let x = 0; x < GRID; x++) if (c[y * GRID + x]) any = true; if (any) n++; } return n; };
+  const cols = (c: Uint8Array): number => { let n = 0; for (let x = 0; x < GRID; x++) { let any = false; for (let y = 0; y < GRID; y++) if (c[y * GRID + x]) any = true; if (any) n++; } return n; };
+  const one = takesOf([[0.5, 0.5]], 0.05, 1), half = takesOf([[0.5, 0.5]], 0.05, 0.5), two = takesOf([[0.5, 0.5]], 0.05, 2);
+  assert.ok(rows(half) < rows(one) && rows(one) < rows(two), `rows ${rows(half)} ${rows(one)} ${rows(two)}`);
+  assert.equal(cols(half), cols(one));
+  assert.notDeepEqual(half, one);
+});
+
+test('coatsOf: most 99 with five stacked strokes peaks at 40; a stroke that lays no cells adds nothing', () => {
+  const five = Array.from({ length: 5 }, () => fat([[0.5, 0.5]]));
+  assert.equal(Math.max(...coatsOf(five, { line: 20, most: 99 })), 40);
+  assert.equal(paintedCount(coatsOf([fat([[0.5, 0.5]], 0)], RULES)), 0);
+  assert.equal(paintedCount(coatsOf([fat([[Number.NaN, 0.5]])], RULES)), 0);
+  assert.equal(paintedCount(coatsOf([fat([[0.5, Infinity]])], RULES)), 0);
+});
+
+test('coatsOf clamps its cap to 0..40 and treats a negative line as 0, so a byte never wraps', () => {
+  assert.equal(Math.max(...coatsOf([fat([[0.5, 0.5]])], { line: -5, most: 40 })), 0);
+  assert.equal(Math.max(...coatsOf([fat([[0.5, 0.5]])], { line: 20, most: -3 })), 0);
 });
