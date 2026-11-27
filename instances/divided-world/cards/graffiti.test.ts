@@ -178,7 +178,7 @@ test('Graffiti: a wash of a draw not given, or of a group it lacks, is refused; 
   assert.equal(wash({ cuts: [{ draw: 'd1', group: 0, presses: [] }] }, draws).ok, false);
   assert.equal(wash({ cuts: [{ draw: 'd1', group: 0, presses: Array(3000).fill([0, 0]) }] }, draws).ok, true);
   assert.match(why(wash({ cuts: [{ draw: 'd1', group: 0, presses: Array(1500).fill([0, 0]) }, { draw: 'd1', group: 0, presses: Array(1501).fill([0, 0]) }] }, draws)), /at most 3000 presses/);
-  assert.equal(wash({ cuts: [{ draw: 'd1', group: 0, presses: [[200.1, 0]] }] }, draws).ok, false);
+  assert.match(why(wash({ cuts: [{ draw: 'd1', group: 0, presses: [[200.1, 0]] }] }, draws)), /cut 1, press 1: a press is across and down/);
   assert.equal(wash({ cuts: [{ draw: 'd1', group: 0, presses: [[0, 0]], can: 'red' }] }, draws).ok, true, 'a sent can is dropped');
 });
 

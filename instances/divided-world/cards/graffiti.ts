@@ -120,13 +120,13 @@ function attachmentOf(a: unknown, unit: Unit): Verdict<Attachment> {
 }
 
 /** Points in a group's units, checked and kept: ems to a hundredth, image widths to a ten-thousandth. */
-function pointsOf(at: string, list: unknown, unit: Unit): Verdict<Points> {
+function pointsOf(at: string, list: unknown, unit: Unit, noun = 'point'): Verdict<Points> {
   const most = REACH[unit];
   const keep = unit === 'em' ? round(2) : tenThousandth;
   const out: Points = [];
   for (const [j, p] of (list as unknown[]).entries()) {
-    if (!Array.isArray(p) || p.length !== 2 || !p.every(finite)) return refuse(`${at}, point ${j + 1}: a point is two numbers, across then down`);
-    if (!(within(p[0], -most, most) && within(p[1], -most, most))) return refuse(`${at}, point ${j + 1}: a point is across and down from -${most} to ${most}, in ${unit === 'em' ? 'ems' : 'image widths'} from the group's center`);
+    if (!Array.isArray(p) || p.length !== 2 || !p.every(finite)) return refuse(`${at}, ${noun} ${j + 1}: a ${noun} is two numbers, across then down`);
+    if (!(within(p[0], -most, most) && within(p[1], -most, most))) return refuse(`${at}, ${noun} ${j + 1}: a ${noun} is across and down from -${most} to ${most}, in ${unit === 'em' ? 'ems' : 'image widths'} from the group's center`);
     out.push([keep(p[0] as number), keep(p[1] as number)]);
   }
   return ok(out);
@@ -252,7 +252,7 @@ function validateWash(input: unknown, draws: ReadonlyMap<string, unknown>): Verd
     total += c.presses.length;
     if (total > BOUNDS.presses) return refuse(`${at}: at most ${BOUNDS.presses} presses in all`);
     // A draw of the old shape is cut in its own shares, 0 to 1.
-    const presses = frame.old ? shares(at, c.presses) : pointsOf(at, c.presses, g.unit);
+    const presses = frame.old ? shares(at, c.presses) : pointsOf(at, c.presses, g.unit, 'press');
     if (!presses.ok) return presses;
     kept.push({ draw: c.draw, group, presses: presses.value });
     cuts.push({ draw: c.draw, presses: framed(frame.box, g, presses.value), radius: frame.radius, aspect: frame.aspect });
