@@ -26,7 +26,11 @@
  * edit never washes and never frees paint.
  *
  * The diff is Myers' O((N+M)D), run on what the two texts do not share at either end, so a typo in a long post costs the typo.
- * Both walks keep their own stacks, never recursion.
+ * Time is O((N+M)D); memory is O(D^2), because each round keeps only the slice of the furthest-reaching row it can reach (2d+3
+ * numbers), and D is at most CAP. Nothing here recurses: the tree walk uses an explicit stack and the diff's walk back is a loop.
+ *
+ * Callers pass `contentOf` the same `forged` verdict set the post is drawn with (the renderer's `BbCode` `forged` prop, as a Set), so
+ * the text and the image numbering here are the ones the screen draws and its layers' offsets refer to.
  */
 import { parse, type BbNode } from '../bbcode/parse.ts';
 import { visibleWalk } from '../bbcode/visible.ts';
@@ -47,12 +51,18 @@ export const CAP = 2000;
 /** How many characters each side of a run must also be unchanged. */
 export const MARGIN = 8;
 
+/** The renderer's test for an image it draws as a link and not a picture (engine/ui/bbcode/render.tsx, case 'img'). Keep the two alike. */
+const HTTP_IMAGE = /^http:/i;
+
 /**
  * The post's visible text and its images in tree order (quotes included, as the renderer draws them), each with which copy of its
- * address it is. Code, a cut and anything the parser did not read as an image have none.
+ * address it is. Code, a cut and anything the parser did not read as an image have none, and neither has an `http:` image: the
+ * renderer draws that as a link (engine/ui/bbcode/render.tsx, case 'img', `/^http:/i`), so it is no image on the screen and is not
+ * counted; `nth` counts among the drawn copies of an address. `forged` is the Acts whose real quotes read as counterfeits, passed to
+ * `parse` exactly as the renderer does, so the text matches the one the screen's offsets refer to.
  */
-export function contentOf(body: string): { text: string; images: Img[] } {
-  const nodes = parse(body);
+export function contentOf(body: string, forged?: ReadonlySet<string>): { text: string; images: Img[] } {
+  const nodes = parse(body, undefined, forged);
   const images: Img[] = [];
   const seen = new Map<string, number>();
   const stack: BbNode[] = [];
@@ -62,6 +72,7 @@ export function contentOf(body: string): { text: string; images: Img[] } {
     const n = stack.pop()!;
     switch (n.type) {
       case 'img': {
+        if (HTTP_IMAGE.test(n.src)) break; // drawn as a link, not a picture
         const nth = seen.get(n.src) ?? 0;
         seen.set(n.src, nth + 1);
         images.push({ src: n.src, nth });
@@ -113,23 +124,28 @@ function finder(n: number): { find: (i: number) => number; join: (a: number, b: 
   return { find, join };
 }
 
+const usable = (st: StrokeShape): boolean => st.points.length > 0 && Number.isFinite(st.r) && st.points.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+
 /**
- * Indices of strokes per group. Figures first: two strokes whose cores come within the sum of their radii (capsule to capsule,
+ * Indices of strokes per group. A stroke with no points, or a point or radius that is not a finite number, has no place to group by:
+ * it is filtered out of the figures and joins none, and comes back as a group of its own, so every index is in exactly one group.
+ * Figures first: two strokes whose cores come within the sum of their radii (capsule to capsule,
  * segment to segment) are one figure. Then groups: two figures join when the gap between their bounding boxes (paint included) is
  * less than the taller one's height, followed through. Groups are ordered by their first stroke, and list their strokes in order.
  */
 export function groupsOf(strokes: readonly StrokeShape[]): number[][] {
   const n = strokes.length;
+  const ok = strokes.map(usable);
   const box = strokes.map((st) => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [x, y] of st.points) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
     return { x0: x0 - st.r, y0: y0 - st.r, x1: x1 + st.r, y1: y1 + st.r };
   });
-  const segs = strokes.map((st) => segsOf(st.points));
+  const segs = strokes.map((st, i) => (ok[i] ? segsOf(st.points) : []));
   const fig = finder(n);
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      if (fig.find(i) === fig.find(j)) continue;
+      if (!ok[i] || !ok[j] || fig.find(i) === fig.find(j)) continue;
       const a = box[i]!, b = box[j]!;
       if (a.x0 > b.x1 || b.x0 > a.x1 || a.y0 > b.y1 || b.y0 > a.y1) continue; // paint boxes apart: cores cannot touch
       const reach = strokes[i]!.r + strokes[j]!.r;
@@ -141,9 +157,10 @@ export function groupsOf(strokes: readonly StrokeShape[]): number[][] {
       if (touch) fig.join(i, j);
     }
   }
-  const roots = [...new Set(Array.from({ length: n }, (_, i) => fig.find(i)))];
+  const roots = [...new Set(Array.from({ length: n }, (_, i) => fig.find(i)).filter((r) => ok[r]))];
   const fb = new Map<number, { x0: number; y0: number; x1: number; y1: number }>();
   for (let i = 0; i < n; i++) {
+    if (!ok[i]) continue;
     const r = fig.find(i), b = box[i]!, f = fb.get(r);
     fb.set(r, f ? { x0: Math.min(f.x0, b.x0), y0: Math.min(f.y0, b.y0), x1: Math.max(f.x1, b.x1), y1: Math.max(f.y1, b.y1) } : { ...b });
   }
@@ -189,7 +206,10 @@ function diff(a: string, b: string): Same[] | null {
   return merged;
 }
 
-/** Myers' greedy diff, forward, keeping each round's furthest-reaching row to walk back through. Null past `CAP`. */
+/**
+ * Myers' greedy diff, forward, keeping what each round needs to walk back through: round d reads rows k-1 and k+1 for k in -d..d, so
+ * it keeps only the slice for k in -d-1..d+1 (2d+3 numbers), O(D^2) in all. Null past `CAP`.
+ */
 function myers(a: string, b: string): Same[] | null {
   const N = a.length, M = b.length, max = Math.min(CAP, N + M);
   const offset = max + 1;
@@ -197,7 +217,7 @@ function myers(a: string, b: string): Same[] | null {
   const trace: Int32Array[] = [];
   let found = -1;
   for (let d = 0; d <= max && found < 0; d++) {
-    trace.push(v.slice());
+    trace.push(v.slice(offset - d - 1, offset + d + 2)); // k = -d-1..d+1, so row k is at k + d + 1
     for (let k = -d; k <= d; k += 2) {
       let x = k === -d || (k !== d && v[offset + k - 1]! < v[offset + k + 1]!) ? v[offset + k + 1]! : v[offset + k - 1]! + 1;
       let y = x - k;
@@ -207,14 +227,14 @@ function myers(a: string, b: string): Same[] | null {
     }
   }
   if (found < 0) return null;
-  // Walk back: each round's `trace` entry is the rows before it.
+  // Walk back: each round's `trace` entry is the rows before it, sliced as above.
   const same: Same[] = [];
   let x = N, y = M;
   for (let d = found; d > 0; d--) {
     const pv = trace[d]!;
     const k = x - y;
-    const prevK = k === -d || (k !== d && pv[offset + k - 1]! < pv[offset + k + 1]!) ? k + 1 : k - 1;
-    const prevX = pv[offset + prevK]!, prevY = prevX - prevK;
+    const prevK = k === -d || (k !== d && pv[k + d]! < pv[k + d + 2]!) ? k + 1 : k - 1;
+    const prevX = pv[prevK + d + 1]!, prevY = prevX - prevK;
     const midX = prevK === k + 1 ? prevX : prevX + 1; // after the one insert or delete
     if (x > midX) same.push({ from: midX, to: midX - k, len: x - midX });
     x = prevX; y = prevY;
@@ -224,20 +244,30 @@ function myers(a: string, b: string): Same[] | null {
 }
 
 /**
- * Where an attachment is on the post as it now stands, or null when it is nowhere to be found (it falls back to its box spot).
+ * Where each attachment is on the post as it now stands, or null where it is nowhere to be found (it falls back to its box spot).
  * Text keeps its place when its run and `MARGIN` characters each side (held to the text) lie in one unchanged stretch; the
- * attachment moves with that stretch. Images keep theirs while the same address is there at the same place among its copies.
+ * attachment moves with that stretch, and a run that is not wholly inside the old text is nowhere. Images keep theirs while the
+ * same address is there at the same place among its copies. The two texts are compared once for all of them, and not at all when
+ * none is text.
  */
+export function mapPlaces(from: { text: string; images: Img[] }, to: { text: string; images: Img[] }, atts: readonly Attachment[]): (Attachment | null)[] {
+  let same: Same[] | null | undefined;
+  return atts.map((a) => {
+    if (a.kind === 'box') return a;
+    if (a.kind === 'image') {
+      const n = to.images.findIndex((im) => im.src === a.src && im.nth === a.nth);
+      return n < 0 ? null : { ...a, n };
+    }
+    if (a.at < 0 || a.len <= 0 || a.at + a.len > from.text.length) return null;
+    const lo = Math.max(0, a.at - MARGIN), hi = Math.min(from.text.length, a.at + a.len + MARGIN);
+    if (same === undefined) same = diff(from.text, to.text);
+    if (!same) return null;
+    const s = same.find((m) => m.from <= lo && hi <= m.from + m.len);
+    return s ? { ...a, at: a.at + (s.to - s.from) } : null;
+  });
+}
+
+/** One attachment's place (see `mapPlaces`). */
 export function mapPlace(from: { text: string; images: Img[] }, to: { text: string; images: Img[] }, a: Attachment): Attachment | null {
-  if (a.kind === 'box') return a;
-  if (a.kind === 'image') {
-    const n = to.images.findIndex((im) => im.src === a.src && im.nth === a.nth);
-    return n < 0 ? null : { ...a, n };
-  }
-  const lo = Math.max(0, a.at - MARGIN), hi = Math.min(from.text.length, a.at + a.len + MARGIN);
-  if (hi <= lo) return null;
-  const same = diff(from.text, to.text);
-  if (!same) return null;
-  const s = same.find((m) => m.from <= lo && hi <= m.from + m.len);
-  return s ? { ...a, at: a.at + (s.to - s.from) } : null;
+  return mapPlaces(from, to, [a])[0]!;
 }
