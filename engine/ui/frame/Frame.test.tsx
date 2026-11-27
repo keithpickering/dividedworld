@@ -40,6 +40,8 @@ const jobRows = (): JobRow[] => {
   return [{ job: 'kayfabb-settle', schedule: '* * * * *', active: true, firstSeen: now, lastOkAt: settleLastOk ?? now, grace: null }];
 };
 
+const accountListeners = new Set<AccountListener>();
+
 function setup(signedIn = true, characters: readonly MyCharacter[] | 'fails' = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite', balance = 240, face: (id: string) => Character = (id) => pub(id, id)) {
   const api = {
     now: () => Date.now(),
@@ -59,7 +61,14 @@ function setup(signedIn = true, characters: readonly MyCharacter[] | 'fails' = [
     /* The frame holds the page's tips (engine/ui/tips/Tips.tsx), which read the account's state; these have them off. */
     preferences: async () => ({ tips: 'off', tipsSeen: [] }),
     alertsUnread: async () => { alerts.reads += 1; return alerts.unread; },
-    subscribeAccount: (l: AccountListener) => { alerts.account = l; alerts.subscribed += 1; return () => { alerts.account = null; }; },
+    /* The real client shares one channel per topic (web/src/data/supabase.ts's join), so the HUD's alerts and the player's own `self` listener hear
+       one `account:<id>` channel: a channel is counted when its first listener joins, and `alerts.account` calls every listener. */
+    subscribeAccount: (l: AccountListener) => {
+      accountListeners.add(l);
+      if (accountListeners.size === 1) alerts.subscribed += 1;
+      alerts.account = { onAlert: (a) => accountListeners.forEach((x) => x.onAlert?.(a)), onSelf: () => accountListeners.forEach((x) => x.onSelf?.()) };
+      return () => { accountListeners.delete(l); if (accountListeners.size === 0) alerts.account = null; };
+    },
     subscribeReach: () => () => {},
     actsById: async () => [],
     thread: async () => null,
@@ -110,7 +119,7 @@ function width(px: number) {
 }
 
 /* These tests look at the page the moment the hand drawer closes (it stays mounted and plays its exit imperatively, glass/play.ts), as under Off; its exit at full motion is the one test that sets it. */
-beforeEach(() => { settleLastOk = null; document.documentElement.setAttribute('data-kb-motion', 'reduce'); alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
+beforeEach(() => { accountListeners.clear(); settleLastOk = null; document.documentElement.setAttribute('data-kb-motion', 'reduce'); alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.unstubAllGlobals(); vi.restoreAllMocks(); delete (document.documentElement as { clientWidth?: number }).clientWidth; });
 
 describe('the counterfeit quote\'s filter', () => {
