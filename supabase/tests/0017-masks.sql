@@ -296,8 +296,12 @@ begin
   perform set_config('role', 'service_role', true);
   due := due_broadcasts();
   perform tests.unbecome();
-  if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'thread' and m ->> 'topic' = 'board:' || system_board()) then
+  -- Its board hears of the thread from the thread's first Act, a row (0453), and no longer from a `thread` event of masks_change's own.
+  if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'row' and m ->> 'topic' = 'board:' || system_board()) then
     raise exception 'a Promos thread the announcement opened was not told to its board';
+  end if;
+  if exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'thread' and m ->> 'topic' like 'board:%') then
+    raise exception 'masks_change still sends a thread event to a board';
   end if;
   -- Oldest first, and only what was sent is cleared.
   if (select array_agg((m ->> 'id')::bigint order by o) from jsonb_array_elements(due) with ordinality as x(m, o))

@@ -14,6 +14,9 @@
 -- Shared buffers (hit or read) one execution of `call_sql` touches. It is run once first, unmeasured: the first call after an ANALYZE
 -- plans the function's statements again, which reads the catalogs and statistics (126 buffers against 11, whatever the board holds), and
 -- that is a cost of the first call and not of the board's size.
+-- The fixtures here write thousands of Acts one statement at a time; 0453's trigger would add two projections (a few ms) to each, and these files measure other costs (the file is rolled back).
+alter table acts disable trigger acts_live_lists;
+
 create function pg_temp.buffers_of(call_sql text) returns bigint language plpgsql as $$
 declare plan jsonb;
 begin
