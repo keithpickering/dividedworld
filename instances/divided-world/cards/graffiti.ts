@@ -1,91 +1,191 @@
 /**
  * Graffiti (Pepperoni, rare): a wall on a post that any character may draw on, and the post's own character may wash. Divided World's
- * instance of the engine's surface (docs/plans/2026-11-11-graffiti-design.md, sections 2, 3, 8 and 9). The engine counts the
- * cells the strokes cover against `graffiti.limit` (a whole percent of its 100 x 100 grid) and holds at most `surface.mostLive` live draws;
- * this card's part is the cans, the caps and the stencils, and the shape of a draw.
+ * instance of the engine's surface (docs/plans/2026-11-11-graffiti-design.md, sections 2, 3, 8 and 9; docs/plans/2026-11-27-graffiti-everywhere-design.md,
+ * sections 1, 2, 4, 5 and 8). The engine counts each draw's own coats against `graffiti.limit` (a whole percent of its 100 x 100 grid) and holds at
+ * most `surface.mostLive` live draws; this card's part is the cans, the caps, the coat numbers, the sponge and the stencils, and the shape of a draw.
  *
- * - **A drawn stroke** is `{ can, cap, aspect, points }`: the can names its color (`CANS`) and the cap its width as a share of the box's
- *   width (`CAPS`, the core the engine counts). The width is never sent: whatever is sent as one is dropped, so a stroke cannot be wider
- *   than its cap. Points are shares of the post body's box, to a ten-thousandth; `aspect` is the drawer's box width over its height, to
- *   three significant figures, as Whoops!'s is.
- * - **A draw** is `{ strokes }`, at most 120 strokes of at most 300 points, 3,000 points in all, which fits 64 KiB as Postgres writes it;
- *   or `{ stencil, can, spot }`, a stencil placed in one cell of a 3 x 3 grid over the body. A stencil is expanded here, so the server,
- *   the chatter and the screen place it the same, and is kept with its key and its strokes. A stencil is drawn at aspect 1 and so stretches
- *   with the post body's shape, a third of its width by a third of its height, as any stroke does when the body reflows.
- * - **A wash** is `{ strokes }` of `{ aspect, points }` with the same bounds, at the sponge's width: 0.06 of the box's width.
+ * - **A drawn stroke** is `{ can, cap, points }`: the can names its color (`CANS`) and the cap its width in ems (`CAPS_EM`, the core the engine
+ *   counts: the size of the post's text, so a tag is the same width beside the words on every screen). The width is never sent: whatever is sent as
+ *   one is dropped. Its points are in its group's units, from the group's center.
+ * - **A draw** is `{ box: { w, h }, groups }`: `box` is the drawer's box in ems (w from 5 to 200, h from 1 to 4,000), and each group is
+ *   `{ at, anchor, unit, em?, strokes }`. `at` is the group's center in shares of that box. `anchor` is what the group was drawn over (an
+ *   `Attachment`, docs/plans/2026-11-27-graffiti-everywhere-design.md, section 4), checked for shape only. `unit` is `em` (text and box attachments)
+ *   or `image` (image attachments: points are in image widths, and `em` says how many ems one width was, from 0.5 to 400). At most 120 strokes of
+ *   at most 300 points, 3,000 points in all, and 120 groups, within 64 KiB as Postgres writes it. A stencil is `{ stencil, can, spot }`, expanded
+ *   here into one box-attached group at its spot's center, 12 ems across, so the server, the chatter and the screen place it the same; it is kept
+ *   with its key, its can and its spot beside its box and groups.
+ * - **What the engine gets** is the strokes framed in the drawer's box: each point is `at + point * scale` (1 / box.w across and 1 / box.h down for
+ *   ems; em / box.w and em / box.h for image widths), held to 0 to 1 for the count only, and each width is `CAPS_EM[cap] / box.w`. The payload keeps the
+ *   points as drawn.
+ * - **A wash** is `{ cuts: { draw, group, presses }[] }`: each cut names a live draw and one of its groups, and the presses are in that group's units,
+ *   at most 3,000 in all. It is framed as a draw's points are and names the draw's radius (`SPONGE_EM / 2 / box.w`) and aspect.
+ * - **A stored draw or wash of the old shape** (`{ strokes }`, `{ strokes, cells }`) is read where a payload is read (the painter, `describeDraw`) and is
+ *   never accepted again. A draw of that shape is washed as one group in its own shares of its box.
  * - **A Mod Bot** names `{ stencil, can, spot }` and never freehands (The System acts inside bounded choices). Its options are a
  *   configuration `validateConfig` keeps, and `staffConfigs` are valid draws of the same shape, one for each stencil, which a Mod Bot's
  *   first draw is chosen from.
  */
 import { landsOn, ok, refuse, type CardRules, type Verdict } from '../../../engine/rules/cards.ts';
 import type { SurfaceStroke } from '../../../engine/rules/surface.ts';
+import type { Attachment } from '../../../engine/rules/anchor.ts';
 import { STENCILS, STENCIL_KEYS, type StencilKey } from './graffiti/stencils.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
 import { capital, field, who } from './seen-words.ts';
-import { GRID } from '../../../engine/rules/surface.ts';
 
 export const CANS = { black: '#111111', white: '#fafafa', red: '#e8202a', orange: '#ff7a1a', yellow: '#ffd200',
   lime: '#7ed321', green: '#16a34a', teal: '#14b8a6', cyan: '#22c7f0', blue: '#2457e6', purple: '#7c3aed',
   pink: '#ff3d9a', brown: '#8b5a2b', silver: '#b8bcc4' } as const;
+/** The caps' widths in ems: today's desktop sizes at the board's 15px. */
+export const CAPS_EM = { skinny: 0.4, stock: 1.07, fat: 2.67 } as const;
+/** The old caps, as a share of the box's width: kept for reading stored draws. */
 export const CAPS = { skinny: 0.006, stock: 0.016, fat: 0.04 } as const;
 export type Can = keyof typeof CANS;
-export type Cap = keyof typeof CAPS;
-/** The sponge's width, as a share of the box's width. */
+export type Cap = keyof typeof CAPS_EM;
+/** The sponge's width in ems: today's 60px at 15px. */
+export const SPONGE_EM = 4;
+/** The old sponge's width, as a share of the box's width: kept for reading stored washes. */
 export const SPONGE = 0.06;
-export const BOUNDS = { strokes: 120, points: 300, totalPoints: 3000, mostLive: 48 } as const;
-const ASPECT = { least: 0.001, most: 1000 } as const;
+/** How wide a stencil is drawn, in ems. */
+export const STENCIL_EM = 12;
+/** The paint's depth in tenths of a coat: what one stroke lays, and the most a cell holds. */
+export const COATS = { line: 20, most: 40 } as const;
+export const BOUNDS = { strokes: 120, points: 300, totalPoints: 3000, groups: 120, presses: 3000, mostLive: 48 } as const;
+/** The box a stencil is counted in, since a Mod Bot has no screen: 988 by 700 px at 15px. */
+const STENCIL_BOX = { w: 65.9, h: 46.7 } as const;
+const BOX = { w: [5, 200], h: [1, 4000] } as const;
+const EM_UNIT = { least: 0.5, most: 400 } as const;
+/** How far a point may lie from its group's center: in ems, and in image widths. */
+const REACH = { em: 200, image: 10 } as const;
+/** A payload's most, as Postgres writes it. */
+const PAYLOAD_BYTES = 65_536;
 
-const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
-const threeFigures = (n: number) => Number(n.toPrecision(3));
+const round = (digits: number) => (n: number) => Math.round(n * 10 ** digits) / 10 ** digits;
+const tenThousandth = round(4);
 const isCan = (v: unknown): v is Can => typeof v === 'string' && Object.hasOwn(CANS, v);
-const isCap = (v: unknown): v is Cap => typeof v === 'string' && Object.hasOwn(CAPS, v);
+const isCap = (v: unknown): v is Cap => typeof v === 'string' && Object.hasOwn(CAPS_EM, v);
 const isStencil = (v: unknown): v is StencilKey => typeof v === 'string' && Object.hasOwn(STENCILS, v);
 const isSpot = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 8;
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const within = (v: unknown, least: number, most: number): v is number => finite(v) && v >= least && v <= most;
+const whole = (v: unknown, most: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= most;
+const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** What a stencil is, to sit in a sentence (graffiti/words.ts says the same to a player; it imports this file, so the staff's words are kept here). */
 const STENCIL_NOUNS: Record<StencilKey, string> = { mustache: 'a mustache', horns: 'a pair of horns', crown: 'a crown', kilroy: 'Kilroy was here', x: 'a big X', smiley: 'a smiley face' };
 const CAN_WORDS = `the cans are ${Object.keys(CANS).join(', ')}`;
 
 type Points = [number, number][];
-type Kept = { aspect: number; points: Points };
-type Drawn = Kept & { can: Can; cap: Cap };
+type Unit = 'em' | 'image';
+type Stroke = { can: Can; cap: Cap; points: Points };
+type Group = { at: [number, number]; anchor: Attachment; unit: Unit; em?: number; strokes: Stroke[] };
+type Box = { w: number; h: number };
+type Drawing = { box: Box; groups: Group[] };
 
-/** The bounds every stroke list holds, and the aspect and points each stroke keeps; `each` checks and keeps what is the stroke's alone. */
-function strokesOf<T extends Kept>(input: unknown, each: (s: Record<string, unknown>, kept: Kept) => Verdict<T>): Verdict<T[]> {
-  const list = typeof input === 'object' && input !== null ? (input as { strokes?: unknown }).strokes : undefined;
-  if (!Array.isArray(list) || list.length < 1) return refuse('send the strokes, a list of at least one');
-  if (list.length > BOUNDS.strokes) return refuse(`at most ${BOUNDS.strokes} strokes`);
-  const out: T[] = [];
-  let total = 0;
-  for (const [i, s] of list.entries()) {
-    const at = `stroke ${i + 1}`;
-    if (typeof s !== 'object' || s === null || Array.isArray(s)) return refuse(`${at}: a stroke is an object with a can, a cap, an aspect and points`);
-    const { aspect, points } = s as { aspect?: unknown; points?: unknown };
-    if (typeof aspect !== 'number' || !(aspect >= ASPECT.least && aspect <= ASPECT.most)) return refuse(`${at}: the aspect is the drawer's box width over its height, from ${ASPECT.least} to ${ASPECT.most}`);
-    if (!Array.isArray(points) || points.length < 1 || points.length > BOUNDS.points) return refuse(`${at}: a stroke has 1 to ${BOUNDS.points} points`);
-    total += points.length;
-    if (total > BOUNDS.totalPoints) return refuse(`${at}: at most ${BOUNDS.totalPoints} points in all`);
-    for (const [j, p] of points.entries()) {
-      if (!Array.isArray(p) || p.length !== 2 || !p.every((n) => typeof n === 'number' && Number.isFinite(n))) return refuse(`${at}, point ${j + 1}: a point is two numbers, across then down`);
-      if (!(p[0] >= 0 && p[0] <= 1 && p[1] >= 0 && p[1] <= 1)) return refuse(`${at}, point ${j + 1}: a point is across and down from 0 to 1, in shares of the box`);
-    }
-    const kept = { aspect: threeFigures(aspect), points: (points as [number, number][]).map(([x, y]): [number, number] => [tenThousandth(x), tenThousandth(y)]) };
-    const one = each(s as Record<string, unknown>, kept);
-    if (!one.ok) return refuse(`${at}: ${one.why}`);
-    out.push(one.value);
+/** Across and down, in shares of the drawer's box, of one unit of a group. */
+const scaleOf = (box: Box, g: { unit: Unit; em?: number }): [number, number] => {
+  const em = g.unit === 'image' ? g.em ?? 1 : 1;
+  return [em / box.w, em / box.h];
+};
+const held = (n: number) => Math.min(1, Math.max(0, n));
+/** A group's points in shares of the drawer's box, held to 0 to 1: for the engine's count and a wash's takes, never the payload. */
+const framed = (box: Box, g: { at: readonly [number, number]; unit: Unit; em?: number }, points: readonly (readonly [number, number])[]): [number, number][] => {
+  const [sx, sy] = scaleOf(box, g);
+  return points.map(([x, y]) => [held(g.at[0] + x * sx), held(g.at[1] + y * sy)]);
+};
+const engine = (d: Drawing): SurfaceStroke[] =>
+  d.groups.flatMap((g) => g.strokes.map((s) => ({ width: CAPS_EM[s.cap] / d.box.w, aspect: d.box.w / d.box.h, points: framed(d.box, g, s.points) })));
+
+/** The bytes a payload takes as Postgres writes it (a space after each comma and colon). */
+const bytesOf = (payload: unknown) => Buffer.byteLength(JSON.stringify(payload).replace(/([,:])/g, '$1 '));
+
+/** An attachment's shape (the screens find it; the server checks only this), kept with its known keys. */
+function attachmentOf(a: unknown, unit: Unit): Verdict<Attachment> {
+  if (!record(a)) return refuse('the anchor is an attachment: a text, an image or a box');
+  if (a.kind === 'box') return unit === 'em' ? ok({ kind: 'box' }) : refuse("a text or box attachment needs unit 'em'");
+  if (a.kind === 'text') {
+    if (unit !== 'em') return refuse("a text or box attachment needs unit 'em'");
+    if (typeof a.version !== 'string' || a.version.length < 1 || a.version.length > 64) return refuse('a text attachment names its version, a string of 1 to 64 characters');
+    if (!whole(a.at, 1_000_000) || !whole(a.len, 1_000_000)) return refuse('a text attachment has at and len, whole numbers of characters');
+    if (!within(a.dx, -5000, 5000) || !within(a.dy, -5000, 5000)) return refuse('a text attachment has dx and dy, in ems, from -5000 to 5000');
+    return ok({ kind: 'text', version: a.version, at: a.at, len: a.len, dx: round(2)(a.dx), dy: round(2)(a.dy) });
+  }
+  if (a.kind === 'image') {
+    if (unit !== 'image') return refuse("an image attachment needs unit 'image'");
+    if (typeof a.version !== 'string' || a.version.length < 1 || a.version.length > 64) return refuse('an image attachment names its version, a string of 1 to 64 characters');
+    if (!whole(a.n, 10_000) || !whole(a.nth, 10_000)) return refuse('an image attachment has n and nth, whole numbers');
+    if (typeof a.src !== 'string' || a.src.length < 1 || a.src.length > 2048) return refuse('an image attachment names its src, a string of 1 to 2048 characters');
+    if (!within(a.x, -100, 100) || !within(a.y, -100, 100)) return refuse('an image attachment has x and y, in image shares, from -100 to 100');
+    return ok({ kind: 'image', version: a.version, n: a.n, src: a.src, nth: a.nth, x: tenThousandth(a.x), y: tenThousandth(a.y) });
+  }
+  return refuse('the anchor is an attachment: a text, an image or a box');
+}
+
+/** Points in a group's units, checked and kept: ems to a hundredth, image widths to a ten-thousandth. */
+function pointsOf(at: string, list: unknown, unit: Unit): Verdict<Points> {
+  const most = REACH[unit];
+  const keep = unit === 'em' ? round(2) : tenThousandth;
+  const out: Points = [];
+  for (const [j, p] of (list as unknown[]).entries()) {
+    if (!Array.isArray(p) || p.length !== 2 || !p.every(finite)) return refuse(`${at}, point ${j + 1}: a point is two numbers, across then down`);
+    if (!(within(p[0], -most, most) && within(p[1], -most, most))) return refuse(`${at}, point ${j + 1}: a point is across and down from -${most} to ${most}, in ${unit === 'em' ? 'ems' : 'image widths'} from the group's center`);
+    out.push([keep(p[0] as number), keep(p[1] as number)]);
   }
   return ok(out);
 }
 
-/** A stencil as strokes: scaled to a third of the box's width, centered in its spot, at aspect 1. */
-function place(key: StencilKey, can: Can, spot: number): Drawn[] {
-  const [col, row] = [spot % 3, Math.floor(spot / 3)];
-  return STENCILS[key].strokes.map((s) => ({
-    can, cap: s.cap, aspect: 1,
-    points: s.points.map(([x, y]): [number, number] => [tenThousandth((col + x) / 3), tenThousandth((row + y) / 3)]),
-  }));
+/** A draw's box and groups, checked and kept. The bounds hold across all the groups. */
+function drawingOf(input: Record<string, unknown>): Verdict<Drawing> {
+  const b = input.box;
+  if (!record(b)) return refuse('send the box, { w, h }, the drawer\'s box in ems');
+  if (!within(b.w, BOX.w[0], BOX.w[1])) return refuse(`the box's w is from ${BOX.w[0]} to ${BOX.w[1]} ems`);
+  if (!within(b.h, BOX.h[0], BOX.h[1])) return refuse(`the box's h is from ${BOX.h[0]} to ${BOX.h[1]} ems`);
+  const list = input.groups;
+  if (!Array.isArray(list) || list.length < 1) return refuse('send the groups, a list of at least one');
+  if (list.length > BOUNDS.groups) return refuse(`at most ${BOUNDS.groups} groups`);
+  const groups: Group[] = [];
+  let strokes = 0, total = 0;
+  for (const [g, one] of list.entries()) {
+    const gat = `group ${g + 1}`;
+    if (!record(one)) return refuse(`${gat}: a group is an object with at, anchor, unit and strokes`);
+    const { at, unit, em } = one;
+    if (!Array.isArray(at) || at.length !== 2 || !within(at[0], 0, 1) || !within(at[1], 0, 1)) return refuse(`${gat}: at is the group's center, across and down from 0 to 1, in shares of the box`);
+    if (unit !== 'em' && unit !== 'image') return refuse(`${gat}: the unit is em or image`);
+    const anchor = attachmentOf(one.anchor, unit);
+    if (!anchor.ok) return refuse(`${gat}: ${anchor.why}`);
+    if (unit === 'image' && !within(em, EM_UNIT.least, EM_UNIT.most)) return refuse(`${gat}: em is how many ems one image width was, from ${EM_UNIT.least} to ${EM_UNIT.most}`);
+    const list2 = one.strokes;
+    if (!Array.isArray(list2) || list2.length < 1) return refuse(`${gat}: send the strokes, a list of at least one`);
+    strokes += list2.length;
+    if (strokes > BOUNDS.strokes) return refuse(`at most ${BOUNDS.strokes} strokes`);
+    const kept: Stroke[] = [];
+    for (const [i, s] of list2.entries()) {
+      const sat = `${gat}, stroke ${i + 1}`;
+      if (!record(s)) return refuse(`${sat}: a stroke is an object with a can, a cap and points`);
+      if (!isCan(s.can)) return refuse(`${sat}: the can is one of the cans: ${CAN_WORDS}`);
+      if (!isCap(s.cap)) return refuse(`${sat}: the cap is ${Object.keys(CAPS_EM).join(', ')}`);
+      if (!Array.isArray(s.points) || s.points.length < 1 || s.points.length > BOUNDS.points) return refuse(`${sat}: a stroke has 1 to ${BOUNDS.points} points`);
+      total += s.points.length;
+      if (total > BOUNDS.totalPoints) return refuse(`${sat}: at most ${BOUNDS.totalPoints} points in all`);
+      const points = pointsOf(sat, s.points, unit);
+      if (!points.ok) return points;
+      kept.push({ can: s.can, cap: s.cap, points: points.value });
+    }
+    groups.push({ at: [tenThousandth(at[0] as number), tenThousandth(at[1] as number)], anchor: anchor.value, unit, ...(unit === 'image' ? { em: round(2)(em as number) } : {}), strokes: kept });
+  }
+  return ok({ box: { w: round(2)(b.w as number), h: round(2)(b.h as number) }, groups });
 }
 
-const engine = (s: Drawn): SurfaceStroke => ({ width: CAPS[s.cap], aspect: s.aspect, points: s.points });
+/** A stencil as one group: a box attachment at the center of its spot's cell, the stencil `STENCIL_EM` across. */
+function place(key: StencilKey, can: Can, spot: number): Drawing {
+  const [col, row] = [spot % 3, Math.floor(spot / 3)];
+  const em = round(2);
+  return {
+    box: { ...STENCIL_BOX },
+    groups: [{
+      at: [tenThousandth((col + 0.5) / 3), tenThousandth((row + 0.5) / 3)], anchor: { kind: 'box' }, unit: 'em',
+      strokes: STENCILS[key].strokes.map((s) => ({ can, cap: s.cap, points: s.points.map(([x, y]): [number, number] => [em((x - 0.5) * STENCIL_EM), em((y - 0.5) * STENCIL_EM)]) })),
+    }],
+  };
+}
 
 /** A stencil's named parts, checked: its key, its can and its spot. */
 function named(input: unknown): Verdict<{ stencil: StencilKey; can: Can; spot: number }> {
@@ -97,27 +197,77 @@ function named(input: unknown): Verdict<{ stencil: StencilKey; can: Can; spot: n
 }
 
 function validateDraw(input: unknown): Verdict<{ readonly strokes: readonly SurfaceStroke[]; readonly payload: Record<string, unknown> }> {
-  const body = typeof input === 'object' && input !== null ? (input as { stencil?: unknown; strokes?: unknown }) : {};
+  const body = record(input) ? input : {};
   if (body.stencil !== undefined) {
-    if (body.strokes !== undefined) return refuse('a draw is strokes or a stencil, not both');
+    if (body.groups !== undefined || body.box !== undefined || body.strokes !== undefined) return refuse('a draw is groups or a stencil, not both');
     const n = named(input);
     if (!n.ok) return n;
-    const strokes = place(n.value.stencil, n.value.can, n.value.spot);
-    return ok({ strokes: strokes.map(engine), payload: { stencil: n.value.stencil, can: n.value.can, spot: n.value.spot, strokes } });
+    const drawing = place(n.value.stencil, n.value.can, n.value.spot);
+    return ok({ strokes: engine(drawing), payload: { stencil: n.value.stencil, can: n.value.can, spot: n.value.spot, ...drawing } });
   }
-  const drawn = strokesOf<Drawn>(input, (s, kept) => {
-    if (!isCan(s.can)) return refuse(`the can is one of the cans: ${CAN_WORDS}`);
-    if (!isCap(s.cap)) return refuse(`the cap is ${Object.keys(CAPS).join(', ')}`);
-    return ok({ can: s.can, cap: s.cap, ...kept });
-  });
-  if (!drawn.ok) return drawn;
-  return ok({ strokes: drawn.value.map(engine), payload: { strokes: drawn.value } });
+  if (body.strokes !== undefined || body.groups === undefined) return refuse('send the box and the groups: a draw of strokes alone is the old shape, which is no longer drawn');
+  const drawing = drawingOf(body);
+  if (!drawing.ok) return drawing;
+  const payload = { ...drawing.value };
+  if (bytesOf(payload) > PAYLOAD_BYTES) return refuse('a draw is at most 64 KiB as it is stored');
+  return ok({ strokes: engine(drawing.value), payload });
 }
 
-function validateWash(input: unknown): Verdict<{ readonly strokes: readonly SurfaceStroke[]; readonly payload: Record<string, unknown> }> {
-  const washed = strokesOf<Kept>(input, (_s, kept) => ok(kept));
-  if (!washed.ok) return washed;
-  return ok({ strokes: washed.value.map((s) => ({ width: SPONGE, ...s })), payload: { strokes: washed.value } });
+/** What a live draw gives a wash to cut: its box and its groups' frames, in the draw's own payload, whatever its shape. */
+type Frame = { readonly at: readonly [number, number]; readonly unit: Unit; readonly em?: number };
+function frameOf(draw: unknown): { box: Box; radius: number; aspect: number; groups: readonly Frame[]; old: boolean } | null {
+  if (!record(draw)) return null;
+  if (Array.isArray(draw.groups) && record(draw.box) && finite(draw.box.w) && finite(draw.box.h) && draw.box.w > 0 && draw.box.h > 0) {
+    const box = { w: draw.box.w, h: draw.box.h };
+    const groups = (draw.groups as unknown[]).map((g): Frame => {
+      const r = record(g) ? g : {};
+      const at = Array.isArray(r.at) ? r.at : [0.5, 0.5];
+      return { at: [Number(at[0]), Number(at[1])], unit: r.unit === 'image' ? 'image' : 'em', ...(finite(r.em) ? { em: r.em } : {}) };
+    });
+    return { box, radius: SPONGE_EM / 2 / box.w, aspect: box.w / box.h, groups, old: false };
+  }
+  // A draw of the old shape is one group, in its own shares of its box.
+  if (Array.isArray(draw.strokes)) {
+    const first = record(draw.strokes[0]) ? draw.strokes[0].aspect : undefined;
+    const aspect = finite(first) && first > 0 ? first : 1;
+    return { box: { w: 1, h: 1 }, radius: SPONGE / 2, aspect, groups: [{ at: [0, 0], unit: 'em' }], old: true };
+  }
+  return null;
+}
+
+function validateWash(input: unknown, draws: ReadonlyMap<string, unknown>): Verdict<{ readonly cuts: readonly { readonly draw: string; readonly presses: readonly (readonly [number, number])[]; readonly radius: number; readonly aspect: number }[]; readonly payload: Record<string, unknown> }> {
+  const list = record(input) ? input.cuts : undefined;
+  if (!Array.isArray(list) || list.length < 1) return refuse('send the cuts, a list of at least one');
+  const cuts: { draw: string; presses: [number, number][]; radius: number; aspect: number }[] = [];
+  const kept: { draw: string; group: number; presses: Points }[] = [];
+  let total = 0;
+  for (const [i, c] of list.entries()) {
+    const at = `cut ${i + 1}`;
+    if (!record(c) || typeof c.draw !== 'string') return refuse(`${at}: a cut is an object with a draw, a group and presses`);
+    const frame = draws.has(c.draw) ? frameOf(draws.get(c.draw)) : null;
+    if (frame === null) return refuse(`${at}: draw ${c.draw} is not one of the draws given`);
+    if (!whole(c.group, frame.groups.length - 1) || frame.groups[c.group as number] === undefined) return refuse(`${at}: draw ${c.draw} has no group ${String(c.group)}`);
+    const group = c.group as number, g = frame.groups[group]!;
+    if (!Array.isArray(c.presses) || c.presses.length < 1) return refuse(`${at}: a cut has at least one press`);
+    total += c.presses.length;
+    if (total > BOUNDS.presses) return refuse(`${at}: at most ${BOUNDS.presses} presses in all`);
+    // A draw of the old shape is cut in its own shares, 0 to 1.
+    const presses = frame.old ? shares(at, c.presses) : pointsOf(at, c.presses, g.unit);
+    if (!presses.ok) return presses;
+    kept.push({ draw: c.draw, group, presses: presses.value });
+    cuts.push({ draw: c.draw, presses: framed(frame.box, g, presses.value), radius: frame.radius, aspect: frame.aspect });
+  }
+  return ok({ cuts, payload: { cuts: kept } });
+}
+
+/** Presses on a draw of the old shape: shares of its box, 0 to 1, to a ten-thousandth. */
+function shares(at: string, list: unknown[]): Verdict<Points> {
+  const out: Points = [];
+  for (const [j, p] of list.entries()) {
+    if (!Array.isArray(p) || p.length !== 2 || !within(p[0], 0, 1) || !within(p[1], 0, 1)) return refuse(`${at}, press ${j + 1}: a press on a draw of the old shape is across and down from 0 to 1, in shares of the box`);
+    out.push([tenThousandth(p[0] as number), tenThousandth(p[1] as number)]);
+  }
+  return ok(out);
 }
 
 /** What a Mod Bot names: a stencil, a can and a spot. */
@@ -132,7 +282,7 @@ export const graffiti: CardRules<GraffitiConfig> = {
   rarity: 'rare',
   stack: 1,
   screenReads: [{ key: 'graffiti.limit', whole: true, min: 1, max: 100 }],
-  surface: { limitKey: 'graffiti.limit', mostLive: BOUNDS.mostLive, validateDraw, validateWash },
+  surface: { limitKey: 'graffiti.limit', mostLive: BOUNDS.mostLive, coats: COATS, validateDraw, validateWash },
   seen: (p) => {
     const stencil = field(p.config, 'stencil'), can = field(p.config, 'can');
     const mark = typeof stencil === 'string' && typeof can === 'string' ? `${STENCIL_NOUNS[stencil as StencilKey] ?? 'a drawing'} in ${can} spray paint` : null;

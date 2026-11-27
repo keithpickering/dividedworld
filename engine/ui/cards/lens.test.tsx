@@ -2651,7 +2651,7 @@ describe('a surface play\'s tab', () => {
   const stroke = (y: number, width: number) => ({ width, aspect: 1, points: [[0, y], [1, y]] as [number, number][] });
   const check = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
     ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes, colors: (input as { colors?: unknown }).colors } }) : refuse('strokes'));
-  const slab = { ...testInstance.cards[0]!, key: 'slab', name: 'Slab', stack: 1, reaches: ['post' as const], surface: { limitKey: 'slab.limit', mostLive: 48, validateDraw: check, validateWash: check } } as unknown as CardRules;
+  const slab = { ...testInstance.cards[0]!, key: 'slab', name: 'Slab', stack: 1, reaches: ['post' as const], surface: { limitKey: 'slab.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: check, validateWash: check } } as unknown as CardRules;
   const surfaced = { ...testInstance, cards: [slab], settings: { ...testInstance.settings, cardSettings: { 'slab.limit': 40 } } };
   const slabUi = (extra: Partial<CardUi> = {}) => [cardUi('slab', { describeDraw: (p) => (typeof p.colors === 'string' ? p.colors : ''), logDraw: { verb: 'tagged', noun: 'tag', nouns: 'tags', surface: 'the wall' }, ...extra })];
 
@@ -2709,12 +2709,12 @@ describe('a surface play\'s tab', () => {
   test('says how many older draws are no longer live, in the card\'s words', async () => {
     const box = await openSlab(await wall(2));
     await waitFor(() => expect(draws(box)).toHaveLength(3));
-    expect(within(box).getByText('and 2 older tags, washed or painted over')).toBeInTheDocument();
+    expect(within(box).getByText('and 2 older tags, washed off')).toBeInTheDocument();
   });
   test('says one older draw in the singular, and nothing where none left the list', async () => {
     const one = await openSlab(await wall(1));
     await waitFor(() => expect(draws(one)).toHaveLength(3));
-    expect(within(one).getByText('and 1 older tag, washed or painted over')).toBeInTheDocument();
+    expect(within(one).getByText('and 1 older tag, washed off')).toBeInTheDocument();
   });
   test('adds no older line where every draw is live', async () => {
     const box = await openSlab(await wall(0));
@@ -2725,7 +2725,7 @@ describe('a surface play\'s tab', () => {
     const box = await openSlab(await wall(2), [cardUi('slab')]);
     await waitFor(() => expect(draws(box)).toHaveLength(3));
     expect(draws(box).map(said).map((t) => t.replace(/^(\w+) · .+? · /u, '$1 · '))).toEqual(['Spritey · 4% of the surface', 'Gloomba · 6% of the surface', 'Spritey · washed']);
-    expect(within(box).getByText('and 2 older drawings, washed or painted over')).toBeInTheDocument();
+    expect(within(box).getByText('and 2 older drawings, washed off')).toBeInTheDocument();
   });
   test('a tab of a card with no surface has no such rows', async () => {
     width(false);

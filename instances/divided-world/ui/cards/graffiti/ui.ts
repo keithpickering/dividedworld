@@ -36,5 +36,5 @@ export const ui: CardUi = {
   status: 'A wall anyone can tag',
   hint: 'Press Draw to tag this wall. Scrub it away on your screen any time.',
   describe: (settings: Settings) =>
-    `A Pepperoni card, ${graffiti.rarity}. It turns a post into a wall. Any character can tag it with spray cans, drawing freehand or placing a stencil, and the wall holds up to ${settings.cardSettings['graffiti.limit'] ?? 40}% of the post. A reader can scrub the paint off on their own screen, which lasts until they leave the page. The post's author can wash it off for everyone, and anyone can tag it again. A Whoops! splat on the same post always covers the wall. It costs nothing more to play.`,
+    `A Pepperoni card, ${graffiti.rarity}. It turns a post into a wall. Any character can tag it with spray cans, drawing freehand or placing a stencil, and the wall holds up to ${settings.cardSettings['graffiti.limit'] ?? 40}% of the post, counting each tag's own paint, even where it covers another tag. A reader can scrub the paint off on their own screen, which lasts until they leave the page. The post's author can wash it off for everyone, a coat at a pass, and anyone can tag it again. A Whoops! splat on the same post always covers the wall. It costs nothing more to play.`,
 };
