@@ -95,6 +95,11 @@ export default manifest;
  * 19px, and a tab's place is held from the first tab's left edge, so it carries the first tab's width. The shift is CI's measure (8.5px; 7.8px
  * here, and it did not go red here). A tab held from the previous tab's right edge would carry no shift, but an `originEdge` acts on y only
  * today: that is a follow-up, not this board's.
+ *
+ * On the board the WHOOPS! tab is found by its words; on the build it is the tab button itself (`buildRole: 'tab'`), since its label is a span
+ * trimmed to its caps inside it (#1248). The button's skewed box starts 18.9px left of where its words did (its 1px border, 14px padding and
+ * the skew's overhang), so the headline and hold's `x` shifts are 9.9 and 7.7 where they were -9 and -11.2; both tabs are held the same way, so
+ * STICK AROUND's shift is unchanged.
  */
 const PHONE = '2026-11-05-backfill/32-lens-log-phone';
 
@@ -114,10 +119,10 @@ export const phone: BoardManifest = {
   size: { width: 390, height: 844 },
   build: { story: 'boards-01-lens--lens-whoops-phone' },
   landmarks: [
-    { id: 'tab', role: 'text', name: 'WHOOPS!', box: 'none', type: false },
-    sheet('tab-stick-around', 'text', 'STICK AROUND', { x: 8 + TAB_ICON_PHONE_SHIFT }),
-    sheet('headline', 'text', "3 layers · top: Gloomba's yellow, 41% washed", { x: -9, y: -8.5 }, { buildName: '33% washed for you' }),
-    sheet('hold', 'text', 'HOLD TO SCRUB', { x: -11.2, y: -25 }, { buildName: 'Hold to scrub' }),
+    { id: 'tab', role: 'text', name: 'WHOOPS!', buildRole: 'tab', box: 'none', type: false },
+    sheet('tab-stick-around', 'text', 'STICK AROUND', { x: 8 + TAB_ICON_PHONE_SHIFT }, { buildRole: 'tab' }),
+    sheet('headline', 'text', "3 layers · top: Gloomba's yellow, 41% washed", { x: 9.9, y: -8.5 }, { buildName: '33% washed for you' }),
+    sheet('hold', 'text', 'HOLD TO SCRUB', { x: 7.7, y: -25 }, { buildName: 'Hold to scrub' }),
     sheet('fold', 'text', '⌄ 3 plays · Gloomba, Pipewrench, Mrs. Hooligan', {}, { box: 'none', buildName: '3 plays · Gloomba, Pipewrench, Mrs. Hooligan' }),
   ],
   also: [
