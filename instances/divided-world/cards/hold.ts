@@ -1,6 +1,6 @@
 /**
  * The author's hold: a card may refuse its post author's saves for a number of hours after a play lands
- * (`CardRules.stateHeldUntil`; docs/plans/2026-11-16-autocorrect-hold-design.md, and Hot Box's in
+ * (`CardRules.stateHeldUntil`; Autocorrect's hold is docs/plans/2026-11-16-autocorrect-hold-design.md, and Hot Box's is
  * docs/plans/2026-11-27-lasting-gags-design.md section 2.2). The server's rule and the screens' preview read the same end from
  * the play's public landing time and an economy setting, so the hold proves nothing private.
  */
