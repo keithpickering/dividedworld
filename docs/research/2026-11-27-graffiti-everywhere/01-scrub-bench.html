@@ -1,8 +1,8 @@
 <!--
   Record, written 2026-11-27. The Graffiti scrub bench: the design session's interactive prototype for how tough a wall's
   paint is to wash (the design that follows docs/plans/2026-11-11-graffiti-design.md and borrows the per-pass wash of
-  docs/plans/2026-11-12-whoops-ink-field-design.md). Its defaults are the session's recommendation until the owner
-  chooses; its other settings are the alternatives. A standalone page: open it in a browser. It is a reference for how
+  docs/plans/2026-11-12-whoops-ink-field-design.md). Its defaults are the owner's choices (2 coats a line, stacking to
+  two lines' worth, the top tag first, see-through when thinned); its other settings are the alternatives. A standalone page: open it in a browser. It is a reference for how
   the wash feels, not code to copy. Strokes are kept in CSS px here; the design keeps them in each group's own units.
 -->
 <!doctype html>
@@ -124,21 +124,21 @@ button.b[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
       <legend>Coats</legend>
       <label>A fresh line <select id="coats">
         <option value="1">1 coat (one pass)</option>
-        <option value="1.5" selected>1.5 coats</option>
-        <option value="2">2 coats</option>
+        <option value="1.5">1.5 coats</option>
+        <option value="2" selected>2 coats (chosen)</option>
         <option value="3">3 coats</option>
       </select></label>
       <label>Own strokes crossing <select id="stack">
         <option value="1">Don't stack</option>
-        <option value="2" selected>Stack to 2 lines' worth</option>
+        <option value="2" selected>Stack to 2 lines' worth (chosen)</option>
         <option value="3">Stack to 3 lines' worth</option>
       </select></label>
       <label>Through tags <select id="layers">
-        <option value="top" selected>Top tag first</option>
+        <option value="top" selected>Top tag first (chosen)</option>
         <option value="all">Every tag at once</option>
       </select></label>
       <label>Thinned paint <select id="thin">
-        <option value="see" selected>Turns see-through</option>
+        <option value="see" selected>Turns see-through (chosen)</option>
         <option value="solid">Solid until gone</option>
       </select></label>
     </fieldset>
