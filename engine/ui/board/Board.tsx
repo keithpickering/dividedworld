@@ -129,19 +129,21 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   /* The rows the board's topic has sent since this document (`row`), by thread: a row the page shows takes the newer one in place. A new document starts over. */
   const [live, setLive] = useState<{ readonly doc: BoardPage; readonly rows: ReadonlyMap<Id, ThreadSummary>; readonly waiting: ReadonlySet<Id> }>(() => ({ doc, rows: new Map(), waiting: new Set() }));
   const fresh = live.doc === doc ? live : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>() };
+  /* The document's characters by id: built when the document changes, not on each row. */
+  const byId = useMemo(() => new Map(doc.characters.map((c) => [c.id, c] as const)), [doc]);
   const state = useMemo<Loaded>(() => {
     const take = (t: ThreadSummary) => fresh.rows.get(t.id) ?? t;
     return {
       board: doc.board, threads: doc.threads.map(take), total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
-      characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins.map((p) => (fresh.rows.has(p.thread.id) ? { ...p, thread: take(p.thread) } : p)), stickies: doc.stickies.map(take), stubs: doc.stubs,
+      characters: byId, pins: doc.pins.map((p) => (fresh.rows.has(p.thread.id) ? { ...p, thread: take(p.thread) } : p)), stickies: doc.stickies.map(take), stubs: doc.stubs,
     };
-  }, [doc, fresh.rows]);
+  }, [doc, byId, fresh.rows]);
   /* A page turn is a navigation to the next page's document: what a spin form held open belonged to the page before. */
   useEffect(() => setSpinOrigin(null), [doc]);
 
   /* Characters named by a live play, beside the document's. */
   const [extra, setExtra] = useState<ReadonlyMap<Id, Character>>(() => new Map());
-  const characters = useMemo(() => (extra.size === 0 ? state.characters : new Map([...state.characters, ...extra])), [state.characters, extra]);
+  const characters = useMemo(() => (extra.size === 0 ? byId : new Map([...byId, ...extra])), [byId, extra]);
   const loaded = useMemo<Loaded>(() => ({ ...state, characters }), [state, characters]);
 
   /* A board card is announced on `reach`, which every signed-in page hears, and not on this board's own topic: this banner keeps the
@@ -165,17 +167,23 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
    * The board's topic sends a thread's row as it is listed, on each post. A thread the page shows (a row, a pin or a sticky) takes it in
    * place and never moves; one the page does not show, or one whose Last post is now later than the row shown before it, would sit
    * elsewhere in a new read, so it waits behind the bar (a pin or a sticky never waits: it is drawn above the list wherever it falls).
-   * A row may come twice or out of order: the one with the later Last post is kept.
+   * A row may come twice or out of order: the one with the later Last post is kept, and a tie keeps the later arrival (a row's Last post only
+   * moves up and one channel delivers in send order, so a row equal in Last post is the same post with newer words, counts or characters).
+   * The subscription lives as long as the board: a document that lands (a Show) is read from refs, so no row is lost in a resubscribe.
    */
   const asked = useRef<Set<Id>>(new Set());
+  const docRef = useRef(doc);
+  const extraRef = useRef(extra);
+  useLayoutEffect(() => { docRef.current = doc; extraRef.current = extra; });
   useEffect(() => {
     asked.current = new Set();
     return api.subscribeBoard(boardId, {
       onRow(row) {
+        const doc = docRef.current;
         setLive((cur) => {
           const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>() };
           const held = base.rows.get(row.id) ?? [...doc.threads, ...doc.stickies, ...doc.pins.map((p) => p.thread)].find((t) => t.id === row.id);
-          if (held && (Date.parse(held.lastAt) > Date.parse(row.lastAt) || (held.lastAt === row.lastAt && held.lastSeq >= row.lastSeq))) return base;
+          if (held && (Date.parse(held.lastAt) > Date.parse(row.lastAt) || (held.lastAt === row.lastAt && held.lastSeq > row.lastSeq))) return base;
           /* A moved thread is no thread of this board: its stub never counts, and a late row for it neither waits nor replaces anything. */
           if (doc.stubs.some((s) => s.thread === row.id)) return base;
           const rows = new Map(base.rows);
@@ -183,7 +191,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
           const slot = doc.threads.findIndex((t) => t.id === row.id);
           const fixed = doc.pins.some((p) => p.thread.id === row.id) || doc.stickies.some((t) => t.id === row.id);
           if (fixed) rows.set(row.id, row);
-          else if (slot < 0) waiting.add(row.id);
+          else if (slot < 0) { if (base.waiting.has(row.id)) return base; waiting.add(row.id); }
           else {
             rows.set(row.id, row);
             /* The row before it, as shown now. The first row of page 2 and after has no row above it to compare with (the earlier pages are other
@@ -194,21 +202,21 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
           return { doc, rows, waiting };
         });
         /* A character the page does not know is read once by id, as a live play's is. */
-        const named = [row.firstCharacter, row.lastCharacter].filter((c): c is Id => c !== null && !asked.current.has(c) && !doc.characters.some((k) => k.id === c));
+        const named = [...new Set([row.firstCharacter, row.lastCharacter])].filter((c): c is Id => c !== null && !asked.current.has(c) && !doc.characters.some((k) => k.id === c) && !extraRef.current.has(c));
         if (named.length === 0) return;
         for (const c of named) asked.current.add(c);
         void api.characters(named).then((who) => { if (who.length) setExtra((m) => new Map([...m, ...who.map((c) => [c.id, c] as const)])); }, () => { for (const c of named) asked.current.delete(c); });
       },
     });
-  }, [api, boardId, doc]);
+  }, [api, boardId]);
   const { retry } = useRouterInternals();
   /*
    * Show reads the shown address again, in place (the router's own re-read: a navigation to the address already shown moves nothing and reads
    * nothing). The old page stays drawn until the new document lands, and that document starts the bar over; focus then lands on the heading,
    * since the button it was on has gone. Page and address are kept, so a reader on page 2 stays on page 2. `refocus` holds the document shown
    * when Show was pressed: only a different document landing after that press takes focus, and only if focus was lost (on the page's body,
-   * as it is when the button goes) and not moved by the reader since, so a read that failed or kept the old document never leaves a claim
-   * on focus for a later, unrelated one. It scrolls nothing: the reader is where they were.
+   * as it is when the button goes) and not moved by the reader since, so a claim never outlives the press it came from: a read that
+   * fails commits a failure page in this board's place (this view and its claim go), and a document that lands is always a new one. It scrolls nothing: the reader is where they were.
    */
   const refocus = useRef<BoardPage | null>(null);
   const show = () => { refocus.current = doc; retry(); };

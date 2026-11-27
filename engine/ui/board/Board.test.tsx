@@ -1349,6 +1349,55 @@ describe('the thread list goes live', () => {
     expect(read.mock.calls.filter(([ids]) => ids.includes(newcomer))).toHaveLength(1);
   });
 
+  /* The rows the board's subscription hears, for a test that sends one itself. */
+  const hearing = (fake: Fake) => {
+    const heard: Array<(r: ThreadSummary) => void> = [];
+    const real = fake.subscribeBoard.bind(fake);
+    const sub = vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { if (l.onRow) heard.push(l.onRow); return real(b, l); });
+    return { heard, sub };
+  };
+
+  test('a row equal in Last post to the one shown but with new words replaces it, and waits for nothing', async () => {
+    const fake = buildWorld();
+    world(fake, { threads: 3 });
+    const { heard } = hearing(fake);
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 003' });
+    const top = (await fake.boardPage('general', 1, []))!.threads.find((t) => t.title === 'Thread 003')!;
+    await act(async () => { for (const hear of heard) hear({ ...top, title: 'Renamed three' }); });
+    expect(screen.getByRole('link', { name: 'Renamed three' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Thread 003' })).toBeNull();
+    expect(bar()).toBeNull();
+  });
+
+  test('the subscription outlives a Show: one subscribe, and a row heard after the new document lands still counts', async () => {
+    const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
+    await screen.findByRole('link', { name: 'Thread 025' });
+    const { heard, sub } = hearing(fake);
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await userEvent.click(await screen.findByRole('button', { name: 'Show' }));
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(sub).not.toHaveBeenCalled();
+    expect(heard).toHaveLength(0);
+    await bump(fake, seeded.ids[23]!, seeded.mine!);
+    await waitFor(() => expect(rowOf('Thread 024')).toHaveTextContent('1 reply'));
+  });
+
+  test('a row whose first and last character are the same unknown id reads it once', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const { heard } = hearing(fake);
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const read = vi.spyOn(fake, 'characters');
+    const newcomer = fake.seed.character(w.me, 'Latecomer', 'face', { at: T0 });
+    const row = (await fake.boardPage('general', 1, []))!.threads[0]!;
+    await act(async () => { for (const hear of heard) hear({ ...row, firstCharacter: newcomer, lastCharacter: newcomer, lastSeq: row.lastSeq + 1, lastAt: new Date(Date.now() + 1000).toISOString() }); });
+    await waitFor(() => expect(within(rowOf('Thread 001')).getAllByText('Latecomer').length).toBeGreaterThan(0));
+    expect(read.mock.calls.filter(([ids]) => ids.includes(newcomer))).toHaveLength(1);
+    expect(read.mock.calls.find(([ids]) => ids.includes(newcomer))![0]).toEqual([newcomer]);
+  });
+
   test('the board\'s subscription ends when the screen goes', async () => {
     const fake = buildWorld();
     const w = world(fake, { threads: 2 });
