@@ -8,6 +8,16 @@
 -- 5. masks_change opens its Turns thread without a `thread` event on a board: the thread's first Act sends the `row`.
 -- 6. thread_row and board_summary are for the trigger alone: no API role can call them.
 -- 7. A signed-in role hears `index`, a visitor does not, and an account's own channel stays its own.
+-- 8. write_roster_entry opens the season's Roster thread without a `thread` event on a board: the thread's first post sends the `row` (section R below).
+--
+-- Task 2, the poke (sections P1 to P7 and R2, below):
+-- P1. grant_aura pokes its account alone; a settlement's wallet rows poke nobody, and a settlement's crowd pay (kind crowd, with `settlement` set) pokes nobody either.
+-- P2. A card_ledger row pokes its account; a statement of many rows pokes each account once.
+-- P3. Every kind in self_kinds() has a fixture Act that pokes its character's owner alone; an appeal_ruling on an infraction and on a move (two hops), and a card_end that ends a lockout's spring (through `locks`), poke too.
+-- P4. A quiet kind, an unresolvable character and an ownerless character poke no one.
+-- P5. ban_lifts and warn_reliefs rows poke the owner of the character they change.
+-- P6. acts_kind_check's kinds equal self_kinds() and quiet_kinds(), with no overlap.
+-- P7. The functions are for the triggers alone.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -315,6 +325,22 @@ begin
   if not exists (select 1 from wallet_events where account = ann and kind = 'settlement') then raise exception 'the settlement wrote no settlement wallet row, so this proves nothing'; end if;
   if exists (select 1 from broadcasts_due where event = 'self') then raise exception 'a settlement queued a self: %', pg_temp.all_selfs(); end if;
 
+  -- A settlement's crowd pay is a wallet row of kind crowd with `settlement` set: it moves every paid wallet in the one transaction, as the settlement's own rows do, and pokes nobody (the HUD reads again on `settled`).
+  declare
+    cb uuid := tests.character(bob, 'Poke Crowd Author', 'alpha', now() - interval '60 days');
+    ct uuid := tests.thread('Poke crowd');
+    cp uuid := tests.post(cb, ct, 'A post the crowd pays for.');
+    w3 timestamptz := w2 + interval '1 day';
+  begin
+    insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values (cp, a, ann, 'up', 1, w2 + interval '1 hour');
+    update settings set value = '2' where key = 'crowdPayEach';
+    delete from broadcasts_due;
+    said := apply_settlement(w2, w3, '[]', '{}', '[]', '[]', jsonb_build_array(jsonb_build_object('player', ann, 'acts', jsonb_build_array(cp))));
+    if not (said ->> 'applied')::boolean then raise exception 'the crowd window did not apply, so this proves nothing: %', said; end if;
+    if not exists (select 1 from wallet_events where account = ann and kind = 'crowd' and settlement is not null) then raise exception 'the settlement wrote no crowd wallet row, so this proves nothing'; end if;
+    if exists (select 1 from broadcasts_due where event = 'self') then raise exception 'a settlement''s crowd pay queued a self: %', pg_temp.all_selfs(); end if;
+  end;
+
   -- A card_ledger row.
   delete from broadcasts_due;
   insert into card_ledger (account, card, kind, price) select bob, key, 'bought', 0 from card_kinds limit 1;
@@ -325,7 +351,7 @@ begin
   insert into card_ledger (account, card, kind, price) select x, k.key, 'bought', 0 from (values (ann), (ann), (ann), (bob)) v(x), (select key from card_kinds limit 1) k;
   if pg_temp.selfs(ann) is distinct from 1 or pg_temp.selfs(bob) is distinct from 1 then raise exception 'a statement of four ledger rows should poke each of two accounts once: %', pg_temp.all_selfs(); end if;
   delete from broadcasts_due;
-  insert into wallet_events (account, kind, change, balance_after) values (ann, 'grant', 1, 1), (ann, 'grant', 1, 2), (bob, 'settlement', 1, 1);
+  insert into wallet_events (account, settlement, kind, change, balance_after) values (ann, null, 'grant', 1, 1), (ann, null, 'grant', 1, 2), (bob, (select max(id) from settlements), 'settlement', 1, 1);
   if pg_temp.selfs(ann) is distinct from 1 or pg_temp.selfs(bob) is distinct from 0 then raise exception 'wallet rows: ann once, bob (a settlement row) not at all: %', pg_temp.all_selfs(); end if;
 end $$;
 
@@ -389,6 +415,23 @@ begin
     if (select count(*) from broadcasts_due where event = 'self') is distinct from 1 then raise exception 'a "%" Act poked someone beside its character''s owner: [%]', k, pg_temp.all_selfs(); end if;
     if exists (select 1 from broadcasts_due where event = 'self' and (payload is distinct from '{}'::jsonb or topic is distinct from 'account:' || ann)) then raise exception 'a "%" self is not an empty poke on the owner''s channel: [%]', k, pg_temp.all_selfs(); end if;
   end loop;
+
+  -- An appeal_ruling reaches the punished character's owner through two hops: the ruling points at the appeal, which points at the infraction (or the move) that names the character.
+  insert into acts (character, kind, thread, payload) values (null, 'infraction', t, pg_temp.infraction_of(mine)) returning id into infraction;
+  insert into acts (character, kind, thread, target_act_id, payload) values (mine, 'appeal', t, infraction, '{"plea": "Please."}') returning id into target;
+  delete from broadcasts_due;
+  insert into acts (character, kind, thread, target_act_id, payload) values (staff, 'appeal_ruling', t, target, jsonb_build_object('appeal_act', target::text, 'verdict', 'overturned', 'points_delta', -3, 'line', 'Gone.'));
+  if pg_temp.selfs(ann) is distinct from 1 or (select count(*) from broadcasts_due where event = 'self') is distinct from 1 then raise exception 'an appeal_ruling on an infraction should poke the infracted character''s owner alone: [%]', pg_temp.all_selfs(); end if;
+  insert into acts (character, kind, thread, payload) values (staff, 'move', t, pg_temp.move_of(mine)) returning id into moved;
+  insert into acts (character, kind, thread, target_act_id, payload) values (mine, 'appeal', t, moved, '{"plea": "Please."}') returning id into target;
+  delete from broadcasts_due;
+  insert into acts (character, kind, thread, target_act_id, payload) values (staff, 'appeal_ruling', t, target, jsonb_build_object('appeal_act', target::text, 'verdict', 'overturned', 'points_delta', 0, 'line', 'Gone.'));
+  if pg_temp.selfs(ann) is distinct from 1 or (select count(*) from broadcasts_due where event = 'self') is distinct from 1 then raise exception 'an appeal_ruling on a move should poke the moved character''s owner alone: [%]', pg_temp.all_selfs(); end if;
+  -- A card_end that ends a lockout's spring reaches the locked character's owner through `locks`, and not the caster's.
+  insert into acts (character, kind, thread, target_act_id, payload) values (theirs, 'spring', t, theirs_post, pg_temp.lockout_of(mine)) returning id into target;
+  delete from broadcasts_due;
+  insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, target, '{"why": "reversed", "by": "admin"}');
+  if pg_temp.selfs(ann) is distinct from 1 or pg_temp.selfs(bob) is distinct from 0 or (select count(*) from broadcasts_due where event = 'self') is distinct from 1 then raise exception 'a card_end of a lockout''s spring should poke the locked character''s owner alone: [%]', pg_temp.all_selfs(); end if;
 
   -- A character of someone else's is poked for its own owner: the same fixture on `theirs` reaches bob alone.
   delete from broadcasts_due;
@@ -468,4 +511,33 @@ begin
       raise exception 'an API role can call %', f;
     end if;
   end loop;
+end $$;
+
+-- R. write_roster_entry opens the season's Roster thread and sends no `thread` event on a board: the thread's first post (a seq Act) fires acts_live_lists, which sends the board's `row` and the index's `board`.
+do $$
+declare
+  boss_before text;
+  sid bigint;
+  base timestamptz := now() + interval '30 days';
+  said jsonb;
+  th uuid;
+  bd uuid;
+  rows jsonb;
+begin
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Poke Boss', 'poke-boss', 'persona', now());
+  update seasons set boss = 'poke-boss', turns_thread = null where ends_at is null;
+  insert into settings (key, value) values ('systemEnabled', 'true') on conflict (key) do update set value = 'true';
+  update settings set value = value || jsonb_build_object('rosterThreadTitle', 'Season {season}: Roster Report') where key = 'copy';
+  select id into sid from seasons where ends_at is null;
+  insert into settlements (starts_at, ends_at, season) values (base - interval '1 day', base, sid);
+  delete from broadcasts_due;
+  said := write_roster_entry(base, '{}', array['A roster body.'], '{}'::jsonb);
+  if not (said ->> 'written')::boolean or (said ->> 'posts')::integer is distinct from 1 then raise exception 'the roster entry did not post, so this proves nothing: %', said; end if;
+  th := (said ->> 'thread')::uuid;
+  select t.board into bd from threads t where t.id = th;
+  if exists (select 1 from broadcasts_due where event = 'thread') then raise exception 'write_roster_entry queued a thread event: %', (select jsonb_agg(topic) from broadcasts_due where event = 'thread'); end if;
+  rows := pg_temp.queued('board:' || bd);
+  if not exists (select 1 from jsonb_array_elements(rows) r where r ->> 'event' = 'row' and r -> 'payload' ->> 'id' = th::text) then
+    raise exception 'the roster thread''s first post should send its row on the board, queued %', rows;
+  end if;
 end $$;

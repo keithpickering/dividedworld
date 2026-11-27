@@ -144,7 +144,7 @@ end $$;
 -- the way an alert goes (write_alert, 0061), through the owner of a character, a private fact the poke reads and never says.
 --
 --   poke_self                 the one place a `self` is queued.
---   wallet_events, card_ledger  a statement that writes rows pokes each account it wrote once, except for rows of kind settlement: a settlement moves every wallet in one transaction and the HUD reads again on `settled` instead.
+--   wallet_events, card_ledger  a statement that writes rows pokes each account it wrote once, except for rows that carry a settlement (its own moves and its crowd pay): a settlement moves every wallet in one transaction and the HUD reads again on `settled` instead.
 --   self_kinds, quiet_kinds   the Act kinds that can change what my_characters shows, and the others. Both are written out in full on purpose: supabase/tests/0453-live-lists-and-self.sql holds them to acts_kind_check's own list, so a kind
 --                             added later is classified or the build fails, and a list that read the constraint would hold nothing.
 --   acts_self                 after a statement that wrote Acts of the kinds in self_kinds(), pokes the owner of each character such an Act changes.
@@ -170,12 +170,12 @@ language sql security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function poke_self(uuid) from public, anon, authenticated, service_role;
 
--- A statement that wrote wallet rows or ledger rows pokes each account once. The rows' own kind decides for the wallet.
+-- A statement that wrote wallet rows or ledger rows pokes each account once. Whether the row carries a settlement decides for the wallet: a settlement's own moves and its crowd pay (kind crowd, `settlement` set) poke nobody.
 create function wallet_events_self() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare one record;
 begin
-  for one in select distinct n.account from new_rows n where n.kind <> 'settlement' loop perform poke_self(one.account); end loop;
+  for one in select distinct n.account from new_rows n where n.settlement is null loop perform poke_self(one.account); end loop;
   return null;
 end $$;
 revoke execute on function wallet_events_self() from public, anon, authenticated, service_role;
@@ -200,8 +200,7 @@ create trigger card_ledger_self after insert on card_ledger referencing new tabl
 --   move_end       the same move's end: the group and the bar go.
 --   spring         a lockout (did lockedOut, `locks` the character).
 --   unmask         class_shown_at: the character's own reveal, shown on every device.
--- Borderline, judged quiet: `card` (a play changes a character only through the rows and Acts beside it, which have their own pokes above, and a pierce or a cut that ends a lift or a lockout writes none: read on
--- the next refresh), `announce` (a loud Turn's words: the Turn's own request is the player's action and the landing is a settlement's), `reveal` (a season's reveal, written in a settlement, changes no class_reveals row),
+-- Borderline, judged quiet: `card` (a card changes another player's character only through the rows and Acts beside it (spring, ban_lifts, warn_reliefs, card_end), all of which poke, and a pierce or a cut cannot end a lift or a lockout: cut_refusal offers only 'use' plays, unban and relief are 'cast', and lockout_ends ignores card_ended), `announce` (a loud Turn's words: the Turn's own request is the player's action and the landing is a settlement's), `reveal` (a season's reveal, written in a settlement, changes no class_reveals row),
 -- `appeal` (the appellant's own action; nothing changes until the ruling), `move_keep` (a keep leaves expires_at and the group alone), `report_verdict` (a verdict punishes only through infractions and bans, which poke),
 -- `take_back`, `donation`, `draw` (the wallet and the hand: wallet_events and card_ledger), `post`/`spin`/`edit`/`tally` (a post count crossing a group's rung is read on the next refresh: a poke for each post would be the whole board's traffic).
 create function self_kinds() returns text[] language sql immutable as $$
@@ -281,3 +280,81 @@ begin
 end $$;
 revoke execute on function warn_reliefs_self() from public, anon, authenticated, service_role;
 create trigger warn_reliefs_self after insert on warn_reliefs referencing new table as new_rows for each statement execute function warn_reliefs_self();
+
+-- write_roster_entry, copied whole from 0440_roster_report.sql (its latest) without its `thread` broadcast to the board: the season's Roster thread opens with the Boss's first post, a seq Act, and the trigger above sends
+-- the one `row` from there. Nothing else changes.
+create or replace function write_roster_entry(window_end timestamptz, newcomers uuid[], bodies text[], record jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  w settlements%rowtype;
+  boss text := current_boss();
+  enabled boolean := coalesce((select s.value = 'true'::jsonb from settings s where s.key = 'systemEnabled'), false);
+  most integer := (select (s.value #>> '{}')::integer from settings s where s.key = 'postMaxLength');
+  texts text[] := array(select btrim(b, E' \t\n\r\f\v') from unnest(coalesce(write_roster_entry.bodies, '{}')) b where btrim(coalesce(b, ''), E' \t\n\r\f\v') <> '');
+  made uuid[] := '{}';
+  skipped text;
+  th uuid;
+  opened boolean;
+  body text;
+  said jsonb;
+  landed jsonb;
+  rec jsonb := coalesce(write_roster_entry.record, '{}'::jsonb);
+begin
+  if jsonb_typeof(rec) is distinct from 'object' then raise exception 'a roster record is an object' using errcode = '22023'; end if;
+  select * into w from settlements s where s.ends_at = write_roster_entry.window_end;
+  if w.id is null then raise exception 'there is no settlement ending at %', write_roster_entry.window_end using errcode = 'P0002'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.roster.' || extract(epoch from write_roster_entry.window_end)::text, 0));
+  if exists (select 1 from roster_entries e where e.window_end = write_roster_entry.window_end) then return jsonb_build_object('written', false); end if;
+
+  if cardinality(texts) > 0 then
+    -- What is known before posting is checked before it: each of these is a state the Boss or the instance is in, and the entry says so. A post past the limit would be refused by the insert's own check, so it is found here.
+    if not enabled then skipped := 'the System is off';
+    elsif boss is null then skipped := 'the season has no Boss';
+    elsif (select o.office from staff_office_now o where o.staff = boss) in ('waiting', 'benched') then skipped := 'the Boss is ' || (select o.office from staff_office_now o where o.staff = boss) || ' and writes nothing';
+    elsif most is not null and exists (select 1 from unnest(texts) b where char_length(b) > most) then skipped := format('a roster post is longer than postMaxLength %s', most);
+    elsif (select s.turns_thread from seasons s where s.id = w.season) is null and coalesce(btrim((select s.value ->> 'rosterThreadTitle' from settings s where s.key = 'copy')), '') = '' then
+      skipped := 'the instance gives no words for copy.rosterThreadTitle';
+    else
+      begin
+        select p.in_thread, p.opened into th, opened from promos_thread(w.season) p;
+        foreach body in array texts loop
+          said := write_staff_act(boss, 'post', th, null, jsonb_build_object('body', body));
+          made := made || (said ->> 'id')::uuid;
+          perform broadcast_later('thread:' || th::text, 'act', said);
+        end loop;
+      exception when sqlstate '55000' or sqlstate 'P0002' then
+        -- Only a refusal of the game's own is a skip (55000: the persona writes nothing, or is locked out of the thread; P0002: there is no staff member, or no words for the title): the block's own writes are rolled back,
+        -- nothing of a half-posted entry stays, and the entry says why. Anything else (a deadlock 40P01, a lock timeout 55P03, a serialization failure 40001, a full disk) is not caught: it reaches the caller, the
+        -- entry is not written, and the window stays due.
+        made := '{}';
+        skipped := left(sqlerrm, 300);
+      end;
+    end if;
+  end if;
+
+  landed := roster_landed(w.ends_at);
+  rec := rec || jsonb_build_object('landedCount', jsonb_array_length(landed), 'landed', coalesce((select jsonb_agg(x.e order by x.i) from jsonb_array_elements(landed) with ordinality x(e, i) where x.i <= 20), '[]'::jsonb));
+  if skipped is not null then rec := rec || jsonb_build_object('skipped', skipped); end if;
+  insert into roster_entries (window_end, season, acts, record) values (w.ends_at, w.season, made, rec);
+  if cardinality(made) = 0 then
+    -- Nothing was posted (the System off, no Boss, a limit too small, nothing to report): this window's newcomers are held for the next report that posts, since the next window's scan starts at this entry. A character
+    -- already held keeps its row; each is held once, so the table follows distinct characters, never Acts.
+    insert into roster_pending (character, window_end)
+    select x.who, w.ends_at from roster_newcomers(w.ends_at) x
+    on conflict (character) do nothing;
+  else
+    -- Every newcomer of the window is written down as seen, the 25 it listed and those it only counted ("and N more"): each is listed once in its life, and a backlog that is never listed would widen every later window.
+    insert into roster_seen (character, window_end, act)
+    select p.id, w.ends_at, (select a.id from acts_public a where a."character" = p.id order by a.created_at, a.id limit 1)
+    from (select n from unnest(coalesce(write_roster_entry.newcomers, '{}')) n union select x.who from roster_newcomers(w.ends_at) x) l(n)
+    join characters_public p on p.id = l.n and p.staff is null
+    on conflict (character) do nothing;
+    if jsonb_array_length(landed) > 0 then
+      insert into news_landed (act, kind) values (made[1], 'roster');
+      perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'tally', 'act', made[1], 'at', now()));
+    end if;
+  end if;
+  return jsonb_build_object('written', true, 'posts', cardinality(made), 'thread', th) || case when skipped is not null then jsonb_build_object('skipped', skipped) else '{}'::jsonb end;
+end $$;
+revoke execute on function write_roster_entry(timestamptz, uuid[], text[], jsonb) from public, anon, authenticated;
+grant execute on function write_roster_entry(timestamptz, uuid[], text[], jsonb) to service_role;
