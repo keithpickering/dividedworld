@@ -209,6 +209,10 @@ test('a Random Event finds a card rarely: about one in thirty', () => {
   assert.deepEqual(defaults.cosmetics.events.outcomes, { line: 70, gear: 20, card: 3 });
 });
 
+test('a Random Event\'s rarity is rolled among the rarities that hold its outcome: common 80, uncommon 15, rare 4, legendary 1', () => {
+  assert.deepEqual(defaults.cosmetics.events.eventRarity, { common: 80, uncommon: 15, rare: 4, legendary: 1 });
+});
+
 test('Laugh Track\'s mark is set, the dropped numbers are gone, and every held number is inside its bounds', () => {
   const held = defaults.cardSettings;
   assert.equal(held['laughTrack.markMost'], 100);

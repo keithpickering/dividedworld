@@ -2,7 +2,7 @@
  * Divided World's Vending Machine, computed by rule from the cards and their prices (docs/plans/2026-11-14-base-set-design.md,
  * section 4.3), so a new card adds no line here and two card builds never meet in this file. The Booster comes first, on sale at 3.00.
  * Then every common is on sale: the Moves, then the Reversals, then the Gimmicks, each group by the card's name. Then every uncommon, rare
- * and legendary card follows, hidden, by rarity and then by name. The owner's words: "I haven't actually been listing uncommons or rarer in
+ * and legendary card follows, hidden, by rarity and then by name. An event-only card has no slot: it is found only through its events. The owner's words: "I haven't actually been listing uncommons or rarer in
  * the machine, because it incentivizes buying a pack and makes the pulls more special", and the grid must not grow until it scrolls and
  * stops looking like a vending machine (section 0, items 4 and 5). A hidden slot is not drawn, so the grid stays small, and an admin or the
  * Boss's moves can still bring one out (Main Event is brought out that way). A card's price is in its own file (`cards/<key>.ts`).
@@ -24,7 +24,7 @@ const slot = (c: CardRules, availability: 'onSale' | 'hidden'): SlotSeed => {
 };
 
 const commons = cards.filter((c) => c.rarity === 'common');
-const rarer = cards.filter((c) => c.rarity !== 'common');
+const rarer = cards.filter((c) => c.rarity !== 'common' && c.eventOnly !== true);
 
 export const machine: readonly SlotSeed[] = deepFreeze<SlotSeed[]>([
   { item: { pack: 'booster' }, availability: 'onSale', price: BOOSTER_PRICE },

@@ -25,13 +25,18 @@ test('the on-sale cards after the Booster are exactly the commons: Moves, then R
 });
 
 test('the rest are every uncommon, rare and legendary card, hidden, by rarity and then by name', () => {
-  const rarer = cards.filter((c) => c.rarity !== 'common');
+  const rarer = cards.filter((c) => c.rarity !== 'common' && !c.eventOnly);
   const want = RARITIES.flatMap((r) => rarer.filter((c) => c.rarity === r).sort(byName)).map((c) => c.key);
   const hidden = cardSlots.filter((s) => s.availability === 'hidden');
   assert.deepEqual(hidden.map(slotKey), want);
   // and they come after every on-sale card
   const firstHidden = cardSlots.findIndex((s) => s.availability === 'hidden');
   assert.ok(cardSlots.slice(firstHidden).every((s) => s.availability === 'hidden'));
+});
+
+test('no slot names an event-only card: an event-only card is found only through its events', () => {
+  const eventOnly = cards.filter((c) => c.eventOnly === true).map((c) => c.key);
+  assert.deepEqual(cardSlots.map(slotKey).filter((k) => k !== undefined && eventOnly.includes(k)), []);
 });
 
 test('every card has exactly one slot, and every card slot names a card', () => {
