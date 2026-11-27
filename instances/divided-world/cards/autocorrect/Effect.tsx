@@ -6,10 +6,10 @@
  * - **The line.** The post's words are cut at every strip's ends into `wrap` runs (engine/ui/bbcode/layers.tsx), each drawn as a
  *   `span[data-kb-ac-seg]`, so the words stay in the line in their own formatting. At a strip's end the run's `trail` holds the
  *   strip's room: break-spaces, as many as the replacement needs past the words (tape.ts `roomOf`), measured in the formatting
- *   the room sits in. A stack whose footprint fits its line is laid whole (it does not wrap) and moves to the next line as a long word
- *   does; one wider than its line wraps and is cut into pieces. A strip the author peeled before this load gets no room. While tape covers a segment its words are
- *   `aria-hidden` and `data-kb-quotable="hidden"`; at each taped strip's start a visually hidden anchor stands in the line, named
- *   for what its role can do and quoted as the replacement (design section 10).
+ *   the room sits in. A stack whose footprint fits its line is laid whole (it does not wrap) and moves to the next line as a
+ *   long word does; one wider than its line wraps and is cut into pieces. A strip the author peeled before this load gets no
+ *   room. While tape covers a segment its words are `aria-hidden` and `data-kb-quotable="hidden"`; at each taped strip's start a
+ *   visually hidden anchor stands in the line, named for what its role can do and quoted as the replacement (design section 10).
  * - **The eye.** A `div.dw-ac-tape` over the post draws each live strip as one piece per line it crosses, measured from a Range
  *   over its first segment to its room, with its paper on a canvas drawn when it first comes near the viewport (a plain fill until
  *   then, so the words under it are never seen) and the replacement's words dealt across the pieces (`dealWords`). Under it, one
@@ -936,8 +936,17 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       const [a, b] = edge(s);
       if (!firstAt.has(a)) firstAt.set(a, i);
       lastAt.set(b, i);
-      width.set(s.dataset.kbAcSeg!, (width.get(s.dataset.kbAcSeg!) ?? 0) + [...s.getClientRects()].reduce((t, r) => t + r.width, 0));
     });
+    /*
+     * The words' widths as they lie unbroken, whatever state each stack is in: a run that wraps loses the space collapsed at its
+     * break, so its rects read narrower than the same words on one line, and a footprint tested on that read would flip the stack
+     * whole, then wider than its line, then not. So every segment is set to nowrap for one batched read (set all, read all,
+     * restore all, inside the layout effect, so nothing paints), and the width tested never depends on the layout it decides.
+     */
+    const priorWrap = segs.map((s) => s.style.whiteSpace);
+    for (const s of segs) s.style.whiteSpace = 'nowrap';
+    segs.forEach((s) => width.set(s.dataset.kbAcSeg!, (width.get(s.dataset.kbAcSeg!) ?? 0) + [...s.getClientRects()].reduce((t, r) => t + r.width, 0)));
+    segs.forEach((s, i) => { s.style.whiteSpace = priorWrap[i]!; });
     /* The segments' widths ascending by start with running totals: the words from one offset to another are a run of them (the segments partition the text, so their ends ascend with their starts). */
     const byStart = [...width].map(([id, w]) => { const [a, b] = id.split('-').map(Number) as [number, number]; return { a, b, w }; }).sort((x, y) => x.a - y.a || x.b - y.b);
     const upTo = [0];
@@ -1006,7 +1015,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
      */
     const lineWidth = (el: HTMLElement | undefined): number => {
       let e: HTMLElement | null = el?.parentElement ?? null;
-      while (e && e !== host.parentElement && String(getComputedStyle(e).display ?? '').startsWith('inline')) e = e.parentElement;
+      while (e && e !== host.parentElement && ['inline', 'contents'].includes(String(getComputedStyle(e).display ?? ''))) e = e.parentElement;
       if (!e) return hostRect.width;
       const cs = getComputedStyle(e);
       const px = (k: string) => Number.parseFloat(cs.getPropertyValue(k)) || 0;
@@ -1105,7 +1114,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       const covered = stack.some((s) => liveKeys.has(s.key) && s.from <= start && s.to >= end);
       const anchors = stack.filter((s) => s.from === start && liveKeys.has(s.key)).sort((a, b) => b.z - a.z);
       const room = rooms[String(end)] ?? 0;
-      const whole_ = whole[String(stack[0]!.from)] ? { 'data-kb-ac-whole': '' } : null;
+      const wholeAttr = whole[String(stack[0]!.from)] ? { 'data-kb-ac-whole': '' } : null;
       return {
         start, end, key: `ac:${id}`, z: 0, mode: 'wrap',
         render: ({ text: words, key }) => (
@@ -1113,10 +1122,10 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
             {key === `ac:${id}@${start}` ? anchors.map((s) => (
               <Anchor key={s.key} strip={s} author={author} heldLeft={heldLeft(s)} open={openKeys.has(s.key)} onKey={onKey} onFocus={setFocused} />
             )) : null}
-            <span data-kb-ac-seg={id} {...whole_} {...(covered ? { 'aria-hidden': true, 'data-kb-quotable': 'hidden' } : null)}>{words}</span>
+            <span data-kb-ac-seg={id} {...wholeAttr} {...(covered ? { 'aria-hidden': true, 'data-kb-quotable': 'hidden' } : null)}>{words}</span>
           </Fragment>
         ),
-        ...(room > 0 ? { trail: (key: string) => <span key={key} className="dw-ac-room" aria-hidden="true" data-kb-quotable="hidden" data-kb-ac-room={end} {...whole_}>{' '.repeat(room)}</span> } : null),
+        ...(room > 0 ? { trail: (key: string) => <span key={key} className="dw-ac-room" aria-hidden="true" data-kb-quotable="hidden" data-kb-ac-room={end} {...wholeAttr}>{' '.repeat(room)}</span> } : null),
       };
     });
   }), [stacks, liveKeys, live, rooms, whole, author, onKey, clock, holds]);
