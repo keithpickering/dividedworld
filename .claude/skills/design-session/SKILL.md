@@ -38,6 +38,12 @@ sessions ahead, and a session that takes up one of those areas starts from them.
   character, with text by the game rules of that design's section 4). It designs the screen with the owner in that
   world's look. Once impeccable is installed, its `shape` step runs with the owner, briefed on that look, and the
   confirmed brief goes into the plan.
+- **A setting that changes shape lands over two releases.** A release writes its seed before its functions deploy
+  (`docs/plans/2026-11-27-release-order-design.md`). Until the functions land, the old ones read the new rows and drop
+  any field they do not know. They refuse anything else: a field removed or renamed, a bound widened, or a new value in
+  a closed list such as `ALERT_KINDS`. So a plan that reshapes a setting splits it in two. The first release ships the
+  functions that accept both the old shape and the new one. A later release writes the new shape and drops the old.
+  The plan says which release each task belongs to. The owner chose this over a seed split in #1223.
 
 ## What it writes
 

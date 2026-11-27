@@ -627,9 +627,18 @@
 .kb-lens-tab .kb-spinner,
 .kb-lens-action .kb-spinner { height: 1em; }
 
-/* A card's icon on its tab (spent-marks design, section 5): always in color, spent or not. A tight halo in the field color lifts it off its own ink
-   fill, and a soft shadow under it, the ground at half strength, keeps it from looking cut out. */
+/* A card's icon on its tab and on its entry in the kinds grid (spent-marks design, section 5): always in color, spent or not. A tight halo in the
+   field color lifts it off its own ink fill, and a soft shadow under it, the ground at half strength, keeps it from looking cut out. */
 .kb-lens-tab .kb-glass-upright { display: inline-flex; align-items: center; gap: 8px; }
+/* The icon centers on the name's capitals, not its line box: the labels are all caps, and a line box sits its caps below its middle by however
+   the face splits ascent and descent, which left the icon riding high. Trimmed to cap height and baseline, the name's box is its letters. */
+.kb-lens-tab-name,
+.kb-lens-kind-name,
+.kb-lens-kind-count { text-box: trim-both cap alphabetic; }
+/* A browser that cannot trim: the display face's caps sit about a twentieth of an em under the line's middle, so the icon follows them down. */
+@supports not (text-box: trim-both cap alphabetic) {
+  .kb-lens-tab-icon { translate: 0 0.05em; }
+}
 .kb-lens-tab-icon {
   flex: none;
   width: 1.35em;
@@ -823,9 +832,12 @@
 }
 
 /* Every kind of card: two columns at the dock's width, one under 40em; each an outlined chamfer in the neutral line an unselected tab has (ink is the selected tab's and the rows'), its count at the right. */
+/* Every row as tall as the tallest: where one name wraps to two lines, every entry takes that height and centers its contents, so the
+   grid keeps one rhythm. Each item is a grid of its one button, which stretches to fill it. */
 .kb-lens-kinds {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: 8px;
   margin: 4px 0 0;
   padding: 0;
@@ -837,7 +849,7 @@
 }
 
 .kb-lens-kinds > li {
-  display: block;
+  display: grid;
   min-width: 0;
 }
 
