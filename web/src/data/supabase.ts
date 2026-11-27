@@ -517,6 +517,7 @@ function toVisit(v: Row): Visit {
   return {
     id: v['visit'], post: v['post'], mod: v['mod'], at: str(v['at']) ?? '', endsAt: str(v['ends_at']) ?? '', line: str(v['line']) ?? '',
     charges: rowsOf(v['charges']).map(toCharge), challenge: toChallenge(isObject(v['challenge']) ? v['challenge'] : {}), end,
+    answers: (Array.isArray(v['answers']) ? v['answers'] : []).filter((x): x is Id => typeof x === 'string'),
     ...(RULINGS.find((r) => r === v['ruling']) ? { ruling: RULINGS.find((r) => r === v['ruling'])! } : {}),
   };
 }
@@ -2039,7 +2040,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       };
     },
     async visitStory(thread, visit, _post): Promise<VisitStory> {
-      const none: VisitStory = { report: null, verdict: null, attempts: [], end: null, infraction: null, appeal: null, ruling: null, warnPoints: null, concessionPost: null };
+      const none: VisitStory = { report: null, verdict: null, attempts: [], end: null, infraction: null, appeal: null, ruling: null, warnPoints: null, outcomePosts: [] };
       if (!idOk(thread) || !idOk(visit)) return none;
       /* Each read is narrowed on the server to this visit (the Act's own payload names it) or to its one Act, so no bound on the thread's reports or attempts can leave the visit's out. */
       const mine = () => client.from('acts_public').select('*').eq('thread', thread);
@@ -2053,18 +2054,20 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const inf = infractions[0];
       const p = isObject(inf?.['payload']) ? (inf!['payload'] as Row) : null;
       const who = p && typeof p['character'] === 'string' ? p['character'] : null;
-      /* Only a talked-down visit has a concession post: the id comes from visit_concession_post (the post Act's id and nothing else, never its error or source), and the post is read as any Act is. A failed read is no post, never a failed story. */
-      const concession = ended[0]?.['payload'] && isObject(ended[0]['payload']) && (ended[0]['payload'] as Row)['outcome'] === 'intercepted'
-        ? (async (): Promise<Row | undefined> => {
-          const r = await read(() => client.rpc('visit_concession_post', { visit }));
-          return typeof r.data === 'string' && idOk(r.data) ? (await list(() => client.from('acts_public').select('*').eq('id', r.data).limit(1)))[0] : undefined;
-        })().catch(() => undefined)
-        : Promise.resolve(undefined);
+      /* Every ended visit may have outcome posts: visit_outcome_posts names them (the posts' ids, what each is about and its kind, never an error or a source), and each is read as any Act is. A failed read is no post, never a failed story. */
+      const outcomes = ended[0]
+        ? (async (): Promise<{ kind: 'filed' | 'intercepted' | 'ruling'; about: Id; post: Row }[]> => {
+          const r = await read(() => client.rpc('visit_outcome_posts', { visit }));
+          const named = (Array.isArray(r.data) ? r.data : []).filter((o): o is Row => isObject(o) && (o['kind'] === 'filed' || o['kind'] === 'intercepted' || o['kind'] === 'ruling') && typeof o['about'] === 'string' && typeof o['post'] === 'string' && idOk(o['post']));
+          const got = await Promise.all(named.map(async (o) => ({ o, act: (await list(() => client.from('acts_public').select('*').eq('id', o['post']).limit(1)))[0] })));
+          return got.flatMap(({ o, act }) => (act ? [{ kind: o['kind'] as 'filed' | 'intercepted' | 'ruling', about: String(o['about']), post: act }] : []));
+        })().catch(() => [])
+        : Promise.resolve([]);
       const [reports, appeals, bar, posted] = await Promise.all([
         verdict && idOk(String(verdict['target_act_id'])) ? list(() => mine().eq('kind', 'report').eq('id', verdict['target_act_id']).limit(1)) : Promise.resolve([] as Row[]),
         inf ? list(() => mine().eq('kind', 'appeal').eq('target_act_id', inf['id']).order('created_at', { ascending: true }).limit(1)) : Promise.resolve([] as Row[]),
         who && idOk(who) ? list(() => client.from('characters_public').select('warn_points').eq('id', who).limit(1)) : Promise.resolve([] as Row[]),
-        concession,
+        outcomes,
       ]);
       const appeal = appeals[0];
       const rulings = appeal ? await list(() => mine().eq('kind', 'appeal_ruling').eq('target_act_id', appeal['id']).limit(1)) : [];
@@ -2076,7 +2079,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           : null,
         appeal: appeal ? toAct(appeal) : null, ruling: rulings[0] ? toAct(rulings[0]) : null,
         warnPoints: inf && typeof bar[0]?.['warn_points'] === 'number' ? bar[0]['warn_points'] : null,
-        concessionPost: posted ? toAct(posted) : null,
+        outcomePosts: posted.map((o) => ({ kind: o.kind, about: o.about, post: toAct(o.post) })),
       };
     },
     async exchange(origin): Promise<Exchange> {

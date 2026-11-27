@@ -24,9 +24,10 @@ import { ThreadCtx } from '../thread/context.ts';
 import { Link } from '../router.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { dayAndTime } from '../characters/format.ts';
+import { excerpt } from '../profile/record.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import {
-  VISIT_KIND, appealTerms, noticeWords, auraWords, chargeWords, markIcon, markLabel, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, timeLeft, topCharge, tryTerms, pointsPlain, visitState, type VisitIcon,
+  VISIT_KIND, appealTerms, noticeWords, auraWords, chargeWords, markIcon, markLabel, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, timeLeft, topCharge, tryTerms, pointsPlain, visitState, type MarkOn, type VisitIcon,
 } from './visit.ts';
 import { useMinute } from './minute.ts';
 import { LateNote } from '../jobs/LateNote.tsx';
@@ -63,16 +64,16 @@ function Stopwatch({ icon }: { readonly icon: VisitIcon }) {
   );
 }
 
-/** The visit's mark: first in the post's strip. */
-export const VisitMark = memo(function VisitMark({ visit, mod, pronouns, expanded, onOpen }: {
-  readonly visit: Visit; readonly mod: string; readonly pronouns: PronounSet; readonly expanded: boolean; readonly onOpen: (kind: string, opener: HTMLElement) => void;
+/** The visit's mark: first in the post's strip. On a Mod's outcome post (`on` is `answer`) it is the same mark, named as the visit to the post this answers. */
+export const VisitMark = memo(function VisitMark({ visit, mod, pronouns, expanded, onOpen, on = 'post' }: {
+  readonly visit: Visit; readonly mod: string; readonly pronouns: PronounSet; readonly expanded: boolean; readonly onOpen: (kind: string, opener: HTMLElement) => void; readonly on?: MarkOn;
 }) {
   const state = visitState(visit);
   const now = useMinute(state === 'open' ? visit.endsAt : null);
   return (
     <button
-      type="button" className="kb-mark kb-visit-mark kb-meta-tile" data-kb-card={VISIT_KIND} data-kb-visit={state}
-      aria-label={markLabel(mod, pronouns, state, visit.endsAt, now)} aria-haspopup="dialog" aria-expanded={expanded}
+      type="button" className="kb-mark kb-visit-mark kb-meta-tile" data-kb-card={VISIT_KIND} data-kb-visit={state} data-kb-on={on === 'answer' ? 'answer' : undefined}
+      aria-label={markLabel(mod, pronouns, state, visit.endsAt, now, on)} aria-haspopup="dialog" aria-expanded={expanded}
       onClick={(e) => onOpen(VISIT_KIND, e.currentTarget)}
     >
       <span className="kb-meta-tile-in" aria-hidden="true"><Stopwatch icon={markIcon(state)} />{state === 'open' && <span className="kb-visit-time">{timeLeft(visit.endsAt, now)}</span>}</span>
@@ -94,8 +95,11 @@ interface Row {
   /** The words the Act carries, quoted as its author's. */
   readonly quote: string;
   readonly label: string;
-  /** A post the row's words point to, linked as "{who} posted a reply" (an intercepted visit's concession post). */
-  readonly reply?: { readonly act: Act; readonly by: string };
+  /**
+   * The Mod's outcome post, where the outcome has one (the filing's, a talk-down's, an appeal ruling's): the row is that post. Its React and Spin thread act on the post itself, it shows the post's opening words in place of the Act's line,
+   * and Go to post leads to it, so the Lens and the thread share one Act and cannot split its reactions or its spun threads. A row with none shows its line and acts on its own Act.
+   */
+  readonly post?: Act;
 }
 
 /** The visit's Acts as rows, in the order they happened: the report and its verdict, the visit's start, each attempt, the end, the appeal and its ruling. */
@@ -123,11 +127,12 @@ function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string,
   const end = story.end ?? visit.end;
   if (end) {
     const by = story.attempts.find((a) => a.id === end.byAct);
+    const posted = story.outcomePosts.find((o) => o.about === end.act)?.post;
     out.push({
       act: end.act, at: end.at, character: end.outcome === 'filed' ? visit.mod : null, ...(end.outcome === 'filed' ? { staff: true as const } : {}), label: `${mod}'s visit ending`,
       did: end.outcome === 'filed' ? 'filed' : end.outcome === 'intercepted' ? `The visit was talked down${by ? ` by ${name(by.character)}` : ''}` : end.outcome === 'trapped' ? 'The visit was ended by a trap set on the post' : end.outcome === 'dropped' ? 'The visit could not be filed and was dropped' : 'The visit was ended by an admin',
       quote: end.outcome === 'filed' ? end.line : '',
-      ...(end.outcome === 'intercepted' && story.concessionPost ? { reply: { act: story.concessionPost, by: mod } } : {}),
+      ...(posted ? { post: posted } : {}),
     });
   }
   if (story.appeal) out.push({ act: story.appeal.id, at: story.appeal.createdAt, character: story.appeal.character, did: 'appealed', quote: said(story.appeal.payload['plea'] as string | undefined), label: `${name(story.appeal.character)}'s appeal` });
@@ -135,6 +140,7 @@ function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string,
     out.push({
       act: story.ruling.id, at: story.ruling.createdAt, character: story.ruling.character, staff: true, label: `${mod}'s ruling`,
       did: `ruled on the appeal: ${said(story.ruling.payload['verdict'] as string | undefined)}`, quote: said(story.ruling.payload['line'] as string | undefined),
+      ...((p) => (p ? { post: p } : {}))(story.outcomePosts.find((o) => o.about === story.ruling!.id)?.post),
     });
   }
   return out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
@@ -145,24 +151,25 @@ function HowRow({ row, name, role, tallies, mine, onSpin }: {
 }) {
   const { settings } = useKayfa();
   const perPage = useContext(ThreadCtx)?.perPage ?? settings.postsPerPage;
-  const reply = row.reply;
+  const post = row.post;
+  /* A row with an outcome post is that post: what it acts on and what it shows are the post's. */
+  const target = post ? post.id : row.act;
+  const by = post ? post.character : row.character;
+  const quote = post ? excerpt(said(post.payload['body'] as string | undefined)) : row.quote;
+  const to = post && post.seq !== null ? threadHref(post.thread, pageOf(post.seq, perPage), post.seq) : null;
   return (
-    <li className="kb-lens-row" data-kb-act={row.act}>
+    <li className="kb-lens-row" data-kb-act={target}>
       <p className="kb-lens-by">
         {row.character !== null && <><span className="kb-lens-who kb-glass-display">{name(row.character)}</span> · </>}
         {row.staff && <>{role} · </>}
         {row.did} <time dateTime={row.at}>{dayAndTime(row.at)}</time>
       </p>
-      {row.quote !== '' && <blockquote className="kb-lens-message">“{row.quote}”</blockquote>}
-      {reply && (
-        <p className="kb-lens-reply">
-          {reply.act.seq === null ? `${reply.by} posted a reply` : <Link to={threadHref(reply.act.thread, pageOf(reply.act.seq, perPage), reply.act.seq)}>{reply.by} posted a reply</Link>}
-        </p>
-      )}
+      {quote !== '' && <blockquote className="kb-lens-message">“{quote}”</blockquote>}
       <div className="kb-lens-row-foot">
-        <Reactions act={row.act} author={row.character} authorName={row.character === null ? 'the visit' : name(row.character)} subject={row.label} tallies={tallies} mine={mine} />
+        <Reactions act={target} author={by} authorName={by === null ? 'the visit' : name(by)} subject={row.label} tallies={tallies} mine={mine} />
         <div className="kb-lens-actions">
-          <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(row.act, row.label)}><span className="kb-kit-tile-label">Spin thread</span></button>
+          <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(target, row.label)}><span className="kb-kit-tile-label">Spin thread</span></button>
+          {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
         </div>
       </div>
     </li>
@@ -175,7 +182,7 @@ function HowRow({ row, name, role, tallies, mine, onSpin }: {
  */
 export async function readVisit(api: KayfaApi, visit: Visit, thread: Id, tallies: Tallies, mine: Mine): Promise<VisitStory> {
   const s = await api.visitStory(thread, visit.id, visit.post);
-  const ids = [s.report, s.verdict, ...s.attempts, s.appeal, s.ruling].filter((a): a is Act => a !== null).map((a) => a.id);
+  const ids = [s.report, s.verdict, ...s.attempts, s.appeal, s.ruling, ...s.outcomePosts.map((o) => o.post)].filter((a): a is Act => a !== null).map((a) => a.id);
   if (s.end) ids.push(s.end.act);
   ids.push(visit.id);
   const [counts, mineNow] = await Promise.all([api.tallies(ids), api.myReactions(ids)]).catch(() => [{}, []] as const);

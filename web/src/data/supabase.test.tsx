@@ -3738,16 +3738,16 @@ describe('a visit\'s story', () => {
   });
 });
 
-describe('a visit\'s concession post', () => {
+describe('a visit\'s outcome posts', () => {
   const VISIT = '77777777-7777-4777-8777-777777777777';
   const POST = '88888888-8888-4888-8888-888888888888';
-  const CONCESSION = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const OUTCOME = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
   const row = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
     id, character: B, kind, thread: T, target_act_id: POST, seq: 7, created_at: '2026-10-01T10:00:00+00:00', payload: {}, current_payload: {}, edited_at: null, shown_edited_at: null, ...extra,
   });
   const end = (outcome: string) => row('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'visit_end', { target_act_id: VISIT, payload: { visit_act: VISIT, outcome, line: 'Done.' } });
-  const router = (all: ReturnType<typeof row>[], concession: string | null): Router => (r) => {
-    if (r.url.pathname === `${REST}/rpc/visit_concession_post`) return json(concession);
+  const router = (all: ReturnType<typeof row>[], posts: unknown): Router => (r) => {
+    if (r.url.pathname === `${REST}/rpc/visit_outcome_posts`) return json(posts);
     if (r.url.pathname.endsWith('/characters_public')) return rows([]);
     if (!r.url.pathname.endsWith('/acts_public')) return undefined;
     let out = all;
@@ -3759,28 +3759,36 @@ describe('a visit\'s concession post', () => {
     return rows(out);
   };
 
-  it('an intercepted visit\'s story carries the post the RPC names, read as the Act', async () => {
-    const h = harness(router([end('intercepted'), row(CONCESSION, 'post', { payload: { body: 'Fine.' } })], CONCESSION));
+  it('a filed visit\'s story carries the posts the RPC names, read as Acts, with what each is about', async () => {
+    const h = harness(router([end('filed'), row(OUTCOME, 'post', { payload: { body: 'Filed.' } })], [{ kind: 'filed', about: VISIT, post: OUTCOME }]));
     const story = await h.api.visitStory(T, VISIT, POST);
-    expect(story.concessionPost).toMatchObject({ id: CONCESSION, seq: 7, thread: T });
-    const call = h.rest().find((r) => r.url.pathname.endsWith('/rpc/visit_concession_post'))!;
+    expect(story.outcomePosts).toHaveLength(1);
+    expect(story.outcomePosts[0]).toMatchObject({ kind: 'filed', about: VISIT, post: { id: OUTCOME, seq: 7, thread: T } });
+    const call = h.rest().find((r) => r.url.pathname.endsWith('/rpc/visit_outcome_posts'))!;
     expect(call.body).toEqual({ visit: VISIT });
   });
 
-  it('a post that cannot be read after the RPC named it leaves the story whole, with no post', async () => {
-    const good = router([end('intercepted')], CONCESSION);
-    const h = harness((r, n) => (r.url.pathname.endsWith('/acts_public') && r.url.searchParams.get('id') === `eq.${CONCESSION}` ? json({ message: 'boom' }, 500) : good(r, n)));
-    const story = await h.api.visitStory(T, VISIT, POST);
-    expect(story.concessionPost).toBeNull();
-    expect(story.end?.outcome).toBe('intercepted');
+  it('is asked for every ended visit, a talked-down one too, and not for one still open', async () => {
+    const down = harness(router([end('intercepted'), row(OUTCOME, 'post')], [{ kind: 'intercepted', about: VISIT, post: OUTCOME }]));
+    expect((await down.api.visitStory(T, VISIT, POST)).outcomePosts.map((o) => o.kind)).toEqual(['intercepted']);
+    const open = harness(router([], [{ kind: 'filed', about: VISIT, post: OUTCOME }]));
+    expect((await open.api.visitStory(T, VISIT, POST)).outcomePosts).toEqual([]);
+    expect(open.rest().some((r) => r.url.pathname.endsWith('/rpc/visit_outcome_posts'))).toBe(false);
   });
 
-  it('asks for none unless the visit was talked down, and an RPC that answers nothing is no post', async () => {
-    const filed = harness(router([end('filed')], CONCESSION));
-    expect((await filed.api.visitStory(T, VISIT, POST)).concessionPost).toBeNull();
-    expect(filed.rest().some((r) => r.url.pathname.endsWith('/rpc/visit_concession_post'))).toBe(false);
-    const none = harness(router([end('intercepted')], null));
-    expect((await none.api.visitStory(T, VISIT, POST)).concessionPost).toBeNull();
+  it('a post that cannot be read after the RPC named it leaves the story whole, with no post', async () => {
+    const good = router([end('filed')], [{ kind: 'filed', about: VISIT, post: OUTCOME }]);
+    const h = harness((r, n) => (r.url.pathname.endsWith('/acts_public') && r.url.searchParams.get('id') === `eq.${OUTCOME}` ? json({ message: 'boom' }, 500) : good(r, n)));
+    const story = await h.api.visitStory(T, VISIT, POST);
+    expect(story.outcomePosts).toEqual([]);
+    expect(story.end?.outcome).toBe('filed');
+  });
+
+  it('a failed RPC, or one that answers nothing, is no post', async () => {
+    const failing = harness((r, n) => (r.url.pathname === `${REST}/rpc/visit_outcome_posts` ? json({ message: 'boom' }, 500) : router([end('filed')], [])(r, n)));
+    expect((await failing.api.visitStory(T, VISIT, POST)).outcomePosts).toEqual([]);
+    const none = harness(router([end('filed')], null));
+    expect((await none.api.visitStory(T, VISIT, POST)).outcomePosts).toEqual([]);
   });
 });
 
@@ -3913,6 +3921,16 @@ describe('reports, appeals and what a page says of a ban', () => {
     expect((await run(null))?.ruling).toBeUndefined();
     expect((await run('nonsense'))?.ruling).toBeUndefined();
     expect((await run(undefined))?.ruling).toBeUndefined();
+  });
+
+  it('carries the outcome posts a visit is answered by on the page, and none from a page that has none or sends nonsense', async () => {
+    const doc = (answers: unknown) => ({ summary: THREAD_ROW, page: 1, acts: [], plays: [], above: [], visits: [{ visit: 'v1', post: A, mod: B, at: '2026-10-01T10:00:00+00:00', ends_at: '2026-10-01T12:00:00+00:00', line: 'x', charges: [], challenge: { kind: 'distraction' }, end: null, ...(answers === undefined ? {} : { answers }) }] });
+    const run = async (answers: unknown) => (await harness((r) => (r.url.pathname === `${REST}/rpc/thread_page` ? json(doc(answers)) : undefined)).api.threadPage(T, { page: 1 }, 20, []))?.visits[0]?.answers;
+    expect(await run(['p1', 'p2'])).toEqual(['p1', 'p2']);
+    expect(await run([])).toEqual([]);
+    expect(await run(undefined)).toEqual([]);
+    expect(await run('p1')).toEqual([]);
+    expect(await run(['p1', 4, null])).toEqual(['p1']);
   });
 
   it('maps a written quiz and a pending one, and carries no answer from either', async () => {

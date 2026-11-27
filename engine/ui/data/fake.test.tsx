@@ -8227,8 +8227,8 @@ describe('the staff board holds a thread for each decision and each handover (04
   });
 });
 
-/* A talked-down Mod's concession post (the concession-post plan, Task 4): the interception writes one post in the thread by the visit's Mod, quoting the visited post. */
-describe('a talked-down Mod posts its concession', () => {
+/* A Mod's outcome posts (the outcome-posts plan, Task 4): a filing, a talk-down and an infraction's ruling each write one post in the visit's thread, quoting the post they answer, and the visit is on the page that holds it. */
+describe('a Mod posts its visit\'s outcomes', () => {
   const setup = (challenge: { kind: 'bribe'; price: number } | { kind: 'quiz'; question: string; choices: readonly string[]; answer: string } = { kind: 'bribe', price: 0 }) => {
     const w = world();
     const mod = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
@@ -8241,8 +8241,7 @@ describe('a talked-down Mod posts its concession', () => {
     const w = setup();
     w.fake.seed.concession(w.visit, 'Fine, {who}. You win. {who} stays unfilled the second time.');
     const before = (await w.postsIn()).length;
-    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
-    expect((await w.postsIn()).some((a) => String(a.payload['body']).includes('Fine,'))).toBe(false);
+    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).outcomePosts).toEqual([]);
     const r = await w.fake.intercept(w.anaFace, w.visit, null);
     expect(r).toMatchObject({ ok: true, value: { succeeded: true } });
     const after = await w.postsIn();
@@ -8250,15 +8249,14 @@ describe('a talked-down Mod posts its concession', () => {
     const post = after[after.length - 1]!;
     expect(post).toMatchObject({ character: w.mod, targetActId: w.opener });
     expect(post.payload['body']).toBe('Fine, Ana Face. You win. {who} stays unfilled the second time.');
-    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost?.id).toBe(post.id);
+    const story = await w.fake.visitStory(w.thread, w.visit, w.opener);
+    expect(story.outcomePosts.map((o) => [o.kind, o.about, o.post.id])).toEqual([['intercepted', story.end!.act, post.id]]);
   });
 
   test('with none written it posts one of the stock lines of the Mod\'s staff key', async () => {
     const w = setup();
     w.fake.seed.stockConcessions('clerk', ['One, {who}.', 'Two, {who}.', 'Three, {who}.']);
     const stock = ['One, Ana Face.', 'Two, Ana Face.', 'Three, Ana Face.'];
-    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
-    expect((await w.postsIn()).some((a) => stock.includes(String(a.payload['body'])))).toBe(false);
     await w.fake.intercept(w.anaFace, w.visit, null);
     const post = (await w.postsIn()).at(-1)!;
     expect(stock).toContain(post.payload['body']);
@@ -8270,11 +8268,63 @@ describe('a talked-down Mod posts its concession', () => {
     const before = (await w.postsIn()).length;
     expect(await w.fake.intercept(w.anaFace, w.visit, 'b')).toMatchObject({ ok: true, value: { succeeded: false } });
     expect(await w.postsIn()).toHaveLength(before);
-    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
     expect(await w.fake.intercept(w.anaHeel, w.visit, 'a')).toMatchObject({ ok: true, value: { succeeded: true } });
     expect(await w.postsIn()).toHaveLength(before);
-    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).end?.outcome).toBe('intercepted');
-    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
+    const story = await w.fake.visitStory(w.thread, w.visit, w.opener);
+    expect(story.end?.outcome).toBe('intercepted');
+    expect(story.outcomePosts).toEqual([]);
+  });
+
+  test('a filing posts its line once, quoting the visited post, and the story and the page name it', async () => {
+    const w = setup();
+    const before = (await w.postsIn()).length;
+    const end = w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed. Rule 2.' });
+    const after = await w.postsIn();
+    expect(after).toHaveLength(before + 1);
+    const post = after.at(-1)!;
+    expect(post).toMatchObject({ character: w.mod, targetActId: w.opener });
+    expect(post.payload['body']).toBe('Filed. Rule 2.');
+    const story = await w.fake.visitStory(w.thread, w.visit, w.opener);
+    expect(story.outcomePosts.map((o) => [o.kind, o.about, o.post.id])).toEqual([['filed', end, post.id]]);
+    const page = await w.fake.threadPage(w.thread, { page: 1 }, 20, []);
+    expect(page?.visits.find((v) => v.id === w.visit)?.answers).toEqual([post.id]);
+  });
+
+  test('a filing with no line posts nothing, and an open visit has no outcome post', async () => {
+    const w = setup();
+    const before = (await w.postsIn()).length;
+    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).outcomePosts).toEqual([]);
+    w.fake.seed.visitEnd(w.visit, { outcome: 'filed' });
+    expect(await w.postsIn()).toHaveLength(before);
+  });
+
+  test('an infraction\'s appeal ruling posts the hearer\'s line, quoting the punished post, and answers the visit that filed it', async () => {
+    const w = setup();
+    w.fake.seed.visitEnd(w.visit, { outcome: 'filed' });
+    const inf = w.fake.seed.infraction(w.visit);
+    w.fake.signInAs(w.bo);
+    w.fake.seed.wallet(w.bo, 500);
+    const appealed = await w.fake.fileAppeal(w.boFace, inf, 'please');
+    expect(appealed).toMatchObject({ ok: true });
+    const post = (await w.postsIn()).at(-1)!;
+    expect(post).toMatchObject({ character: w.mod, targetActId: w.opener });
+    const story = await w.fake.visitStory(w.thread, w.visit, w.opener);
+    const ruling = story.outcomePosts.find((o) => o.kind === 'ruling');
+    expect(ruling).toMatchObject({ about: story.ruling!.id, post: { id: post.id } });
+    expect(post.payload['body']).toBe(story.ruling!.payload['line']);
+  });
+
+  test('a visit is on the page that holds its outcome post when the visited post is on another page, with that post in its answers', async () => {
+    const w = setup();
+    for (let i = 0; i < 4; i++) w.fake.seed.post(w.thread, w.anaFace, `filler ${i}`);
+    w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+    const post = (await w.postsIn()).at(-1)!;
+    const first = await w.fake.threadPage(w.thread, { page: 1 }, 3, []);
+    const last = await w.fake.threadPage(w.thread, { page: 3 }, 3, []);
+    expect(first?.visits.map((v) => v.id)).toEqual([w.visit]);
+    expect(first?.visits[0]?.answers).toEqual([]);
+    expect(last?.acts.some((a) => a.id === post.id)).toBe(true);
+    expect(last?.visits.map((v) => [v.id, v.answers])).toEqual([[w.visit, [post.id]]]);
   });
 });
 

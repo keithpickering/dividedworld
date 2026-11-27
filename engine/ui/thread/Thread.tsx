@@ -228,6 +228,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
 
   /* Each post's latest visit as the pages read so far carried it (Visit.tsx); a visit that changed on a page read again redraws the posts. */
   const visitsHeld = useRef(new Map<Id, Visit>());
+  /* The same visits by the outcome posts that answer them (`Visit.answers`): an outcome post on this page carries the mark of a visit whose post may be on another. */
+  const answersHeld = useRef(new Map<Id, Visit>());
   const [visitTick, setVisitTick] = useState(0);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -380,6 +382,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       const was = visitsHeld.current.get(v.post);
       if (!was || was.id !== v.id || was.end?.act !== v.end?.act) moved = true;
       visitsHeld.current.set(v.post, v);
+      for (const a of v.answers) {
+        const held = answersHeld.current.get(a);
+        if (!held || held.id !== v.id || held.end?.act !== v.end?.act) moved = true;
+        answersHeld.current.set(a, v);
+      }
     }
     if (moved && mounted.current) setVisitTick((n) => n + 1);
     /* The page says which of its posts are the reader's own under a veil; what it says of the posts it holds replaces what was held of them. */
@@ -988,10 +995,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   /* The HUD's Reveal starts on this thread, except on The System's board (and until the board is known), where a meta act is not made. It is cleared when the screen goes. */
   useShowOpenThread(systemBoard === false && feed.summary ? { id: thread, title: feed.summary.title, board: feed.summary.board } : null);
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const answered = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(answersHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const veiled = useMemo<ReadonlyMap<Id, Veiled>>(() => new Map(veiledHeld.current), [veilTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, catchUp, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, catchUp, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, answered, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, catchUp, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, answered, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, catchUp, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   /* Each board card goes under the newest shown Act written before it (the first, for one older than every Act shown). */

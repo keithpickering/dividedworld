@@ -479,19 +479,6 @@
   overflow-wrap: anywhere;
 }
 
-/* An intercepted visit's reply: the Mod's concession post, linked on the ending's row in the Lens's quoted-words voice. */
-.kb-lens-reply {
-  margin: 0 0 0.5rem;
-  color: var(--kb-glass-text);
-  font-weight: 700;
-}
-
-.kb-lens-reply a {
-  color: var(--kb-glass-text-hi);
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
-}
-
 .kb-lens-note,
 .kb-lens-more,
 .kb-lens-yours {

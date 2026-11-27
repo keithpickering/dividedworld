@@ -6,7 +6,7 @@
  * The guard holds the glass's words for how a visit ended to the outcomes the database allows. Each poison must fire (naming what is wrong) and the real
  * tree must stay clean: the old `/^Rule \d/iu` notice test (which doubles "House Rule 1: x"); a `reversed` whose only writer passes a
  * null `by_act` while the words say "admin" (main before the plain-words plan's Task 6); an outcome added to the SQL's list with no
- * words; words for an outcome the SQL does not allow; and an outcome with no icon on the mark (`markIcon`).
+ * words; words for an outcome the SQL does not allow; an outcome with no icon on the mark (`markIcon`); and `markLabel`'s answer map (the mark on a post that answers a visit) missing `trapped`, and with a key the SQL does not allow.
  */
 import { visitWordFaults, readTree } from './check-visit-outcome-words.mjs';
 
@@ -46,6 +46,10 @@ await fire('a reversed whose only writer names no Act while the words say admin'
 await fire('an outcome added to the SQL list with no words', { sqlText: swap(tree.sqlText, "'reversed', 'dropped') then raise", "'reversed', 'dropped', 'vanished') then raise") }, 'vanished');
 await fire('words for an outcome the SQL does not allow', { sqlText: swap(tree.sqlText, "'reversed', 'dropped') then raise", "'reversed') then raise") }, 'dropped');
 await fire('an outcome with no icon on the mark', { visitText: swap(tree.visitText, "    case 'trapped': return 'teeth';\n", '') }, 'markIcon');
+
+await fire('an answer map missing trapped', { visitText: swap(tree.visitText, "    trapped: `${mod}'s visit to the post this answers was trapped, ended by a trap`,\n", '') }, 'markLabel (answer)');
+await fire('an answer map with an extra key', { visitText: swap(tree.visitText, "    dropped: `${mod}'s visit to the post this answers could not be filed and was dropped`,\n", "    dropped: `${mod}'s visit to the post this answers could not be filed and was dropped`,\n    vanished: `${mod}'s visit to the post this answers vanished`,\n") }, 'vanished');
+await fire('a post map missing trapped (the first map is still held)', { visitText: swap(tree.visitText, "    trapped: `${mod}'s visit to this post was trapped, ended by a trap`,\n", '') }, 'markLabel (post)');
 
 if (failures.length) { console.error(`\n${failures.length} failed:`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`\n${pass} passed`);

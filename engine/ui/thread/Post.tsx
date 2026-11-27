@@ -237,7 +237,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid, 
 });
 
 const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }: Props & { readonly cut?: Cut | undefined }) {
-  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, faceOf, pronounsOf, summary, know, visits } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, faceOf, pronounsOf, summary, know, visits, answered } = useThread();
   const { api, ui, instance } = useKayfa();
   const ref = useRef<HTMLElement>(null);
   const narrow = useNarrow();
@@ -284,7 +284,19 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   const asks = useRef(0);
   const { hudCharacter } = usePlayer();
   const visit = visits?.get(act.id);
-  const askAppeal = useCallback((infraction: Id, opener: HTMLElement) => setAsk({ n: ++asks.current, form: { kind: 'appeal', infraction, visit }, opener }), [visit]);
+  /* A Mod's outcome post carries the mark of the visit it answers, though the visited post may be on another page (design, section 4): the same mark and the same tab, named for the post it is on. The post's own visit comes first. */
+  const answers = visit === undefined ? answered?.get(act.id) : undefined;
+  const marked = visit ?? answers;
+  /* The visited post's author, whose warn bar the visit's filing lands on: the page may not hold that post, so it is read once for the post that answers. A post that cannot be read leaves it unnamed. */
+  const [visitedAuthor, setVisitedAuthor] = useState<Id | null>(null);
+  const answersPost = answers?.post;
+  useEffect(() => {
+    if (answersPost === undefined) return;
+    let live = true;
+    api.act(answersPost).then((a) => { if (live) setVisitedAuthor(a?.character ?? null); }, () => {});
+    return () => { live = false; };
+  }, [api, answersPost]);
+  const askAppeal = useCallback((infraction: Id, opener: HTMLElement) => setAsk({ n: ++asks.current, form: { kind: 'appeal', infraction, visit: marked }, opener }), [marked]);
   /* "Report" is on a player's post that is not the current mask's own; never on a staff post (the server refuses one) or where the post's author is not known to be a player. */
   const reportable = (act.kind === 'post' || act.kind === 'spin') && act.character !== null && person !== undefined && !person.character.staff && hudCharacter !== null && hudCharacter.id !== act.character;
   const askReport = useCallback((opener: HTMLElement) => setAsk({ n: ++asks.current, form: { kind: 'report', post: act.id, seq }, opener }), [act.id, seq]);
@@ -294,7 +306,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   const marks = isPost(act.kind)
     ? <PostMarks
         post={act.id} ghost={act} plays={plays} to={null} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
-        visit={visit} modPronouns={visit ? pronounsOf(visit.mod) : undefined} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
+        visit={marked} on={answers ? 'answer' : 'post'} modPronouns={marked ? pronounsOf(marked.mod) : undefined} author={answers ? visitedAuthor : act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
         {...(reportTo ? { reportTo } : {})}
       />
     : null;

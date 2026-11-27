@@ -340,14 +340,14 @@ export interface Seed {
    * (`ruled` by a meeting, or `lapsed`; neither is still waiting). Only the log reads it here: the fake has no meeting to rule it.
    */
   staffRequest(staff: string, post: Id, options: { ruling: 'fulfill' | 'reject' | 'confer'; by?: 'mod' | 'boss'; moveKind?: string; ruled?: 'fulfill' | 'reject'; lapsed?: boolean; at?: number }): void;
-  /** A visit's end (`end_visit`): filed, intercepted, trapped, reversed or dropped, with the Act that ended it where one did. */
-  visitEnd(visit: Id, end: { outcome: VisitOutcome; by?: Id; line?: string; at?: number }): Id;
+  /** A visit's end (`end_visit`): filed, intercepted, trapped, reversed or dropped, with the Act that ended it where one did. A filing with a line posts it as the Mod does (`file_visit`), unless `unposted` says its post was refused. */
+  visitEnd(visit: Id, end: { outcome: VisitOutcome; by?: Id; line?: string; at?: number; unposted?: boolean }): Id;
   /** The written concession a visit's Mod holds (`visit_concessions`), posted when the visit is talked down; `{who}` is the interceptor's name. Never carried to a reader before it is posted. */
   concession(visit: Id, body: string): void;
   /** The stock lines a Mod's staff key draws a concession from when none was written (the persona's `concessions`); the draw is deterministic by the visit. */
   stockConcessions(staff: string, lines: readonly string[]): void;
-  /** A visit's concession post as already written: `post` is a post of the visit's thread, and the story names it. For a screen's test that needs the post without a talk-down. */
-  concessionPost(visit: Id, post: Id): void;
+  /** A visit's outcome post as already written: `post` is a post of the visit's thread, and the story names it (as `kind`, about the Act `about`, default the visit's end). For a screen's test that needs the post without the outcome writing it. */
+  outcomePost(visit: Id, post: Id, kind?: 'filed' | 'intercepted' | 'ruling', about?: Id): void;
   /** A character's report of a post (`open_report`), with its reason. */
   report(character: Id, post: Id, reason: string, options?: { at?: number }): Id;
   /** A Mod's verdict on a report (`close_report`): the visit it sent, where it sent one. */
@@ -965,14 +965,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   /** The answer a seeded quiz visit holds (never carried to a reader), and its question and choices, by visit. */
   const staffRequests: StaffRequestRec[] = [];
-  /** A written concession by visit, the stock lines by staff key, and the concession post written for a visit. */
+  /** A written concession by visit, the stock lines by staff key, and the outcome posts written for a visit. */
   const writtenConcessions = new Map<Id, string>();
   const stockLines = new Map<string, readonly string[]>();
-  const concessionPosts = new Map<Id, Id>();
+  const outcomePosts = new Map<Id, { kind: 'filed' | 'intercepted' | 'ruling'; about: Id; post: Id }[]>();
   const visitQuizzes = new Map<Id, { readonly question: string; readonly choices: readonly string[]; readonly answer: string }>();
   const visitEndOf = (e: ActRec): VisitEnd => ({ act: e.id, at: iso(e.at), outcome: e.payload.outcome as VisitOutcome, byAct: (e.payload.by_act as Id | undefined) ?? null, line: (e.payload.line as string | undefined) ?? '' });
   /** A visit as `thread_page` carries it: its charges (the start's and each join's), its challenge without an answer, and its end. */
-  function visitOf(v: ActRec): Visit {
+  function visitOf(v: ActRec, shown: ReadonlySet<Id>): Visit {
     const c = v.payload.challenge as { kind: string; price?: number };
     const quiz = visitQuizzes.get(v.id);
     const end = [...acts.values()].find((a) => a.kind === 'visit_end' && a.target === v.id);
@@ -983,6 +983,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       challenge: c.kind === 'quiz' ? (quiz ? { kind: 'quiz', question: quiz.question, choices: quiz.choices } : { kind: 'quiz', pending: true }) : c.kind === 'bribe' ? { kind: 'bribe', price: c.price ?? 0 } : { kind: 'distraction' },
       end: end ? visitEndOf(end) : null,
       ...((r) => (r ? { ruling: r } : {}))(rulingOnVisit(v.id)),
+      answers: (outcomePosts.get(v.id) ?? []).filter((o) => shown.has(o.post)).sort((x, y) => (acts.get(x.post)!.at - acts.get(y.post)!.at) || (acts.get(x.post)!.order - acts.get(y.post)!.order)).map((o) => o.post),
     };
   }
   /** The verdict of the appeal heard on the infraction a visit filed (thread_page's `ruling`), or undefined. */
@@ -992,11 +993,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const ruling = appeal ? [...acts.values()].find((a) => a.kind === 'appeal_ruling' && a.target === appeal.id) : undefined;
     return ruling?.payload.verdict as AppealVerdict | undefined;
   }
-  /** Each of these posts' latest visit (`vis` in thread_page). */
-  const visitsOn = (posts: readonly Id[]): Visit[] => posts.flatMap((p) => {
-    const latest = [...acts.values()].filter((a) => a.kind === 'visit' && a.target === p).sort((a, b) => b.order - a.order)[0];
-    return latest ? [visitOf(latest)] : [];
-  });
+  /** Each of these posts' latest visit (`vis` in thread_page), and the visit an outcome post among them answers: a visit is on the page when its outcome post is, though the visited post is on another page. */
+  const visitsOn = (posts: readonly Id[]): Visit[] => {
+    const out = new Map<Id, Visit>();
+    const shown = new Set(posts);
+    for (const p of posts) {
+      const latest = [...acts.values()].filter((a) => a.kind === 'visit' && a.target === p).sort((a, b) => b.order - a.order)[0];
+      if (latest) out.set(latest.id, visitOf(latest, shown));
+    }
+    for (const [visit, list] of outcomePosts) if (!out.has(visit) && list.some((o) => shown.has(o.post)) && acts.has(visit)) out.set(visit, visitOf(acts.get(visit)!, shown));
+    return [...out.values()];
+  };
   const placed = (threadId: Id) => [...acts.values()].filter((a) => a.thread === threadId && a.seq !== null).sort((a, b) => a.seq! - b.seq!);
 
   /** The account's followed threads with posts past its place by characters it does not own, newest first, at most 50 (my_followed_threads, 0059). */
@@ -1879,19 +1886,24 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /**
-   * The concession post of a talked-down visit (post_concession): the Mod's character posts in the visit's thread, quoting the visited post, the written concession or else a stock line of its staff key
-   * drawn by the visit's id, `{who}` filled once with the interceptor's name. Best effort: with no line, or a Mod gone from the office, nothing is posted.
+   * An outcome's post (post_outcome): `by` posts `line` in the visit's thread, quoting `quote`, and the visit answers with it. Best effort: with no line, or a poster gone from the office, nothing is posted.
    */
-  function postConcession(visit: ActRec, who: string): void {
+  function postOutcome(visit: ActRec, kind: 'filed' | 'intercepted' | 'ruling', about: Id, by: Id | null, line: string | undefined, quote: Id | null | undefined): void {
+    const mod = by === null ? undefined : characters.get(by);
+    if (!mod?.staff || mod.retiredAt !== null || line === undefined || line === '' || !quote || !acts.has(quote)) return;
+    if ((outcomePosts.get(visit.id) ?? []).some((o) => o.about === about)) return;
+    const written = write({ character: mod.id, kind: 'post', thread: visit.thread, target: quote, payload: { body: line } });
+    sendAct(written);
+    outcomePosts.set(visit.id, [...(outcomePosts.get(visit.id) ?? []), { kind, about, post: written.id }]);
+  }
+  /** The talked-down Mod's line (post_concession): the written concession, else a stock line of its staff key drawn by the visit's id, `{who}` filled once with the interceptor's name. */
+  function concessionLine(visit: ActRec, who: string): string | undefined {
     const mod = visit.character === null ? undefined : characters.get(visit.character);
-    if (!mod?.staff || mod.retiredAt !== null) return;
+    if (!mod?.staff) return undefined;
     const lines = stockLines.get(mod.staff.key) ?? [];
     const draw = [...visit.id].reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) >>> 0, 7);
     const line = writtenConcessions.get(visit.id) ?? (lines.length > 0 ? lines[draw % lines.length]! : undefined);
-    if (line === undefined || !visit.target || !acts.has(visit.target)) return;
-    const written = write({ character: mod.id, kind: 'post', thread: visit.thread, target: visit.target, payload: { body: line.replace('{who}', () => who) } });
-    sendAct(written);
-    concessionPosts.set(visit.id, written.id);
+    return line?.replace('{who}', () => who);
   }
 
   function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[], poll?: PollDraft): Answer<Act> {
@@ -4517,7 +4529,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         infraction: inf ? { act: inf.id, character: inf.payload.character as Id, points: inf.payload.points as number, band: inf.payload.band as VisitBand, ruleNumber: (inf.payload.rule_number as number | null) ?? null, expiresAt: inf.payload.expires_at as string, at: iso(inf.at) } : null,
         appeal: appeal ? publicAct(appeal) : null, ruling: ruling ? publicAct(ruling) : null,
         warnPoints: inf ? warnOf(inf.payload.character as Id) : null,
-        concessionPost: ((id) => (id !== undefined && acts.has(id) ? publicAct(acts.get(id)!) : null))(end?.payload.outcome === 'intercepted' ? concessionPosts.get(visit) : undefined),
+        outcomePosts: end ? (outcomePosts.get(visit) ?? []).filter((o) => acts.has(o.post)).map((o) => ({ kind: o.kind, about: o.about, post: publicAct(acts.get(o.post)!) })) : [],
       };
     },
     exchange(origin): Exchange {
@@ -4558,8 +4570,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const written = write({ character: through, kind: 'intercept', thread: v.thread, target: v.target, payload: { visit_act: visit, kind: challenge.kind, succeeded: worked, ...(challenge.kind === 'quiz' ? { answer: (answer ?? '').trim() } : {}) } });
       if (bribed > 0) spend(me()!, bribed, 'bribe', written.id);
       let tailUntil: string | null = null;
-      if (worked) write({ character: null, kind: 'visit_end', thread: v.thread, target: visit, payload: { visit_act: visit, outcome: 'intercepted', by_act: written.id, line: `${who.name} got past ${characters.get(v.character!)?.name ?? 'the Mod'}'s ${challenge.kind === 'quiz' ? 'quiz' : 'price'}.` } });
-      if (worked) postConcession(v, who.name);
+      const ended = worked ? write({ character: null, kind: 'visit_end', thread: v.thread, target: visit, payload: { visit_act: visit, outcome: 'intercepted', by_act: written.id, line: `${who.name} got past ${characters.get(v.character!)?.name ?? 'the Mod'}'s ${challenge.kind === 'quiz' ? 'quiz' : 'price'}.` } }) : null;
+      if (ended) postOutcome(v, 'intercepted', ended.id, v.character, concessionLine(v, who.name), v.target);
       else tailUntil = iso(now() + 24 * 3_600_000);
       return ok({ act: written.id, succeeded: worked, tailUntil });
     },
@@ -4671,6 +4683,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (end !== null) until = iso(end);
       }
       const ruled = write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}), ...(hearer.staff?.office === 'boss' || hearer.staff?.office === 'mod' ? { office: hearer.staff.office } : {}) } });
+      /* close_appeal's post: an infraction's ruling is the hearer's line in the punished post's thread, quoting the post, and answers the visit that filed it; a ban's or a move's has no visit and no mark. */
+      const filedBy = pun.kind === 'infraction' && typeof pun.payload['visit_act'] === 'string' ? acts.get(pun.payload['visit_act']) : undefined;
+      if (filedBy?.kind === 'visit') postOutcome(filedBy, 'ruling', ruled.id, hearer.id, line, typeof pun.payload['about_act'] === 'string' ? pun.payload['about_act'] : filedBy.target);
       if (movePunishes) {
         if (verdict === 'overturned') {
           moveEnds.set(pun.id, { why: 'overturned', by: 'appeal', at: now() });
@@ -6538,14 +6553,19 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       writtenConcessions.set(visit, body);
     },
     stockConcessions(staff, lines) { stockLines.set(staff, [...lines]); },
-    concessionPost(visit, post) {
-      if (acts.get(visit)?.kind !== 'visit' || !acts.has(post)) throw new Error(`no such visit ${visit} or post ${post}`);
-      concessionPosts.set(visit, post);
+    outcomePost(visit, post, kind = 'intercepted', about) {
+      const v = acts.get(visit);
+      if (v?.kind !== 'visit' || !acts.has(post)) throw new Error(`no such visit ${visit} or post ${post}`);
+      const end = [...acts.values()].find((a) => a.kind === 'visit_end' && a.target === visit);
+      outcomePosts.set(visit, [...(outcomePosts.get(visit) ?? []), { kind, about: about ?? end?.id ?? visit, post }]);
     },
     visitEnd(visit, e) {
       const v = acts.get(visit);
       if (!v || v.kind !== 'visit') throw new Error(`no such visit ${visit}`);
-      return write({ character: null, kind: 'visit_end', thread: v.thread, target: visit, at: e.at, payload: { visit_act: visit, outcome: e.outcome, ...(e.by ? { by_act: e.by } : {}), line: e.line ?? '' } }).id;
+      const ended = write({ character: null, kind: 'visit_end', thread: v.thread, target: visit, at: e.at, payload: { visit_act: visit, outcome: e.outcome, ...(e.by ? { by_act: e.by } : {}), line: e.line ?? '' } });
+      /* file_visit: a filing posts its line at once, as the Mod, quoting the visited post. */
+      if (e.outcome === 'filed' && e.unposted !== true) postOutcome(v, 'filed', ended.id, v.character, e.line, v.target);
+      return ended.id;
     },
     report(character, post, reason, o) {
       const p = acts.get(post);

@@ -1704,7 +1704,7 @@ describe('the opening post\'s strip and the ORIGIN band\'s marks are separate', 
     w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.' });
     openSpun(w, spun);
     const opening = await screen.findByRole('article', { name: /^Post 1 /u });
-    const mark = await within(opening).findByRole('button', { name: /Opens the visit\.$/u });
+    const mark = await within(opening).findByRole('button', { name: /to this post.*Opens the visit\.$/u });
     expect(mark.closest('.kb-act-meta')).not.toBeNull();
   });
 });

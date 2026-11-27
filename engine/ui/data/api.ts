@@ -664,6 +664,8 @@ export interface Visit {
   readonly end: VisitEnd | null;
   /** The ruling of the appeal heard on the infraction it filed (`thread_page`'s visits); absent where none was heard. */
   readonly ruling?: AppealVerdict;
+  /** The visit's outcome posts on this page (`thread_page`'s `answers`), by time: each carries the visit's mark beside the visited post's. Empty where none. */
+  readonly answers: readonly Id[];
 }
 
 /** What a visit's filing put on its author: the infraction Act's own facts. */
@@ -693,10 +695,10 @@ export interface VisitStory {
   /** The points on the infraction's character's warn bar now, read with the story (`characters_public`); null with no infraction. */
   readonly warnPoints: number | null;
   /**
-   * The concession post a talked-down Mod wrote in the thread (`visit_concession_post`, read only for an intercepted visit), as the Act every reader sees; null where none was posted.
-   * An Act and not its id so the row can link it by its seq and the Lens needs no read of its own for where it stands.
+   * The posts a Mod wrote for this visit's outcomes (`visit_outcome_posts`, read for every ended visit): the filing's, a talk-down's, an appeal ruling's, each as the Act every reader sees, and the Act the outcome is about.
+   * Acts and not ids so a row can show the post's words and link it by its seq, and the Lens needs no read of its own for where it stands; empty where none was posted or the read failed.
    */
-  readonly concessionPost: Act | null;
+  readonly outcomePosts: readonly { readonly kind: 'filed' | 'intercepted' | 'ruling'; readonly about: Id; readonly post: Act }[];
 }
 
 /** What `intercept` answers: the attempt's Act, whether it worked, and the character's tail where it did not. */

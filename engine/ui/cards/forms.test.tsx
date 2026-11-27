@@ -275,7 +275,7 @@ describe('the appeal form', () => {
   }
   async function opened(w: ReturnType<typeof filed> = filed()) {
     open(w);
-    await userEvent.click(await within(await article(3)).findByRole('button', { name: /Opens the visit\.$/u }));
+    await userEvent.click(await within(await article(3)).findByRole('button', { name: /to this post.*Opens the visit\.$/u }));
     const visitPanel = await dialog(/^Visit/u);
     await waitFor(() => expect(visitPanel.querySelector('.kb-visit')).not.toHaveAttribute('aria-busy'));
     await userEvent.click(await within(visitPanel).findByRole('button', { name: 'Appeal · 0.50 Aura' }));
@@ -296,7 +296,7 @@ describe('the appeal form', () => {
   test('the Appeal tab is read before it shows: the punishment is in the first render of the form', async () => {
     const w = filed();
     open(w);
-    await userEvent.click(await within(await article(3)).findByRole('button', { name: /Opens the visit\.$/u }));
+    await userEvent.click(await within(await article(3)).findByRole('button', { name: /to this post.*Opens the visit\.$/u }));
     const visitPanel = await dialog(/^Visit/u);
     await within(visitPanel).findByRole('button', { name: 'Appeal · 0.50 Aura' });
     let release!: () => void;
@@ -525,7 +525,7 @@ describe('Spin thread on a form\'s answer', () => {
     w.fake.seed.infraction(visit, { points: 2 });
     w.fake.seed.judging({ appeal: 'upheld' });
     open(w);
-    await userEvent.click(await within(await article(3)).findByRole('button', { name: /Opens the visit\.$/u }));
+    await userEvent.click(await within(await article(3)).findByRole('button', { name: /to this post.*Opens the visit\.$/u }));
     const visitPanel = await dialog(/^Visit/u);
     await userEvent.click(await within(visitPanel).findByRole('button', { name: 'Appeal · 0.50 Aura' }));
     const panel = await dialog('Appeal on this post');
