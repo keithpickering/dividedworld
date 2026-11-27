@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { Profiler, useState } from 'react';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, holdReads, renderIn, renderInWorld, testInstance } from '../test-world.tsx';
 import { seedMoves } from '../board/move-world.ts';
 import { IndexScreen } from './Index.tsx';
@@ -7,11 +8,18 @@ import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { LoadedIndex } from '../loaded.tsx';
 import { Routes, type Route } from '../routes.tsx';
 import { loadIndex, type LoadEnv, type ScreenDoc } from '../screen-docs.ts';
-import type { IndexPage } from '../data/api.ts';
+import type { BoardSummary, IndexListener, IndexPage } from '../data/api.ts';
+
+/* A switch for one test: the router hands the screen a retry that is new on every render. */
+const routerFlags = vi.hoisted(() => ({ freshRetry: false }));
+vi.mock('../router.tsx', async (orig) => {
+  const real = await orig<typeof import('../router.tsx')>();
+  return { ...real, useRouterInternals: () => { const r = real.useRouterInternals(); return routerFlags.freshRetry ? { ...r, retry: () => r.retry() } : r; } };
+});
 
 const T0 = Date.UTC(2026, 9, 20, 12);
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => { localStorage.clear(); routerFlags.freshRetry = false; });
 
 describe('the index', () => {
   test('lists the ordinary board and The System\'s, with its thread count, last post and read-only note', async () => {
@@ -285,12 +293,11 @@ describe('the index rows\' units and last post (list-rows plan, Task 1)', () => 
       const row = (await screen.findByRole('link', { name: 'General' })).closest('tr')!;
       expect(row).toHaveTextContent('One');
       expect(within(row).getByText('1', { selector: '.kb-num' })).toBeInTheDocument();
-      await act(async () => {
-        await fake.startThread('general', w.mine, 'Fresh', 'y');
-        await new Promise((r) => setTimeout(r, 20));
-      });
-      const after = screen.getByRole('link', { name: 'General' }).closest('tr')!;
-      await waitFor(() => expect(within(after).getByText('2', { selector: '.kb-num' })).toBeInTheDocument());
+      /* findBy resolves outside act, before the screen's passive effects (the subscription) have run; flush them, so the summary has a listener to reach. */
+      await act(async () => {});
+      await act(async () => { await fake.startThread('general', w.mine, 'Fresh', 'y'); });
+      const after = (await screen.findByRole('link', { name: 'General' })).closest('tr')!;
+      expect(await within(after).findByText('2', { selector: '.kb-num' })).toBeInTheDocument();
       expect(after).toHaveTextContent('Fresh');
     });
 
@@ -313,21 +320,131 @@ describe('the index rows\' units and last post (list-rows plan, Task 1)', () => 
       expect(await screen.findByRole('link', { name: 'Third' })).toBeInTheDocument();
     });
 
-    test('a Last-post character the page does not know is read once and its name shown', async () => {
+    test('a Last-post character the page does not know is read once, however many posts it makes, and its name shown', async () => {
       const { seeded: w, fake } = renderInWorld(<LoadedIndex />, {
         seed: (f) => { const me = f.seed.account('me'); const mine = f.seed.character(me, 'Newcomer', 'face', { at: T0 }); f.signInAs(me); return { mine }; },
       });
       await screen.findByRole('link', { name: 'General' });
+      await act(async () => {});
       const reads: string[][] = [];
       const real = fake.characters.bind(fake);
-      fake.characters = async (ids: readonly string[]) => { reads.push([...ids]); return real(ids); };
+      /* The read is held until both posts have been heard, so the second summary arrives while the first read is in flight. */
+      let release: () => void = () => {};
+      const gate = new Promise<void>((r) => { release = r; });
+      fake.characters = async (ids: readonly string[]) => { reads.push([...ids]); await gate; return real(ids); };
       await act(async () => {
         await fake.startThread('general', w.mine, 'Late', 'x');
-        await new Promise((r) => setTimeout(r, 20));
+        await fake.startThread('general', w.mine, 'Later', 'x');
       });
-      const row = screen.getByRole('link', { name: 'General' }).closest('tr')!;
+      release();
+      const row = (await screen.findByRole('link', { name: 'General' })).closest('tr')!;
       expect(await within(row).findByText('Newcomer')).toBeInTheDocument();
       expect(reads).toHaveLength(1);
+    });
+
+    /* The listener the screen subscribes with, taken from the fake, so a test can send summaries by hand. */
+    const tapIndex = (fake: ReturnType<typeof buildWorld>) => {
+      const taps: { listener: IndexListener; count: number } = { listener: {}, count: 0 };
+      const real = fake.subscribeIndex.bind(fake);
+      fake.subscribeIndex = (l) => { taps.listener = l; taps.count++; return real(l); };
+      return taps;
+    };
+    const summary = (b: BoardSummary, over: Partial<BoardSummary>): BoardSummary => ({ ...b, ...over });
+
+    test('a new document starts from itself: no render over it shows the last document\'s live summary', async () => {
+      const fake = buildWorld();
+      const me = fake.seed.account('me');
+      const spritey = fake.seed.character(me, 'Spritey', 'face', { at: T0 });
+      fake.seed.thread('general', spritey, 'One', 'x', { at: T0 });
+      fake.signInAs(me);
+      const boot = await fake.boot();
+      const doc = await fake.indexPage();
+      const next: IndexPage = { ...doc, boards: doc.boards.map((b) => (b.lastAt === null ? b : { ...b, threadCount: 7 })) };
+      const taps = tapIndex(fake);
+      /* The profiler reports each commit as it lands, before any passive effect could have cleaned it up. */
+      const frames: string[] = [];
+      let swap: () => void = () => {};
+      const Host = () => {
+        const [d, setD] = useState<IndexPage>(doc);
+        swap = () => setD(next);
+        return <Profiler id="index" onRender={() => { frames.push(document.querySelector('.kb-board-threads')?.textContent ?? ''); }}><IndexScreen doc={d} /></Profiler>;
+      };
+      renderIn(fake, <Host />, { boot });
+      await act(async () => {});
+      const general = doc.boards.find((b) => b.lastAt !== null)!;
+      await act(async () => { taps.listener.onBoard!(summary(general, { threadCount: 2, lastAt: new Date(Date.parse(general.lastAt!) + 1000).toISOString() })); });
+      expect(frames.at(-1)).toBe('2 threads');
+      frames.length = 0;
+      await act(async () => { swap(); });
+      expect(frames).not.toContain('2 threads');
+      expect(frames.at(-1)).toBe('7 threads');
+    });
+
+    test('an older summary, or the same one twice, does not overwrite a newer one', async () => {
+      const fake = buildWorld();
+      const me = fake.seed.account('me');
+      const spritey = fake.seed.character(me, 'Spritey', 'face', { at: T0 });
+      fake.seed.thread('general', spritey, 'One', 'x', { at: T0 });
+      fake.signInAs(me);
+      const boot = await fake.boot();
+      const doc = await fake.indexPage();
+      const taps = tapIndex(fake);
+      renderIn(fake, <IndexScreen doc={doc} />, { boot });
+      await act(async () => {});
+      const general = doc.boards.find((b) => b.lastAt !== null)!;
+      const at = (ms: number) => new Date(Date.parse(general.lastAt!) + ms).toISOString();
+      await act(async () => { taps.listener.onBoard!(summary(general, { threadCount: 5, lastAt: at(2000), lastTitle: 'Newer' })); });
+      await act(async () => { taps.listener.onBoard!(summary(general, { threadCount: 3, lastAt: at(1000), lastTitle: 'Older' })); });
+      let row = screen.getByRole('link', { name: 'General' }).closest('tr')!;
+      expect(row).toHaveTextContent('5 threads');
+      expect(row).toHaveTextContent('Newer');
+      /* Older than the document's own entry is dropped too, on a board with nothing live yet. */
+      await act(async () => { taps.listener.onBoard!(summary(general, { threadCount: 1, lastAt: at(-1000), lastTitle: 'Ancient' })); });
+      row = screen.getByRole('link', { name: 'General' }).closest('tr')!;
+      expect(row).toHaveTextContent('Newer');
+    });
+
+    test('the subscription is made once; a retry that is new on every render does not rebuild it', async () => {
+      routerFlags.freshRetry = true;
+      const fake = buildWorld();
+      fake.signInAs(fake.seed.account('me'));
+      const env: LoadEnv = { api: fake, signedIn: () => true, postsPerPage: () => 20, effects: [] };
+      const routes: readonly Route[] = [{ path: '/', load: () => loadIndex(env), render: (_, doc) => <IndexScreen doc={doc as ScreenDoc<IndexPage>} /> }];
+      const taps = tapIndex(fake);
+      let bump: () => void = () => {};
+      const Host = () => {
+        const [, set] = useState(0);
+        bump = () => set((n) => n + 1);
+        return <Routes routes={routes} />;
+      };
+      renderIn(fake, <Host />);
+      await screen.findByRole('link', { name: 'General' });
+      await act(async () => {});
+      await act(async () => { bump(); });
+      await act(async () => { bump(); });
+      expect(taps.count).toBe(1);
+    });
+
+    test('a burst of summaries for boards not on the page reads the index once', async () => {
+      const fake = buildWorld();
+      const me = fake.seed.account('me');
+      fake.signInAs(me);
+      let loads = 0;
+      const env: LoadEnv = { api: fake, signedIn: () => true, postsPerPage: () => 20, effects: [] };
+      const routes: readonly Route[] = [{ path: '/', load: () => { loads++; return loadIndex(env); }, render: (_, doc) => <IndexScreen doc={doc as ScreenDoc<IndexPage>} /> }];
+      const taps = tapIndex(fake);
+      renderIn(fake, <Routes routes={routes} />);
+      await screen.findByRole('link', { name: 'General' });
+      await act(async () => {});
+      expect(loads).toBe(1);
+      const general = (await fake.indexPage()).boards[0]!;
+      await act(async () => {
+        taps.listener.onBoard!(summary(general, { id: 'nowhere-1', slug: 'n1' }));
+        taps.listener.onBoard!(summary(general, { id: 'nowhere-2', slug: 'n2' }));
+      });
+      await waitFor(() => expect(loads).toBe(2));
+      await act(async () => { await new Promise((r) => setTimeout(r, 400)); });
+      expect(loads).toBe(2);
     });
   });
 });

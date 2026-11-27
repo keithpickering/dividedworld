@@ -21,6 +21,9 @@ import { Link, useRouterInternals } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import './index.css';
 
+/** How long the first summary of a board not on the page waits for the rest of its burst before the index is read again. */
+const REREAD_AFTER = 50;
+
 /** The index draws its document (the forum-load plan, Task 13): the router loaded it, so the first frame is whole. Signed out, the loader's marker is the front door. */
 export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
   const { api, settings, ui } = useKayfa();
@@ -28,32 +31,59 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
   const page = isSignedOutDoc(doc) ? null : doc;
   const docCharacters = useMemo<ReadonlyMap<Id, Character>>(() => new Map((page?.characters ?? []).map((c) => [c.id, c])), [page]);
 
-  /* What the document shows, and what live summaries changed or named since; a new document starts again from itself. */
-  const [live, setLive] = useState<ReadonlyMap<Id, BoardSummary>>(() => new Map());
-  const [extra, setExtra] = useState<ReadonlyMap<Id, Character>>(() => new Map());
+  /* What the document shows, and what live summaries changed or named since, kept with the document they were made over: a new document is read as itself on its first render. */
+  const [mine, setMine] = useState<{ readonly doc: ScreenDoc<IndexPage>; readonly live: ReadonlyMap<Id, BoardSummary>; readonly extra: ReadonlyMap<Id, Character> }>(() => ({ doc, live: new Map(), extra: new Map() }));
+  const cur = mine.doc === doc ? mine : { doc, live: new Map<Id, BoardSummary>(), extra: new Map<Id, Character>() };
+  const live = cur.live;
+  const extra = cur.extra;
   const asked = useRef<Set<Id>>(new Set());
   const known = useRef<ReadonlySet<Id>>(new Set());
-  const listed = useRef<ReadonlySet<Id>>(new Set());
-  useEffect(() => { setLive(new Map()); setExtra(new Map()); asked.current = new Set(); }, [doc]);
+  const listed = useRef<ReadonlyMap<Id, BoardSummary>>(new Map());
+  const docRef = useRef(doc);
+  const retryRef = useRef(retry);
+  const rereading = useRef<ReturnType<typeof setTimeout> | null>(null);
+  docRef.current = doc;
+  retryRef.current = retry;
+  /* A new document answers any re-read asked for, and starts the character reads again. */
+  useEffect(() => {
+    asked.current = new Set();
+    if (rereading.current !== null) { clearTimeout(rereading.current); rereading.current = null; }
+  }, [doc]);
+  useEffect(() => () => { if (rereading.current !== null) clearTimeout(rereading.current); }, []);
   known.current = new Set([...docCharacters.keys(), ...extra.keys()]);
-  listed.current = new Set((page?.boards ?? []).map((b) => b.id));
+  listed.current = new Map((page?.boards ?? []).map((b) => [b.id, b]));
 
   const signedIn = page !== null;
   useEffect(() => {
     if (!signedIn) return undefined;
+    /* The state is taken as of the document the summary was heard over. */
+    const over = (cur: typeof mine): typeof mine => (cur.doc === docRef.current ? cur : { doc: docRef.current, live: new Map(), extra: new Map() });
     return api.subscribeIndex({
       onBoard(b) {
-        if (!listed.current.has(b.id)) { retry(); return; }
-        setLive((m) => new Map([...m, [b.id, b]]));
+        const shown = listed.current.get(b.id);
+        if (!shown) {
+          /* A burst of them (one per post) is one re-read, a moment after the first. */
+          if (rereading.current === null) rereading.current = setTimeout(() => { rereading.current = null; retryRef.current(); }, REREAD_AFTER);
+          return;
+        }
+        setMine((s) => {
+          const base = over(s);
+          const held = base.live.get(b.id) ?? shown;
+          /* A summary may come twice or out of order: the one with the later Last post is kept. */
+          if (held.lastAt !== null && (b.lastAt === null || Date.parse(held.lastAt) > Date.parse(b.lastAt))) return base;
+          return { ...base, live: new Map([...base.live, [b.id, b]]) };
+        });
         const c = b.lastCharacter;
         if (c === null || known.current.has(c) || asked.current.has(c)) return;
         asked.current.add(c);
+        const heard = docRef.current;
         void api.characters([c]).then((who) => {
-          if (who.length) setExtra((m) => new Map([...m, ...who.map((w) => [w.id, w] as const)]));
+          if (!who.length || docRef.current !== heard) return;
+          setMine((s) => { const base = over(s); return { ...base, extra: new Map([...base.extra, ...who.map((w) => [w.id, w] as const)]) }; });
         }).catch(() => { asked.current.delete(c); /* the next summary or read of the index shows it */ });
       },
     });
-  }, [api, retry, signedIn]);
+  }, [api, signedIn]);
 
   const characters = useMemo(() => (extra.size === 0 ? docCharacters : new Map([...docCharacters, ...extra])), [docCharacters, extra]);
 
