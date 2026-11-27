@@ -25,6 +25,7 @@ import { Link } from '../router.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { excerpt } from '../profile/record.ts';
+import { withoutLeadingQuote } from '../../bbcode/outcome-quote.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import {
   VISIT_KIND, appealTerms, noticeWords, auraWords, chargeWords, markIcon, markLabel, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, timeLeft, topCharge, tryTerms, pointsPlain, visitState, type MarkOn, type VisitIcon,
@@ -155,7 +156,7 @@ function HowRow({ row, name, role, tallies, mine, onSpin }: {
   /* A row with an outcome post is that post: what it acts on and what it shows are the post's. */
   const target = post ? post.id : row.act;
   const by = post ? post.character : row.character;
-  const quote = post ? excerpt(said(post.payload['body'] as string | undefined)) : row.quote;
+  const quote = post ? excerpt(withoutLeadingQuote(said(post.payload['body'] as string | undefined))) : row.quote;
   const to = post && post.seq !== null ? threadHref(post.thread, pageOf(post.seq, perPage), post.seq) : null;
   return (
     <li className="kb-lens-row" data-kb-act={target}>

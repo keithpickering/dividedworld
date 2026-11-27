@@ -45,6 +45,7 @@ import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { quotedActs, visibleText } from '../../bbcode/visible.ts';
 import { forgedList, forgedSet, holds, quoteHeld, quoteSource } from '../../bbcode/quoted.ts';
 import { parse } from '../../bbcode/parse.ts';
+import { outcomeQuote } from '../../bbcode/outcome-quote.ts';
 import { concealQuotes } from '../../bbcode/conceal.ts';
 import { pageOf } from '../thread/pages.ts';
 import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
@@ -1894,7 +1895,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const mod = by === null ? undefined : characters.get(by);
     if (!mod?.staff || mod.retiredAt !== null || line === undefined || line === '' || !quote || !acts.has(quote)) return;
     if ((outcomePosts.get(visit.id) ?? []).some((o) => o.about === about)) return;
-    const written = write({ character: mod.id, kind: 'post', thread: visit.thread, target: quote, payload: { body: line } });
+    /* The post opens with a real quote of its target's current words, as post_outcome writes it (the outcome quotes plan); the Mod's words are never cut for it, and a post with no room for one word has none. */
+    const target = acts.get(quote)!;
+    const said = (edits(target).at(-1)?.payload ?? target.payload)['body'];
+    const room = settings.postMaxLength - line.length - `[quote=${quote}][/quote]\n[noparse][/noparse]`.length;
+    const opening = typeof said === 'string' ? outcomeQuote(quote, said, room) : '';
+    const written = write({ character: mod.id, kind: 'post', thread: visit.thread, target: quote, payload: { body: `${opening}${line}` } });
     sendAct(written);
     outcomePosts.set(visit.id, [...(outcomePosts.get(visit.id) ?? []), { kind, about, post: written.id }]);
   }

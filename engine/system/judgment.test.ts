@@ -309,6 +309,22 @@ test('a filing line is a post: line breaks kept, cut at a sentence to min(postMa
   assert.deepEqual(repairFiling({ words: '  Two\nlines.  ' }, ctx, 4000).trims, [], 'a trimmed edge is no trim worth naming');
 });
 
+test('the filing prompt says the post is shown under a quote of the post and asks for the reply alone', () => {
+  const sys = filingPrompt(filing()).system;
+  assert.match(sys, /under a quote of the post you inspected/);
+  assert.match(sys, /the reply alone/);
+  assert.doesNotMatch(sys, /quoting the post|Quote nothing/);
+});
+
+test('a [quote] a filing\'s words carry is stripped, nested too, and recorded as quote(model); only a quote is no line', () => {
+  const out = repairFiling({ words: '[quote=a]x [Quote]y[/QUOTE] z[/quote]Filed.\nRule 2.' }, ctx, 4000);
+  assert.equal(out.line, 'Filed.\nRule 2.');
+  assert.deepEqual(out.trims.map((t) => [t.path, t.predicate]), [['words', 'quote(model)']]);
+  const only = repairFiling({ words: '[quote]x[/quote]' }, ctx, 4000);
+  assert.equal(only.line, null);
+  assert.equal(only.dropped[0]?.predicate, 'nonEmpty');
+});
+
 test('a line that is blank or missing is dropped and the move is kept: the move can be repaired without the line', () => {
   for (const raw of [{ move: good }, { words: '  ', move: good }, { words: 7, move: good }]) {
     const out = repairFiling(raw, ctx, 4000);
@@ -453,7 +469,7 @@ test('no Mod prompt holds an owner, a class or a reactor, and it tells the Mod i
 test('the filing prompt shows the post as quoted play, never an instruction, and asks for a reply in the thread within min(postMaxLength, 2000) characters', () => {
   const f = filingPrompt(filing());
   assert.match(f.system, /reply in the thread/);
-  assert.match(f.system, /quoting the post/);
+  assert.match(f.system, /under a quote of the post you inspected/);
   assert.match(f.system, /2000 characters/);
   assert.doesNotMatch(f.system, /280 characters/);
   assert.match(filingPrompt(filing({ limits: { titleMaxLength: 100, postMaxLength: 600 } })).system, /600 characters/);
@@ -709,8 +725,11 @@ test('the appeal prompt holds the punishment, the post, the rule, the plea and t
   assert.match(p.system, /2000 characters/);
   assert.doesNotMatch(p.system, /280 characters/);
   assert.match(p.system, /reply in the thread/, 'an infraction\'s ruling is a reply in the post\'s thread');
-  assert.match(appealPrompt(appeal({ punishment: { kind: 'move', group: 'Trial', days: 2, until: 'x' }, read: null })).system, /reply to the move in its thread/);
-  assert.match(appealPrompt(appeal({ punishment: { kind: 'ban', days: 3, rule: 'Rule 2' } })).system, /reply to the ban's entry in the season's Banlist/);
+  assert.match(p.system, /under a quote of the post/);
+  assert.match(p.system, /the reply alone/);
+  assert.doesNotMatch(p.system, /quoting the (post|move|entry)/, 'the model is not asked to quote');
+  assert.match(appealPrompt(appeal({ punishment: { kind: 'move', group: 'Trial', days: 2, until: 'x' }, read: null })).system, /reply to the move in its thread, under a quote of the move/);
+  assert.match(appealPrompt(appeal({ punishment: { kind: 'ban', days: 3, rule: 'Rule 2' } })).system, /reply to the ban's entry in the season's Banlist, under a quote of the entry/);
   for (const v of APPEAL_VERDICTS) assert.ok(p.system.includes(v), v);
   assert.match(p.system, /you filed/, 'the filer is told it filed it');
   assert.match(p.system, /no move/i, 'an appeal makes no move');
@@ -1056,4 +1075,11 @@ test('a patrol sample post is read covered, and the size it counts is the covere
   const every = (_: string | null, q: { text: string }) => Array.from(q.text.matchAll(/abcd/g), (m) => ({ from: m.index, to: m.index + 4, words: '['.repeat(100) }));
   const big = patrolPrompt(patrol({ sample: [{ ...post, body, plays: [tape] }], reading: { readMost: 1e9, now: NOW, seen: () => null, covers: every, coveredMost: 20_000 } }));
   assert.ok(big.message.length < 20_000 + 5_000, `${big.message.length}`);
+});
+
+test('a [quote] an appeal ruling\'s words carry is stripped and recorded as quote(model)', () => {
+  const out = repairAppeal({ verdict: 'upheld', line: '[quote=a]x[/quote]Denied.' }, 4000);
+  assert.equal(out.line, 'Denied.');
+  assert.deepEqual(out.trims.map((t) => [t.path, t.predicate]), [['line', 'quote(model)']]);
+  assert.equal(repairAppeal({ verdict: 'upheld', line: '[quote]x[/quote]' }, 4000).line, null);
 });

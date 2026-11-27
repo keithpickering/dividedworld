@@ -1982,6 +1982,18 @@ describe('a visit\'s tab', () => {
       expect(l).not.toHaveTextContent(/of 10/u);
     });
 
+    test('an outcome row shows the Mod\'s words, not the quote the post opens with', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ, mine: true });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.' });
+      openVisit(w);
+      const l = await press(w);
+      await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
+      const filed = [...l.querySelectorAll('.kb-lens-message')].map((b) => b.textContent);
+      expect(filed).toContain('\u201cStamped, initialed, and filed under D.\u201d');
+      expect(filed.some((t) => t?.includes('post 4'))).toBe(false);
+    });
+
     test('Appeal, with its price and terms, is the author\'s current mask\'s alone, and opens the form', async () => {
       width(false);
       const w = visited({ challenge: QUIZ, mine: true });
