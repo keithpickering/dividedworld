@@ -98,10 +98,10 @@ export { FOG_BUDGET_MS, FOG_SHARE, forceFogLevel, resetFogLadder, forgetScratch,
 /** The control's label and its hidden description, which the Lens is given. */
 export const WAVE_LABEL = 'Wave the smoke';
 export const WAVE_DESCRIBE = `Hold Space or Enter on this button to wave the smoke off line by line, at the pace of a hand. Let go and it rolls back in. Hold to the end and the post stays clear for ${SMOKE.waved / 1000} seconds.`;
-/** The line that stands where the words are for a screen reader while they are under smoke: the glass's voice, plain and true. */
-export const SMOKED_WAY = `This post is under smoke. To read it, open Hot Box in the cards on this post and hold ${WAVE_LABEL}.`;
+/** The line that stands where the words are for a screen reader while they are under smoke: the glass's voice, plain and true. It names the control the reader is given, `label` (the author is given Air it out once the hold is over). */
+export const smokedWay = (label: string): string => `This post is under smoke. To read it, open Hot Box in the cards on this post and hold ${label}.`;
 /** The same line for a post with a band aired from its top: it follows the aired lines' own words, and the smoke is over the rest. */
-export const SMOKED_REST_WAY = `The rest of this post is under smoke. To read it, open Hot Box in the cards on this post and hold ${WAVE_LABEL}.`;
+export const smokedRestWay = (label: string): string => `The rest of this post is under smoke. To read it, open Hot Box in the cards on this post and hold ${label}.`;
 
 /** The author's held control, once the hold is over, and its hidden description. */
 export const AIR_LABEL = 'Air it out';
@@ -338,8 +338,8 @@ export function HotBoxEffect(props: EffectProps) {
   const play = up.filter((p) => !airedOut(states[p.id]?.state)).at(-1);
   const aired = play ? undefined : up.at(-1);
   useEffect(() => { if (!play && !aired) show(null); }, [show, play, aired]);
-  if (play) return <Smoke key={play.id} {...props} play={play} />;
   /* Keyed by the play: a second cast after the first ended starts with nothing cleared. */
+  if (play) return <Smoke key={play.id} {...props} play={play} />;
   return aired ? <Aired show={show}>{children}</Aired> : <>{children}</>;
 }
 
@@ -728,8 +728,8 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
       q.timer = setTimeout(() => { void run(attempt + 1); }, RETRY_AFTER_MS * 2 ** attempt);
       return;
     }
-    /* The server's answer would be the same for what was made since: the band stays where it holds it, and the next line sends its own. */
-    q.want = null;
+    /* The server's answer to this state would be the same again, so it is not sent again; a newer state queued while it was in flight is another question, and stays queued to go after the debounce (Whoops! keeps its dirty mark the same way). */
+    if (q.want) q.timer = setTimeout(() => { void run(); }, q.gone ? 0 : SAVE_AFTER_MS);
   }, []);
   const queueSave = useCallback((state: Record<string, unknown>) => {
     const q = queue.current;
@@ -737,16 +737,8 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     clearTimeout(q.timer);
     q.timer = setTimeout(() => { void send(); }, SAVE_AFTER_MS);
   }, [send]);
-  /* The post has gone: nothing more is set and nothing retried, and what still waits on its debounce is sent at once. */
-  useEffect(() => {
-    const q = queue.current;
-    q.gone = false;
-    return () => {
-      q.gone = true;
-      clearTimeout(q.timer);
-      void send();
-    };
-  }, [send]);
+  /* The post is here (its going is below, after the hold is settled: cleanups run in the order the effects are written). */
+  useEffect(() => { queue.current.gone = false; }, []);
 
   /* ---- the hold ---- */
   const start = useCallback(() => {
@@ -809,11 +801,17 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     const off = (a: number, b: number) => Math.abs(a - b) > SHIFT_PX;
     if (sw && sw.releasedAt === null && (off(sw.width, frame.ww) || off(sw.height, frame.wh) || off(sw.x0, frame.wx) || off(sw.y0, frame.wy))) stop();
   }, [frame.ww, frame.wh, frame.wx, frame.wy, stop]);
-  /* A hold ends with the effect (nothing is drawn or timed after it). */
+  /* The post has gone. The hold ends with the effect (nothing is drawn or timed after it), but the lines it finished since the last tick are settled first so their share is queued; then nothing more is set and nothing retried, and what waits on its debounce is sent at once. */
   useEffect(() => () => {
-    const m = model.current;
-    if (m.sweep && m.sweep.releasedAt === null) m.sweep = { ...m.sweep, releasedAt: api.now() };
-  }, [api]);
+    const m = model.current, q = queue.current;
+    if (m.sweep && m.sweep.releasedAt === null) {
+      settle(api.now());
+      if (m.sweep) m.sweep = { ...m.sweep, releasedAt: api.now() };
+    }
+    q.gone = true;
+    clearTimeout(q.timer);
+    void send();
+  }, [api, settle, send]);
 
   /* ---- time: what the timer does when it fires ---- */
   const step = useCallback(() => {
@@ -838,7 +836,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     wasWaved.current = waved;
   }, [waved, play.card]);
 
-  /* The lines already aired are not smoke: their words are read out beside the inert block, so a screen reader pays no more for them than a sighted reader. Read again whenever the band or the words' size change; a browser that cannot measure a range gives none, and the whole-post line stands. */
+  /* The lines already aired are not smoke: their words are read out beside the inert block, so a screen reader pays no more for them than a sighted reader. Read again whenever the band, the words or their size change; a browser that cannot measure a range gives none, and the whole-post line stands. */
   const [airedWords, setAiredWords] = useState('');
   const airedBand = airedTop(saved, frame.h);
   useLayoutEffect(() => {
@@ -847,7 +845,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     const read = readLines(words, { w: frame.ww, h: frame.wh });
     const lines = read.filter((l) => px(l.bottom * frame.wh + frame.wy) <= airedBand + BAND_SLOP_PX);
     setAiredWords(lines.map((l) => l.text).join(' '));
-  }, [waved, airedBand, frame.ww, frame.wh, frame.wy]);
+  }, [waved, airedBand, frame.ww, frame.wh, frame.wy, children]);
 
   /* ---- what the reader is shown, and what the Lens is told ---- */
   const m = model.current;
@@ -859,6 +857,8 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
   const endNote = play.ends === undefined ? '' : ` ${endsWords(play.ends, fixedAt ?? at)}.`;
   const endsText = `${!author ? ENDS_READER : holding ? `You can air it out for good in ${holdLeft(until! - clock)}. Until then, point at the words, or hold ${WAVE_LABEL}, to read.` : ENDS_AUTHOR}${endNote}`;
   const progress = Math.round((1 - s) * 100) / 100;
+  /* The control the Lens is given, which the in-body line names. */
+  const control = airing ? AIR_LABEL : WAVE_LABEL;
   const view = useMemo<CardView>(() => ({
     progress, state, ends: endsText, yours: !waved,
     controls: [airing ? { kind: 'hold', label: AIR_LABEL, describe: AIR_DESCRIBE, start, stop } : { kind: 'hold', label: WAVE_LABEL, describe: WAVE_DESCRIBE, start, stop }],
@@ -881,7 +881,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
   return (
     <div ref={hostRef} className="dw-hotbox" data-kb-hotbox data-dw-fog-level={forcedFogLevel() ?? 0} style={standIn}>
       {forced && <p className="dw-hotbox-sign"><strong>{state}.</strong> {endsText}</p>}
-      {!waved && <p className="kb-visually-hidden dw-hotbox-way">{airedWords ? `${airedWords} ${SMOKED_REST_WAY}` : SMOKED_WAY}</p>}
+      {!waved && <p className="kb-visually-hidden dw-hotbox-way">{airedWords ? `${airedWords} ${smokedRestWay(control)}` : smokedWay(control)}</p>}
       <div ref={wordsRef} className="dw-hotbox-words" inert={!waved} style={mask}>{children}</div>
       {forced && (
         <div className="dw-hotbox-frame" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>

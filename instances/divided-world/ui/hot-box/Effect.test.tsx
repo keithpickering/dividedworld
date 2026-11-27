@@ -27,7 +27,7 @@ import { SMOKE, fogAlpha, holeRadius, maskAlpha, strength } from './smoke.ts';
 import { HOT_BOX_THINS } from '../../cards/hot-box.ts';
 import { spanMs } from '../../../../engine/ui/cards/marks.ts';
 import { makeField, paintFog, stepField } from './fog.ts';
-import { AIR_DESCRIBE, HotBoxEffect, SMOKED_REST_WAY, SMOKED_WAY, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, nextWake, forgetScratch, resetFogLadder } from './Effect.tsx';
+import { AIR_DESCRIBE, HotBoxEffect, smokedRestWay, smokedWay, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, nextWake, forgetScratch, resetFogLadder } from './Effect.tsx';
 
 /* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them; and what a painter's call costs, for the ladder. */
 const { LINES, read, cost } = vi.hoisted(() => {
@@ -173,10 +173,13 @@ const settle = (ms = 400) => pass(ms, 16);
  */
 /** Opens or shuts a curtain over the post set up last (the effect's `covered`), the way the engine does when a cover goes. */
 let cover: (covered: boolean) => void = () => {};
+let reword: (words: EffectProps['children']) => void = () => {};
 function Covering({ props }: { props: EffectProps }) {
   const [covered, setCovered] = useState(props.covered);
+  const [children, setChildren] = useState(props.children);
   cover = setCovered;
-  return <HotBoxEffect {...props} covered={covered} />;
+  reword = setChildren;
+  return <HotBoxEffect {...props} covered={covered} children={children} />;
 }
 function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, nested = false, inPost = false) {
   const show = vi.fn<(view: CardView | null) => void>();
@@ -1070,8 +1073,8 @@ describe('the held sweep', () => {
 describe('the in-body line', () => {
   test('stands where the words are while they are smoked, hidden from sight and outside the inert words; gone in the waved window, and back after', () => {
     const s = setup();
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
-    expect(SMOKED_WAY).toBe('This post is under smoke. To read it, open Hot Box in the cards on this post and hold Wave the smoke.');
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
+    expect(smokedWay('Wave the smoke')).toBe('This post is under smoke. To read it, open Hot Box in the cards on this post and hold Wave the smoke.');
     expect(way(s)).toHaveClass('kb-visually-hidden');
     expect(way(s)!.closest('[inert]')).toBeNull();
     expect(words(s).contains(way(s))).toBe(false);
@@ -1083,12 +1086,12 @@ describe('the in-body line', () => {
     release(s);
     pass(SMOKE.waved);
     expect(inert(s)).toBe(true);
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
   });
 
   test('is drawn in a moment as it is live', () => {
     const s = setup({ moment });
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
   });
 });
 
@@ -1406,7 +1409,7 @@ describe('forced colors: a hard circular mask', () => {
   test('the words are inert, as on the canvas path, and the in-body line is not', () => {
     const s = setup();
     expect(inert(s)).toBe(true);
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
     expect(way(s)!.closest('[inert]')).toBeNull();
   });
 
@@ -2080,7 +2083,7 @@ describe('a moment', () => {
   test('the words are inert while smoked, with the way-line standing in them', () => {
     const s = past();
     expect(inert(s)).toBe(true);
-    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
     expect(s.container.querySelector('[aria-live]')).not.toBeNull();
     expect(last(s)).toMatchObject({ state: 'Smoke over the words' });
   });
@@ -2434,14 +2437,71 @@ describe('the author airs it out', () => {
 
   test('a partly aired post gives a screen reader the aired lines, then the way to the rest; one with nothing aired keeps the whole-post line', () => {
     const s = setup({ plays: [play()], states: kept({ aired: 0.5 }) });
-    expect(way(s)).toHaveTextContent(`First line of the post. Second line. ${SMOKED_REST_WAY}`);
+    expect(way(s)).toHaveTextContent(`First line of the post. Second line. ${smokedRestWay('Wave the smoke')}`);
     expect(way(s)).not.toHaveTextContent('Third line.');
     expect(way(s)).toHaveClass('kb-visually-hidden');
     expect(way(s)!.closest('[inert]')).toBeNull();
-    expect(SMOKED_REST_WAY).toBe('The rest of this post is under smoke. To read it, open Hot Box in the cards on this post and hold Wave the smoke.');
+    expect(smokedRestWay('Wave the smoke')).toBe('The rest of this post is under smoke. To read it, open Hot Box in the cards on this post and hold Wave the smoke.');
     const t = setup({ plays: [play()], states: kept({ aired: 0.05 }) });
-    expect(way(t)).toHaveTextContent(SMOKED_WAY);
+    expect(way(t)).toHaveTextContent(smokedWay('Wave the smoke'));
     expect(way(t)).not.toHaveTextContent('First line');
+  });
+
+  test('the screen-reader line names the control the author holds: Air it out after the hold, Wave the smoke before it and for a reader', () => {
+    const after = setup({ reader: AUTHOR, plays: [endless(30)] });
+    expect(label(after)).toBe('Air it out');
+    expect(way(after)).toHaveTextContent('open Hot Box in the cards on this post and hold Air it out.');
+    expect(way(after)).not.toHaveTextContent('Wave the smoke');
+    const partly = setup({ reader: AUTHOR, plays: [endless(30)], states: kept({ aired: 0.5 }) });
+    expect(way(partly)).toHaveTextContent(`First line of the post. Second line. The rest of this post is under smoke. To read it, open Hot Box in the cards on this post and hold Air it out.`);
+    const during = setup({ reader: AUTHOR, plays: [endless(1)] });
+    expect(way(during)).toHaveTextContent(smokedWay('Wave the smoke'));
+  });
+
+  test('a partial save refused while the clean one is queued behind it: the clean state is still sent', async () => {
+    const save = vi.fn()
+      .mockImplementationOnce(async () => ({ ok: false as const, error: 'The server said no.' }))
+      .mockImplementation(async () => ({ ok: true as const, value: { play: 'h1', savedAt: iso(Date.now()) } }));
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save: save as never });
+    press(s);
+    pass(3000);
+    /* The first line's save is in flight (its answer not yet read) while the rest of the hold finishes and queues clean. */
+    pass(4000);
+    await settled();
+    await settled();
+    pass(SWEEP_MS);
+    await settled();
+    expect(save.mock.calls.map((c) => c[1])).toEqual([{ aired: 0.2 }, { clean: true }]);
+  });
+
+  test('the aired lines read out follow the words when they change at the same size', () => {
+    const s = setup({ plays: [play()], states: kept({ aired: 0.5 }) });
+    expect(way(s)).toHaveTextContent('First line of the post. Second line.');
+    read.lines = LINES.map((l, i) => ({ ...l, text: ['Reworded first.', 'Reworded second.', 'Reworded third.'][i]! }));
+    act(() => { reword(<p>Different words, the same size.</p>); });
+    expect(way(s)).toHaveTextContent('Reworded first. Reworded second.');
+    expect(way(s)).not.toHaveTextContent('First line of the post.');
+  });
+
+  test('a post left mid-hold saves the line that finished since the last tick', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save });
+    press(s);
+    /* The clock passes the first line's end with no timer fired: the line is finished but not yet settled. */
+    vi.setSystemTime(Date.now() + LINE_MS + 200);
+    s.unmount();
+    await settled();
+    expect(save.mock.calls).toEqual([['h1', { aired: 0.2 }]]);
+  });
+
+  test('pressing Air it out with no line left below the band saves clean, and starts no sweep', async () => {
+    const save = accepted();
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], save, states: kept({ aired: 0.9 }) });
+    press(s);
+    expect(last(s).state, 'no hold began').toBe('Smoke over part of the words');
+    pass(1000);
+    await settled();
+    expect(save.mock.calls).toEqual([['h1', { clean: true }]]);
   });
 
   test('every view the author is shown passes viewProblems', async () => {
@@ -2457,5 +2517,27 @@ describe('the author airs it out', () => {
     forced = true;
     const s = setup({ reader: AUTHOR, plays: [endless(30)], states: kept({ aired: 0.5 }) });
     expect(rectLayers(s).some((r) => r.top === 0 && r.height === 300 && r.alpha === 1)).toBe(true);
+  });
+
+  test("in a spun thread's ORIGIN box the aired band starts at the area's top border and spans its width, in the fog and in the forced-colors mask", () => {
+    AREA = { left: 10, top: 40, width: 600, height: 300 }; OUTER = { left: 0, top: 0, width: 900, height: 700 };
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], states: kept({ aired: 0.5 }) }, false, false, true);
+    settle();
+    /* The canvas is the area; rows 0 to 150 of it are clear, across its whole width, and the rest is fog. */
+    expect(alphaAt(s, 5, 2), 'at the top border, left edge').toBe(0);
+    expect(alphaAt(s, 595, 2), 'at the top border, right edge').toBe(0);
+    expect(alphaAt(s, 300, 140)).toBe(0);
+    expect(alphaAt(s, 5, 200), 'below the band').toBeGreaterThan(0);
+    expect(alphaAt(s, 595, 290)).toBeGreaterThan(0);
+  });
+
+  test("in the ORIGIN box under forced colors the mask's aired rect starts at the area's top", () => {
+    forced = true;
+    AREA = { left: 10, top: 40, width: 600, height: 300 }; OUTER = { left: 0, top: 0, width: 900, height: 700 };
+    const s = setup({ reader: AUTHOR, plays: [endless(30)], states: kept({ aired: 0.5 }) }, false, false, true);
+    /* The words stand 60 px below the area's top border (the words' box is at 100, the area's at 40), so the band's top, the border, is -60 in the words' own mask. */
+    expect(rectLayers(s).some((r) => r.height === 150 && r.alpha === 1)).toBe(true);
+    expect(words(s).style.maskPosition).toContain('0 -60px');
+    expect(words(s).style.maskSize).toContain('100% 150px');
   });
 });
