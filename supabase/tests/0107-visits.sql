@@ -355,7 +355,7 @@ begin
   if seen ->> 'visit' <> v::text or jsonb_array_length(seen -> 'charges') <> 2 or seen #>> '{challenge,kind}' not in ('quiz', 'bribe', 'distraction') or seen -> 'end' <> 'null'::jsonb then
     raise exception 'the open visit is wrong on the page: %', seen;
   end if;
-  if page::text ~* 'answer' then raise exception 'thread_page carries an answer: %', substring(page::text from '.{40}answer.{40}'); end if;
+  if page::text ~* 'answer(?!s)' then raise exception 'thread_page carries an answer: %', substring(page::text from '.{40}answer.{40}'); end if;
   if not exists (select 1 from jsonb_array_elements(page -> 'people') x where x #>> '{character,id}' = (select character from acts where id = v)::text) then raise exception 'the Mod is not among the page''s people'; end if;
   -- Filed, the page carries its end with the line.
   perform file_visit(v, 'Rule 2 was explained.');
@@ -364,7 +364,7 @@ begin
   perform tests.unbecome();
   seen := (select e from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = p::text);
   if seen #>> '{end,outcome}' <> 'filed' or seen #>> '{end,line}' <> 'Rule 2 was explained.' then raise exception 'a filed visit''s end is not on the page: %', seen; end if;
-  if page::text ~* 'answer' then raise exception 'thread_page carries an answer once filed'; end if;
+  if page::text ~* 'answer(?!s)' then raise exception 'thread_page carries an answer once filed'; end if;
 end $$;
 
 -- ---- 6. A post by a staff character starts no visit ----

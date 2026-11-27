@@ -23,7 +23,7 @@ const { MIGRATION_DATA } = (await import(files)) as { MIGRATION_DATA: readonly s
 const root = path.resolve(import.meta.dirname, '../../..');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'lines_owed', 'lines_owed_open', 'lines_paid', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_facts', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'visit_concessions', 'visit_concession_posts', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'arc_announcements', 'staff_pin_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings', 'roster_entries', 'roster_seen', 'roster_pending'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'lines_owed', 'lines_owed_open', 'lines_paid', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_facts', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'visit_concessions', 'visit_concession_posts', 'outcome_posts', 'concessions_owed', 'bans_owed', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'arc_announcements', 'staff_pin_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings', 'roster_entries', 'roster_seen', 'roster_pending'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -579,6 +579,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into visit_concessions (visit_act, source, body) select v.id, 'model', 'Carried across, {who}.' from acts v where v.kind = 'visit' and v.target_act_id = p;
       insert into visit_concession_posts (visit_act, source, post_act) select v.id, 'model', (write_staff_act('exp-bot', 'post', t, p, jsonb_build_object('body', 'Carried across, Exported B.')) ->> 'id')::uuid
         from acts v where v.kind = 'visit' and v.target_act_id = p;
+      -- A talk-down's owed concession and the outcome post that settled it (0451), on the visit the Hall Pass's post drew, which ended: carried across with the Acts they name.
+      insert into concessions_owed (visit_act, end_act, interceptor, how) select v.id, e.id, b, 'paid' from acts v join acts e on e.kind = 'visit_end' and e.target_act_id = v.id where v.kind = 'visit' and v.target_act_id = pass_post;
+      insert into outcome_posts (about_act, kind, visit_act, source, post_act) select e.id, 'intercepted', v.id, 'model', (write_staff_act('exp-bot', 'post', t, pass_post, jsonb_build_object('body', 'Carried across, Exported B.')) ->> 'id')::uuid
+        from acts v join acts e on e.kind = 'visit_end' and e.target_act_id = v.id where v.kind = 'visit' and v.target_act_id = pass_post;
       -- An infraction against Ann's mask for her post, her appeal of it, the Mod's ruling, the price paid and returned, and the refund's own table (0109): carried across with the
       -- Acts that name them. (The bar's setting is planted where a database made from the migrations alone has none.)
       insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;
@@ -604,6 +608,14 @@ test('an instance exported and imported into a fresh database is the same instan
         perform infract(b, 'severe', relief_post, 'exp-bot');
         perform infract(b, 'moderate', relief_post2, 'exp-bot');
         perform play_card(ann, 'expunban', a, b, '{}', 0, '', 'character', relief_post);
+      end;
+      -- The bans those infractions laid owe their entries (infract writes the row, 0451): one entry refused, so an outcome post that holds an error is carried across with the ban it names, and the season's Banlist is a thread of
+      -- the system board that the season names.
+      insert into outcome_posts (about_act, kind, source, error) select x.ban_act, 'banned', 'stock', 'planted: carried across' from bans_owed x order by x.at limit 1;
+      declare banlist uuid;
+      begin
+        insert into threads (board, title) values (system_board(), 'Season 1: Banlist') returning id into banlist;
+        update seasons set banlist_thread = banlist where ends_at is null;
       end;
       -- The open season revealed at its end, as the settlement of its last window would. Its end is after the cast's debuts (this cast debuted now, and the first season
       -- began in 2000), so that the season's results hold the cast, as they did on a database whose seasons an earlier file had carried to the present.
