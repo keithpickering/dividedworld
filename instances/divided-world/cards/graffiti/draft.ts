@@ -90,10 +90,45 @@ const WORD_EM = 0.55;
 /** The drawer's box bounds, in ems (graffiti.ts). */
 const BOX_EM = { w: [5, 200], h: [1, 4000] } as const;
 
-/** One group of the drawing, before it is attached: its strokes' indices, its center in px of the box. */
-function groupsIn(strokes: readonly Stroke[], t: Tagging): { readonly strokes: readonly Stroke[]; readonly center: Pt }[] {
-  const shapes = strokes.map((s) => ({ points: s.points, r: (CAPS_EM[s.cap] * t.emPx) / 2 }));
-  return groupsOf(shapes).map((idx) => {
+/** One group of the drawing, before it is attached: its strokes, its center in px of the box. */
+interface Cut { readonly strokes: readonly Stroke[]; readonly center: Pt }
+
+/** The strokes' indices cut into groups by the rules' own `groupsOf`, at this text size. */
+function cutsOf(strokes: readonly Stroke[], emPx: number): number[][] {
+  return groupsOf(strokes.map((s) => ({ points: s.points, r: (CAPS_EM[s.cap] * emPx) / 2 })));
+}
+
+/**
+ * What `cutsOf` last gave, for the strokes it was given and nothing else: the key holds every number the answer depends on, so a stroke that grew, shrank or
+ * was replaced under it is a different key. Grouping measures every pair of strokes whose boxes overlap, which a drawing of 3,000 points can make millions of
+ * distance checks; a screen that asks again for the same strokes (the meter, then the preview, then Tag it) is given the answer, never a second grouping.
+ */
+const lastCut: { key: readonly number[]; cuts: number[][] } = { key: [], cuts: [] };
+const keyOf = (strokes: readonly Stroke[], emPx: number): number[] => {
+  const key = [emPx, strokes.length];
+  for (const s of strokes) { key.push(CAPS_EM[s.cap], s.points.length); for (const [x, y] of s.points) key.push(x, y); }
+  return key;
+};
+function groupedOnce(strokes: readonly Stroke[], emPx: number): number[][] {
+  const key = keyOf(strokes, emPx);
+  if (key.length === lastCut.key.length && key.every((n, i) => n === lastCut.key[i])) return lastCut.cuts;
+  const cuts = cutsOf(strokes, emPx);
+  lastCut.key = key;
+  lastCut.cuts = cuts;
+  return cuts;
+}
+
+/**
+ * The groups of the drawing. Settled, they are the rules' own (`groupsOf`, once for a drawing however many screens ask). While a stroke is live (`live`: the
+ * pointer is down, and the stroke is the last), the strokes finished before it are grouped once, as they were when it began, and the live stroke is a group of
+ * its own for the move: a move costs the live stroke alone, where grouping the whole drawing again at every point is every pair of strokes' segments (a hatch of
+ * parallel strokes, which never touch, is the worst). The drawing is grouped in full when the pointer lifts, and at Tag it, which never takes `live`.
+ */
+function groupsIn(strokes: readonly Stroke[], t: Tagging, live: boolean): Cut[] {
+  const cuts = live && strokes.length > 0
+    ? [...groupedOnce(strokes.slice(0, -1), t.emPx), [strokes.length - 1]]
+    : groupedOnce(strokes, t.emPx);
+  return cuts.map((idx) => {
     const own = idx.map((i) => strokes[i]!);
     let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
     for (const s of own) for (const [x, y] of s.points) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
@@ -122,9 +157,9 @@ function underneath(center: Pt, t: Tagging): { readonly pic: Picture; readonly i
 }
 
 /** The draw a drawing is sent as: its groups, each attached to what is under it on this screen. */
-function drawOf(strokes: readonly Stroke[], t: Tagging): { box: { w: number; h: number }; groups: unknown[] } {
+function drawOf(strokes: readonly Stroke[], t: Tagging, live = false): { box: { w: number; h: number }; groups: unknown[] } {
   const { box, emPx } = t;
-  const groups = groupsIn(strokes, t).map((g) => {
+  const groups = groupsIn(strokes, t, live).map((g) => {
     const [cx, cy] = g.center;
     const at: Pt = [tenThousandth(clamp(cx / box.w, 0, 1)), tenThousandth(clamp(cy / box.h, 0, 1))];
     /* The rules take a point only so far from its group's center, in the group's own unit (REACH): a group whose strokes reach past it in the unit of what it would be attached to (a small image under long strokes) is attached to the box. */
@@ -147,8 +182,8 @@ function drawOf(strokes: readonly Stroke[], t: Tagging): { box: { w: number; h: 
 }
 
 /** The drawing as the engine counts it: what the rules frame a draw (or a stencil, which they expand) as. */
-export function engineStrokes(draft: Draft, t: Tagging): readonly SurfaceStroke[] {
-  const v = graffiti.surface!.validateDraw(inputOf(draft, t));
+export function engineStrokes(draft: Draft, t: Tagging, live = false): readonly SurfaceStroke[] {
+  const v = graffiti.surface!.validateDraw(inputOf(draft, t, live));
   return v.ok ? (v.value as { strokes: readonly SurfaceStroke[] }).strokes : [];
 }
 
@@ -156,8 +191,8 @@ export function engineStrokes(draft: Draft, t: Tagging): readonly SurfaceStroke[
  * The meter's figures: the wall's cells now (`covered`, the server's) and with the drawing's own painted cells added in full, however much of them lie over
  * ink already there. The attachment changes nothing it counts, so a `Tagging` with nothing measured (`bare`) gives the same figure.
  */
-export function meterOf(covered: number, draft: Draft | null, most: number, t: Tagging): Meter {
-  const after = draft ? covered + paintedCount(coatsOf(engineStrokes(draft, t), COATS)) : covered;
+export function meterOf(covered: number, draft: Draft | null, most: number, t: Tagging, live = false): Meter {
+  const after = draft ? covered + paintedCount(coatsOf(engineStrokes(draft, t, live), COATS)) : covered;
   return { wall: covered, after, most, over: after > most };
 }
 
@@ -170,15 +205,15 @@ export const overWords = (m: Meter): string => `This tag would take the wall to 
 /* ------------------------------------------------------------------ what is sent ---- */
 
 /** What the card's draw takes: the box and the groups of the freehand strokes, attached on this screen, or a stencil's three names. */
-export function inputOf(draft: Draft, t: Tagging): unknown {
+export function inputOf(draft: Draft, t: Tagging, live = false): unknown {
   if (draft.kind === 'stencil') return { stencil: draft.stencil, can: draft.can, spot: draft.spot };
-  return drawOf(draft.strokes, t);
+  return drawOf(draft.strokes, t, live);
 }
 
 /** The drawing as the painter takes a draw (spray.ts), to be drawn into the wall's layer: where it was drawn, whatever it is attached to; null for no drawing. */
-export function paintAct(draft: Draft | null, t: Tagging): WallAct | null {
+export function paintAct(draft: Draft | null, t: Tagging, live = false): WallAct | null {
   if (!draft) return null;
-  if (draft.kind === 'freehand') return { kind: 'draw', payload: drawOf(draft.strokes, bare(t.box, t.emPx)) };
+  if (draft.kind === 'freehand') return { kind: 'draw', payload: drawOf(draft.strokes, bare(t.box, t.emPx), live) };
   const v = graffiti.surface!.validateDraw({ stencil: draft.stencil, can: draft.can, spot: draft.spot });
   return v.ok ? { kind: 'draw', payload: (v.value as { payload: unknown }).payload } : null;
 }

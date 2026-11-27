@@ -194,3 +194,60 @@ test('Undo takes the last stroke, with the parts that continue it', () => {
   undo(strokes);
   assert.deepEqual(strokes, []);
 });
+
+/* ---------------------------------------------------------------- the cost of a move ---- */
+
+/** A hatch: parallel diagonal strokes whose boxes overlap and whose cores never touch, the grouping's slowest input (every pair of strokes is measured segment by segment). */
+const HATCH_BOX = { w: 3000, h: 3000 };
+const hatch = (strokes: number, points: number): Stroke[] =>
+  Array.from({ length: strokes }, (_, i) => ({ can: 'red', cap: 'skinny', points: Array.from({ length: points }, (_, j): Pt => [i * 50 + j * 30, j * 30]) }));
+/** The segment-distance work something does, as the `Math.hypot` calls it makes: a count, never a clock. */
+function hypots<T>(run: () => T): { value: T; calls: number } {
+  const real = Math.hypot;
+  let calls = 0;
+  Math.hypot = (...args: number[]) => { calls++; return real(...args); };
+  try { return { value: run(), calls }; } finally { Math.hypot = real; }
+}
+
+test('a pointer move on a worst-case hatch does no grouping: the meter and the preview take the strokes finished before it as grouped once', () => {
+  const bareBox = bare(HATCH_BOX, EM);
+  const strokes = hatch(40, 25);
+  const draft = freehand(...strokes);
+  const grouping = hypots(() => inputOf(draft, bareBox));
+  assert.ok(grouping.calls > 100_000, `the hatch is the grouping's worst case (${grouping.calls} distance calls)`);
+  meterOf(0, draft, 100_000, bareBox, true); // the stroke that began: the finished ones are grouped once
+  paintAct(draft, bareBox, true);
+  strokes.at(-1)!.points.push([2400, 800]); // the pointer moves
+  const meter = hypots(() => meterOf(0, draft, 100_000, bareBox, true));
+  const preview = hypots(() => paintAct(draft, bareBox, true));
+  assert.ok(meter.calls < 5_000, `a move's meter measured ${meter.calls} distances`);
+  assert.ok(preview.calls < 5_000, `a move's preview measured ${preview.calls} distances`);
+  assert.ok(meter.value.after > 0);
+});
+
+test('what the move\'s meter counts is what Tag it sends: it agrees with the server\'s count wherever the live stroke touches none that is finished', () => {
+  const strokes = [stripe(100), stripe(300), stroke([[30, 380], [570, 380]])];
+  const draft = freehand(...strokes);
+  const live = meterOf(0, draft, 4000, nothing, true);
+  assert.equal(live.after, meterOf(0, draft, 4000, nothing).after);
+  const v = graffiti.surface!.validateDraw(inputOf(draft, nothing));
+  assert.ok(v.ok);
+  assert.equal(live.after, paintedCount(coatsOf(v.value.strokes, COATS)));
+});
+
+test('Tag it\'s payload is grouped in full whatever was asked of the move before it, and a stroke changed since is regrouped', () => {
+  const bareBox = bare(HATCH_BOX, EM);
+  const far = stroke([[2800, 2800], [2900, 2900]], 'skinny');
+  const strokes = [...hatch(3, 5), far];
+  const draft = freehand(...strokes);
+  const sent = JSON.stringify(inputOf(draft, bareBox));
+  meterOf(0, draft, 100_000, bareBox, true);
+  paintAct(draft, bareBox, true);
+  assert.equal(JSON.stringify(inputOf(draft, bareBox)), sent, 'the cache never reaches what is sent');
+  assert.equal(groups(JSON.parse(sent)), 2, 'the hatch is one group and the far stroke another');
+  strokes[0]!.points.push([3, 3]); // an earlier stroke changes under the cache
+  meterOf(0, draft, 100_000, bareBox, true);
+  strokes[3]!.points.push([2950, 2950]);
+  assert.notEqual(JSON.stringify(inputOf(draft, bareBox)), sent);
+  assert.equal(groups(inputOf(draft, bareBox)), 2);
+});

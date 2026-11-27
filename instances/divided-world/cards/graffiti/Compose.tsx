@@ -33,7 +33,6 @@ import { contentOf } from '../../../../engine/rules/anchor.ts';
 import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
 import type { ComposeProps } from '../../../../engine/ui/cards/types.ts';
 import { bodyOf, wordsBoxOf } from '../../../../engine/ui/cards/body.ts';
-import { usePostVersion } from '../../../../engine/ui/cards/tails.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { LOST_ANSWER, type Act, type Answer } from '../../../../engine/ui/data/api.ts';
 import { usePlayer } from '../../../../engine/ui/player.tsx';
@@ -184,23 +183,29 @@ export function DrawMode(p: DrawModeProps) {
   const draft: Draft | null = freehand ?? (tab === 'stencils' && stencil !== null ? { kind: 'stencil', stencil, can, spot } : null);
   /* A new object each render: the strokes change in place, so the memos below are keyed by what they change with. */
   const version = strokes.current.reduce((n, s) => n + s.points.length, strokes.current.length);
+  /* While the pointer is down the meter and the preview do not group the drawing again at every point (draft.ts `groupsIn`); the lift renders once more, grouped in full. */
+  const live = useRef<Live | null>(null);
+  const inking = live.current !== null;
   /* What a drawing is counted and previewed against needs no measuring of the words: the attachment changes neither (draft.ts `bare`). */
   const em = emOf(surfaceEl);
   const frame = useMemo(() => bare(p.box ?? { w: 1, h: 1 }, em), [p.box?.w, p.box?.h, em]); // eslint-disable-line react-hooks/exhaustive-deps
   const meter = useMemo(
-    () => meterOf(p.covered, draft, p.most, frame),
+    () => meterOf(p.covered, draft, p.most, frame, inking),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [p.covered, p.most, frame, tab, stencil, can, spot, version, strokes.current.length],
+    [p.covered, p.most, frame, tab, stencil, can, spot, version, strokes.current.length, inking],
   );
-  /* The post's current version: what the tails the page holds say (they are read again after an edit), else the version the page's read carried with the post (`version`, thread_page 0456: its latest edit, or its own Act), else its own
-     Act while it has no edit. A post edited since the page read it (an edit that lands in it, `editedAt` set while `version` is still its own id or absent) with no tails is not known: its groups are attached to the box, which any version accepts. */
-  const heldVersion = usePostVersion(p.post?.id ?? '');
-  const postVersion = p.post ? (heldVersion ?? currentVersionOf(p.post)) : null;
+  /* The version a tag names is the version of the words the marks were measured against, which is the post this component holds: the version its read carried
+     with its body (`currentVersionOf`). The tails the page holds can be ahead of that body (an edit they have already delivered that the post has not been refreshed
+     with), and a newer version beside the old words' offsets is a tag the server cannot refuse; so tails are not read here. A post edited since its page read it (`editedAt` set while
+     `version` is still its own id or absent) has no known version: its groups are attached to the box, which any version accepts. A stale version is refused by the server ("reload"). */
+  const postVersion = p.post ? currentVersionOf(p.post) : null;
   const held = strokes.current.length > 0 || stencil !== null;
 
   const now = useRef({ can, cap, box: p.box, locked: false, busy: false, asking: null as string | null, tab });
   now.current = { can, cap, box: p.box, locked: busy || asking !== null, busy, asking, tab };
 
+  /** The pointer lifts (or is taken): the drawing is rendered once more, now grouped in full. */
+  const lift = () => { live.current = null; setVersion((v) => v + 1); };
   const changed = () => { setVersion((v) => v + 1); setRefusal(null); };
 
   /* ---------------------------------------------------- what the host is told ---- */
@@ -212,9 +217,9 @@ export function DrawMode(p: DrawModeProps) {
   const onDraft = useRef(p.onDraft);
   onDraft.current = p.onDraft;
   const act = useMemo(
-    () => paintAct(draft, frame),
+    () => paintAct(draft, frame, inking),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [frame, tab, stencil, can, spot, version, strokes.current.length],
+    [frame, tab, stencil, can, spot, version, strokes.current.length, inking],
   );
   useEffect(() => { onDraft.current?.(act); }, [act]);
   useEffect(() => () => { onDraft.current?.(null); }, []);
@@ -266,7 +271,6 @@ export function DrawMode(p: DrawModeProps) {
 
   /* ------------------------------------------------------------ a stroke ---- */
 
-  const live = useRef<Live | null>(null);
   const gesture = useRef<Gesture | null>(null);
 
   /** Where a point of the screen lies in the post body's box, in px from its top left, to a hundredth. */
@@ -316,7 +320,7 @@ export function DrawMode(p: DrawModeProps) {
   const onPointerEnd = (e: PointerEvent) => {
     const s = live.current;
     if (e.pointerType === 'touch' || !s || s.touch || e.pointerId !== s.pointer) return;
-    live.current = null;
+    lift();
     cursor.press(false);
     if (e.type === 'pointerup') showCursor(e);
     else if (surfaceEl) cursor.leave(surfaceEl);
@@ -331,7 +335,7 @@ export function DrawMode(p: DrawModeProps) {
   const onTouchStart = (e: TouchEvent) => {
     if (e.touches.length > 1) {
       if (gesture.current) { settle(gesture.current); gesture.current.state = 'page'; }
-      live.current = null;
+      lift();
       return;
     }
     const tc = e.changedTouches[0];
@@ -371,7 +375,7 @@ export function DrawMode(p: DrawModeProps) {
     /* A tap on the post is one dab, as a click is. */
     if (e.type === 'touchend' && g.state === 'wait') begin(g.x0, g.y0, g.id, true);
     gesture.current = null;
-    if (live.current?.touch) live.current = null;
+    if (live.current?.touch) lift();
   };
 
   /* The input is native listeners on the lifted surface, each calling the latest handler: a touchmove must be able to refuse the page's scroll. */

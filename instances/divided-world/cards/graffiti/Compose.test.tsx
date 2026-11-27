@@ -25,6 +25,9 @@ vi.mock('../whoops/cursor.ts', () => ({ cursor: { over: vi.fn(), press: vi.fn(),
 vi.mock('./spray.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./spray.ts')>()), paintWall: vi.fn() }));
 
 const player = vi.hoisted(() => ({ value: null as unknown }));
+/** The version the page's tails say a post is at (`usePostVersion`), which a test sets to put the tails ahead of the post it holds. */
+const tails = vi.hoisted(() => ({ version: null as string | null }));
+vi.mock('../../../../engine/ui/cards/tails.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../../engine/ui/cards/tails.ts')>()), usePostVersion: () => tails.version }));
 vi.mock('../../../../engine/ui/player.tsx', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../../engine/ui/player.tsx')>()), usePlayer: () => player.value }));
 
 const BOX = { w: 600, h: 400 };
@@ -36,6 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   player.value = { session: { signedIn: true, account: 'acct-1' }, hudCharacter: { id: 'c1' }, actingCharacters: [{ id: 'c1' }] };
   HTMLCanvasElement.prototype.getContext = (() => ({})) as unknown as HTMLCanvasElement['getContext'];
+  tails.version = null;
   try { localStorage.clear(); } catch { /* none here */ }
 });
 const unders: HTMLElement[] = [];
@@ -419,6 +423,42 @@ describe('tagging a post\'s words and images', () => {
     drag(surface, [[20 / 600, 25 / 400], [60 / 600, 25 / 400]]);
     await user.click(tag());
     expect((vi.mocked(props.submit).mock.calls[0]![1] as { groups: { anchor: unknown }[] }).groups[0]!.anchor).toEqual({ kind: 'box' });
+  });
+});
+
+describe('a version is named only with the words it is the version of', () => {
+  const rect = (x: number, y: number, w = 0, h = 0) => ({ x, y, left: x, top: y, width: w, height: h, right: x + w, bottom: y + h, toJSON: () => ({}) }) as DOMRect;
+  const layout = (marks: Record<string, DOMRect>) => {
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const m = this.getAttribute('data-kb-word-mark');
+      return (m !== null ? marks[m] : undefined) ?? real.call(this);
+    });
+  };
+  const edited = (words: string, extra: Partial<Act> = {}) => ({ ...POST, payload: { body: words }, currentPayload: { body: words }, ...extra }) as Act;
+  afterEach(() => { vi.restoreAllMocks(); });
+  const anchorOf = (props: ComposeProps) => (vi.mocked(props.submit).mock.calls[0]![1] as { groups: { anchor: unknown }[] }).groups[0]!.anchor;
+
+  test('tails ahead of the post (an edit they hold that the post has not been refreshed with) never name their newer version for the old words\' offsets', async () => {
+    const user = userEvent.setup();
+    layout({ 0: rect(0, 10, 0, 21) });
+    tails.version = 'edit-2';
+    const { props, surface } = mountCompose({ post: edited('Hello'), words: 'Hello' });
+    drag(surface, [[20 / 600, 25 / 400], [60 / 600, 25 / 400]]);
+    await user.click(tag());
+    const anchor = anchorOf(props);
+    expect(anchor).not.toMatchObject({ version: 'edit-2' });
+    expect(anchor).toMatchObject({ kind: 'text', version: 'post-1', at: 0, len: 5 });
+  });
+
+  test('tails ahead of a post that is known to be edited, with no version of its own, give the box', async () => {
+    const user = userEvent.setup();
+    layout({ 0: rect(0, 10, 0, 21) });
+    tails.version = 'edit-2';
+    const { props, surface } = mountCompose({ post: edited('Hello', { editedAt: '2026-10-30T00:00:00.000Z', version: 'post-1' }), words: 'Hello' });
+    drag(surface, [[20 / 600, 25 / 400], [60 / 600, 25 / 400]]);
+    await user.click(tag());
+    expect(anchorOf(props)).toEqual({ kind: 'box' });
   });
 });
 
