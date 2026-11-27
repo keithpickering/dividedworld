@@ -36,11 +36,18 @@ export interface SoundPreference {
   readonly interfaceVolume: number;
 }
 
+/** What a stage holds the game bus at; the volume stays the preference's. */
+export interface SoundStage {
+  readonly gameSound: 'off' | 'on';
+}
+
 const GESTURES = ['pointerdown', 'pointerup', 'click', 'keydown', 'touchend'] as const;
 
 export interface SoundPage {
   readonly mixer: Mixer;
   setSoundPreference(p: SoundPreference): void;
+  /** Hold the game bus at `gameSound` over the account's preference until the returned release is called (the front door's, see `stageSound`). */
+  stageSound(s: SoundStage): () => void;
   /** Add the listeners, once; called by everything that uses the page's sound. */
   arm(): void;
   /** Remove every listener, for a test. */
@@ -70,12 +77,38 @@ export function createSound(deps: MixerDeps): SoundPage {
     for (const g of GESTURES) document.addEventListener(g, onGesture, { capture: true, passive: true });
     document.addEventListener('visibilitychange', onVisibility);
   };
+  /* The last preference told, and the stages held, oldest first; the newest stage's game setting wins over the preference's. */
+  let preference: SoundPreference | null = null;
+  const stages: SoundStage[] = [];
+  const applyBuses = (): void => {
+    const p = preference;
+    const top = stages.at(-1);
+    if (!p) {
+      /* Before any preference is told, only a stage speaks: it sets whether the game bus is on, at full volume. */
+      if (top) mixer.setBus('game', { on: top.gameSound === 'on', volume: 100 });
+      return;
+    }
+    mixer.setBus('game', { on: (top ? top.gameSound : p.gameSound) === 'on', volume: p.gameVolume });
+    mixer.setBus('interface', { on: p.interfaceSound === 'on', volume: p.interfaceVolume });
+  };
   return {
     mixer,
     setSoundPreference(p) {
-      mixer.setBus('game', { on: p.gameSound === 'on', volume: p.gameVolume });
-      mixer.setBus('interface', { on: p.interfaceSound === 'on', volume: p.interfaceVolume });
+      preference = p;
+      applyBuses();
       arm();
+    },
+    stageSound(s) {
+      const mine: SoundStage = { gameSound: s.gameSound };
+      stages.push(mine);
+      applyBuses();
+      arm();
+      return () => {
+        const i = stages.indexOf(mine);
+        if (i < 0) return;
+        stages.splice(i, 1);
+        applyBuses();
+      };
     },
     arm,
     dispose() {
@@ -118,6 +151,17 @@ export function resetSound(deps: MixerDeps = realDeps): void {
 /** The screens that hold the account's preferences say it here when it is read or changed. */
 export function setSoundPreference(p: SoundPreference): void {
   page.setSoundPreference(p);
+}
+
+/**
+ * The front door's own sound, held over the account's: it stages the game bus (the first page's sound is on, whatever a visitor's
+ * preference says) and calls the release it gets when it unmounts. It is a layer, not a write, because a sign-in settles the account's
+ * preference while the door is still mounted, and the door's unmount must not undo it: the release only takes the stage away, and the
+ * bus goes to the last preference told, which is the account's. The newest stage held wins, a release removes only its own, and a
+ * second call of it does nothing, so a StrictMode double effect leaks and over-releases nothing.
+ */
+export function stageSound(s: SoundStage): () => void {
+  return page.stageSound(s);
 }
 
 export interface SoundPlay {

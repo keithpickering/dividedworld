@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'vitest';
-import { applyAppearance, motionReduced, resolveAppearance, smokeLevel, textSize } from './appearance.ts';
+import { afterEach, describe, expect, test } from 'vitest';
+import { applyAppearance, motionReduced, resolveAppearance, smokeLevel, stageEffects, textSize } from './appearance.ts';
 import type { GlassTheme, ThemeOption } from './types.ts';
 
 const themes: ThemeOption[] = [
@@ -183,5 +183,50 @@ describe('the glass\'s three preferences on the page', () => {
     expect(marks()).toEqual([null, null, null, 'standard']);
     expect(smokeLevel()).toBe('full');
     expect(textSize()).toBe(100);
+  });
+});
+
+describe('the front door stages the effects mark over the account\'s', () => {
+  const effects = () => document.documentElement.getAttribute('data-kb-effects');
+  const apply = (e?: 'standard' | 'bright') => applyAppearance(document, { theme: 'default', motion: 'system', ...(e ? { effects: e } : {}) }, themes);
+  afterEach(() => { document.documentElement.removeAttribute('data-kb-effects'); });
+
+  test('a stage marks bright, a later standard preference keeps it, and the release puts back what was last asked', () => {
+    apply('standard');
+    const release = stageEffects('bright');
+    expect(effects()).toBe('bright');
+    apply('standard');
+    expect(effects()).toBe('bright');
+    release();
+    expect(effects()).toBeNull();
+    apply('bright');
+    const again = stageEffects('bright');
+    apply('standard');
+    apply('bright');
+    again();
+    expect(effects()).toBe('bright');
+  });
+
+  test('staging standard over a preference of bright removes the mark while held', () => {
+    apply('bright');
+    expect(effects()).toBe('bright');
+    const release = stageEffects('standard');
+    expect(effects()).toBeNull();
+    apply('bright');
+    expect(effects()).toBeNull();
+    release();
+    expect(effects()).toBe('bright');
+  });
+
+  test('a release twice, or after a newer stage, releases only its own', () => {
+    apply('standard');
+    const first = stageEffects('bright');
+    const second = stageEffects('standard');
+    expect(effects()).toBeNull();
+    first();
+    first();
+    expect(effects()).toBeNull();
+    second();
+    expect(effects()).toBeNull();
   });
 });

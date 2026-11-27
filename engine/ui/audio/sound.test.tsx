@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { captions } from './captions.ts';
-import { CAPTION_MS, HELD_FROM, resetSound, setSoundPreference, useSound, useWarmSounds } from './sound.ts';
+import { CAPTION_MS, createSound, HELD_FROM, resetSound, setSoundPreference, useSound, useWarmSounds } from './sound.ts';
 import type { AudioContextLike, GainNodeLike, SourceLike } from './mixer.ts';
 import type { SoundSlot } from './types.ts';
 
@@ -544,5 +544,75 @@ describe('the page warms the sounds a screen names', () => {
     renderHook(() => useWarmSounds([]), { wrapper: warmWrap });
     expect(warmed.calls).toEqual([]);
     expect(fetchBytes).not.toHaveBeenCalled();
+  });
+});
+
+describe('the front door stages the game bus over the account\'s preference', () => {
+  const pref = (gameSound: 'off' | 'on', gameVolume = 80) => ({ gameSound, gameVolume, interfaceSound: 'on' as const, interfaceVolume: 40 });
+  /** The last setting each bus was given. */
+  const watch = () => {
+    const sound = createSound({ makeContext, fetchBytes });
+    const spy = vi.spyOn(sound.mixer, 'setBus');
+    const last = (bus: 'game' | 'interface') => spy.mock.calls.filter((c) => c[0] === bus).at(-1)?.[1];
+    return { sound, last };
+  };
+
+  test('a stage turns the game bus on, a later preference with it off leaves it on, and the release turns it off', () => {
+    const { sound, last } = watch();
+    sound.setSoundPreference(pref('off'));
+    expect(last('game')?.on).toBe(false);
+    const release = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')?.on).toBe(true);
+    sound.setSoundPreference(pref('off'));
+    expect(last('game')?.on).toBe(true);
+    release();
+    expect(last('game')?.on).toBe(false);
+    sound.dispose();
+  });
+
+  test('stage, release, then a preference with the game on: it is on', () => {
+    const { sound, last } = watch();
+    const release = sound.stageSound({ gameSound: 'on' });
+    release();
+    sound.setSoundPreference(pref('on'));
+    expect(last('game')?.on).toBe(true);
+    sound.dispose();
+  });
+
+  test('a release called twice, or after a newer stage, releases only its own; the newest stage held wins', () => {
+    const { sound, last } = watch();
+    sound.setSoundPreference(pref('off'));
+    const first = sound.stageSound({ gameSound: 'on' });
+    const second = sound.stageSound({ gameSound: 'off' });
+    expect(last('game')?.on).toBe(false);
+    first();
+    first();
+    expect(last('game')?.on).toBe(false);
+    second();
+    expect(last('game')?.on).toBe(false);
+    const third = sound.stageSound({ gameSound: 'on' });
+    const fourth = sound.stageSound({ gameSound: 'off' });
+    third();
+    expect(last('game')?.on).toBe(false);
+    fourth();
+    expect(last('game')?.on).toBe(false);
+    const fifth = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')?.on).toBe(true);
+    fifth();
+    sound.dispose();
+  });
+
+  test('while staged the volume is the last preference\'s, and the interface bus follows the preference alone', () => {
+    const { sound, last } = watch();
+    sound.setSoundPreference(pref('off', 30));
+    const release = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')).toEqual({ on: true, volume: 30 });
+    sound.setSoundPreference({ gameSound: 'off', gameVolume: 65, interfaceSound: 'off', interfaceVolume: 10 });
+    expect(last('game')).toEqual({ on: true, volume: 65 });
+    expect(last('interface')).toEqual({ on: false, volume: 10 });
+    release();
+    expect(last('game')).toEqual({ on: false, volume: 65 });
+    expect(last('interface')).toEqual({ on: false, volume: 10 });
+    sound.dispose();
   });
 });

@@ -92,7 +92,8 @@ export function applyAppearance(doc: Document, pref: AppearancePreference, theme
   const size = pref.textSize === 125 || pref.textSize === 150 || pref.textSize === 200 ? pref.textSize : null;
   mark(root, 'data-kb-smoke-level', smoke);
   mark(root, 'data-kb-contrast', high ? 'high' : null);
-  mark(root, 'data-kb-effects', pref.effects === 'bright' ? 'bright' : null);
+  effectsPref.set(root, pref.effects === 'bright' ? 'bright' : null);
+  markEffects(root);
   mark(root, 'data-kb-text-size', size === null ? null : String(size));
   if (glass) applyGlass(root, glass, high ? 'high' : 'standard');
   return a;
@@ -114,6 +115,39 @@ function applyBannerArt(root: HTMLElement, art: BannerArt | null): void {
 /** The key of the theme on the page, as the root is marked now, or null before one is applied. */
 export function themeKey(doc: Document = document): string | null {
   return doc.documentElement.getAttribute('data-kb-theme');
+}
+
+/*
+ * The effects mark has two sources: what the last `applyAppearance` asked for (the account's), and the stages held over it. Each is
+ * kept per root, so a second document has its own.
+ */
+const effectsPref = new WeakMap<HTMLElement, 'bright' | null>();
+const effectsStages = new WeakMap<HTMLElement, { readonly value: 'bright' | null }[]>();
+function markEffects(root: HTMLElement): void {
+  const top = effectsStages.get(root)?.at(-1);
+  mark(root, 'data-kb-effects', top ? top.value : (effectsPref.get(root) ?? null));
+}
+
+/**
+ * The front door's effects, held over the account's: it stages `bright` (the first page's effects use their full colors) and calls the
+ * release it gets when it unmounts. It is a layer, not a write, because a sign-in applies the account's preference while the door is
+ * still mounted, and the door's unmount must not undo it: the release only takes the stage away, and the root goes to what the last
+ * `applyAppearance` asked for, bright or none. The newest stage held wins, a release removes only its own, and a second call of it does
+ * nothing, so a StrictMode double effect leaks and over-releases nothing.
+ */
+export function stageEffects(value: 'standard' | 'bright', doc: Document = document): () => void {
+  const root = doc.documentElement;
+  const mine = { value: value === 'bright' ? 'bright' as const : null };
+  const stack = effectsStages.get(root) ?? [];
+  effectsStages.set(root, stack);
+  stack.push(mine);
+  markEffects(root);
+  return () => {
+    const i = stack.indexOf(mine);
+    if (i < 0) return;
+    stack.splice(i, 1);
+    markEffects(root);
+  };
 }
 
 function mark(root: HTMLElement, name: string, value: string | null): void {
