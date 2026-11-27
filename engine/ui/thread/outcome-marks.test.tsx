@@ -99,6 +99,37 @@ describe('the mark on an outcome post', () => {
     expect(single).not.toHaveBeenCalledWith(w.second);
   });
 
+  test('a post visited twice, both outcome posts on another page: each answer mark\'s Lens names the visited post\'s author', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.seed.post(thread, spritey, 'post 3');
+    const clerk = fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.they });
+    const now = Date.now();
+    for (const [i, line] of ['Talked down once.', 'Talked down twice.'].entries()) {
+      const visit = fake.seed.visit(clerk, second, { at: now - 120_000 + i * 60_000, endsInMs: 30_000 });
+      fake.seed.visitEnd(visit, { outcome: 'intercepted', line, unposted: true });
+      fake.seed.outcomePost(visit, fake.seed.staffPost(clerk, thread, line));
+    }
+    fake.signInAs(me);
+    /* Only the first read of the page answers: a later one would name the author for both marks and hide the answer-time author read this pins. */
+    const read = fake.threadPage.bind(fake);
+    let reads = 0;
+    vi.spyOn(fake, 'threadPage').mockImplementation((...args) => (reads++ === 0 ? read(...args) : new Promise(() => {})));
+    renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}?page=2`, settings: { postsPerPage: 3 } });
+    for (const n of [4, 5]) {
+      const answer = await screen.findByRole('article', { name: new RegExp(`^Post ${n} `, 'u') });
+      await userEvent.click(await within(answer).findByRole('button', { name: /Opens the visit\.$/u }));
+      const lens = await screen.findByRole('dialog', { name: /^Visit/u });
+      await waitFor(() => expect(lens).toHaveTextContent(/Nothing landed on Spritey\./u));
+      await userEvent.keyboard('{Escape}');
+    }
+  });
+
   test('the answer mark and the visited post\'s mark open the same visit', async () => {
     const w = world();
     const story = vi.spyOn(w.fake, 'visitStory');

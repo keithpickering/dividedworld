@@ -390,7 +390,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
     let moved = false;
     /* The visited posts' authors for the page's outcome posts: from the page's own Acts where the visited post is on it, and the rest in one read for the whole page. */
-    const shown = new Map([...page.acts, ...under].map((a) => [a.id, a] as const));
+    const onThisPage = new Map([...page.acts, ...under].map((a) => [a.id, a] as const));
     const missing = new Set<Id>();
     const authored = (answers: readonly Id[], author: Id | null) => {
       for (const a of answers) if (!authorsHeld.current.has(a) || authorsHeld.current.get(a) !== author) { authorsHeld.current.set(a, author); moved = true; }
@@ -405,7 +405,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         answersHeld.current.set(a, v);
       }
       if (v.answers.length === 0) continue;
-      const visited = shown.get(v.post);
+      const visited = onThisPage.get(v.post);
       if (visited) visitedAuthors.current.set(v.post, visited.character);
       const known = visitedAuthors.current.get(v.post);
       if (known !== undefined) authored(v.answers, known);
@@ -418,9 +418,10 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       void (async () => {
         const got = await api.actsById(wanted);
         await ensurePeople(got.map((a) => a.character));
-        moved = false;
-        for (const a of got) { visitedAuthors.current.set(a.id, a.character); authored(visitsHeld.current.get(a.id)?.answers ?? [], a.character); }
-        if (moved) { if (mounted.current) setVisitTick((n) => n + 1); else unshownAuthors.current = true; }
+        let changed = false;
+        /* A post visited twice has an outcome post for each visit, and `answersHeld` holds them all; a visited post `actsById` cannot return stays asked and shows "The author". */
+        for (const a of got) { visitedAuthors.current.set(a.id, a.character); for (const [answer, v] of answersHeld.current) if (v.post === a.id && authorsHeld.current.get(answer) !== a.character) { authorsHeld.current.set(answer, a.character); changed = true; } }
+        if (changed) { if (mounted.current) setVisitTick((n) => n + 1); else unshownAuthors.current = true; }
       })().catch(() => { for (const id of wanted) authorsAsked.current.delete(id); /* the author stays unnamed: "The author" */ });
     }
     /* The page says which of its posts are the reader's own under a veil; what it says of the posts it holds replaces what was held of them. */
