@@ -253,6 +253,11 @@ begin
     insert into outcome_posts (about_act, kind, visit_act, source, error)
     values (post_ban_entry.ban, 'banned', null, src, left('the instance gives no words for copy.' || coalesce(missing, 'banlistEntry') || '; seed them', 500))
     on conflict (about_act) do nothing;
+    -- Where a writer got there first (a race), its row stands and that is the answer, as the early return above gives it.
+    if not found then
+      select * into held from outcome_posts x where x.about_act = post_ban_entry.ban;
+      return jsonb_build_object('posted', false, 'existing', true, 'post', held.post_act);
+    end if;
     return jsonb_build_object('posted', false, 'existing', false, 'error', 'no words');
   end if;
   if src = 'model' then said := left(btrim(coalesce(line, ''), E' \t\n\r\f\v'), 280); end if;
@@ -918,7 +923,7 @@ declare
   conc_lapsed integer := 0;
   ban_late record;
   ban_lapsed integer := 0;
-  -- Owed concessions and ban entries are looked for in the last seven days of owed rows only (the index on their time), so the scan is bounded by a week and never by the instance's history.
+  -- Owed concessions and ban entries are read from the open sets (concessions_owed_open, bans_owed_open), which hold only what is unpaid and have no age bound: no debt is too old to be paid, and a paid one leaves the set.
   posted_now jsonb;
 begin
   if not pg_try_advisory_xact_lock(hashtext('kayfabb.system_tick')) then return jsonb_build_object('skipped', true); end if;

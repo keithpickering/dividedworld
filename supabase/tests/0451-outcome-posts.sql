@@ -946,3 +946,109 @@ begin
   perform pg_temp.expect(visit_outcome_posts(other) = '[]'::jsonb, 'an act that is not a visit answered posts: ' || visit_outcome_posts(other)::text);
   perform pg_temp.expect((select count(*) from outcome_page_rows(array[made])) = 1, 'the page read answered a row whose visit is not a visit Act');
 end $$;
+
+-- ---- 10. The post is refused, or sprung on, and the outcome stands ----
+-- (a) The visited post carries a live No quote: the Mod's post lands as a plain reply (write_staff_act drops the target), springs nothing, and the outcome is recorded with it.
+do $$
+declare
+  setacc uuid := tests.account('op-nq-ann');
+  setter uuid := tests.character(setacc, 'Op Nq Setter');
+  t uuid := tests.thread('Op no quote');
+  p uuid := tests.post(setter, t, 'A post that cannot be quoted.');
+  v uuid;
+  got jsonb; o outcome_posts%rowtype; posted acts%rowtype; n_spring bigint;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values
+    ('op-nq', 'Op Last Word', 'salty', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "noQuote"}') on conflict (key) do nothing;
+  perform tests.act(setter, 'card', t, jsonb_build_object('card', 'op-nq', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() + interval '2 days'), p);
+  perform pg_temp.expect(exists (select 1 from no_quote_on(p)), 'the world: the post holds no live No quote');
+  v := pg_temp.visit(p, 'op-m1');
+  n_spring := (select count(*) from acts where kind = 'spring');
+  got := file_visit(v, 'Filed, quoting nothing.');
+  perform pg_temp.expect((got ->> 'filed')::boolean and (pg_temp.end_of(v)).payload ->> 'outcome' = 'filed', 'the filing did not end the visit filed: ' || got::text);
+  select * into o from outcome_posts where about_act = (pg_temp.end_of(v)).id;
+  perform pg_temp.expect(o.kind = 'filed' and o.post_act is not null and o.error is null, 'the outcome is not recorded with its post: ' || to_jsonb(o)::text);
+  select * into posted from acts where id = o.post_act;
+  perform pg_temp.expect(posted.thread = t and posted.target_act_id is null and posted.character = pg_temp.modchar('op-m1'), 'the post under No quote is not a plain reply: ' || to_jsonb(posted)::text);
+  perform pg_temp.expect((select count(*) from acts where kind = 'spring') = n_spring, 'a post under No quote sprang something');
+  perform pg_temp.expect(exists (select 1 from alerts a where a.act = (got ->> 'infraction')::uuid and a.sub = 'warning'), 'the filing''s alert did not stand');
+end $$;
+
+-- (b) The visited post carries a quote trap: the Mod's quoting post springs it (the Move lands, once), and the outcome stands with its post. Then the same with the outcome's record failing after the spring
+--     (a trigger of this test's own refuses the insert): the refusal rolls back the post and the spring with it, the error is recorded, and the filing stands.
+create function op_force_fail() returns trigger language plpgsql as $$
+begin
+  if new.post_act is not null and new.visit_act::text = current_setting('op.fail_about', true) then raise exception 'op forced failure after the spring'; end if;
+  return new;
+end $$;
+create trigger op_force_fail before insert on outcome_posts for each row execute function op_force_fail();
+
+do $$
+declare
+  setacc uuid := tests.account('op-trap-ann');
+  setter uuid := tests.character(setacc, 'Op Trap Setter');
+  t uuid := tests.thread('Op quote trap');
+  p uuid := tests.post(setter, t, 'A trapped post.');
+  p2 uuid := tests.post(setter, t, 'Another trapped post.');
+  v uuid; v2 uuid; got jsonb; o outcome_posts%rowtype; posted acts%rowtype;
+  n_plays bigint; n_posts bigint; infraction uuid;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values ('op-move', 'Op Move', 'salty', 'common', 'cast', null, '{post}', null) on conflict (key) do nothing;
+  insert into card_ledger (account, card, kind, price) select setacc, 'op-move', 'bought', 0 from generate_series(1, 14);
+  perform set_card(setacc, 'op-move', setter, p, '{}', 0, null);
+  perform set_card(setacc, 'op-move', setter, p2, '{}', 0, null);
+  v := pg_temp.visit(p, 'op-m1');
+  v2 := pg_temp.visit(p2, 'op-m1');
+
+  -- Springs, and stands.
+  got := file_visit(v, 'Filed into a trap.');
+  select * into o from outcome_posts where about_act = (pg_temp.end_of(v)).id;
+  perform pg_temp.expect(o.post_act is not null and o.error is null, 'the post that sprang the trap is not recorded: ' || to_jsonb(o)::text);
+  perform pg_temp.expect((select a.target_act_id from acts a where a.id = o.post_act) = p, 'the post that sprang the trap does not quote');
+  perform pg_temp.expect((select count(*) from acts a where a.kind = 'spring' and a.thread = t and a.payload ->> 'set' is not null and a.target_act_id = p) = 1, 'the trap did not spring once');
+
+  -- The record fails after the spring.
+  n_plays := (select count(*) from acts where thread = t and kind in ('post', 'spring', 'card'));
+  perform set_config('op.fail_about', v2::text, true);
+  got := file_visit(v2, 'Filed into a trap, then refused.');
+  perform set_config('op.fail_about', '', true);
+  perform pg_temp.expect((got ->> 'filed')::boolean and (pg_temp.end_of(v2)).payload ->> 'outcome' = 'filed', 'the filing did not stand: ' || got::text);
+  select * into o from outcome_posts where about_act = (pg_temp.end_of(v2)).id;
+  perform pg_temp.expect(o.post_act is null and o.error like '%op forced failure after the spring%' and o.kind = 'filed', 'the error was not recorded: ' || to_jsonb(o)::text);
+  perform pg_temp.expect((select count(*) from acts where thread = t and kind in ('post', 'spring', 'card')) = n_plays, 'the refused post or the trap''s side effects remain: '
+    || ((select count(*) from acts where thread = t and kind in ('post', 'spring', 'card')) - n_plays) || ' Acts');
+  perform pg_temp.expect(exists (select 1 from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v2::text), 'the infraction did not stand');
+  perform pg_temp.expect(exists (select 1 from alerts a where a.act = (got ->> 'infraction')::uuid and a.sub = 'warning'), 'the filing''s alert did not stand');
+end $$;
+drop trigger op_force_fail on outcome_posts;
+drop function op_force_fail();
+
+-- (c) An infraction's ruling whose post is refused (the hearer is locked out of the thread): the ruling Act, its refund and its alert stand, the error is recorded, and no post is written.
+do $$
+declare
+  author uuid := pg_temp.fresh('Op Ruling Locked');
+  t uuid := tests.thread('Op refused ruling');
+  p uuid := tests.post(author, t, 'A post that drew an infraction.');
+  v uuid := pg_temp.visit(p, 'op-m1');
+  lp uuid := tests.post(author, t, 'A post to hang the lock on.');
+  inf uuid; sset uuid; ap uuid; closed jsonb; o outcome_posts%rowtype; n_posts bigint; w0 integer := pg_temp.wallet(pg_temp.owner(author));
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick, stack, replies) values
+    ('op-lk', 'Op Lock', 'pepperoni', 'rare', 'set', '{"trigger": {"on": "cast"}, "match": {"flavors": ["salty", "pepperoni"], "upTo": "rare"}, "outcome": {"kind": "lockout", "hours": 24}}', '{post}', null, null, 1, false)
+  on conflict (key) do nothing;
+  perform file_visit(v, 'Filed.');
+  inf := (select i.id from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text);
+  ap := pg_temp.appeal(author, inf);
+  sset := tests.act(author, 'set', t, '{}', lp);
+  perform tests.act(author, 'spring', t, jsonb_build_object('card', 'op-lk', 'trigger', 'cast', 'did', 'lockedOut', 'set', sset::text, 'locks', pg_temp.modchar('op-m1')::text, 'until', (now() + interval '1 day')::text), lp);
+  perform pg_temp.expect(locked_out_until(pg_temp.modchar('op-m1'), t) is not null, 'the hearer is not locked out of the thread');
+  n_posts := (select count(*) from acts where kind = 'post');
+  closed := close_appeal(ap, 'overturned', 'Overturned, but I cannot say so there.', null, null);
+  perform pg_temp.expect((closed ->> 'closed')::boolean, 'the appeal did not close: ' || closed::text);
+  perform pg_temp.expect(exists (select 1 from acts r where r.id = (closed ->> 'ruling_act')::uuid and r.kind = 'appeal_ruling'), 'the ruling Act did not stand');
+  select * into o from outcome_posts where about_act = (closed ->> 'ruling_act')::uuid;
+  perform pg_temp.expect(o.kind = 'ruling' and o.post_act is null and o.error is not null, 'the refusal was not recorded: ' || coalesce(to_jsonb(o)::text, 'no row'));
+  perform pg_temp.expect((select count(*) from acts where kind = 'post') = n_posts, 'a refused ruling wrote a post');
+  perform pg_temp.expect(pg_temp.wallet(pg_temp.owner(author)) = w0 and exists (select 1 from appeal_refunds f where f.appeal_act = ap and f.why = 'overturned'), 'the refund did not stand');
+  perform pg_temp.expect(exists (select 1 from alerts a where a.act = (closed ->> 'ruling_act')::uuid and a.sub = 'appealAnswered'), 'the ruling''s alert did not stand');
+end $$;
