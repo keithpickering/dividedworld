@@ -15,7 +15,7 @@
  *   here into one box-attached group at its spot's center, 12 ems across, so the server, the chatter and the screen place it the same; it is kept
  *   with its key, its can and its spot beside its box and groups.
  * - **What the engine gets** is the strokes framed in the drawer's box: each point is `at + point * scale` (1 / box.w across and 1 / box.h down for
- *   ems; em / box.w and em / box.h for image widths), held to 0 to 1 for the count only, and each width is `CAPS_EM[cap] / box.w`. The payload keeps the
+ *   ems; em / box.w and em / box.h for image widths), placed in the box for the count only (`placementOf`: a group larger than the box is shrunk evenly, one hanging off an edge is moved in), and each width is `CAPS_EM[cap] / box.w` times the group's shrink. The payload keeps the
  *   points as drawn.
  * - **A wash** is `{ cuts: { draw, group, presses }[] }`: each cut names a live draw and one of its groups, and the presses are in that group's units,
  *   at most 3,000 in all. It is framed as a draw's points are and names the draw's radius (`SPONGE_EM / 2 / box.w`) and aspect.
@@ -85,17 +85,53 @@ const scaleOf = (box: Box, g: { unit: Unit; em?: number }): [number, number] => 
   const em = g.unit === 'image' ? g.em ?? 1 : 1;
   return [em / box.w, em / box.h];
 };
-const held = (n: number) => Math.min(1, Math.max(0, n));
-/** A group's points in shares of the drawer's box, held to 0 to 1: for the engine's count and a wash's takes, never the payload. */
-const framed = (box: Box, g: { at: readonly [number, number]; unit: Unit; em?: number }, points: readonly (readonly [number, number])[]): [number, number][] => {
+/** Where a group lands in its drawer's box: scaled evenly about its center by `k`, then moved by `dx` and `dy`, all in shares of the box. */
+export type Placement = { readonly k: number; readonly dx: number; readonly dy: number };
+type Placed = { readonly at: readonly [number, number]; readonly unit: Unit; readonly em?: number; readonly strokes: readonly { readonly cap?: unknown; readonly points?: unknown }[] };
+const CAPS_WIDEST = (g: Placed) => g.strokes.reduce((m, s) => Math.max(m, typeof s.cap === 'string' && Object.hasOwn(CAPS_EM, s.cap) ? CAPS_EM[s.cap as Cap] : 0), 0);
+/**
+ * The one transform a group is framed by, for the count and for a wash's takes, so takes line up with coats: the screen's placement steps 3 and 4
+ * (docs/plans/2026-11-27-graffiti-everywhere-design.md, section 4) in the drawer's frame. The group's extent is its points' bounds plus half the
+ * widest cap; where that is wider or taller than the box, the whole group (its stroke widths too) is shrunk evenly about its center, and then it
+ * is moved to lie inside 0 to 1 (centered where it still cannot). The payload keeps the points as drawn.
+ */
+export function placementOf(box: Box, g: Placed): Placement {
   const [sx, sy] = scaleOf(box, g);
-  return points.map(([x, y]) => [held(g.at[0] + x * sx), held(g.at[1] + y * sy)]);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const s of g.strokes) if (Array.isArray(s.points)) for (const p of s.points as unknown[]) {
+    if (!Array.isArray(p) || !finite(p[0]) || !finite(p[1])) continue;
+    x0 = Math.min(x0, p[0] * sx); x1 = Math.max(x1, p[0] * sx); y0 = Math.min(y0, p[1] * sy); y1 = Math.max(y1, p[1] * sy);
+  }
+  if (x0 === Infinity) return { k: 1, dx: 0, dy: 0 };
+  const hx = CAPS_WIDEST(g) / 2 / box.w, hy = CAPS_WIDEST(g) / 2 / box.h;
+  const [lx, hix, ly, hiy] = [x0 - hx, x1 + hx, y0 - hy, y1 + hy];
+  const k = Math.min(1, 1 / (hix - lx), 1 / (hiy - ly));
+  const pull = (at: number, lo: number, hi: number) => {
+    const [a, b] = [at + lo * k, at + hi * k];
+    if (b - a > 1 + 1e-9) return 0.5 - (a + b) / 2;
+    return a < 0 ? -a : b > 1 ? 1 - b : 0;
+  };
+  return { k, dx: pull(g.at[0], lx, hix), dy: pull(g.at[1], ly, hiy) };
+}
+/** A group's points in shares of the drawer's box, placed by `placementOf`: for the engine's count and a wash's takes, never the payload. */
+const framed = (box: Box, g: { at: readonly [number, number]; unit: Unit; em?: number }, t: Placement, points: readonly (readonly [number, number])[]): [number, number][] => {
+  const [sx, sy] = scaleOf(box, g);
+  return points.map(([x, y]) => [g.at[0] + x * sx * t.k + t.dx, g.at[1] + y * sy * t.k + t.dy]);
 };
 const engine = (d: Drawing): SurfaceStroke[] =>
-  d.groups.flatMap((g) => g.strokes.map((s) => ({ width: CAPS_EM[s.cap] / d.box.w, aspect: d.box.w / d.box.h, points: framed(d.box, g, s.points) })));
+  d.groups.flatMap((g) => {
+    const t = placementOf(d.box, g);
+    return g.strokes.map((s) => ({ width: (CAPS_EM[s.cap] / d.box.w) * t.k, aspect: d.box.w / d.box.h, points: framed(d.box, g, t, s.points) }));
+  });
 
-/** The bytes a payload takes as Postgres writes it (a space after each comma and colon). */
-const bytesOf = (payload: unknown) => Buffer.byteLength(JSON.stringify(payload).replace(/([,:])/g, '$1 '));
+/** The bytes a payload takes as Postgres writes it (jsonb text: ', ' between elements and ': ' after keys, and nowhere inside a string). */
+const jsonb = (v: unknown): string => {
+  if (Array.isArray(v)) return `[${v.map(jsonb).join(', ')}]`;
+  if (typeof v === 'object' && v !== null) return `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${jsonb(x)}`).join(', ')}}`;
+  return JSON.stringify(v);
+};
+const bytesOf = (payload: unknown) => Buffer.byteLength(jsonb(payload));
+const plain = (s: string) => !/[\u0000-\u001f\u007f]/.test(s);
 
 /** An attachment's shape (the screens find it; the server checks only this), kept with its known keys. */
 function attachmentOf(a: unknown, unit: Unit): Verdict<Attachment> {
@@ -103,16 +139,16 @@ function attachmentOf(a: unknown, unit: Unit): Verdict<Attachment> {
   if (a.kind === 'box') return unit === 'em' ? ok({ kind: 'box' }) : refuse("a text or box attachment needs unit 'em'");
   if (a.kind === 'text') {
     if (unit !== 'em') return refuse("a text or box attachment needs unit 'em'");
-    if (typeof a.version !== 'string' || a.version.length < 1 || a.version.length > 64) return refuse('a text attachment names its version, a string of 1 to 64 characters');
+    if (typeof a.version !== 'string' || a.version.length < 1 || a.version.length > 64 || !plain(a.version)) return refuse('a text attachment names its version, a string of 1 to 64 characters, with no control characters');
     if (!whole(a.at, 1_000_000) || !whole(a.len, 1_000_000)) return refuse('a text attachment has at and len, whole numbers of characters');
     if (!within(a.dx, -5000, 5000) || !within(a.dy, -5000, 5000)) return refuse('a text attachment has dx and dy, in ems, from -5000 to 5000');
     return ok({ kind: 'text', version: a.version, at: a.at, len: a.len, dx: round(2)(a.dx), dy: round(2)(a.dy) });
   }
   if (a.kind === 'image') {
     if (unit !== 'image') return refuse("an image attachment needs unit 'image'");
-    if (typeof a.version !== 'string' || a.version.length < 1 || a.version.length > 64) return refuse('an image attachment names its version, a string of 1 to 64 characters');
+    if (typeof a.version !== 'string' || a.version.length < 1 || a.version.length > 64 || !plain(a.version)) return refuse('an image attachment names its version, a string of 1 to 64 characters, with no control characters');
     if (!whole(a.n, 10_000) || !whole(a.nth, 10_000)) return refuse('an image attachment has n and nth, whole numbers');
-    if (typeof a.src !== 'string' || a.src.length < 1 || a.src.length > 2048) return refuse('an image attachment names its src, a string of 1 to 2048 characters');
+    if (typeof a.src !== 'string' || a.src.length < 1 || a.src.length > 2048 || !plain(a.src)) return refuse('an image attachment names its src, a string of 1 to 2048 characters, with no control characters');
     if (!within(a.x, -100, 100) || !within(a.y, -100, 100)) return refuse('an image attachment has x and y, in image shares, from -100 to 100');
     return ok({ kind: 'image', version: a.version, n: a.n, src: a.src, nth: a.nth, x: tenThousandth(a.x), y: tenThousandth(a.y) });
   }
@@ -214,7 +250,7 @@ function validateDraw(input: unknown): Verdict<{ readonly strokes: readonly Surf
 }
 
 /** What a live draw gives a wash to cut: its box and its groups' frames, in the draw's own payload, whatever its shape. */
-type Frame = { readonly at: readonly [number, number]; readonly unit: Unit; readonly em?: number };
+type Frame = { readonly at: readonly [number, number]; readonly unit: Unit; readonly em?: number; readonly place: Placement };
 function frameOf(draw: unknown): { box: Box; radius: number; aspect: number; groups: readonly Frame[]; old: boolean } | null {
   if (!record(draw)) return null;
   if (Array.isArray(draw.groups) && record(draw.box) && finite(draw.box.w) && finite(draw.box.h) && draw.box.w > 0 && draw.box.h > 0) {
@@ -222,7 +258,8 @@ function frameOf(draw: unknown): { box: Box; radius: number; aspect: number; gro
     const groups = (draw.groups as unknown[]).map((g): Frame => {
       const r = record(g) ? g : {};
       const at = Array.isArray(r.at) ? r.at : [0.5, 0.5];
-      return { at: [Number(at[0]), Number(at[1])], unit: r.unit === 'image' ? 'image' : 'em', ...(finite(r.em) ? { em: r.em } : {}) };
+      const frame = { at: [Number(at[0]), Number(at[1])] as [number, number], unit: (r.unit === 'image' ? 'image' : 'em') as Unit, ...(finite(r.em) ? { em: r.em } : {}) };
+      return { ...frame, place: placementOf(box, { ...frame, strokes: Array.isArray(r.strokes) ? r.strokes.filter(record) : [] }) };
     });
     return { box, radius: SPONGE_EM / 2 / box.w, aspect: box.w / box.h, groups, old: false };
   }
@@ -230,7 +267,7 @@ function frameOf(draw: unknown): { box: Box; radius: number; aspect: number; gro
   if (Array.isArray(draw.strokes)) {
     const first = record(draw.strokes[0]) ? draw.strokes[0].aspect : undefined;
     const aspect = finite(first) && first > 0 ? first : 1;
-    return { box: { w: 1, h: 1 }, radius: SPONGE / 2, aspect, groups: [{ at: [0, 0], unit: 'em' }], old: true };
+    return { box: { w: 1, h: 1 }, radius: SPONGE / 2, aspect, groups: [{ at: [0, 0], unit: 'em', place: { k: 1, dx: 0, dy: 0 } }], old: true };
   }
   return null;
 }
@@ -255,7 +292,7 @@ function validateWash(input: unknown, draws: ReadonlyMap<string, unknown>): Verd
     const presses = frame.old ? shares(at, c.presses) : pointsOf(at, c.presses, g.unit, 'press');
     if (!presses.ok) return presses;
     kept.push({ draw: c.draw, group, presses: presses.value });
-    cuts.push({ draw: c.draw, presses: framed(frame.box, g, presses.value), radius: frame.radius, aspect: frame.aspect });
+    cuts.push({ draw: c.draw, presses: framed(frame.box, g, g.place, presses.value), radius: frame.radius, aspect: frame.aspect });
   }
   return ok({ cuts, payload: { cuts: kept } });
 }

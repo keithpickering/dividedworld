@@ -25,7 +25,6 @@ const image = { kind: 'image', version: 'v1', n: 0, src: 'https://x.test/a.png',
 const group = (over: Record<string, unknown> = {}) => ({ at: [0.5, 0.5], anchor: text, unit: 'em', strokes: [stroke()], ...over });
 const box = { w: 60, h: 40 };
 const drawn = (groups: unknown[], b: unknown = box) => ({ box: b, groups });
-const STENCIL_KEYS_FOR_TEST = ['mustache', 'horns', 'crown', 'kilroy', 'x', 'smiley'] as const;
 const STENCIL_KEYS = ['mustache', 'horns', 'crown', 'kilroy', 'x', 'smiley'] as const;
 const strokesOf = (v: ReturnType<typeof draw>) => { assert.equal(v.ok, true, JSON.stringify(v)); return v.ok ? v.value.strokes : []; };
 const why = (v: { ok: boolean; why?: string }) => (v.ok ? '' : v.why ?? '');
@@ -57,12 +56,102 @@ test('Graffiti: a draw of two groups is kept as given, and its strokes are frame
   assert.ok(Math.abs(b!.points[1]![0] - (0.75 + (0.5 * 20) / 60)) < 1e-9 && Math.abs(b!.points[1]![1] - (0.5 + (0.25 * 20) / 40)) < 1e-9, JSON.stringify(b!.points));
 });
 
-test('Graffiti: points framed outside the box are held to it for the count, and kept as drawn', () => {
+const cellsFor = (g: unknown, b: unknown = box) => { const v = draw(drawn([g], b)); assert.equal(v.ok, true, why(v)); return count(cellsOf(v.ok ? v.value.strokes : [])); };
+const zigzag = (n: number, w: number, h: number) => Array.from({ length: n }, (_, i): [number, number] => [i % 2 === 0 ? -w / 2 : w / 2, -h / 2 + (h * i) / (n - 1)]);
+
+test('Graffiti: a group larger than the box is shrunk evenly into it for the count, and the payload keeps the points as drawn', () => {
   const v = draw(drawn([group({ at: [0.9, 0.9], strokes: [stroke({ points: [[0, 0], [60, 40]] })] })]));
   assert.equal(v.ok, true, why(v));
   if (!v.ok) return;
-  assert.deepEqual(v.value.strokes[0]!.points[1], [1, 1]);
   assert.deepEqual((v.value.payload as { groups: { strokes: { points: number[][] }[] }[] }).groups[0]!.strokes[0]!.points[1], [60, 40]);
+  for (const s of v.value.strokes) for (const [x, y] of s.points) assert.ok(x >= -1e-9 && x <= 1 + 1e-9 && y >= -1e-9 && y <= 1 + 1e-9, `${x}, ${y}`);
+});
+
+test('Graffiti: a hostile em-400 zigzag in a 5-em box counts as many cells as the same scribble scaled into the box', () => {
+  const small = { w: 5, h: 40 };
+  const points = zigzag(40, 400, 40).map(([x, y]): [number, number] => [Math.max(-200, Math.min(200, x)), y]);
+  const hostile = cellsFor(group({ strokes: [stroke({ points })] }), small);
+  // The same scribble, scaled evenly (its stroke width too) until it is as wide as the box: k is the box over the extent (the zigzag plus the cap).
+  const k = 1 / (400 / 5 + 1.07 / 5);
+  const scaled = count(cellsOf([{ width: (1.07 / 5) * k, aspect: 5 / 40, points: points.map(([x, y]): [number, number] => [0.5 + (x * k) / 5, 0.5 + (y * k) / 40]) }]));
+  assert.ok(hostile > 0 && hostile === scaled, `${hostile} against ${scaled}`);
+  const widths = strokesOf(draw(drawn([group({ strokes: [stroke({ points: [[-200, 0], [200, 0]] })] })], small))).map((s) => s.width);
+  assert.ok(widths[0]! < 1.07 / 5, 'the stroke width shrinks with the group');
+});
+
+test('Graffiti: a group hanging off the right edge is moved in, not squashed', () => {
+  const pts = [[-3, -1], [3, 1], [-3, 1], [3, -1]];
+  const inside = cellsFor(group({ at: [0.5, 0.5], strokes: [stroke({ points: pts })] }));
+  const off = cellsFor(group({ at: [0.97, 0.5], strokes: [stroke({ points: pts })] }));
+  assert.ok(Math.abs(off - inside) <= inside * 0.1, `${off} against ${inside}`);
+  const v = draw(drawn([group({ at: [0.97, 0.5], strokes: [stroke({ points: pts })] })]));
+  const xs = strokesOf(v).flatMap((s) => s.points.map((p) => p[0]));
+  assert.ok(Math.max(...xs) <= 1 && Math.abs(Math.max(...xs) + 0.5 * 1.07 / 60 - 1) < 1e-9, `${Math.max(...xs)}`);
+});
+
+test('Graffiti: a wash press at a group\'s point lands on the same framed spot as the draw\'s point, for a group that was shrunk and moved', () => {
+  const live = drawn([group({ at: [0.95, 0.1], strokes: [stroke({ points: [[-300 / 2, 3], [100, -50], [150, 20]] })] })], { w: 5, h: 40 });
+  const d = draw(live);
+  assert.equal(d.ok, true, why(d));
+  if (!d.ok) return;
+  const v = wash({ cuts: [{ draw: 'd1', group: 0, presses: [[-150, 3], [100, -50], [150, 20]] }] }, new Map([['d1', d.value.payload]]));
+  assert.equal(v.ok, true, why(v));
+  if (!v.ok) return;
+  v.value.cuts[0]!.presses.forEach((p, i) => { const q = d.value.strokes[0]!.points[i]!; assert.ok(Math.abs(p[0] - q[0]) < 1e-9 && Math.abs(p[1] - q[1]) < 1e-9, `${i}: ${p} against ${q}`); });
+});
+
+test('Graffiti: control characters in a version or a src are refused', () => {
+  for (const bad of ['a\u0000b', 'a\u001fb', 'a\u007fb', 'a\nb']) {
+    assert.equal(draw(drawn([group({ anchor: { ...text, version: bad } })])).ok, false, JSON.stringify(bad));
+    assert.equal(draw(drawn([group({ anchor: { ...image, src: bad }, unit: 'image', em: 10 })])).ok, false, JSON.stringify(bad));
+  }
+  assert.equal(draw(drawn([group({ anchor: { ...image, src: 'https://x.test/a b.png' }, unit: 'image', em: 10 })])).ok, true);
+});
+
+const imageGroup = (src: string, x = 0) => group({ anchor: { ...image, src }, unit: 'image', em: 10, strokes: [stroke({ points: [[x, 0]] })] });
+
+test('Graffiti: the stored size counts as Postgres writes it, and a colon or comma inside a string is not a separator', () => {
+  // One group as jsonb text, the separators written out by hand: only the structural ones have a space after them.
+  const src = ':,'.repeat(1000);
+  const one = `{"at": [0.5, 0.5], "anchor": {"kind": "image", "version": "v1", "n": 0, "src": "${src}", "nth": 0, "x": 0.4, "y": 0.6}, "unit": "image", "em": 10, "strokes": [{"can": "red", "cap": "stock", "points": [[0, 0]]}]}`;
+  const fits = (n: number) => Buffer.byteLength(`{"box": {"w": 60, "h": 40}, "groups": [${Array(n).fill(one).join(', ')}]}`);
+  // 29 of these fit as Postgres writes them, and would not if every colon and comma in the string were doubled.
+  assert.ok(fits(29) < 65_536 && fits(29) + 29 * 2000 > 65_536, `${fits(29)}`);
+  assert.equal(draw(drawn(Array.from({ length: 29 }, () => imageGroup(src)))).ok, true);
+});
+
+test('Graffiti: a draw just under 64 KiB is kept and one just over is refused', () => {
+  const unit = (src: string) => Buffer.byteLength(`{"at": [0.5, 0.5], "anchor": {"kind": "image", "version": "v1", "n": 0, "src": "${src}", "nth": 0, "x": 0.4, "y": 0.6}, "unit": "image", "em": 10, "strokes": [{"can": "red", "cap": "stock", "points": [[0, 0]]}]}`);
+  const head = Buffer.byteLength('{"box": {"w": 60, "h": 40}, "groups": []}');
+  // Thirty groups with a src of n characters take head + 30 * unit + 2 * 29 bytes; pick n so that the total is exactly the limit, then one over.
+  const total = (n: number) => head + 30 * unit('a'.repeat(n)) + 2 * 29;
+  let n = 0;
+  while (total(n + 1) <= 65_536) n++;
+  assert.ok(n > 0 && n <= 2048, `${n}`);
+  assert.ok(total(n) <= 65_536 && total(n + 1) > 65_536);
+  const under = draw(drawn(Array.from({ length: 30 }, () => imageGroup('a'.repeat(n)))));
+  assert.equal(under.ok, true, why(under));
+  const over = draw(drawn(Array.from({ length: 30 }, () => imageGroup('a'.repeat(n + 1)))));
+  assert.equal(over.ok, false);
+  assert.match(why(over), /64 KiB/);
+});
+
+test('Graffiti: NaN and Infinity are refused for a draw point, a wash press, the box and at', () => {
+  for (const bad of [NaN, Infinity, -Infinity]) {
+    assert.equal(draw(drawn([group({ strokes: [stroke({ points: [[bad, 0]] })] })])).ok, false, `point ${bad}`);
+    assert.equal(draw(drawn([group({ strokes: [stroke({ points: [[0, bad]] })] })])).ok, false, `point ${bad}`);
+    assert.equal(draw(drawn([group()], { w: bad, h: 40 })).ok, false, `box.w ${bad}`);
+    assert.equal(draw(drawn([group()], { w: 60, h: bad })).ok, false, `box.h ${bad}`);
+    assert.equal(draw(drawn([group({ at: [bad, 0.5] })])).ok, false, `at ${bad}`);
+    assert.equal(wash({ cuts: [{ draw: 'd1', group: 0, presses: [[bad, 0]] }] }, new Map([['d1', drawn([group()])]])).ok, false, `press ${bad}`);
+  }
+});
+
+test('Graffiti: the wash of an old-shape draw names the old sponge as a share of the box', () => {
+  const old = { strokes: [{ can: 'red', cap: 'stock', aspect: 2, points: [[0.1, 0.2]] }] };
+  const v = wash({ cuts: [{ draw: 'd1', group: 0, presses: [[0.5, 0.5]] }] }, new Map([['d1', old]]));
+  assert.equal(v.ok, true, why(v));
+  if (v.ok) assert.equal(v.value.cuts[0]!.radius, (sizes as unknown as { SPONGE: number }).SPONGE / 2);
 });
 
 test('Graffiti: each bound refuses one over and names its predicate', () => {
@@ -239,7 +328,7 @@ test('Graffiti: a refusal names the group, the stroke and the point that failed'
 });
 
 test('Graffiti: every stencil at the last spot fits 64 KiB as Postgres writes it, and a stencil lands in its own ninth', () => {
-  for (const key of STENCIL_KEYS_FOR_TEST) {
+  for (const key of STENCIL_KEYS) {
     const v = draw({ stencil: key, can: 'orange', spot: 8 });
     assert.equal(v.ok, true, key);
     assert.ok(Buffer.byteLength(JSON.stringify(v.ok && v.value.payload).replace(/([,:])/g, '$1 ')) < 65_536, key);
