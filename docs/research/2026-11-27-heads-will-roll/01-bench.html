@@ -91,6 +91,11 @@ table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
 td, th { border: 1px solid var(--rule); padding: 3px 6px; text-align: left; }
 td.n { font-family: var(--mono); text-align: right; }
 .notes { font-size: 13.75px; }
+/* On a phone's own screen the board stacks the postbit over the post, as Divided World does, whichever window is chosen. */
+@media (max-width: 600px) {
+  .post { grid-template-columns: 1fr; }
+  .postbit { border-right: 0; border-bottom: 1px solid var(--b-rule); }
+}
 .notes li { margin-bottom: .4em; }
 </style>
 </head>
@@ -261,7 +266,7 @@ td.n { font-family: var(--mono); text-align: right; }
   }
 
   // ---- The box (Space): x in [-W/2, W/2], y in [-Hb/2, Hb/2], z in [-D/2, D/2].
-  const box = () => ({ w: W, h: Math.max(80, H * 0.55), d: W * 0.9 });
+  const box = () => ({ w: W, h: Math.max(80, H * 0.8), d: W * 0.9 });
 
   function scatter(h) {
     if (mode() === 'flat') {
@@ -401,28 +406,41 @@ td.n { font-family: var(--mono); text-align: right; }
 
   function spaceStep(dt, t) {
     const B = box();
+    // A system wider than the box (a phone's narrow post, a sun with many satellites) draws its rings in to fit: `fit` scales every orbit's radius.
+    // Without it the room left for the sun was negative, and the clamps below flipped it from one side to the other every frame.
+    for (const s of heads) {
+      if (s.sun) continue;
+      const raw = Math.max(sizeOf(s) / 2, ...heads.filter((h) => h.sun === s).map((h) => h.orbit.r + sizeOf(h) / 2));
+      s.fit = Math.min(1, Math.max(0.05, (Math.min(B.w, B.d) / 2 - 2) / raw));
+      s.reach = raw * s.fit;
+    }
     // Suns drift in the box and bounce off its walls.
+    const room = (half, r) => Math.max(0, half - r);
     for (const s of heads) {
       if (s.sun || s.reel) continue;
       // A system stays inside the box whole, so no satellite crosses the content area's borders.
-      const r = Math.max(sizeOf(s) / 2, ...heads.filter((h) => h.sun === s).map((h) => h.orbit.r + sizeOf(h) / 2));
-      s.X += s.vx * K.drift * dt; s.Y += s.vy * K.drift * dt * .4; s.Z += s.vz * K.drift * dt;
-      if (Math.abs(s.X) > Math.max(0, B.w / 2 - r)) { s.X = Math.sign(s.X) * Math.max(0, B.w / 2 - r); s.vx = -Math.sign(s.X) * Math.abs(s.vx); }
-      if (Math.abs(s.Y) > B.h / 2 - r) { s.Y = Math.sign(s.Y) * (B.h / 2 - r); s.vy *= -1; }
-      if (Math.abs(s.Z) > Math.max(0, B.d / 2 - r)) { s.Z = Math.sign(s.Z) * Math.max(0, B.d / 2 - r); s.vz = -Math.sign(s.Z) * Math.abs(s.vz); }
+      const r = s.reach;
+      s.X += s.vx * K.drift * dt; s.Y += s.vy * K.drift * dt; s.Z += s.vz * K.drift * dt;
+      // Each wall turns the sun back toward the middle; never a flip of sign on a clamp, which is what alternated frame to frame.
+      const rx = room(B.w / 2, r), ry = room(B.h / 2, sizeOf(s) / 2), rz = room(B.d / 2, r);
+      if (s.X > rx) { s.X = rx; s.vx = -Math.abs(s.vx); } else if (s.X < -rx) { s.X = -rx; s.vx = Math.abs(s.vx); }
+      if (s.Y > ry) { s.Y = ry; s.vy = -Math.abs(s.vy); } else if (s.Y < -ry) { s.Y = -ry; s.vy = Math.abs(s.vy); }
+      if (s.Z > rz) { s.Z = rz; s.vz = -Math.abs(s.vz); } else if (s.Z < -rz) { s.Z = -rz; s.vz = Math.abs(s.vz); }
     }
     // Suns steer: back toward the middle of the box, more the farther out they are, and away from another sun they come near. Their speed stays the drift,
     // so a sun curves home rather than stopping, and two systems may pass one another at different depths (it is space), never sun through sun.
     const suns = heads.filter((h) => !h.sun);
     for (const a of suns) {
-      let ax = -a.X / (B.w / 2) * K.home, az = -a.Z / (B.d / 2) * K.home;
+      let ax = -a.X / (B.w / 2) * K.home, ay = -a.Y / (B.h / 2) * K.home, az = -a.Z / (B.d / 2) * K.home;
       for (const b of suns) {
         if (a === b) continue;
-        const dx = a.X - b.X, dz = a.Z - b.Z, d = Math.hypot(dx, dz) || 0.01, near = (sizeOf(a) + sizeOf(b)) * 1.6;
-        if (d < near) { const k = (near - d) / near * 3; ax += dx / d * k; az += dz / d * k; }
+        // Suns part in all three directions, so on a tall, narrow post (a phone's) two systems stack one over the other rather than knotting in the middle.
+        const near = (a.reach ?? sizeOf(a)) + (b.reach ?? sizeOf(b));
+        const dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z, d = Math.hypot(dx, dy, dz) || 0.01;
+        if (d < near) { const k = (near - d) / near * 3; ax += dx / d * k; ay += dy / d * k; az += dz / d * k; }
       }
-      a.vx += ax * dt; a.vz += az * dt;
-      const v = Math.hypot(a.vx, a.vz) || 1; a.vx /= v; a.vz /= v;
+      a.vx += ax * dt; a.vy += ay * dt; a.vz += az * dt;
+      const v = Math.hypot(a.vx, a.vy, a.vz) || 1; a.vx /= v; a.vy /= v; a.vz /= v;
     }
     // Satellites go round their sun: a circle in a plane wobbled off the horizontal, at a pace that follows the sun's mass and the radius.
     for (const h of heads) {
@@ -430,9 +448,10 @@ td.n { font-family: var(--mono); text-align: right; }
       const o = h.orbit, M = massOf(h.sun);
       const w = K.opace * Math.sqrt(Math.max(1, M) * 4e4 / Math.pow(o.r, 3));
       o.phase += w * dt;
-      const cx = Math.cos(o.phase) * o.r, cz = Math.sin(o.phase) * o.r;
+      const R = o.r * (h.sun.fit ?? 1);
+      const cx = Math.cos(o.phase) * R, cz = Math.sin(o.phase) * R;
       const wob = K.owob * Math.PI / 180 * o.tiltA;
-      const cy = Math.sin(o.phase + o.tiltB) * Math.sin(wob) * o.r;
+      const cy = Math.sin(o.phase + o.tiltB) * Math.sin(wob) * R;
       const yRoom = Math.max(0, B.h / 2 - sizeOf(h) / 2);
       h.X = h.sun.X + cx; h.Y = Math.max(-yRoom, Math.min(yRoom, h.sun.Y + cy)); h.Z = h.sun.Z + cz;
     }
