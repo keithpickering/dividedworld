@@ -3694,6 +3694,21 @@ describe('the kinds grid', () => {
     expect(within(lens()).queryByRole('button', { name: /plays? · / })).toBeNull();
   });
 
+  /* The grid is the tab row laid out: each entry carries the icon its tab carries, as decoration beside its name. */
+  test('each entry shows its card\'s icon, as its tab does, and its name stays its label', async () => {
+    const row = await opened();
+    overflow(row, true);
+    const iconOfTab = new Map(within(row).getAllByRole('tab').map((t) => [t.textContent!, t.querySelector('.kb-lens-tab-icon')?.getAttribute('src')]));
+    await userEvent.click(await within(lens()).findByRole('button', { name: 'All 12' }));
+    for (const li of entries()) {
+      const name = li.querySelector('.kb-lens-kind-name')!.textContent!;
+      const icon = li.querySelector<HTMLElement>('img.kb-lens-tab-icon');
+      expect(icon).not.toBeNull();
+      expect(icon).toHaveAttribute('alt', '');
+      expect(icon!.getAttribute('src')).toBe(iconOfTab.get(name));
+    }
+  });
+
   test('choosing an entry opens its tab, hides the grid and puts focus on the tab', async () => {
     const row = await opened();
     overflow(row, true);
