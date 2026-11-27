@@ -1300,6 +1300,33 @@ describe('the thread list goes live', () => {
     expect(screen.queryByRole('link', { name: 'Thread 001' })).toBeNull();
   });
 
+  test('a thread of the page that moves away becomes its stub, and a thread from another board that moves here counts on the bar', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 3 });
+    const elsewhere = fake.seed.thread('off-topic', w.mine!, 'Visitor', 'Hi').thread;
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 002' });
+    act(() => { fake.seed.moveThread(w.ids[1]!, 'off-topic'); });
+    const stub = await screen.findByRole('link', { name: 'Moved: Thread 002' });
+    expect(screen.queryByRole('link', { name: 'Thread 002' })).toBeNull();
+    expect(stub.closest('tr')).toHaveTextContent('now on Off Topic');
+    expect(rowOf('Thread 001').compareDocumentPosition(stub.closest('tr')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bar()).toBeNull();
+    act(() => { fake.seed.moveThread(elsewhere, 'general'); });
+    await waitFor(() => expect(bar()).toHaveTextContent('1 thread has new posts'));
+    expect(screen.queryByRole('link', { name: 'Visitor' })).toBeNull();
+  });
+
+  test('a thread that waited behind the bar and then moves away leaves the count, and a thread of a later page that moves away is a stub on page 1', async () => {
+    const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general', seed: (f) => world(f, { threads: 25 }) });
+    await screen.findByRole('link', { name: 'Thread 025' });
+    await bump(fake, seeded.ids[0]!, seeded.mine!);
+    await waitFor(() => expect(bar()).toHaveTextContent('1 thread has new posts'));
+    act(() => { fake.seed.moveThread(seeded.ids[0]!, 'off-topic'); });
+    await waitFor(() => expect(bar()).toBeNull());
+    expect(await screen.findByRole('link', { name: 'Moved: Thread 001' })).toBeInTheDocument();
+  });
+
   test('the first row of page 2 counts on any bump, since no row above it is shown to compare with', async () => {
     const { seeded, fake } = renderInWorld(<Routed />, { path: '/b/general?page=2', seed: (f) => world(f, { threads: 25 }) });
     await screen.findByRole('link', { name: 'Thread 005' });

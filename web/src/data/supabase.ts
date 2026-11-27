@@ -261,6 +261,12 @@ const searchArgs = (q: SearchQuery, after: SearchCursor | null | undefined) => (
   q: q.q, author: q.author, board: q.board, from_at: q.fromAt, to_at: q.toAt, titles_only: q.titlesOnly, sort: q.sort, after: cursorArg(after), per_page: q.perPage,
 });
 
+/** A moved-thread stub as board_page lists it and as a board's `moved` event sends it (0455): the thread's id and title, the board it is on now and when it moved; none without that board. */
+function toStub(s: Row): BoardStub[] {
+  if (typeof s['moved_to'] !== 'string') return [];
+  return [{ thread: s['id'], title: str(s['title']) ?? '', movedTo: { id: s['moved_to'], slug: str(s['moved_to_slug']) ?? '', name: str(s['moved_to_name']) ?? '' }, movedAt: str(s['moved_at']) ?? '' }];
+}
+
 function toThread(r: Row): ThreadSummary {
   return {
     id: r['id'],
@@ -1977,10 +1983,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const reading: Record<Id, number> = {};
       for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
       const ref = (v: unknown): BoardRef | null => (isObject(v) && typeof v['id'] === 'string' ? { id: v['id'], slug: str(v['slug']) ?? '', name: str(v['name']) ?? '' } : null);
-      const stubs = rowsOf(d['stubs']).flatMap((s): BoardStub[] => {
-        const to = ref({ id: s['moved_to'], slug: s['moved_to_slug'], name: s['moved_to_name'] });
-        return to ? [{ thread: s['id'], title: str(s['title']) ?? '', movedTo: to, movedAt: str(s['moved_at']) ?? '' }] : [];
-      });
+      const stubs = rowsOf(d['stubs']).flatMap(toStub);
       return {
         board: toBoard(d['board'] as Row), closed: d['closed'] === true ? { mergedInto: ref(d['mergedInto']), fallback: ref(d['fallback']), goesTo: ref(d['goesTo']) } : null, stubs,
         total: num(d['total']), page: num(d['page'], 1), threads, pins, stickies, banner,
@@ -2614,7 +2617,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       }, l.onJoined);
     },
     subscribeBoard(board, l) {
-      return join(`board:${board}`, ['row'], (_event, p) => { l.onRow?.(toThread(p)); });
+      return join(`board:${board}`, ['row', 'moved'], (event, p) => {
+        if (event === 'moved') { for (const stub of toStub(p)) l.onMoved?.(stub); } else l.onRow?.(toThread(p));
+      });
     },
     /* The index's own topic, `index`: one `board` event per board that changed, shaped as index_page's entry. */
     subscribeIndex(l) {

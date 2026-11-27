@@ -1979,6 +1979,18 @@ describe('live', () => {
     expect(early.channels.filter((c) => c.subscribed)).toEqual([]);
   });
 
+  it('maps a board `moved` broadcast to the stub the old board lists, and joins the board topic for row and moved', async () => {
+    const s = stub();
+    const onMoved = vi.fn();
+    s.api.subscribeBoard(C, { onMoved });
+    await settle();
+    expect([...(s.channels[0]?.handlers.keys() ?? [])].sort()).toEqual(['moved', 'row']);
+    s.channels[0]?.handlers.get('moved')?.({ payload: { id: T, title: 'A title', moved_to: 'b-2', moved_to_slug: 'side', moved_to_name: 'Side', moved_at: '2026-10-02T10:00:00+00:00' } });
+    expect(onMoved).toHaveBeenCalledWith({ thread: T, title: 'A title', movedTo: { id: 'b-2', slug: 'side', name: 'Side' }, movedAt: '2026-10-02T10:00:00+00:00' });
+    s.channels[0]?.handlers.get('moved')?.({ payload: { id: T, title: 'A title', moved_at: 'x' } });
+    expect(onMoved).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the index topic for board summaries', async () => {
     const s = stub();
     const onBoard = vi.fn();

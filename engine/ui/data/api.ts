@@ -2359,6 +2359,11 @@ export interface ThreadListener {
 export interface BoardListener {
   /** A thread of the board has a new post (or is new): its row as the board page lists it. May come twice or out of order: key by id, and keep the row with the later `lastAt`. */
   readonly onRow?: (row: ThreadSummary) => void;
+  /**
+   * A thread of this board was moved to another: the stub this board's next read lists for it (board_page's `stubs`, 0455), for a move that board_page would still list.
+   * A page that shows the thread draws the stub in its place; one that does not shows it as the next read would. May come twice: key by thread.
+   */
+  readonly onMoved?: (stub: BoardStub) => void;
 }
 
 export interface IndexListener {

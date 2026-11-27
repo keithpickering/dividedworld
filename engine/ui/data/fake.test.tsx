@@ -774,6 +774,40 @@ describe('live events', () => {
     expect(boards).toEqual(['true Fresh 2']);
     expect(fake.broadcast.log.map((e) => e.topic + ' ' + e.event)).toEqual([`thread:${started.thread.id} act`, `board:${board} row`, 'index board']);
   });
+  test('a thread moved to another board is a row on the new board, its stub on the old, and a board entry on the index for both', async () => {
+    const { fake, thread } = world();
+    const old = await boardId(fake, 'general');
+    fake.seed.board('side', 'Side');
+    const to = await boardId(fake, 'side');
+    const rows: string[] = [];
+    const stubs: unknown[] = [];
+    const entries: string[] = [];
+    fake.subscribeBoard(to, { onRow: (r) => rows.push(r.title) });
+    fake.subscribeBoard(old, { onMoved: (s) => stubs.push(s) });
+    fake.subscribeIndex({ onBoard: (b) => entries.push(`${b.id === old ? 'old' : 'new'} ${b.threadCount}`) });
+    fake.seed.moveThread(thread, 'side');
+    await flush();
+    expect(rows).toEqual(['Hello']);
+    expect(stubs).toEqual([{ thread, title: 'Hello', movedTo: { id: to, slug: 'side', name: 'Side' }, movedAt: expect.any(String) }]);
+    expect(entries.sort()).toEqual(['new 1', 'old 0']);
+    expect(fake.broadcast.log.map((e) => e.topic + ' ' + e.event).slice(-4)).toEqual([`board:${to} row`, `board:${old} moved`, 'index board', 'index board']);
+    expect(stubs[0]).toEqual((await fake.boardPage('general', 1, []))!.stubs[0]);
+  });
+  test('a move older than movedStubDays sends no stub, and a thread moved back sends a row and no stub to the board it came back to', async () => {
+    const { fake, thread } = world();
+    const old = await boardId(fake, 'general');
+    fake.seed.board('side', 'Side');
+    const to = await boardId(fake, 'side');
+    const stubs: string[] = [];
+    fake.subscribeBoard(old, { onMoved: (s) => stubs.push(`old ${s.title}`) });
+    fake.subscribeBoard(to, { onMoved: (s) => stubs.push(`side ${s.title}`) });
+    fake.seed.moveThread(thread, 'side', { at: Date.now() - 400 * DAY });
+    await flush();
+    expect(stubs).toEqual([]);
+    fake.seed.moveThread(thread, 'general');
+    await flush();
+    expect(stubs).toEqual(['side Hello']);
+  });
   test('a post reaches onRow with its new count and onBoard with the board\'s last post', async () => {
     const { fake, anaFace, thread } = world();
     const board = await boardId(fake, 'general');

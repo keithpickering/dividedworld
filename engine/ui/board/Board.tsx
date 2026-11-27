@@ -16,6 +16,12 @@
  * NEW in place; a thread off the page, or one whose bump would put it above the row shown before it,
  * counts toward the bar above the list ("N threads have new posts"), whose Show reads the page again.
  * Pins, stickies and moved-thread stubs never count.
+ *
+ * The board's topic also sends `moved` when a thread leaves for another board: the stub the board's next read would list. A thread the page
+ * shows (row, pin or sticky) leaves the list and leaves the bar's count, and the stub is drawn with the page's other stubs, newest first, on
+ * the first page, where board_page lists them; a stub is its own group below the rows, so it cannot take the row's place there. A row that
+ * reaches this board's topic after that for a thread whose stub the page shows is ignored (the earlier rule), so a thread moved back shows
+ * its row from the next read.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useKayfa } from '../context.tsx';
@@ -133,17 +139,19 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
     hydrate1(doc);
   }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps -- the stores are this view's own and never change
   /* The rows the board's topic has sent since this document (`row`), by thread: a row the page shows takes the newer one in place. A new document starts over. */
-  const [live, setLive] = useState<{ readonly doc: BoardPage; readonly rows: ReadonlyMap<Id, ThreadSummary>; readonly waiting: ReadonlySet<Id> }>(() => ({ doc, rows: new Map(), waiting: new Set() }));
-  const fresh = live.doc === doc ? live : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>() };
+  const [live, setLive] = useState<{ readonly doc: BoardPage; readonly rows: ReadonlyMap<Id, ThreadSummary>; readonly waiting: ReadonlySet<Id>; readonly moved: ReadonlyMap<Id, BoardStub> }>(() => ({ doc, rows: new Map(), waiting: new Set(), moved: new Map() }));
+  const fresh = live.doc === doc ? live : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>() };
   /* The document's characters by id: built when the document changes, not on each row. */
   const byId = useMemo(() => new Map(doc.characters.map((c) => [c.id, c] as const)), [doc]);
   const state = useMemo<Loaded>(() => {
     const take = (t: ThreadSummary) => fresh.rows.get(t.id) ?? t;
+    const here = (t: ThreadSummary) => !fresh.moved.has(t.id);
     return {
-      board: doc.board, threads: doc.threads.map(take), total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
-      characters: byId, pins: doc.pins.map((p) => (fresh.rows.has(p.thread.id) ? { ...p, thread: take(p.thread) } : p)), stickies: doc.stickies.map(take), stubs: doc.stubs,
+      board: doc.board, threads: doc.threads.filter(here).map(take), total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
+      characters: byId, pins: doc.pins.filter((p) => here(p.thread)).map((p) => (fresh.rows.has(p.thread.id) ? { ...p, thread: take(p.thread) } : p)), stickies: doc.stickies.filter(here).map(take),
+      stubs: fresh.moved.size === 0 || doc.page !== 1 ? doc.stubs : [...[...fresh.moved.values()].reverse(), ...doc.stubs.filter((s) => !fresh.moved.has(s.thread))],
     };
-  }, [doc, byId, fresh.rows]);
+  }, [doc, byId, fresh.rows, fresh.moved]);
   /* A page turn is a navigation to the next page's document: what a spin form held open belonged to the page before. */
   useEffect(() => setSpinOrigin(null), [doc]);
 
@@ -187,11 +195,11 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       onRow(row) {
         const doc = docRef.current;
         setLive((cur) => {
-          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>() };
+          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>() };
           const held = base.rows.get(row.id) ?? [...doc.threads, ...doc.stickies, ...doc.pins.map((p) => p.thread)].find((t) => t.id === row.id);
           if (held && (Date.parse(held.lastAt) > Date.parse(row.lastAt) || (held.lastAt === row.lastAt && held.lastSeq > row.lastSeq))) return base;
           /* A moved thread is no thread of this board: its stub never counts, and a late row for it neither waits nor replaces anything. */
-          if (doc.stubs.some((s) => s.thread === row.id)) return base;
+          if (base.moved.has(row.id) || doc.stubs.some((s) => s.thread === row.id)) return base;
           const rows = new Map(base.rows);
           const waiting = new Set(base.waiting);
           const slot = doc.threads.findIndex((t) => t.id === row.id);
@@ -205,13 +213,27 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
             const above = slot > 0 ? base.rows.get(doc.threads[slot - 1]!.id) ?? doc.threads[slot - 1]! : null;
             if (above ? Date.parse(row.lastAt) > Date.parse(above.lastAt) : doc.page > 1) waiting.add(row.id);
           }
-          return { doc, rows, waiting };
+          return { doc, rows, waiting, moved: base.moved };
         });
         /* A character the page does not know is read once by id, as a live play's is. */
         const named = [...new Set([row.firstCharacter, row.lastCharacter])].filter((c): c is Id => c !== null && !asked.current.has(c) && !doc.characters.some((k) => k.id === c) && !extraRef.current.has(c));
         if (named.length === 0) return;
         for (const c of named) asked.current.add(c);
         void api.characters(named).then((who) => { if (who.length) setExtra((m) => new Map([...m, ...who.map((c) => [c.id, c] as const)])); }, () => { for (const c of named) asked.current.delete(c); });
+      },
+      onMoved(stub) {
+        const doc = docRef.current;
+        setLive((cur) => {
+          const base = cur.doc === doc ? cur : { doc, rows: new Map<Id, ThreadSummary>(), waiting: new Set<Id>(), moved: new Map<Id, BoardStub>() };
+          const waiting = new Set(base.waiting);
+          waiting.delete(stub.thread);
+          /* The stub is drawn on the first page only, where board_page lists them; a thread the page shows leaves its row, pin or sticky either way. */
+          const shown = doc.page === 1 && !doc.stubs.some((s) => s.thread === stub.thread && s.movedAt === stub.movedAt);
+          const moved = new Map(base.moved);
+          moved.delete(stub.thread);
+          if (shown || [...doc.threads, ...doc.stickies, ...doc.pins.map((p) => p.thread)].some((t) => t.id === stub.thread)) moved.set(stub.thread, stub);
+          return { doc, rows: base.rows, waiting, moved };
+        });
       },
     });
   }, [api, boardId]);

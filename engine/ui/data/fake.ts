@@ -88,7 +88,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'row' | 'board' | 'self' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled' | 'poll';
+  readonly event: 'act' | 'tally' | 'row' | 'moved' | 'board' | 'self' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled' | 'poll';
 }
 
 export interface Seed {
@@ -874,6 +874,30 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!board || isClosed(board)) return;
     const entry = boardEntry(board);
     send('index', 'board', () => { for (const l of [...indexListeners]) l.onBoard?.(entry); });
+  };
+  /** The stub a departure lists on the board it left, as board_page draws it: the thread's title, the board it is on now and when it moved. */
+  const stubOf = (d: { thread: Id; at: number }): BoardStub => {
+    const moved = threads.get(d.thread)!;
+    const here = boards.find((b) => b.id === moved.board)!;
+    return { thread: d.thread, title: moved.title, movedTo: { id: here.id, slug: here.slug, name: boardNow(here).name }, movedAt: iso(d.at) };
+  };
+  /**
+   * A landed board move, as rebuild_thread_places sends it (0455): `row` on the new board, `moved` (the stub the old board's page would list, none once the move is
+   * older than movedStubDays) on the old, and `board` on the index for each of the two boards, as an open board's entry.
+   */
+  const sendMoved = (t: ThreadRec, from: Id, at: number) => {
+    const row = summary(t);
+    send(`board:${t.board}`, 'row', () => { for (const l of [...(boardListeners.get(t.board) ?? [])]) l.onRow?.(row); });
+    if (at >= now() - settings.movedStubDays * DAY) {
+      const stub = stubOf({ thread: t.id, at });
+      send(`board:${from}`, 'moved', () => { for (const l of [...(boardListeners.get(from) ?? [])]) l.onMoved?.(stub); });
+    }
+    for (const id of [from, t.board]) {
+      const board = boards.find((b) => b.id === id);
+      if (!board || isClosed(board)) continue;
+      const entry = boardEntry(board);
+      send('index', 'board', () => { for (const l of [...indexListeners]) l.onBoard?.(entry); });
+    }
   };
   /**
    * The Act kinds the database pokes the owner's account about with `self` (`self_kinds()`, 0455), besides a `move` naming one of their characters. The wallet moves
@@ -5322,11 +5346,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const since = now() - settings.movedStubDays * 86_400_000;
       const stubs = shown !== 1 ? [] : [...departures].filter((d) => d.origin === board.id && d.at >= since).sort((x, y) => y.at - x.at)
         .filter((d, i, all) => all.findIndex((e) => e.thread === d.thread) === i && core.thread(d.thread)!.board !== board.id)
-        .map((d): BoardStub => {
-          const moved = core.thread(d.thread)!;
-          const here = boards.find((b) => b.id === moved.board)!;
-          return { thread: d.thread, title: moved.title, movedTo: { id: here.id, slug: here.slug, name: boardNow(here).name }, movedAt: iso(d.at) };
-        });
+        .map(stubOf);
       return {
         board, closed: null, stubs, total: listed.total, page: shown, threads: listed.threads, pins, stickies, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
         tallies: core.tallies(marked.map((a) => a.id)), mine: core.myReactions(marked.map((a) => a.id)), reading: core.reading(ids), views: core.viewCounts(ids),
@@ -6536,8 +6556,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const t = threads.get(thread);
       const to = boards.find((b) => b.slug === slug || b.id === slug);
       if (!t || !to) throw new Error(`cannot move ${thread} to ${slug}`);
-      departures.push({ thread, origin: t.board, to: to.id, at: o?.at ?? now() });
+      const from = t.board;
+      departures.push({ thread, origin: from, to: to.id, at: o?.at ?? now() });
       t.board = to.id;
+      if (from !== to.id && listed(t)) sendMoved(t, from, o?.at ?? now());
     },
     closeBoard(slug, how) {
       const b = boards.find((x) => x.slug === slug || x.id === slug);
