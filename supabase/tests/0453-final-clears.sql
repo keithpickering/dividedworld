@@ -128,6 +128,7 @@ begin
   r := pg_temp.cast_of(cat, 'fgdeep', c, p); perform pg_temp.expect(r.said is null, format('deep two: %s', r.said));
   r := pg_temp.cast_of(dan, 'fgdeep', d, p); perform pg_temp.expect(r.said = '23505 this post already carries 2 of that card, the most it takes', format('deep three was not refused: %s', r.said));
   said := pg_temp.save_of(ann, a, one, '{"clean": true}', true, null);
+  perform pg_temp.expect(said is null, format('deep one''s clear was refused: %s', said));
   r := pg_temp.cast_of(dan, 'fgdeep', d, p); perform pg_temp.expect(r.said is null, format('deep three was refused after one was cleared for good: %s', r.said));
   perform pg_temp.expect((select (x.payload ->> 'layer')::integer from acts x where x.id = r.id) = 3, 'the third deep play did not take layer 3');
 end $$;
@@ -149,6 +150,7 @@ begin
   perform pg_temp.expect((select not e.cleared and e.state = '{"clean": false}' from effect_state e where e.play = one), 'the plain card''s later save was not kept');
   -- A cleared one is saved again with no refusal.
   said := pg_temp.save_of(ann, a, one, '{"clean": true}', true, null);
+  perform pg_temp.expect(said is null, format('the plain card''s clear, saved again, was refused: %s', said));
   said := pg_temp.save_of(ann, a, one, '{"clean": true, "again": 1}', true, null);
   perform pg_temp.expect(said is null, format('a save on the plain card''s cleared play was refused: %s', said));
 end $$;

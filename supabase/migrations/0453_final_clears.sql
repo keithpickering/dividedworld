@@ -7,7 +7,8 @@
 --   3. place_cast                  copied whole from 0438_board_cards_on_their_board.sql: the post stack count leaves out a play of a kind that clears for good that effect_cleared(play, null) says is cleared. The layer and the count beyond a post are unchanged.
 --   4. spring_facts                copied whole from 0438_board_cards_on_their_board.sql: its subquery `l` gains `cleared_for_good`, and `up` and `quadrant_up` leave those plays out. `layer` is unchanged, so no layer is taken twice.
 --   5. save_effect_state           copied whole from 0411_post_effects.sql (no later migration redefines it): after the didn't-take refusal, a play of a kind that clears for good that is cleared for every version is refused
---                                  in the words 'that effect was cleared for good, and stays cleared' (errcode 55000). It sits after the author check, so only the post's author meets it. Grants as 0411 gave them (service role only).
+--                                  in the words 'that effect was cleared for good, and stays cleared' (errcode 55000). It sits after the author check, so only the post's author meets it. The post's row is locked for no key update
+--                                  as place_cast locks it, first, before that check, so two saves of one play cannot both pass it and a later save cannot overwrite the clear. Grants as 0411 gave them (service role only).
 -- Grants and settings as each copied definition states them. No later migration redefines place_cast, spring_facts or save_effect_state, and seed_instance's latest is 0449.
 --
 -- Ways out: the state is the author's own clear, which is the way out of the effect; once cleared for good it stays cleared, and the card can be played on the post again. Masks: every fact read is public (a play's card, its author's clear).
@@ -726,7 +727,6 @@ begin
       frozen := rewind_refusal(target, kind_of);
       if frozen is not null then raise exception '%', frozen using hint = 'kayfabb.refusal', errcode = '42501'; end if;
     end if;
-    -- A card that clears for good holds no place in its stack once its author has cleared it for every version of the post (effect_cleared with no version; the layer still counts it, so none is taken twice).
     -- A card with a time up ends at it, whatever it holds (a skim, a veil, a use card): the stack below and the end both read the play's `ends`.
     if kind_of.lasts is not null then ends := now() + kind_of.lasts; end if;
     -- The stack counts the plays still up: a caught play, an ended Use and a play beyond a post sitting here hold no place. The
@@ -737,6 +737,7 @@ begin
     if kind_of.skim is not null and not coalesce(quad = any (array['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative']), false) then
       raise exception 'this card names a reaction quadrant' using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
+    -- A card that clears for good holds no place in its stack once its author has cleared it for every version of the post (effect_cleared with no version; the layer still counts it, so none is taken twice).
     select count(*) filter (where (k.payload ->> 'ends' is null or (k.payload ->> 'ends')::timestamptz > now()) and not card_ended(k.id)
                              and not (kind_of.clears_for_good and effect_cleared(k.id, null))),
            greatest(coalesce(max((k.payload ->> 'layer')::integer), 0), count(*)) + 1
@@ -1078,8 +1079,8 @@ begin
     into f.up, f.layer, f.quadrant_up
   from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended,
                k2.payload #>> '{config,quadrant}' as quadrant,
-               -- A play of a card that clears for good, cleared for every version of the post, holds no place in the stack (place_cast counts it the same way); the layer still counts it.
-               coalesce(ck.clears_for_good, false) and effect_cleared(k2.id, null) as cleared_for_good
+               -- A play of a card that clears for good, cleared for every version of the post, holds no place in the stack (place_cast counts it the same way); the layer still counts it. Asked only of plays of the card counted (fd.card), so the probe is not run for the post's other plays.
+               coalesce(ck.clears_for_good, false) and k2.payload ->> 'card' = fd.card and effect_cleared(k2.id, null) as cleared_for_good
         from acts k2 left join card_kinds ck on ck.key = k2.payload ->> 'card' where k2.kind = 'card' and k2.target_act_id = by_act and not (k2.payload ? 'caught') and coalesce(k2.payload ->> 'reach', 'post') = 'post' offset 0) l;
   f.quadrant_ok := (fd.config ->> 'quadrant') = any (array['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative']);
   -- The window a scored-as play would name, and whether the quoting character already has a class named for it: a play of any scored-as card made at or after the last settled window's end, not ended.
@@ -1133,8 +1134,10 @@ create or replace function save_effect_state(who uuid, through uuid, on_play uui
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare author uuid;
 begin
+  -- The post's row is locked first, as place_cast locks it (for no key update, before it counts anything): saves of one play, and a cast beside them, are laid one at a time, so the check below for a clear that is final
+  -- reads every save that came before it, and a later save never overwrites the clear. The post's row is the only lock taken before the effect_state row, which place_cast takes after the post's, so the order is the same.
   select t.character into author from acts k join acts t on t.id = k.target_act_id where k.id = on_play and k.kind = 'card'
-    and coalesce(k.payload ->> 'reach', 'post') = 'post';
+    and coalesce(k.payload ->> 'reach', 'post') = 'post' for no key update of t;
   -- The post's own player answers for the mask that wrote it, retired or not.
   if not (author is not distinct from through
           and exists (select 1 from characters c where c.id = through and c.owner = who and c.debuted_at is not null)) then
