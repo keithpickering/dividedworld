@@ -281,6 +281,11 @@ declare
 begin
   select * into s from surfaces x where x.play = on_play for update;
   if not found then raise exception 'there is no wall on that post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- Every writer that places groups on a post (the four draw writers, first draws included) and every edit of that post serialize on one transaction-level advisory lock, keyed as the repository's other advisory locks
+  -- are, hashtextextended('kayfabb.<thing>.' || id, 0): 'kayfabb.surface_post.' || the post. A row lock on the post's surfaces cannot see a surface an uncommitted first draw is creating; this one can. Taken after the
+  -- surfaces row and before the post's current version is read, so a draw either commits before the edit or reads the edit's version and is refused as stale. Lock order: a draw takes the surfaces row, then this lock;
+  -- an edit takes only this lock, and no one takes a surfaces row while holding it, so there is no cycle.
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.surface_post.' || s.post::text, 0));
   -- An admin's End this card can commit between the caller's early check and the lock: the card is read again here, under the lock, and a draw or a wash that waited for it is refused.
   if exists (select 1 from acts x where x.kind = 'card_end' and x.target_act_id = on_play) then
     raise exception 'an admin ended that card' using hint = 'kayfabb.refusal', errcode = '55000';
@@ -1769,9 +1774,9 @@ begin
       raise exception 'a closed poll cannot change' using hint = 'kayfabb.refusal', errcode = '55000';
     end if;
   end if;
-  -- A draw applies under its surface's row lock and reads the post's current version there (surface_apply). The post's surfaces are locked here, before the edit is inserted, so a draw either commits before the edit
-  -- (and its places are seen by the edit's insert below) or waits for the edit and is refused as stale. Ordered by play, and surface_apply holds one surfaces row and then writes Acts, as this does, so the two cannot deadlock.
-  perform 1 from surfaces s where s.post = target order by s.play for update;
+  -- A draw applies under its post's advisory lock and reads the post's current version there (surface_apply). The edit takes the same lock before it is inserted, so a draw either commits before the edit (and its places
+  -- are seen by the edit's insert below) or waits for the edit and is refused as stale, a first draw included. No one takes a surfaces row while holding this lock, so the draws' order (row, then lock) cannot cycle with it.
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.surface_post.' || target::text, 0));
   insert into acts (character, kind, thread, target_act_id, payload) values (through, 'edit', in_thread, target, jsonb_build_object('body', body)) returning id into edit_act;
   -- Where each live group of the walls on this post sits in the new words, for the edit's own version: the Edge Function maps them (surface_groups_on gives it the groups). A malformed entry, a place that is not an
   -- attachment or JSON null, and a group the draw does not have are refused below, even for a draw that is not live; an entry that is well formed but names a draw that is not live on this post is left out, and a group
