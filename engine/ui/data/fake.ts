@@ -877,16 +877,36 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The Act kinds the database pokes the owner's account about with `self` (`self_kinds()`, 0453), besides a `move` naming one of their characters. The wallet moves
    * (any kind but a settlement's), the card ledger rows and the ban lifts and warn reliefs poke too, where the fake writes them. One list, so a kind added to the SQL is added here.
    */
-  const SELF_KINDS: ReadonlySet<ActKind> = new Set<ActKind>(['appeal_ruling', 'ban', 'card_end', 'infraction', 'move_end', 'spring', 'unmask']);
+  const SELF_KINDS: ReadonlySet<ActKind> = new Set<ActKind>(['appeal_ruling', 'ban', 'card_end', 'infraction', 'move', 'move_end', 'spring', 'unmask']);
+  /** The kinds whose target Act is followed, up to two hops, to find what they change (`act_self_characters`'s chain). */
+  const SELF_CHAIN: ReadonlySet<ActKind> = new Set<ActKind>(['move_end', 'card_end', 'appeal_ruling', 'appeal']);
   const sendSelf = (account: Id | null | undefined) => {
-    if (account == null) return;
+    if (account == null || account === '') return;
     send(`account:${account}`, 'self', () => { for (const l of [...(accountListeners.get(account) ?? [])]) l.onSelf?.(); });
   };
+  /** A text that is a character id, else null (`self_uuid`): a payload is JSON, and a character in it is only as good as its writer. */
+  const selfCharacter = (v: unknown): Id | null => (typeof v === 'string' && characters.has(v) ? v : null);
+  /**
+   * The characters one Act changes (`act_self_characters`, 0453): the Act and, for an Act that ends or rules on another, the Act it points at and that Act's own target, up to two hops; on each the payload's
+   * `character`, a move's `params.character` and a spring's `locks`; an unmask's own character; and the character a play lifted a ban from (`ban_lifts`).
+   */
+  const actSelfCharacters = (act: ActRec): Set<Id> => {
+    const named = new Set<Id>();
+    let at: ActRec | undefined = act;
+    for (let hop = 0; at !== undefined; hop++) {
+      const params = at.payload['params'] as Record<string, unknown> | undefined;
+      for (const c of [at.payload['character'], params?.['character'], at.payload['locks']]) { const id = selfCharacter(c); if (id !== null) named.add(id); }
+      if (hop === 0 && at.kind === 'unmask' && at.character !== null && characters.has(at.character)) named.add(at.character);
+      for (const l of banLifts) if (l.play === at.id) { const id = selfCharacter(acts.get(l.ban)?.payload['character']); if (id !== null) named.add(id); }
+      if (hop >= 2 || !SELF_CHAIN.has(at.kind) || at.target === null) break;
+      at = acts.get(at.target);
+    }
+    return named;
+  };
+  /** The Act's self poke, as `acts_self` sends it: the owner of each character the Act changes, once, for the kinds `self_kinds()` lists. */
   const sendSelfFor = (act: ActRec) => {
-    const params = act.payload['params'] as Record<string, unknown> | undefined;
-    const named = act.kind === 'move' ? params?.['character'] : act.kind === 'ban' || act.kind === 'infraction' ? act.payload['character'] ?? act.character : act.character;
-    if (!SELF_KINDS.has(act.kind) && act.kind !== 'move') return;
-    if (typeof named === 'string') sendSelf(characters.get(named)?.owner);
+    if (!SELF_KINDS.has(act.kind)) return;
+    for (const owner of new Set([...actSelfCharacters(act)].map((c) => characters.get(c)?.owner))) sendSelf(owner);
   };
 
   /* ---------------------------------------------------------------- projections ---- */
@@ -2488,7 +2508,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const sealed = new Map<Id, { readonly account: Id; readonly contents: readonly string[] }>();
   const cardLedger: { readonly account: Id; readonly order: number; readonly event: CardEvent; readonly ms: number }[] = [];
   let logOrder = 0;
-  const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); if (e.kind !== 'settlement') sendSelf(account); };
+  const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); if (e.settlement === null) sendSelf(account); };
   /*
    * The Vending Machine's slots (machine_slots, 0139_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
    * database keeps an admin's choices. Their ids are their own count, so the ids of everything else are as they were. A pack is rolled with a
@@ -3121,10 +3141,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const take = Math.min(pointsLeft(inf), want);
         if (take <= 0) continue;
         warnReliefs.push({ play: id, infraction: inf.id, points: take });
+        sendSelf(characters.get(selfCharacter(inf.payload['character']) ?? '')?.owner);
         want -= take;
       }
     } else if (effect.kind === 'unban') {
-      for (const b of running) banLifts.push({ play: id, ban: b.id });
+      for (const b of running) { banLifts.push({ play: id, ban: b.id }); sendSelf(characters.get(selfCharacter(b.payload['character']) ?? '')?.owner); }
     }
     spend(account, price, 'play', written.id);
     recordCard(account.id, written.at, { card: rules.key, kind: 'played', act: written.id, price });
@@ -4290,7 +4311,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const t = openThread(named.id, title, move);
       const written = write({ character, kind: 'spin', thread: t.id, target: move, payload: { title, body } });
       apologies.push({ move, apology: written.id, character, state: 'pending', at: written.at });
-        sendAct(written);
+      sendAct(written);
       writeFramed(body, framing, written);
       return ok({ thread: summary(t), act: publicAct(written) });
     },
@@ -4503,6 +4524,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (moveEnds.has(act)) return refuse('that move has already ended');
       moveEnds.set(act, { why: 'reversed', by: 'admin', at: now() });
       const end = write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: 'reversed', by: 'admin' } });
+      sendSelfFor(end);
       /* What builds on it follows: a landed part is reversed with an end of its own, and a part still waiting is held. */
       const root = queue.find((x) => x.landed === act);
       const alsoEnded: Id[] = [];
@@ -4511,7 +4533,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (f.landed !== null && !moveEnds.has(f.landed)) {
           const fa = acts.get(f.landed)!;
           moveEnds.set(f.landed, { why: 'reversed', by: 'admin', at: now() });
-          write({ character: null, kind: 'move_end', thread: fa.thread, target: f.landed, payload: { why: 'reversed', by: 'admin' } });
+          sendSelfFor(write({ character: null, kind: 'move_end', thread: fa.thread, target: f.landed, payload: { why: 'reversed', by: 'admin' } }));
           alsoEnded.push(f.landed);
         } else if (f.landed === null && f.heldAt === null && !f.refusal) {
           f.heldAt = now();
@@ -4715,16 +4737,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (end !== null) until = iso(end);
       }
       const ruled = write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}), ...(hearer.staff?.office === 'boss' || hearer.staff?.office === 'mod' ? { office: hearer.staff.office } : {}) } });
+      sendSelfFor(ruled);
       /* close_appeal's post: an infraction's ruling is the hearer's line in the punished post's thread, quoting the post, and answers the visit that filed it; a ban's or a move's has no visit and no mark. */
       const filedBy = pun.kind === 'infraction' && typeof pun.payload['visit_act'] === 'string' ? acts.get(pun.payload['visit_act']) : undefined;
       if (filedBy?.kind === 'visit') postOutcome(filedBy, 'ruling', ruled.id, hearer.id, line, typeof pun.payload['about_act'] === 'string' ? pun.payload['about_act'] : filedBy.target);
       if (movePunishes) {
         if (verdict === 'overturned') {
           moveEnds.set(pun.id, { why: 'overturned', by: 'appeal', at: now() });
-          write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'overturned', by: 'appeal' } });
+          sendSelfFor(write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'overturned', by: 'appeal' } }));
         } else if (verdict === 'reduced' && until !== undefined && Date.parse(until) <= now()) {
           moveEnds.set(pun.id, { why: 'expired', by: 'appeal', at: now() });
-          write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'expired', by: 'appeal' } });
+          sendSelfFor(write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'expired', by: 'appeal' } }));
         }
       }
       const refunded = verdict === 'overturned' ? settings.modBots.appealPrice : 0;
@@ -6422,7 +6445,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (moveEnds.has(act)) throw new Error('that move has ended');
       const at = end.at ?? now();
       moveEnds.set(act, { why: end.why, by: end.by ?? (end.why === 'reversed' ? 'admin' : end.why === 'superseded' ? 'boss' : end.why === 'spent' ? 'handover' : 'tick'), at });
-      return write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: end.why, by: end.by ?? (end.why === 'reversed' ? 'admin' : end.why === 'superseded' ? 'boss' : end.why === 'spent' ? 'handover' : 'tick') }, at }).id;
+      const ended = write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: end.why, by: end.by ?? (end.why === 'reversed' ? 'admin' : end.why === 'superseded' ? 'boss' : end.why === 'spent' ? 'handover' : 'tick') }, at });
+      sendSelfFor(ended);
+      return ended.id;
     },
     queueSuccessor(staff, boss, o) {
       staffId(staff);
@@ -6627,10 +6652,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       /* file_visit (0361): the oldest live fall on the post, not caught or ended, that no infraction names yet; the filing is the fall caster's. */
       const fall = [...acts.values()].filter((a) => a.kind === 'card' && a.target === post.id && a.payload.caught === undefined && onPost(a) && !over(a.id)
         && instance.cards.find((c) => c.key === a.payload.card)?.discipline?.kind === 'fall' && !spentPlays().has(a.id)).sort((x, y) => x.at - y.at || x.order - y.order)[0];
-      return write({
+      const filed = write({
         character: null, kind: 'infraction', thread: v.thread, at,
         payload: { character: fall ? fall.character : post.character, ...(fall ? { fall_play: fall.id, fall_for: post.character } : {}), band: o?.band ?? 'minor', points: o?.points ?? 2, rule_number: o?.ruleNumber === undefined ? 2 : o.ruleNumber, about_act: post.id, visit_act: visit, staff: (v.character ? characters.get(v.character)?.staff?.key : undefined) ?? 'seed', expires_at: iso(o?.expiresAt ?? at + 14 * 86_400_000) },
-      }).id;
+      });
+      sendSelfFor(filed);
+      return filed.id;
     },
     appeal(character, infraction, plea, o) {
       const i = acts.get(infraction);
@@ -6640,24 +6667,30 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     ruling(appeal, mod, verdict, o) {
       const a = acts.get(appeal);
       if (!a || a.kind !== 'appeal') throw new Error(`no such appeal ${appeal}`);
-      return write({ character: mod, kind: 'appeal_ruling', thread: a.thread, target: appeal, at: o?.at, payload: { appeal_act: appeal, verdict, line: o?.line ?? '', ...(o?.until !== undefined ? { until: iso(o.until) } : {}) } }).id;
+      const ruled = write({ character: mod, kind: 'appeal_ruling', thread: a.thread, target: appeal, at: o?.at, payload: { appeal_act: appeal, verdict, line: o?.line ?? '', ...(o?.until !== undefined ? { until: iso(o.until) } : {}) } });
+      sendSelfFor(ruled);
+      return ruled.id;
     },
     relief(play, infraction, points) {
       if (acts.get(play)?.kind !== 'card') throw new Error(`no such card play ${play}`);
       if (acts.get(infraction)?.kind !== 'infraction') throw new Error(`no such infraction ${infraction}`);
       if (!Number.isInteger(points) || points < 1) throw new Error('a relief takes at least one point');
       warnReliefs.push({ play, infraction, points });
+      sendSelf(characters.get(selfCharacter(acts.get(infraction)!.payload['character']) ?? '')?.owner);
     },
     lift(play, ban) {
       if (acts.get(play)?.kind !== 'card') throw new Error(`no such card play ${play}`);
       if (acts.get(ban)?.kind !== 'ban') throw new Error(`no such ban ${ban}`);
       banLifts.push({ play, ban });
+      sendSelf(characters.get(selfCharacter(acts.get(ban)!.payload['character']) ?? '')?.owner);
     },
     ban(character, until, o) {
       const inf = o?.infraction ? acts.get(o.infraction) : [...acts.values()].filter((a) => a.kind === 'infraction' && a.payload.character === character).sort((x, y) => y.at - x.at)[0];
       if (!inf) throw new Error('a ban follows an infraction that filled the bar');
       const at = o?.at ?? now();
-      return write({ character: null, kind: 'ban', thread: inf.thread, at, payload: { character, days: o?.days ?? 1, until: iso(until), infraction_act: inf.id, season: 1 } }).id;
+      const banned = write({ character: null, kind: 'ban', thread: inf.thread, at, payload: { character, days: o?.days ?? 1, until: iso(until), infraction_act: inf.id, season: 1 } });
+      sendSelfFor(banned);
+      return banned.id;
     },
     donation(character, drive, amount, o) {
       const d = acts.get(drive);
@@ -6678,7 +6711,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     cardEnd(play, o) {
       const p = acts.get(play);
       if (!p || p.kind !== 'card') throw new Error(`no such card play ${play}`);
-      return write({ character: null, kind: 'card_end', thread: p.thread, target: play, at: o?.at, payload: {} }).id;
+      const ended = write({ character: null, kind: 'card_end', thread: p.thread, target: play, at: o?.at, payload: {} });
+      sendSelfFor(ended);
+      return ended.id;
     },
     judging(answers) {
       if (answers.report) judged.report = answers.report;

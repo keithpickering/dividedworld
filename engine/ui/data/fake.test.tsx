@@ -786,13 +786,16 @@ describe('live events', () => {
     expect(rows).toEqual([1]);
     expect(boards).toEqual([thread]);
   });
-  test('a settlement\'s wallet line is no poke, since a settlement is announced on reach', async () => {
-    const { fake, ana } = world();
+  test('a settlement\'s wallet line, the real settlement path, is no poke, since a settlement is announced on reach', async () => {
+    const { fake, ana, anaFace } = world();
     const mine = vi.fn();
     fake.subscribeAccount({ onSelf: mine });
-    fake.seed.wallet(ana, 100);
+    /* The real settlement path: the ledger's line credits the wallet through the settlement's own wallet row. */
+    fake.seed.settle({ ledger: [{ character: anaFace, reason: 'face.cheered', amount: 30 }] });
     await flush();
     expect(mine).not.toHaveBeenCalled();
+    expect((await fake.log()).wallet.map((e) => e.kind)).toEqual(['settlement']);
+    void ana;
   });
   test('an edit is the post again under its own id; a reaction is a tally', async () => {
     const { fake, anaFace, boFace, thread, opener } = world();
@@ -2750,6 +2753,22 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(on.find((a) => a.kind === 'spring')?.payload).not.toHaveProperty('outcome');
     expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
+  });
+
+  test('a trap\'s caught ledger row pokes the setter, and the one who was caught gets a poke of their own for the card they spent', async () => {
+    const { fake, ana, bo, anaFace, boFace, opener } = setup();
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    const setter = vi.fn();
+    fake.subscribeAccount({ onSelf: setter });
+    fake.signInAs(bo);
+    const other = vi.fn();
+    fake.subscribeAccount({ onSelf: other });
+    must(await fake.playCard('blot', boFace, opener, {}, ''));
+    await flush();
+    expect(set.kind).toBe('set');
+    expect(setter).toHaveBeenCalled();
+    expect(other).toHaveBeenCalled();
+    expect(fake.broadcast.log.filter((e) => e.event === 'self').map((e) => e.topic)).toEqual(expect.arrayContaining([`account:${ana}`, `account:${bo}`]));
   });
 
   test('a catching set card\'s catch is the setter\'s: a card in the hand, a ledger row and no payout', async () => {
@@ -4834,6 +4853,22 @@ describe('a drive and its gifts, refused and split as the database does', () => 
     return { fake, ana, bo, anaFace, boFace, thread, opener, drive };
   }
   const walletOf = async (fake: ReturnType<typeof driveWorld>['fake'], who: string) => { fake.signInAs(who); return (await fake.wallet()).balance; };
+
+  test('a gift pokes the post\'s author (a grant-like wallet move from another player) and the giver, a settlement on the same fake pokes no one', async () => {
+    const { fake, ana, bo, anaFace, boFace, drive } = driveWorld();
+    const theirs = vi.fn();
+    const mine = vi.fn();
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onSelf: theirs });
+    fake.signInAs(ana);
+    fake.subscribeAccount({ onSelf: mine });
+    fake.seed.settle({ ledger: [{ character: anaFace, reason: 'face.cheered', amount: 30 }, { character: boFace, reason: 'face.cheered', amount: 30 }] });
+    await flush();
+    expect([mine.mock.calls.length, theirs.mock.calls.length]).toEqual([0, 0]);
+    must(await fake.donate(anaFace, drive, 25));
+    await flush();
+    expect([mine.mock.calls.length, theirs.mock.calls.length]).toEqual([1, 1]);
+  });
 
   test('a gift takes the amount from the giver, sends the rest to the post\'s author, and answers with the Act and the giver\'s balance', async () => {
     const { fake, ana, bo, anaFace, thread, drive } = driveWorld();
@@ -6942,6 +6977,36 @@ describe('discipline cards: hearts, the Unban and Take the Fall', () => {
     fake.signInAs(fake.seed.account('boss', { admin: true }));
     must(await fake.reverseCard(played.id));
     expect(await warn(boFace)).toBe(9);
+  });
+
+  test('what ends or rules on a ban pokes the banned character\'s owner: an unban play, an admin end of the play, and an appeal\'s ruling', async () => {
+    const { fake, ana, bo, anaFace, boFace, opener, file, now } = world();
+    const boPokes = vi.fn();
+    const anaPokes = vi.fn();
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onSelf: boPokes });
+    fake.signInAs(ana);
+    fake.subscribeAccount({ onSelf: anaPokes });
+    const ban = fake.seed.ban(boFace, now + 3 * DAY, { infraction: file(7, DAY), days: 3 });
+    await flush();
+    /* The infraction and the ban each poke the banned owner (two Acts), Ana none. */
+    expect([boPokes.mock.calls.length, anaPokes.mock.calls.length]).toEqual([2, 0]);
+    /* An unban play: the Act is Ana's own card, and the lift row pokes the banned owner (and Ana's wallet and ledger move for the play). */
+    const played = must(await fake.playCard('t-ultra', anaFace, boFace, {}, '', 'character', opener));
+    await flush();
+    expect(boPokes.mock.calls.length).toBe(3);
+    /* The admin's end of that play: the card_end names the play, whose lift names the ban's character. */
+    const before = boPokes.mock.calls.length;
+    const boss = fake.seed.account('boss', { admin: true });
+    fake.signInAs(boss);
+    must(await fake.reverseCard(played.id));
+    await flush();
+    expect(boPokes.mock.calls.length).toBe(before + 1);
+    /* A ruling on the ban: ruling, appeal, ban, two hops. */
+    const appeal = fake.seed.appeal(boFace, ban, 'No.');
+    fake.seed.ruling(appeal, fake.seed.staff('mod2', 'Mod Two', 'mod'), 'overturned', { until: now });
+    await flush();
+    expect(boPokes.mock.calls.length).toBe(before + 2);
   });
 
   test('an Ultra Happy Heart lifts every running ban at once; the log says when and by which card', async () => {
