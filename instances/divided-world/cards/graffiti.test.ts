@@ -390,3 +390,19 @@ test('Graffiti: the Lens\'s line for drawings no longer live reads "washed off"'
   assert.equal(olderWords(14, { ...SURFACE_WORDS, ...LOG_DRAW }), 'and 14 older tags, washed off');
   assert.equal(olderWords(1, { ...SURFACE_WORDS, ...LOG_DRAW }), 'and 1 older tag, washed off');
 });
+
+test('Graffiti: a draw is counted and validated where the browser has no Node Buffer', () => {
+  const g = globalThis as { Buffer?: unknown };
+  const saved = g.Buffer;
+  try {
+    delete g.Buffer;
+    assert.equal(typeof g.Buffer, 'undefined');
+    assert.equal(sizes.bytesOf({ a: 'é€😀' }), Buffer_free_count('{"a": "é€😀"}'));
+    const v = draw(drawn([group({ strokes: [stroke({})] })]));
+    assert.equal(v.ok, true, why(v));
+  } finally {
+    g.Buffer = saved;
+  }
+});
+// UTF-8 length by hand (1, 2, 3 or 4 bytes a code point), so the expectation needs no Node global either.
+const Buffer_free_count = (s: string) => [...s].reduce((n, c) => n + (c.codePointAt(0)! < 0x80 ? 1 : c.codePointAt(0)! < 0x800 ? 2 : c.codePointAt(0)! < 0x10000 ? 3 : 4), 0);

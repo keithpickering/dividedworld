@@ -134,7 +134,9 @@ const jsonb = (v: unknown): string => {
   if (typeof v === 'object' && v !== null) return `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${jsonb(x)}`).join(', ')}}`;
   return JSON.stringify(v);
 };
-export const bytesOf = (payload: unknown) => Buffer.byteLength(jsonb(payload));
+/* UTF-8 bytes through TextEncoder, not Node's `Buffer`: this runs in the browser, which has no `Buffer`. */
+const utf8 = new TextEncoder();
+export const bytesOf = (payload: unknown) => utf8.encode(jsonb(payload)).length;
 const plain = (s: string) => !/[\u0000-\u001f\u007f]/.test(s) && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
 
 /** An attachment's shape (the screens find it; the server checks only this), kept with its known keys. */
