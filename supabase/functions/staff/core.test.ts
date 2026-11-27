@@ -169,6 +169,7 @@ test('a due visit is filed with the Mod\'s line: one light-tier filing call nami
   const c = m.chats[0]!;
   assert.equal(c.duty, 'filing');
   assert.equal(c.tier, 'light');
+  assert.equal(c.maxTokens, 1_000, 'a chat filing keeps its cap');
   assert.equal(c.staff, MON);
   assert.ok(c.rules);
   assert.match(c.system, /Crack down on bumping in Games\./, 'the Boss\'s order');
@@ -311,14 +312,14 @@ test('a ledger row that cannot be written stops the run: an unrecorded call is n
   assert.equal(d.count('file_visit'), 0);
 });
 
-test('a line past 280 characters is cut at a sentence, the trim recorded', async () => {
+test('a line past the post bound (a filing line is a post) is cut at a sentence, the trim recorded', async () => {
   const d = fakeDb({ visits: [due(V1, P1)] });
-  const m = fakeModels(() => ({ words: 'This post broke a rule. '.repeat(40) }));
+  const m = fakeModels(() => ({ words: 'This post broke a rule. '.repeat(400) }));
   const out = await run(d, m);
   assert.ok(out.status === 'ok');
   const line = d.of('file_visit')[0]!.line as string;
-  assert.ok(line.length <= 280 && line.endsWith('rule.'));
-  assert.equal(out.filings[0]!.trims[0] && (out.filings[0]!.trims[0] as { predicate: string }).predicate, 'maxLength(280)');
+  assert.ok(line.length <= 2000 && line.length > 280 && line.endsWith('rule.'));
+  assert.equal(out.filings[0]!.trims[0] && (out.filings[0]!.trims[0] as { predicate: string }).predicate, 'maxLength(2000)');
 });
 
 test('past filingLinesPerDay the stock line files and no model is called; the count carries across the run', async () => {
@@ -347,6 +348,7 @@ test('an old-voice persona\'s line is a raw completion, and its move a chat call
   assert.equal(m.completions[0]!.staff, MON);
   assert.deepEqual(m.completions[0]!.stop, ['\n']);
   assert.ok(m.completions[0]!.prompt.endsWith(`${old.system.roster.find((p) => p.key === MON)!.name}:`));
+  assert.equal(m.completions[0]!.maxTokens, 400);
   assert.equal(m.chats.length, 1, 'the move is a second, chat call');
   assert.equal(m.chats[0]!.duty, 'filing');
   assert.match(m.chats[0]!.messages[0]!.content, /Hey, quit it with the double posting/, 'it is shown the line it said');
@@ -377,7 +379,9 @@ test('an old voice\'s filing asks for the most the window leaves, and its frame 
     await run(d, m, world);
     return { req: m.completions[0]!, count: tokenCounter(world.settings.oldVoiceTokenizer), window: world.settings.oldVoiceWindow };
   };
-  assert.equal((await room({})).req.maxTokens, 160);
+  const roomy = await room({});
+  assert.equal(roomy.req.maxTokens, 400, 'the chatter\'s post bound, not the old line\'s');
+  assert.equal(roomy.req.maxChars, Math.min(dividedWorld.settings.postMaxLength, 2000), 'the outcome post\'s bound');
   const tight = await room({ oldVoiceWindow: 400, oldVoicePromptFloor: 300 });
   assert.equal(tight.req.maxTokens, 100, 'a window of 400 with a floor of 300 leaves 100');
   assert.ok(tight.count(tight.req.prompt) <= tight.window - 100, 'the prompt fits the budget');
