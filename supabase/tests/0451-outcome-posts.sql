@@ -55,6 +55,8 @@ create function pg_temp.age(tbl text, keycol text, k uuid, minutes integer) retu
 begin
   execute format('alter table %I disable trigger %I', tbl, tbl || '_no_update');
   execute format('update %I set at = at - make_interval(mins => %s) where %I = %L', tbl, minutes, keycol, k);
+  -- The open set carries its own copy of the time (the tick and the staff run read it), aged with the row it was made beside.
+  execute format('update %I set at = at - make_interval(mins => %s) where %I = %L', tbl || '_open', minutes, keycol, k);
   execute format('alter table %I enable always trigger %I', tbl, tbl || '_no_update');
 end $$;
 
@@ -798,4 +800,117 @@ begin
   why := pg_temp.refusal('select post_outcome(gen_random_uuid(), ''filed'', null, ''op-m1'', null, null, ''x'', ''stock'')');
   perform pg_temp.expect(why ~ '^42501', 'the service role called post_outcome: ' || coalesce(why, 'allowed'));
   perform tests.unbecome();
+end $$;
+
+-- ---- 9. The review's fixes ----
+-- (a) No debt is too old to be paid: an owed concession and an owed ban entry dated eight days ago are posted by the tick from stock, and a paid one leaves the open set.
+do $$
+declare
+  author uuid := pg_temp.chr('Op Bob A');
+  ann uuid := pg_temp.chr('Op Ann A');
+  t uuid := tests.thread('Op eight days');
+  v uuid := pg_temp.visit(tests.post(author, t, 'A post talked down a long time ago.'), 'op-m1');
+  c uuid := pg_temp.fresh('Op Banned Nine');
+  pb uuid := tests.post(c, t, 'A post that filled the bar a long time ago.');
+  e uuid; ban uuid; tick jsonb;
+begin
+  perform pg_temp.try(ann, v);
+  e := (pg_temp.end_of(v)).id;
+  ban := (infract(c, 'severe', pb, 'op-m3') ->> 'ban')::uuid;
+  perform pg_temp.expect(exists (select 1 from concessions_owed_open where visit_act = v and end_act = e) and exists (select 1 from bans_owed_open where ban_act = ban), 'an owed row made no open row');
+  perform pg_temp.age('concessions_owed', 'visit_act', v, 8 * 24 * 60);
+  perform pg_temp.age('bans_owed', 'ban_act', ban, 8 * 24 * 60);
+  tick := system_tick();
+  perform pg_temp.expect((pg_temp.outcome(e)).post_act is not null and (pg_temp.outcome(e)).source = 'stock', 'a concession eight days owed was not posted by the tick: ' || tick::text);
+  perform pg_temp.expect((pg_temp.outcome(ban)).post_act is not null and (pg_temp.outcome(ban)).source = 'stock', 'a ban entry eight days owed was not posted by the tick: ' || tick::text);
+  perform pg_temp.expect(not exists (select 1 from concessions_owed_open where visit_act = v) and not exists (select 1 from bans_owed_open where ban_act = ban), 'a paid debt is still in the open set');
+  perform pg_temp.expect(exists (select 1 from concessions_owed where visit_act = v) and exists (select 1 from bans_owed where ban_act = ban), 'a paid debt left its owed table');
+  -- A debt settled by an outcome that was refused leaves the open set too.
+  perform pg_temp.expect(not exists (select 1 from concessions_owed_open o join outcome_posts p on p.about_act = o.end_act) and not exists (select 1 from bans_owed_open o join outcome_posts p on p.about_act = o.ban_act), 'an open row has an outcome post');
+  perform pg_temp.expect((select relrowsecurity from pg_class where relname = 'concessions_owed_open') and (select relrowsecurity from pg_class where relname = 'bans_owed_open'), 'an open table has no row level security');
+  perform pg_temp.expect(not has_table_privilege('authenticated', 'concessions_owed_open', 'select') and not has_table_privilege('anon', 'bans_owed_open', 'select'), 'a client can read an open table');
+end $$;
+
+-- (b) The Banlist follows the system board's flag, as the Roster Report and the Staff Meetings thread do.
+do $$
+declare
+  bt uuid := (select banlist_thread from seasons where number = 1);
+  was_system uuid := system_board();
+  other_board uuid;
+begin
+  perform pg_temp.expect(bt is not null and bt in (select instance_threads()), 'the world: the Banlist is not one of the instance''s own');
+  insert into boards (slug, name) values ('op-other', 'Op Other');
+  other_board := (select id from boards where slug = 'op-other');
+  update boards set is_system = false where is_system;
+  update boards set is_system = true where id = other_board;
+  perform pg_temp.expect(thread_place(bt) = other_board, 'the Banlist did not follow the flag');
+  perform pg_temp.expect((select c.place from thread_places_computed() c where c.thread = bt) = other_board, 'the computed place of the Banlist did not follow the flag');
+  perform rebuild_thread_places((select array_agg(r.id) from system_thread_rows() r where r.board is distinct from other_board));
+  perform pg_temp.expect((select board from threads where id = bt) = other_board and not exists (select 1 from thread_places_drift()), 'the Banlist is not stored on the flagged board after the rebuild');
+  update boards set is_system = false where is_system;
+  update boards set is_system = true where id = was_system;
+  perform rebuild_thread_places((select array_agg(r.id) from system_thread_rows() r where r.board is distinct from was_system));
+  perform pg_temp.expect(thread_place(bt) = was_system and (select board from threads where id = bt) = was_system and not exists (select 1 from thread_places_drift()), 'the Banlist did not follow the flag back');
+end $$;
+
+-- (c) A player's reply to an outcome post is found waiting for that Mod, with nothing changed in it, and the outcome post itself waits for no one.
+do $$
+declare
+  poster uuid := pg_temp.chr('Op Bob A');
+  ann uuid := pg_temp.chr('Op Ann A');
+  t uuid := tests.thread('Op reply');
+  p uuid := tests.post(poster, t, 'A post for a reply to the concession.');
+  v uuid := pg_temp.visit(p, 'op-m1');
+  conc uuid; reply uuid;
+  since timestamptz := now() - interval '2 days';
+  before_acts bigint;
+  before_answered bigint := (select count(*) from pool_answered);
+begin
+  perform pg_temp.try(ann, v);
+  perform post_visit_concession(v, 'Fine, {who}.');
+  conc := (pg_temp.outcome((pg_temp.end_of(v)).id)).post_act;
+  perform pg_temp.expect(conc is not null, 'no outcome post to reply to');
+  perform pg_temp.expect(not exists (select 1 from pool_waiting_in_thread(t, array['op-m1'], since) w where w.act is not null), 'something waited before any reply');
+  reply := tests.act(poster, 'post', t, jsonb_build_object('body', 'A reply to the concession.'), conc);
+  before_acts := (select count(*) from acts);
+  perform pg_temp.expect((select count(*) from pool_waiting_in_thread(t, array['op-m1'], since) w where w.act = reply and w.staff = 'op-m1' and w.author = poster) = 1,
+    'a reply to the outcome post is not found waiting for its Mod: ' || coalesce((select jsonb_agg(to_jsonb(w))::text from pool_waiting_in_thread(t, array['op-m1'], since) w), 'nothing'));
+  perform pg_temp.expect((select count(*) from acts) = before_acts and (select count(*) from pool_answered) = before_answered, 'finding the reply changed something');
+  perform pg_temp.expect(not exists (select 1 from pool_waiting_in_thread(t, array['op-m1'], since) w where w.act = conc), 'the outcome post counted as waiting');
+end $$;
+
+-- (d) A ban that already has its entry, posted or refused, answers existing before the words are looked at, even where the copy has since lost them.
+do $$
+declare
+  c uuid := pg_temp.fresh('Op Banned Ten');
+  t uuid := tests.thread('Op ban existing');
+  p uuid := tests.post(c, t, 'A post that fills the bar.');
+  ban uuid; r jsonb;
+begin
+  ban := (infract(c, 'severe', p, 'op-m1') ->> 'ban')::uuid;
+  perform pg_temp.expect((post_ban_entry(ban, 'Once.', 'model') ->> 'posted')::boolean, 'the entry did not post');
+  update settings set value = value - 'banlistEntry' where key = 'copy';
+  r := post_ban_entry(ban, 'Twice.', 'model');
+  perform pg_temp.expect((r ->> 'existing')::boolean and not (r ->> 'posted')::boolean and r ->> 'post' is not null and r ->> 'error' is null, 'a posted ban answered something else with the words missing: ' || r::text);
+  update settings set value = value || jsonb_build_object('banlistEntry', 'Banned: {character}, {days} days, {rule}. [url={post}]The post that did it.[/url]') where key = 'copy';
+end $$;
+
+-- (e) The page's reads answer nothing for a visit that is not a public visit Act, even with an outcome post recorded against it.
+do $$
+declare
+  author uuid := pg_temp.chr('Op Bob A');
+  ann uuid := pg_temp.chr('Op Ann A');
+  t uuid := tests.thread('Op not public');
+  p uuid := tests.post(author, t, 'A visited post.');
+  v uuid := pg_temp.visit(p, 'op-m1');
+  other uuid := tests.post(author, t, 'Not a visit.');
+  made uuid;
+begin
+  perform pg_temp.try(ann, v);
+  perform post_visit_concession(v, 'Fine, {who}.');
+  made := (pg_temp.outcome((pg_temp.end_of(v)).id)).post_act;
+  perform pg_temp.expect(jsonb_array_length(visit_outcome_posts(v)) = 1 and (select count(*) from outcome_page_rows(array[made])) = 1, 'the public visit answers nothing');
+  insert into outcome_posts (about_act, kind, visit_act, source, post_act) values (other, 'intercepted', other, 'stock', made);
+  perform pg_temp.expect(visit_outcome_posts(other) = '[]'::jsonb, 'an act that is not a visit answered posts: ' || visit_outcome_posts(other)::text);
+  perform pg_temp.expect((select count(*) from outcome_page_rows(array[made])) = 1, 'the page read answered a row whose visit is not a visit Act');
 end $$;

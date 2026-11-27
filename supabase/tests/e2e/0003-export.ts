@@ -23,7 +23,7 @@ const { MIGRATION_DATA } = (await import(files)) as { MIGRATION_DATA: readonly s
 const root = path.resolve(import.meta.dirname, '../../..');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'lines_owed', 'lines_owed_open', 'lines_paid', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_facts', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'visit_concessions', 'visit_concession_posts', 'outcome_posts', 'concessions_owed', 'bans_owed', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'arc_announcements', 'staff_pin_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings', 'roster_entries', 'roster_seen', 'roster_pending'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'lines_owed', 'lines_owed_open', 'lines_paid', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_facts', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'visit_concessions', 'visit_concession_posts', 'outcome_posts', 'concessions_owed', 'concessions_owed_open', 'bans_owed', 'bans_owed_open', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'arc_announcements', 'staff_pin_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings', 'roster_entries', 'roster_seen', 'roster_pending'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -583,6 +583,14 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into concessions_owed (visit_act, end_act, interceptor, how) select v.id, e.id, b, 'paid' from acts v join acts e on e.kind = 'visit_end' and e.target_act_id = v.id where v.kind = 'visit' and v.target_act_id = pass_post;
       insert into outcome_posts (about_act, kind, visit_act, source, post_act) select e.id, 'intercepted', v.id, 'model', (write_staff_act('exp-bot', 'post', t, pass_post, jsonb_build_object('body', 'Carried across, Exported B.')) ->> 'id')::uuid
         from acts v join acts e on e.kind = 'visit_end' and e.target_act_id = v.id where v.kind = 'visit' and v.target_act_id = pass_post;
+      -- A talk-down still owed (the open set holds it, 0451): a second visit, to a post of its own, ends talked down and nothing has paid its concession. The 3-hour visit above stays open.
+      declare owed_post uuid := tests.post(b, t, 'A post a Mod was talked down from.'); owed_visit uuid;
+      begin
+        owed_visit := (write_staff_act('exp-bot', 'visit', t, owed_post, jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', gen, 'band', 'minor', 'cause', 'rule', 'about_act', owed_post::text)),
+          'ends_at', now() + interval '3 hours', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking again.')) ->> 'id')::uuid;
+        perform end_visit(owed_visit, 'intercepted');
+        insert into concessions_owed (visit_act, end_act, interceptor, how) select owed_visit, e.id, b, 'paid' from acts e where e.kind = 'visit_end' and e.target_act_id = owed_visit;
+      end;
       -- An infraction against Ann's mask for her post, her appeal of it, the Mod's ruling, the price paid and returned, and the refund's own table (0109): carried across with the
       -- Acts that name them. (The bar's setting is planted where a database made from the migrations alone has none.)
       insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;
@@ -612,6 +620,8 @@ test('an instance exported and imported into a fresh database is the same instan
       -- The bans those infractions laid owe their entries (infract writes the row, 0451): one entry refused, so an outcome post that holds an error is carried across with the ban it names, and the season's Banlist is a thread of
       -- the system board that the season names.
       insert into outcome_posts (about_act, kind, source, error) select x.ban_act, 'banned', 'stock', 'planted: carried across' from bans_owed x order by x.at limit 1;
+      -- A ban whose entry is still owed (the open set holds it): one more ban, laid after the refused one, whose entry nothing has posted.
+      perform infract(a, 'severe', tests.post(a, t, 'A post that fills the bar, its entry still owed.'), 'exp-bot');
       declare banlist uuid;
       begin
         insert into threads (board, title) values (system_board(), 'Season 1: Banlist') returning id into banlist;
@@ -666,6 +676,9 @@ test('an instance exported and imported into a fresh database is the same instan
       perform tests.become((select owner from characters where id = b));
       perform post(t, b, '[quote=' || p || ']Never said in this post.[/quote] Bob, doctored.', p);
       perform tests.unbecome();
+      -- One more ban, laid last so that no play after it meets the ban: its entry is still owed, so the open set holds it (0451).
+      perform infract(a, 'severe', tests.post(a, t, 'A post that fills the bar, its entry still owed.'), 'exp-bot');
+      perform infract(a, 'severe', tests.post(a, t, 'A second post that fills the bar.'), 'exp-bot');
     end $$;
     -- Each leaving is its own transaction, as the seed makes it: the deferred trigger card_ledger_gone_card refuses a copy of a card in the transaction that inserted it, so the
     -- copies above (bought before the card left) must commit first. The renamed card's new key and the withdrawal's refund are written by card_leaves.

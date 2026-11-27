@@ -33,8 +33,8 @@
 -- depends on the outcome and the staff run's clock; whether it lands depends only on the Mod's character and the thread. outcome_posts.error reaches no page. The page read returns only public post ids for a public visit.
 -- Ways out. An owed concession ends by itself, as a post, within `concessionWriteMinutes` and a tick; an owed ban entry within `owedLines.graceMinutes` and a tick, or at the ban's ruling. The Banlist is read-only to players as
 -- every thread on the system board is (not_the_systems).
--- Scale. One row per outcome. The tick and the staff run find what is owed by an index on `at`, looking back seven days only (a row older than that is a tick that never came for a week), so the scan is bounded by a week of
--- outcomes and never by the instance's history. The page's join is by the post's id, indexed, over the page's own posts.
+-- Scale. One row per outcome. The tick and the staff run find what is owed by an index on `at`, reading the open sets (concessions_owed_open, bans_owed_open: a row for each debt unsettled, gone when its outcome post is recorded), so the scan is bounded by what is unpaid and never by the instance's history, and
+-- no debt is too old to be paid. The page's join is by the post's id, indexed, over the page's own posts.
 
 -- ------------------------------------------------------------------------------------------------ the tables ----
 
@@ -75,6 +75,44 @@ create table bans_owed (
 create index bans_owed_at on bans_owed (at);
 alter table bans_owed enable row level security;
 revoke all on bans_owed from public, anon, authenticated;
+
+-- The open sets (as lines_owed_open is, 0445): a row for each debt not yet settled, so the tick and the staff run read the unsettled alone, oldest first by `at`, and never the debts' history. A row is made beside its owed row
+-- and goes when the outcome post (posted or refused) is recorded. The owed tables themselves stay append-only.
+create table concessions_owed_open (
+  visit_act uuid primary key references acts (id),
+  end_act uuid not null unique references acts (id),
+  at timestamptz not null
+);
+create index concessions_owed_open_at on concessions_owed_open (at, visit_act);
+create table bans_owed_open (
+  ban_act uuid primary key references acts (id),
+  at timestamptz not null
+);
+create index bans_owed_open_at on bans_owed_open (at, ban_act);
+alter table concessions_owed_open enable row level security;
+alter table bans_owed_open enable row level security;
+revoke all on concessions_owed_open from public, anon, authenticated;
+revoke all on bans_owed_open from public, anon, authenticated;
+
+create function outcome_owed_open() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if tg_table_name = 'concessions_owed' then
+    insert into concessions_owed_open (visit_act, end_act, at) select new.visit_act, new.end_act, new.at
+    where not exists (select 1 from outcome_posts o where o.about_act = new.end_act) on conflict do nothing;
+  elsif tg_table_name = 'bans_owed' then
+    insert into bans_owed_open (ban_act, at) select new.ban_act, new.at
+    where not exists (select 1 from outcome_posts o where o.about_act = new.ban_act) on conflict do nothing;
+  else
+    delete from concessions_owed_open where end_act = new.about_act;
+    delete from bans_owed_open where ban_act = new.about_act;
+  end if;
+  return null;
+end $$;
+revoke execute on function outcome_owed_open() from public, anon, authenticated;
+create trigger concessions_owed_open_make after insert on concessions_owed for each row execute function outcome_owed_open();
+create trigger bans_owed_open_make after insert on bans_owed for each row execute function outcome_owed_open();
+create trigger outcome_posts_close_open after insert on outcome_posts for each row execute function outcome_owed_open();
 
 create function outcome_tables_append_only() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
@@ -192,6 +230,7 @@ create function post_ban_entry(ban uuid, line text, source text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   o bans_owed%rowtype;
+  held outcome_posts%rowtype;
   head text;
   said text;
   src text := post_ban_entry.source;
@@ -203,6 +242,8 @@ begin
   if src is null or src not in ('model', 'stock') then raise exception 'an entry is the model''s or the stock''s, not %', coalesce(src, 'nothing') using errcode = '22023'; end if;
   select * into o from bans_owed b where b.ban_act = post_ban_entry.ban;
   if not found then return jsonb_build_object('posted', false, 'existing', false, 'owed', false); end if;
+  select * into held from outcome_posts x where x.about_act = post_ban_entry.ban;
+  if found then return jsonb_build_object('posted', false, 'existing', true, 'post', held.post_act); end if;
   head := ban_entry_head(post_ban_entry.ban);
   select string_agg(k, ' and ') into missing from (values ('banlistThreadTitle'), ('banlistEntry')) w(k)
   where not exists (select 1 from settings s where s.key = 'copy' and jsonb_typeof(s.value -> w.k) = 'string' and btrim(s.value ->> w.k) <> '');
@@ -282,16 +323,16 @@ language sql stable security definer set search_path = public, pg_temp as $$
          case when c.how = 'paid' then (v.payload #>> '{challenge,price}')::integer end,
          case when c.how = 'distracted' then (select k.payload ->> 'card' from acts k where k.id = c.intercept_act) end,
          c.at
-  from concessions_owed c
+  from concessions_owed_open u
+  join concessions_owed c on c.visit_act = u.visit_act
   join acts v on v.id = c.visit_act
   join characters m on m.id = v.character
   join characters i on i.id = c.interceptor
   join threads t on t.id = v.thread
   left join boards_now b on b.id = t.board
   left join visit_quizzes q on q.visit_act = c.visit_act and c.how = 'answered'
-  where c.at > now() - make_interval(mins => coalesce((select (s.value ->> 'concessionWriteMinutes')::integer from settings s where s.key = 'modBots'), 15))
-    and not exists (select 1 from outcome_posts o where o.about_act = c.end_act)
-  order by c.at, c.visit_act
+  where u.at > now() - make_interval(mins => coalesce((select (s.value ->> 'concessionWriteMinutes')::integer from settings s where s.key = 'modBots'), 15))
+  order by u.at, u.visit_act
   limit greatest(pending_concessions.most, 0)
 $$;
 revoke execute on function pending_concessions(integer) from public, anon, authenticated;
@@ -302,16 +343,16 @@ grant execute on function pending_concessions(integer) to service_role;
 create function pending_ban_entries(most integer) returns table (ban_act uuid, staff text, banned text, days integer, rule text, season integer, post_act uuid, thread uuid, board uuid, board_name text, owed_at timestamptz)
 language sql stable security definer set search_path = public, pg_temp as $$
   select o.ban_act, o.staff, ch.name, (b.payload ->> 'days')::integer, punishment_words((b.payload ->> 'infraction_act')::uuid), o.season, p.id, p.thread, t.board, bn.name, o.at
-  from bans_owed o
+  from bans_owed_open u
+  join bans_owed o on o.ban_act = u.ban_act
   join acts b on b.id = o.ban_act
   join characters ch on ch.id = (b.payload ->> 'character')::uuid
   join acts i on i.id = (b.payload ->> 'infraction_act')::uuid
   join acts p on p.id = (i.payload ->> 'about_act')::uuid
   join threads t on t.id = p.thread
   left join boards_now bn on bn.id = t.board
-  where o.at > now() - make_interval(mins => owed_grace_minutes())
-    and not exists (select 1 from outcome_posts x where x.about_act = o.ban_act)
-  order by o.at, o.ban_act
+  where u.at > now() - make_interval(mins => owed_grace_minutes())
+  order by u.at, u.ban_act
   limit greatest(pending_ban_entries.most, 0)
 $$;
 revoke execute on function pending_ban_entries(integer) from public, anon, authenticated;
@@ -335,6 +376,7 @@ alter table staff_call_records add constraint staff_call_records_duty_check chec
 create function outcome_page_rows(posts uuid[]) returns table (visit_act uuid, post_act uuid, kind text, at timestamptz)
 language sql stable security definer set search_path = public, pg_temp as $$
   select o.visit_act, o.post_act, o.kind, o.at from outcome_posts o where o.post_act = any (outcome_page_rows.posts) and o.visit_act is not null
+    and exists (select 1 from acts_public v where v.id = o.visit_act and v.kind = 'visit')
 $$;
 revoke execute on function outcome_page_rows(uuid[]) from public;
 grant execute on function outcome_page_rows(uuid[]) to anon, authenticated, service_role;
@@ -352,7 +394,8 @@ as $function$
 begin
   return coalesce((select jsonb_agg(jsonb_build_object('kind', o.kind, 'about', o.about_act, 'post', o.post_act) order by o.at, o.about_act)
                    from outcome_posts o join acts a on a.id = o.post_act and a.kind = 'post'
-                   where o.visit_act = visit_outcome_posts.visit and o.post_act is not null), '[]'::jsonb);
+                   where o.visit_act = visit_outcome_posts.visit and o.post_act is not null
+                     and exists (select 1 from acts_public v where v.id = visit_outcome_posts.visit and v.kind = 'visit')), '[]'::jsonb);
 end
 $function$;
 revoke execute on function visit_outcome_posts(uuid) from public;
@@ -873,7 +916,6 @@ declare
   ban_late record;
   ban_lapsed integer := 0;
   -- Owed concessions and ban entries are looked for in the last seven days of owed rows only (the index on their time), so the scan is bounded by a week and never by the instance's history.
-  owed_floor timestamptz := now() - interval '7 days';
   posted_now jsonb;
 begin
   if not pg_try_advisory_xact_lock(hashtext('kayfabb.system_tick')) then return jsonb_build_object('skipped', true); end if;
@@ -1298,8 +1340,8 @@ begin
   -- switch says: the staff run writes the Mod's own words sooner where it can, and no talk-down waits longer than this. A persona with no stock line records `no line` and posts nothing. The oldest first, found by the index on the
   -- owed row's time, at most `demandChecksPerTick`, and none once the budget is spent. Best effort per visit: one that fails is warned and left for the next tick; one the staff run posted first is left as it stands (post_outcome finds it).
   for conc_late in
-    select c.visit_act from concessions_owed c
-    where c.at <= now() - conc_grace and c.at > owed_floor and not exists (select 1 from outcome_posts o where o.about_act = c.end_act)
+    select c.visit_act from concessions_owed_open c
+    where c.at <= now() - conc_grace
     order by c.at, c.visit_act limit cap
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
@@ -1314,8 +1356,8 @@ begin
   -- 9. Owed ban entries (the outcome posts plan, Task 1): a ban whose entry no staff run wrote and no ruling posted within `owedLines.graceMinutes` has its entry posted from stock (the code line and a `banEntry` line), whatever the
   -- switch says: the ban has happened. The oldest first, at most `demandChecksPerTick` (the tick's one count for work per run, the owed lines' grace bound), and none once the budget is spent.
   for ban_late in
-    select b.ban_act from bans_owed b
-    where b.at <= now() - make_interval(mins => owed_grace_minutes()) and b.at > owed_floor and not exists (select 1 from outcome_posts o where o.about_act = b.ban_act)
+    select b.ban_act from bans_owed_open b
+    where b.at <= now() - make_interval(mins => owed_grace_minutes())
     order by b.at, b.ban_act limit cap
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
