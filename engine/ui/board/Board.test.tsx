@@ -1283,21 +1283,38 @@ describe('the thread list goes live', () => {
     expect(document.activeElement).toBe(link);
   });
 
-  test('a row for a thread the board has only a stub for does not wait behind the bar', async () => {
+  test('a row after the document\'s stub for its thread means the thread is back: the stub goes and the bar counts it', async () => {
     const fake = buildWorld();
     const w = world(fake, { threads: 3 });
     fake.seed.moveThread(w.ids[0]!, 'off-topic', { at: fake.clock.now() - DAY });
-    /* A moved thread's rows go to its new board's topic; one that reached this board's topic anyway (a late or replayed one) is what is tested. */
     const heard: Array<(r: ThreadSummary) => void> = [];
     const real = fake.subscribeBoard.bind(fake);
     vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { if (l.onRow) heard.push(l.onRow); return real(b, l); });
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Moved: Thread 001' });
-    const moved = (await fake.boardPage('off-topic', 1, []))!.threads.find((t) => t.id === w.ids[0])!;
-    await act(async () => { for (const hear of heard) hear({ ...moved, lastAt: new Date(Date.now() + DAY).toISOString(), lastSeq: moved.lastSeq + 1 }); });
+    const back = (await fake.boardPage('off-topic', 1, []))!.threads.find((t) => t.id === w.ids[0])!;
     expect(bar()).toBeNull();
-    expect(screen.getByRole('link', { name: 'Moved: Thread 001' })).toBeInTheDocument();
+    await act(async () => { for (const hear of heard) hear({ ...back, lastAt: new Date(Date.now() + DAY).toISOString(), lastSeq: back.lastSeq + 1 }); });
+    expect(screen.queryByRole('link', { name: 'Moved: Thread 001' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Thread 001' })).toBeNull();
+    expect(bar()).toHaveTextContent('1 thread has new posts');
+  });
+
+  test('a row after a live moved for the same thread means it is back: the stub goes and the bar counts it', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 3 });
+    const heard: Array<(r: ThreadSummary) => void> = [];
+    const real = fake.subscribeBoard.bind(fake);
+    vi.spyOn(fake, 'subscribeBoard').mockImplementation((b, l) => { if (l.onRow) heard.push(l.onRow); return real(b, l); });
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 002' });
+    act(() => { fake.seed.moveThread(w.ids[1]!, 'off-topic'); });
+    await screen.findByRole('link', { name: 'Moved: Thread 002' });
+    const back = (await fake.boardPage('off-topic', 1, []))!.threads.find((t) => t.id === w.ids[1])!;
+    await act(async () => { for (const hear of heard) hear({ ...back, lastAt: new Date(Date.now() + DAY).toISOString(), lastSeq: back.lastSeq + 1 }); });
+    expect(screen.queryByRole('link', { name: 'Moved: Thread 002' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Thread 002' })).toBeNull();
+    expect(bar()).toHaveTextContent('1 thread has new posts');
   });
 
   test('a thread of the page that moves away becomes its stub, and a thread from another board that moves here counts on the bar', async () => {
