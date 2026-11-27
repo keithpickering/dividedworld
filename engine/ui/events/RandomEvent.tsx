@@ -10,16 +10,21 @@
  * Nothing is asked of the player and nothing is claimed: whatever the event gave is in the wardrobe or the hand already. A roll that fails, is refused, or finds nothing
  * shows nothing at all, and never says which ("a response never proves a private fact"). This is the glass speaking, so the line is the instance's committed copy and
  * may joke about what happened; it never bluffs, and it speaks as no character. No Aura moves.
+ *
+ * An event rarer than common carries a tag at the end of the bar, after the title: the rarity's gem and "{Rarity} event" (the event-rarity design, section 3). It says how
+ * rare the roll was, a fact the player alone is shown; the gem's shape and the word tell the rarity, never its color alone. It is the glass's own plain copy, and a common
+ * event, which is most of them, shows nothing new. The item's own line below it is the item's rarity, which is a separate fact.
  */
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { RandomEvent as Event } from '../data/api.ts';
-import { faceOf, rarityName, withCardEconomy } from '../cards/faces.ts';
+import { faceOf, gemOf, rarityName, withCardEconomy } from '../cards/faces.ts';
 import { Postcard } from '../cards/Postcard.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { SecretLock } from '../glass/SecretLock.tsx';
 import { usePlayer } from '../player.tsx';
+import '../glass/gem.css';
 import './events.css';
 
 export function RandomEvent() {
@@ -60,9 +65,10 @@ function Dialog({ event, onClose }: { readonly event: Event; readonly onClose: (
   const shipped = gear !== undefined ? ui.gear[gear.key] : undefined;
   const art = shipped?.views[shipped.default]?.art;
   const face = rules !== undefined ? faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds) : null;
+  const tier = event.eventRarity;
   const pictured = art !== undefined || face !== null;
   return (
-    <Overlay title="SOMETHING HAPPENED!" surface="effect" className="kb-event-overlay" closeAt="none" data={{ 'kb-event': pictured ? 'find' : 'words' }} onClose={onClose}>
+    <Overlay title="SOMETHING HAPPENED!" surface="effect" className="kb-event-overlay" closeAt="none" aside={tier === 'common' ? undefined : <p className="kb-event-rarity" data-kb-rarity={tier}><span className="kb-gem" aria-hidden="true" data-kb-rarity={tier} data-kb-gem={gemOf(tier)} />{rarityName(tier)} event</p>} data={{ 'kb-event': pictured ? 'find' : 'words' }} onClose={onClose}>
       <div className="kb-event">
         {pictured && (
           <span className="kb-event-art" aria-hidden="true">

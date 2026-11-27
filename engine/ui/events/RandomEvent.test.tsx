@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
@@ -5,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Instance } from '../../rules/types.ts';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import type { Fake } from '../data/fake.ts';
+import { gemOf } from '../cards/faces.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { RandomEvent } from './RandomEvent.tsx';
 
@@ -12,7 +14,7 @@ import { RandomEvent } from './RandomEvent.tsx';
 const shop: Instance = {
   ...testInstance,
   cards: [...testInstance.cards, { ...testInstance.cards[0]!, key: 'trap', name: 'Trap Card', rarity: 'rare' }],
-  gear: [{ key: 'band', name: 'Headband', line: 'Holds a thought in place.', rarity: 'uncommon' }],
+  gear: [{ key: 'band', name: 'Headband', line: 'Holds a thought in place.', rarity: 'uncommon' }, { key: 'cap', name: 'Cap', line: 'Keeps the sun off.', rarity: 'common' }],
   events: { lines: [
     { key: 'bench', outcome: 'gear', text: 'You found {item} under a park bench.' },
     { key: 'shoe', outcome: 'card', text: 'A postcard was stuck to your shoe. It is {item}.' },
@@ -95,6 +97,72 @@ describe('the Random Event dialog', () => {
     expect(within(dialog).getByText('You touched the statue.')).toBeInTheDocument();
     expect(within(dialog).queryByText(/gear|card/iu)).toBeNull();
     expect(within(dialog).queryByRole('link', { name: 'Wear it' })).toBeNull();
+  });
+
+  test('a common event shows no rarity tag: the bar holds the heading alone', async () => {
+    for (const eventRarity of [undefined, 'common'] as const) {
+      const { fake } = world();
+      fake.seed.nextEvent({ outcome: 'line', line: 'statue', ...(eventRarity === undefined ? {} : { eventRarity }) });
+      open(fake);
+      const dialog = await screen.findByRole('dialog', { name: 'SOMETHING HAPPENED!' });
+      expect(dialog.querySelector('.kb-event-rarity')).toBeNull();
+      expect(dialog.querySelector('.kb-gem')).toBeNull();
+      expect(dialog).not.toHaveTextContent(/common event/iu);
+      cleanup();
+    }
+  });
+
+  test('a rare event tags the bar with its gem and "Rare event", after the title, which stays its name', async () => {
+    const { fake } = world();
+    fake.seed.nextEvent({ outcome: 'line', line: 'statue', eventRarity: 'rare' });
+    open(fake);
+    const dialog = await screen.findByRole('dialog', { name: 'SOMETHING HAPPENED!' });
+    const tag = dialog.querySelector('.kb-event-rarity')!;
+    expect(tag).toHaveTextContent('Rare event');
+    const gem = tag.querySelector('.kb-gem')!;
+    expect(gem).toHaveAttribute('data-kb-rarity', 'rare');
+    expect(gem).toHaveAttribute('data-kb-gem', '★');
+    expect(gem).toHaveAttribute('aria-hidden', 'true');
+    const head = within(dialog).getByRole('heading', { name: 'SOMETHING HAPPENED!' });
+    expect(head.compareDocumentPosition(tag) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(head.parentElement).toContainElement(tag as HTMLElement);
+  });
+
+  test('an uncommon event says "Uncommon event" with the uncommon gem', async () => {
+    const { fake } = world();
+    fake.seed.nextEvent({ outcome: 'line', line: 'statue', eventRarity: 'uncommon' });
+    open(fake);
+    const dialog = await screen.findByRole('dialog', { name: 'SOMETHING HAPPENED!' });
+    expect(within(dialog).getByText('Uncommon event')).toBeInTheDocument();
+    expect(dialog.querySelector('.kb-gem')).toHaveAttribute('data-kb-gem', gemOf('uncommon'));
+  });
+
+  test('the tag takes each rarity\'s color, and the bar wraps so the tag drops under the title', () => {
+    const css = readFileSync('engine/ui/events/events.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (selector: string) => css.match(new RegExp(`${selector.replace(/[.[\]()':=>~-]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    expect(rule(".kb-event-rarity[data-kb-rarity='uncommon']")).toMatch(/--kb-event-rarity-color:\s*var\(--kb-glass-sweet\)/);
+    expect(rule(".kb-event-rarity[data-kb-rarity='rare']")).toMatch(/--kb-event-rarity-color:\s*var\(--kb-glass-ready\)/);
+    expect(rule(".kb-event-rarity[data-kb-rarity='legendary']")).toMatch(/--kb-event-rarity-color:\s*var\(--kb-glass-salty-text\)/);
+    expect(rule('.kb-glass-dialog-bar:has(> .kb-event-rarity)')).toMatch(/flex-wrap:\s*wrap/);
+  });
+
+  test('a legendary line alone says "Legendary event" and still has no found-item sentence', async () => {
+    const { fake } = world();
+    fake.seed.nextEvent({ outcome: 'line', line: 'statue', eventRarity: 'legendary' });
+    open(fake);
+    const dialog = await screen.findByRole('dialog', { name: 'SOMETHING HAPPENED!' });
+    expect(within(dialog).getByText('Legendary event')).toBeInTheDocument();
+    expect(dialog.querySelector('.kb-gem')).toHaveAttribute('data-kb-gem', gemOf('legendary'));
+    expect(dialog.querySelector('.kb-event-found')).toBeNull();
+  });
+
+  test('a rare event giving common gear says both the event and the gear\'s rarity', async () => {
+    const { fake } = world();
+    fake.seed.nextEvent({ outcome: 'gear', item: 'cap', line: 'bench', eventRarity: 'rare' });
+    open(fake);
+    const dialog = await screen.findByRole('dialog', { name: 'SOMETHING HAPPENED!' });
+    expect(within(dialog).getByText('Rare event')).toBeInTheDocument();
+    expect(within(dialog).getByText('Common gear, now in your wardrobe.')).toBeInTheDocument();
   });
 
   test('an item key this instance does not know is still named, never called nothing', async () => {

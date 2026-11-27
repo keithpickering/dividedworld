@@ -52,10 +52,10 @@ export interface RarityOdds {
   readonly cards: readonly { readonly card: string; readonly chance: number }[];
 }
 
-/** The cards a pack can hand out at a rarity: the instance's, in its order, less what is out of print, what the pack leaves out and what the instance withholds (a card that writes, with no old voice); the SQL roll leaves the same ones out. */
+/** The cards a pack can hand out at a rarity: the instance's, in its order, less what is out of print, what is event-only (found only through its events), what the pack leaves out and what the instance withholds (a card that writes, with no old voice); the SQL roll leaves the same ones out. */
 function eligible(pack: PullPack, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>, rarity: Rarity): string[] {
   const left = new Set(pack.leaves ?? []);
-  return cards.filter((c) => inPrint(c) && c.rarity === rarity && !left.has(c.key) && !withheld(c, settings)).map((c) => c.key);
+  return cards.filter((c) => inPrint(c) && !c.eventOnly && c.rarity === rarity && !left.has(c.key) && !withheld(c, settings)).map((c) => c.key);
 }
 
 /** The rarities of a pull that have a card to give, with their weights, in rarity order. A rarity with none is not rolled. */

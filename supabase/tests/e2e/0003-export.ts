@@ -112,11 +112,13 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into wallets (account, balance) values (ann, 0) on conflict (account) do nothing;
       insert into card_ledger (account, card, kind, price) values (ann, 'splat', 'bought', 100);
       -- Gear (0205): a kind, a copy found and a copy granted, and a piece worn, each carried across as it was.
-      insert into gear_kinds (key, rarity) values ('expgear', 'uncommon');
+      insert into gear_kinds (key, rarity, event_only) values ('expgear', 'uncommon', true);  -- event-only (0453): the flag travels
       -- Random Events (0207): a gear event and a card event, each with its found row naming it, the account's last roll and the instance's event lines.
       insert into event_lines (key, outcome, text) values ('exp-line', 'line', 'Carried across.'), ('exp-gear-line', 'gear', 'Found a thing.');
-      insert into random_events (id, account, character, outcome, item, line, line_text) values
-        ('00000000-0000-4000-8000-0000000000e2', ann, a, 'gear', 'expgear', 'exp-gear-line', 'Found a thing.'), ('00000000-0000-4000-8000-0000000000e3', ann, a, 'card', 'splat', 'exp-line', 'Carried across.');
+      -- Event rarity and a named item (0453): a rare line naming the event-only piece.
+      insert into event_lines (key, outcome, text, rarity, item) values ('exp-rare-line', 'gear', 'Found the thing in the attic.', 'rare', 'expgear');
+      insert into random_events (id, account, character, outcome, item, line, line_text, rarity) values
+        ('00000000-0000-4000-8000-0000000000e2', ann, a, 'gear', 'expgear', 'exp-rare-line', 'Found the thing in the attic.', 'rare'), ('00000000-0000-4000-8000-0000000000e3', ann, a, 'card', 'splat', 'exp-line', 'Carried across.', 'common');
       insert into random_event_rolls (account, rolled_at) values (ann, '2000-01-02T03:04:05Z');
       insert into job_runs (job, first_seen, last_ok_at) values ('kayfabb-settle', '2000-01-02T03:04:05Z', '2000-01-03T03:04:05Z')
         on conflict (job) do update set first_seen = excluded.first_seen, last_ok_at = excluded.last_ok_at;  -- a seed already began the row (0450)

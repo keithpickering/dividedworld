@@ -2541,8 +2541,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const outcome = e['outcome'];
       const rarity = str(e['rarity']);
       if ((outcome !== 'line' && outcome !== 'gear' && outcome !== 'card') || (rarity !== null && !(RARITIES as readonly string[]).includes(rarity)) || (e['item'] != null && typeof e['item'] !== 'string')) return refusal(NOT_READ);
+      /* An answer from an edge function not yet deployed has no event rarity: it reads as common, as every event was before. */
+      const eventRarity = str(e['eventRarity']) ?? 'common';
+      if (!(RARITIES as readonly string[]).includes(eventRarity)) return refusal(NOT_READ);
       const lineKey = str(e['lineKey']);
-      return { ok: true, value: { event: e['event'], outcome, item: str(e['item']), rarity: rarity as RandomEvent['rarity'], line: str(e['line']), ...(lineKey !== null ? { lineKey } : {}), character: e['character'] } };
+      return { ok: true, value: { event: e['event'], outcome, item: str(e['item']), rarity: rarity as RandomEvent['rarity'], eventRarity: eventRarity as RandomEvent['eventRarity'], line: str(e['line']), ...(lineKey !== null ? { lineKey } : {}), character: e['character'] } };
     },
     async grantGear(character, gear, copies) {
       const a = await rpcWrite(() => client.rpc('grant_gear', { of_character: character, gear_key: gear, copies }));

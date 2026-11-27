@@ -26,6 +26,7 @@ import { Outfit, placement, slotShape } from '../gear/Outfit.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { Carousel } from '../glass/Carousel.tsx';
+import '../glass/gem.css';
 import { GlassLink } from '../glass/Link.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt } from '../mini.tsx';

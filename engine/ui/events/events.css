@@ -3,6 +3,9 @@
  * the line, then a foot of the way out and the lock's note. The picture stands bare on the smoke (a card is its own frame, and a gear's art needs none), so the box
  * holds no second box. Every color is a glass token and every size the glass's type; the window is the board's own 760px, and a line with no picture takes a
  * narrower one, so its words keep a measure a reader can hold.
+ *
+ * An event rarer than common has a tag at the bar's end (`.kb-event-rarity`, handed to the overlay's `aside`): the rarity's gem (glass/gem.css) and "{Rarity} event" in the
+ * glass's label type, in the rarity's color, subtle by the owner's choice. The bar wraps, so on a phone the tag drops under the title and never squeezes it.
  */
 /* The overlay is the glass's (portaled to the body). */
 .kb-event-overlay {
@@ -11,6 +14,37 @@
 
 .kb-event-overlay[data-kb-event='words'] {
   width: min(100%, 600px);
+}
+
+.kb-glass-dialog-bar:has(> .kb-event-rarity) {
+  /* The tag stands beside the title while both fit, and drops under it, whole, when they do not (a phone, a larger text size), so the title is never squeezed. */
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.kb-event-rarity {
+  --kb-event-rarity-color: var(--kb-glass-text-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 0 auto;
+  font-size: var(--kb-glass-size-label);
+  /* The bar sets no tracking of its own, so the tag takes the glass's uppercase label tracking, as the menu's tabs do. */
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--kb-event-rarity-color);
+}
+
+.kb-event-rarity[data-kb-rarity='uncommon'] { --kb-event-rarity-color: var(--kb-glass-sweet); }
+.kb-event-rarity[data-kb-rarity='rare'] { --kb-event-rarity-color: var(--kb-glass-ready); }
+.kb-event-rarity[data-kb-rarity='legendary'] { --kb-event-rarity-color: var(--kb-glass-salty-text); }
+
+.kb-event-rarity .kb-gem {
+  --kb-gem-color: var(--kb-event-rarity-color);
+  width: 16px;
+  height: 16px;
+  /* gem.css sizes the glyph at 0.8em of the gem's own type, which here would be the tag's 20px label, a 16px glyph in a 16px tile. 0.75em of the label (15px at the default text size) makes it 12px, the proportion (about 0.75) of the 22px tile's ~17px glyph. In em, not px, so it follows the player's text size as every glass font size does. */
+  font-size: 0.75em;
 }
 
 .kb-event {

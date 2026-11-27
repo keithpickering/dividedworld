@@ -8,7 +8,14 @@ import type { CosmeticsSettings } from './types.ts';
 export type { CosmeticsSettings };
 
 /** A piece of gear an instance offers. Its art is the instance's UI (`InstanceUi.gear`). */
-export interface GearRules { readonly key: string; readonly name: string; readonly line: string; readonly rarity: Rarity }
+export interface GearRules {
+  readonly key: string;
+  readonly name: string;
+  readonly line: string;
+  readonly rarity: Rarity;
+  /** Found only through the Random Events that name it: never drawn by an event that names no item, never given by anything else. An admin may still give it. */
+  readonly eventOnly?: true;
+}
 
 /** A trophy kind the instance's code defines. Admin-made kinds live in the database only. */
 export interface TrophyRules { readonly key: string; readonly name: string; readonly line?: string; readonly belt?: true }
@@ -23,8 +30,20 @@ export interface TrophyCatalog {
   readonly demandMet: string;
 }
 
-/** A line a Random Event can say. `{item}` is replaced by the found item's name. */
-export interface EventLine { readonly key: string; readonly outcome: 'line' | 'gear' | 'card'; readonly text: string }
+/**
+ * A line a Random Event can say. `{item}` is replaced by the found item's name. `rarity` is the line's own (absent is common); `item` is the gear key of a gear event or the
+ * card key of a card event, and an event is at least as rare as the item it gives.
+ */
+export interface EventLine {
+  readonly key: string;
+  readonly outcome: 'line' | 'gear' | 'card';
+  readonly text: string;
+  readonly rarity?: Rarity;
+  readonly item?: string;
+}
+
+/** The rarity of an event line: common unless it says otherwise. */
+export const eventRarity = (l: Pick<EventLine, 'rarity'>): Rarity => l.rarity ?? 'common';
 
 /** The views an item may ship, in the dress-up page's Facing row order. */
 export const GEAR_VIEWS = ['side-left', 'three-quarter-left', 'front', 'three-quarter-right', 'side-right'] as const;

@@ -99,7 +99,7 @@ const settings: Settings = {
   cosmetics: {
     gear: { wornMost: 12, reach: 0.4 },
     trophies: { shownMost: 3 },
-    events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 } },
+    events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 }, eventRarity: { common: 80, uncommon: 15, rare: 4, legendary: 1 } },
   },
   setLasts: { unit: 'day', count: 7 },
   reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
@@ -1694,10 +1694,124 @@ test('an event outcome has a line, and a gear or card line says {item}', () => {
 });
 
 test('the event odds are never a promise the draw cannot keep: a rarity with no item at it is a problem', () => {
-  assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: { legendary: 1 } }) }), /events\.gearRarity names legendary, and the instance has no gear of that rarity/);
-  assert.match(said({ ...good, settings: cosmeticsSettings({ cardRarity: { legendary: 1 } }) }), /events\.cardRarity names legendary, and the instance has no card of that rarity/);
-  assert.match(said({ ...good, gear: good.gear.filter((g) => g.rarity !== 'rare') }), /events\.gearRarity names rare, and the instance has no gear of that rarity/);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: { legendary: 1 } }) }), /events\.gearRarity names legendary, and the instance has no gear of that rarity that can be drawn/);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ cardRarity: { legendary: 1 } }) }), /events\.cardRarity names legendary, and the instance has no card of that rarity that can be drawn/);
+  assert.match(said({ ...good, gear: good.gear.filter((g) => g.rarity !== 'rare') }), /events\.gearRarity names rare, and the instance has no gear of that rarity that can be drawn/);
   assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: {} }) }), /setting "cosmetics"/);
+});
+
+// Event rarity (docs/plans/2026-11-26-event-rarity-plan.md, Task 1).
+test('events.eventRarity is required, weighs one or more known rarities, and each weight is a positive whole number', () => {
+  const bad = (events: unknown) => settingsProblems({ ...settings, cosmetics: { ...settings.cosmetics, events } } as unknown as Settings).join('\n');
+  const { eventRarity: _gone, ...without } = settings.cosmetics.events;
+  assert.match(bad(without), /"events\.eventRarity"/);
+  assert.match(bad({ ...settings.cosmetics.events, eventRarity: {} }), /"events\.eventRarity" must give at least one weight/);
+  assert.match(bad({ ...settings.cosmetics.events, eventRarity: { epic: 1 } }), /"events\.eventRarity\.epic" is not one of events\.eventRarity.s fields \(common, uncommon, rare, legendary\)/);
+  assert.match(bad({ ...settings.cosmetics.events, eventRarity: { common: 0 } }), /"events\.eventRarity\.common" has a weight of 0/);
+  assert.equal(bad(settings.cosmetics.events), '');
+  assert.match(settingsProblems({ ...settings, cosmetics: 5 } as unknown as Settings).join('\n'), /eventRarity/, 'the shape sentence names it');
+});
+
+const attic = { key: 'attic', outcome: 'gear', rarity: 'rare', item: 'hat', text: 'You find the {item}.' } as const;
+const hat = { key: 'hat', name: 'Hat', line: 'A hat.', rarity: 'rare', eventOnly: true } as const;
+const withEvents = (over: Partial<Instance> & { lines: Instance['events']['lines'] }): Instance => ({ ...good, ...over, events: { lines: over.lines } });
+const lineOf = (over: Record<string, unknown>) => [...good.events.lines, { key: 'x', outcome: 'gear', text: 'A {item}.', ...over }] as Instance['events']['lines'];
+
+test('an event-only piece of gear that an event names is whole', () => {
+  assert.deepEqual(instanceProblems(withEvents({ gear: [...good.gear, hat], lines: [...good.events.lines, attic] })), []);
+});
+
+test('a rare event naming common gear passes', () => {
+  assert.deepEqual(instanceProblems(withEvents({ lines: lineOf({ rarity: 'rare', item: 'cap' }) })), []);
+});
+
+test('an uncommon event naming uncommon gear passes', () => {
+  assert.deepEqual(instanceProblems(withEvents({ lines: lineOf({ rarity: 'uncommon', item: 'monocle' }) })), []);
+});
+
+test('an event line\'s rarity is one of the four', () => {
+  assert.match(said(withEvents({ lines: lineOf({ rarity: 'mythic' }) })), /event line "x" has the rarity "mythic"; a rarity is common, uncommon, rare or legendary/);
+});
+
+test('only a gear or card event gives an item', () => {
+  assert.match(said(withEvents({ lines: [...good.events.lines, { key: 'x', outcome: 'line', text: 'Hi.', item: 'cap' }] as Instance['events']['lines'] })), /event line "x" is a line event and names the item "cap"; only a gear or card event gives an item/);
+});
+
+test('a gear event names gear the instance has', () => {
+  assert.match(said(withEvents({ lines: lineOf({ item: 'ghost' }) })), /event line "x" names the gear "ghost", and the instance has no such gear/);
+});
+
+test('a card\'s key is no gear', () => {
+  assert.match(said(withEvents({ lines: lineOf({ item: 'a' }) })), /event line "x" names the gear "a", and the instance has no such gear/);
+});
+
+test('a card event names a card the instance has', () => {
+  assert.match(said(withEvents({ lines: lineOf({ outcome: 'card', item: 'ghost' }) })), /event line "x" names the card "ghost", and the instance has no such card/);
+});
+
+test('a gear\'s key is no card', () => {
+  assert.match(said(withEvents({ lines: lineOf({ outcome: 'card', item: 'cap' }) })), /event line "x" names the card "cap", and the instance has no such card/);
+});
+
+test('a common gear event may not name rare gear', () => {
+  assert.match(said(withEvents({ lines: lineOf({ item: 'crown' }) })), /event line "x" is common and names the rare gear "crown"; an event is at least as rare as the item it gives/);
+});
+
+test('a common card event may not name a rare card', () => {
+  assert.match(said(withEvents({ lines: lineOf({ outcome: 'card', item: 'c' }) })), /event line "x" is common and names the rare card "c"; an event is at least as rare as the item it gives/);
+});
+
+const onlyCard = [packCards[0]!, { ...packCards[1]!, eventOnly: true }, packCards[2]!] as Instance['cards'];
+
+test('an event-only piece of gear that no event names could never be found', () => {
+  assert.match(said({ ...good, gear: [...good.gear, hat] }), /gear "hat" is event-only and no event line names it, so it could never be found/);
+});
+
+test('an event-only card that no event names could never be found', () => {
+  assert.match(said({ ...good, cards: onlyCard }), /card "b" is event-only and no event line names it, so it could never be found/);
+});
+
+test('an event-only piece of gear named only at a rarity eventRarity does not weigh could never be found', () => {
+  const lines = [...good.events.lines, { ...attic, rarity: 'legendary' }] as Instance['events']['lines'];
+  assert.match(said({ ...withEvents({ gear: [...good.gear, hat], lines }), settings: cosmeticsSettings({ eventRarity: { common: 1 } }) }), /gear "hat" is event-only and no event line at a rarity events\.eventRarity weighs names it, so it could never be found/);
+});
+
+test('an event-only card named only at a rarity eventRarity does not weigh could never be found', () => {
+  assert.match(said({ ...withEvents({ cards: onlyCard, lines: lineOf({ outcome: 'card', rarity: 'legendary', item: 'b' }) }), settings: cosmeticsSettings({ eventRarity: { common: 1 }, cardRarity: { common: 1 } }) }), /card "b" is event-only and no event line at a rarity events\.eventRarity weighs names it, so it could never be found/);
+});
+
+test('an event-only card named only by a gear event could never be found', () => {
+  const lines = [...good.events.lines, { key: 'x', outcome: 'gear', text: 'A {item}.', item: 'b' }] as Instance['events']['lines'];
+  assert.match(said({ ...withEvents({ cards: onlyCard, lines }), settings: cosmeticsSettings({ cardRarity: { common: 1 } }) }), /card "b" is event-only and no event line names it, so it could never be found/);
+});
+
+test('an event-only card that is also retired and named by no event passes', () => {
+  assert.deepEqual(instanceProblems({ ...good, cards: [packCards[0]!, { ...packCards[1]!, eventOnly: true, retired: true }, packCards[2]!] as Instance['cards'], settings: cosmeticsSettings({ cardRarity: { common: 1 } }) }), []);
+});
+
+test('an event-only card that an event names passes', () => {
+  assert.deepEqual(instanceProblems({ ...withEvents({ cards: onlyCard, lines: lineOf({ outcome: 'card', rarity: 'uncommon', item: 'b' }) }), settings: cosmeticsSettings({ cardRarity: { common: 1 } }) }), []);
+});
+
+const onlyCommon = { ...settings, cosmetics: { ...settings.cosmetics, events: { ...settings.cosmetics.events, eventRarity: { common: 1 } } } };
+const rareGearLines = good.events.lines.map((l) => (l.outcome === 'gear' ? { ...l, rarity: 'rare' as const } : l));
+
+test('an outcome whose events all sit at rarities eventRarity does not weigh would have nothing to say', () => {
+  assert.match(said({ ...withEvents({ lines: rareGearLines }), settings: onlyCommon }), /the events' outcome "gear" has no event line at a rarity events\.eventRarity weighs, and a Random Event that picks it would have nothing to say/);
+});
+
+test('an outcome with one event at a rarity eventRarity weighs passes', () => {
+  assert.deepEqual(instanceProblems({ ...withEvents({ lines: [...rareGearLines, { key: 'also', outcome: 'gear', text: 'A {item}.' }] }), settings: onlyCommon }), []);
+});
+
+test('a gear rarity every piece of is event-only cannot be named by the event odds', () => {
+  const onlyRare = [...good.gear.filter((g) => g.rarity !== 'rare'), { ...hat, key: 'crown' }];
+  assert.match(said({ ...good, gear: onlyRare, events: { lines: [...good.events.lines, { ...attic, item: 'crown' }] } }), /events\.gearRarity names rare, and the instance has no gear of that rarity that can be drawn/);
+});
+
+test('a card rarity every card of is event-only cannot be named by the event odds', () => {
+  const cards = [packCards[0]!, packCards[1]!, { ...packCards[2]!, eventOnly: true }] as Instance['cards'];
+  assert.match(said(withEvents({ cards, lines: lineOf({ outcome: 'card', rarity: 'rare', item: 'c' }) })), /events\.cardRarity names rare, and the instance has no card of that rarity that can be drawn/);
 });
 
 test('an event weight is a positive whole number, and only none may be 0', () => {
@@ -2005,6 +2119,27 @@ test('a pack never names a card that has been renamed or withdrawn', () => {
 test('a machine slot never names a card that is out of print', () => {
   const slot = { item: { card: 'b' }, availability: 'onSale', price: 100 } as const;
   assert.match(said(leftWith({ cards: retiredB, machine: [slot] })), /the slot for card "b" names a card that is out of print/);
+});
+
+// Event-only cards (docs/plans/2026-11-26-event-rarity-plan.md, Task 1).
+const eventOnlyC = [packCards[0]!, packCards[1]!, { ...packCards[2]!, eventOnly: true }] as Instance['cards'];
+const catches = lineOf({ outcome: 'card', rarity: 'rare', item: 'c' });
+
+test('a fixed pack never holds an event-only card', () => {
+  assert.match(said({ ...leftWith({ cards: eventOnlyC, packs: [{ key: 'p', contents: ['a', 'c'] }] }), events: { lines: catches } }), /pack "p" holds "c", which is event-only; an event-only card is found only through its events/);
+});
+
+test('the machine never sells an event-only card', () => {
+  const slot = { item: { card: 'c' }, availability: 'onSale', price: 100 } as const;
+  assert.match(said({ ...leftWith({ cards: eventOnlyC, machine: [slot] }), events: { lines: catches } }), /the slot for card "c" names an event-only card; an event-only card is found only through its events/);
+});
+
+test('a pull never reaches an event-only card', () => {
+  assert.match(said({ ...leftWith({ cards: eventOnlyC, packs: [{ key: 'p', pulls: [{ weights: { rare: 1 } }] }] }), events: { lines: catches } }), /pack "p", pull 1 names rare, and the pack has no eligible card of that rarity/);
+});
+
+test('a pack may leave an event-only card out', () => {
+  assert.deepEqual(instanceProblems({ ...leftWith({ cards: eventOnlyC, packs: [{ key: 'p', pulls: [{ weights: { common: 1 } }], leaves: ['c'] }] }), events: { lines: catches }, settings: cosmeticsSettings({ cardRarity: { common: 1 } }) }), []);
 });
 
 test('a persona\'s concessions are three to eight lines, each text of at most 280 characters with no brace token but {who}, each problem naming the persona', () => {
