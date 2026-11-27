@@ -304,7 +304,7 @@ begin
         using hint = 'kayfabb.refusal', errcode = '55000';
     end if;
     if painted_new > 0 and live_draws + 1 > s.most_live then
-      raise exception 'this wall holds % tags; paint over one or wait for a wash', s.most_live using hint = 'kayfabb.refusal', errcode = '55000';
+      raise exception 'This wall is full: it holds % tags. It has room again when its author washes one off.', s.most_live using hint = 'kayfabb.refusal', errcode = '55000';
     end if;
     if jsonb_typeof(in_places) = 'array' and exists (
          select 1 from jsonb_array_elements(in_places) p

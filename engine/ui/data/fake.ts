@@ -2424,7 +2424,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return refuse(`this wall is ${Math.floor(covered / 100)}% covered, and its limit is ${Math.floor(most / 100)}%; this tag would take it to ${Math.ceil((covered + painted) / 100)}%`);
       }
       const mostLive = rules.surface!.mostLive;
-      if (painted > 0 && s.grids.size + 1 > mostLive) return refuse(`this wall holds ${mostLive} tags; paint over one or wait for a wash`);
+      if (painted > 0 && s.grids.size + 1 > mostLive) return refuse(`This wall is full: it holds ${mostLive} tags. It has room again when its author washes one off.`);
       const where = placesOfDraw(post, sent);
       if (isRefusal(where)) return where;
       places = where.value;

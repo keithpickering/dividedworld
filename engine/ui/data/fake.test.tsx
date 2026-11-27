@@ -5608,11 +5608,11 @@ describe('the log\'s scored-as rows (card notes, Part 6, Task 6)', () => {
 
 /* ---------------------------------------------------------------------------------- a surface ---- */
 describe('a surface, as the server keeps it', () => {
-  const sql = readFileSync(resolve(process.cwd(), 'supabase/migrations/0317_surfaces.sql'), 'utf8');
+  const sql = readFileSync(resolve(process.cwd(), 'supabase/migrations/0456_surface_coats.sql'), 'utf8');
   /** The sentence the SQL raises, found in its text: `format('...')` or the literal, with each `%` and `%s` in place. */
   const sayings = {
     limit: /format\('(this wall is [^']*)'/.exec(sql)![1]!,
-    live: /exception '(this wall holds [^']*)'/.exec(sql)![1]!,
+    live: /exception '(This wall is full[^']*)'/.exec(sql)![1]!,
     author: /exception '(only the post''s author washes what is on it)'/.exec(sql)![1]!.replace(/''/g, '\''),
   };
   const said = (template: string, ...values: (number | string)[]) => { const v = [...values]; return template.replace(/%%/g, '\u0000').replace(/%s?/g, () => String(v.shift())).replace(/\u0000/g, '%'); };

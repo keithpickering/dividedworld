@@ -454,11 +454,11 @@ begin
   end loop;
   if pg_temp.live(w.play) <> 48 then raise exception '48 live draws'; end if;
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(100, 1));
-  if got is distinct from 'ERROR: this wall holds 48 tags; paint over one or wait for a wash' then raise exception 'the 49th is refused in the wall''s words: %', got; end if;
+  if got is distinct from 'ERROR: This wall is full: it holds 48 tags. It has room again when its author washes one off.' then raise exception 'the 49th is refused in the wall''s words: %', got; end if;
   if pg_temp.draws(w.play) <> 48 or pg_temp.covered(w.play) <> 48 then raise exception 'a refused draw writes nothing'; end if;
   -- Painting over one is no way out: the draw it covers stays live, and the wall still holds 48.
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 1));
-  if got is distinct from 'ERROR: this wall holds 48 tags; paint over one or wait for a wash' or not exists (select 1 from surfaces where play = w.play and first_draw = any (live)) then raise exception 'painting over a tag frees nothing at 48: %', got; end if;
+  if got is distinct from 'ERROR: This wall is full: it holds 48 tags. It has room again when its author washes one off.' or not exists (select 1 from surfaces where play = w.play and first_draw = any (live)) then raise exception 'painting over a tag frees nothing at 48: %', got; end if;
   -- A wash is never refused for the count, and one that clears a tag frees its place.
   got := pg_temp.wash(ann, a, w.play, pg_temp.cells(10, 1));
   if got like 'ERROR:%' or pg_temp.live(w.play) <> 47 then raise exception 'a wash lands at 48 and frees a tag: %', got; end if;

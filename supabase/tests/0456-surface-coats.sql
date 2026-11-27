@@ -240,10 +240,10 @@ begin
   end loop;
   if (select count(*) from surface_coats where play = w.play) is distinct from 48 then raise exception '48 rows'; end if;
   got := pg_temp.draw(bob, b, w.play, pg_temp.coats(100, 1));
-  if got is distinct from 'ERROR: this wall holds 48 tags; paint over one or wait for a wash' then raise exception 'the 49th is refused in the wall''s words: %', got; end if;
+  if got is distinct from 'ERROR: This wall is full: it holds 48 tags. It has room again when its author washes one off.' then raise exception 'the 49th is refused in the wall''s words: %', got; end if;
   -- A draw over a tag does not free it: overlap is paid, and the tag it covers is still live.
   got := pg_temp.draw(bob, b, w.play, pg_temp.coats(0, 1));
-  if got not like 'ERROR: this wall holds 48 tags%' then raise exception 'painting over a tag frees nothing: %', got; end if;
+  if got not like 'ERROR: This wall is full: it holds 48 tags.%' then raise exception 'painting over a tag frees nothing: %', got; end if;
   -- A draw that paints nothing is never refused for the count.
   got := pg_temp.draw(bob, b, w.play, pg_temp.coats(100, 1, '1'));
   if got like 'ERROR:%' then raise exception 'a draw that paints nothing is not refused for the count: %', got; end if;

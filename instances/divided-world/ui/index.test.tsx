@@ -1501,7 +1501,7 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(g.hint).not.toMatch(/\d/u);
     const said = g.describe(instance.settings);
     expect(said).toContain('up to 40% of the post');
-    expect(said).toContain('The post\'s author can wash it off for everyone, a coat at a pass, and anyone can tag it again.');
+    expect(said).toContain('The post\'s author can wash it off for everyone, and anyone can tag it again.');
     expect(said).toContain('A reader can scrub the paint off on their own screen');
     expect(said).not.toMatch(/colour|grey|tick /u);
     expect(g.describe({ ...instance.settings, cardSettings: { ...instance.settings.cardSettings, 'graffiti.limit': 25 } })).toContain('up to 25% of the post');
