@@ -74,7 +74,7 @@ p = problems(['0001', '0424', '0425'], ['0001', '0425'], 'before');
 check('9f. the stray problem says db push would refuse it', p.length === 1 && /db push would refuse it/.test(p[0]) && /below the database's newest, 0425/.test(p[0]), JSON.stringify(p));
 const advice = checkModule.strayAdvice?.('0425');
 check('9g. the stray advice names the newest, renumbering and --include-all', typeof advice === 'string' && advice.includes('Renumber each of these above 0425') && advice.includes('--include-all'), String(advice));
-check('9h. strayNewest finds the newest stray-causing version, or null for none', checkModule.strayNewest?.(['0001', '0424', '0425'], ['0001', '0425'], 'before') === '0425' && checkModule.strayNewest?.(['0001', '0425', '0426'], ['0001', '0425'], 'before') === null && checkModule.strayNewest?.(['0001', '0424'], ['0001'], 'after') === null);
+check('9h. strays names the stray versions and the newest, or null for none', JSON.stringify(checkModule.strays?.(['0001', '0423', '0424', '0425'], ['0001', '0425'], 'before')) === JSON.stringify({ newest: '0425', versions: ['0423', '0424'] }) && checkModule.strays?.(['0001', '0425', '0426'], ['0001', '0425'], 'before') === null && checkModule.strays?.(['0001', '0424'], ['0001', '0425'], 'after') === null);
 
 /* ----------------------------------------------------------------------- the command ---- */
 

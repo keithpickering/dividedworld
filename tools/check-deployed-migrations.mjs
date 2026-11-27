@@ -56,21 +56,19 @@ export function localVersions(dir) {
   return versions.sort();
 }
 
-/** Local versions the remote lacks that are below the remote's newest (four-digit strings compare as text), sorted. */
-function strayVersions(local, remote) {
-  if (!remote.length) return [];
+/**
+ * Under `before`, the local versions the remote lacks that are numbered below the remote's newest
+ * (four-digit strings compare as text), sorted, with that newest; null when there are none.
+ */
+export function strays(local, remote, mode) {
+  if (mode !== 'before' || !remote.length) return null;
   const newest = [...remote].sort().at(-1);
   const there = new Set(remote);
-  return [...new Set(local)].filter((v) => !there.has(v) && v < newest).sort();
+  const versions = [...new Set(local)].filter((v) => !there.has(v) && v < newest).sort();
+  return versions.length ? { newest, versions } : null;
 }
 
-/** The database's newest version when `before` has stray versions to complain of, otherwise null. */
-export function strayNewest(local, remote, mode) {
-  if (mode !== 'before' || !strayVersions(local, remote).length) return null;
-  return [...remote].sort().at(-1);
-}
-
-/** What main() prints after the list when strayNewest found one. */
+/** What main() prints after the list when strays() found any. */
 export function strayAdvice(newest) {
   return `Renumber each of these above ${newest} in a PR (no database holds it yet), so production applies it in the order the SQL suite tests. Only if you have checked that it shares no objects with the newer migrations, apply it by hand with supabase db push --include-all.`;
 }
@@ -88,11 +86,9 @@ export function problems(local, remote, mode) {
   for (const v of [...there].filter((x) => !here.has(x)).sort()) {
     out.push(`the database holds migration ${v}, which the repository does not have (SQL applied by hand, or a migration renamed after it was applied)`);
   }
-  const newest = strayNewest(local, remote, mode);
-  if (newest !== null) {
-    for (const v of strayVersions(local, remote)) {
-      out.push(`the repository has migration ${v}, which the database does not hold and which is numbered below the database's newest, ${newest}: db push would refuse it, and applying it now would run it after migrations the SQL suite ran it before`);
-    }
+  const stray = strays(local, remote, mode);
+  for (const v of stray?.versions ?? []) {
+    out.push(`the repository has migration ${v}, which the database does not hold and which is numbered below the database's newest, ${stray.newest}: db push would refuse it, and applying it now would run it after migrations the SQL suite ran it before`);
   }
   if (mode === 'after') {
     for (const v of [...here].filter((x) => !there.has(x)).sort()) {
@@ -193,8 +189,8 @@ async function main() {
   if (found.length) {
     console.error(`  deployed-migrations: ${found.length} problem(s) ${a.mode} the push:`);
     for (const f of found) console.error(`    ${f}`);
-    const newest = strayNewest(local, remote, a.mode);
-    if (newest !== null) console.error(`  ${strayAdvice(newest)}`);
+    const stray = strays(local, remote, a.mode);
+    if (stray) console.error(`  ${strayAdvice(stray.newest)}`);
     process.exit(1);
   }
   console.log(`  deployed-migrations: ${remote.length} migration(s) in the database, ${local.length} in the repository: nothing wrong ${a.mode} the push`);
