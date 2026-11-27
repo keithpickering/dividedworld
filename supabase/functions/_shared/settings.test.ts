@@ -50,3 +50,18 @@ test('databaseSettingsProblems reports an unknown field under report, and reads 
   const drop = await databaseSettingsProblems(instance, rowsWith({ modBots: newerModBots }), { unknownFields: 'drop' });
   assert.deepEqual(drop.problems, []);
 });
+
+test('two dropped fields give one warning naming both paths and neither value', async () => {
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => { warned.push(args.join(' ')); };
+  try {
+    await withDatabaseSettings(instance, rowsWith({ modBots: { ...instance.settings.modBots, firstNewField: 4242 }, apology: { ...instance.settings.apology, secondNewField: 9191 } }));
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(warned.length, 1);
+  assert.match(warned[0]!, /modBots\.firstNewField/);
+  assert.match(warned[0]!, /apology\.secondNewField/);
+  assert.doesNotMatch(warned[0]!, /4242|9191/);
+});

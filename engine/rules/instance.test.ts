@@ -2082,7 +2082,7 @@ const withExtra = (path: string): Settings => {
 test('every strict setting in SETTING_FIELDS: one extra field is refused, dropped by name, and the rest passes (2026-11-27, D4)', () => {
   const paths = Object.keys(SETTING_FIELDS).filter((p) => at(settings, p) !== undefined);
   assert.ok(paths.length >= 25, `the table reaches ${paths.length} paths of the valid settings`);
-  assert.deepEqual(Object.keys(SETTING_FIELDS).filter((p) => at(settings, p) === undefined), ['habits'], 'only a persona\'s habits is no setting\'s');
+  assert.deepEqual(Object.keys(SETTING_FIELDS).filter((p) => at(settings, p) === undefined), [], 'every entry is a path of the settings');
   for (const path of paths) {
     const given = withExtra(path);
     assert.ok(settingsProblems(given).length > 0, `${path}: an extra field is refused`);
@@ -2125,4 +2125,24 @@ test('a missing field is never filled: a modBots row without quizWriteMinutes st
   assert.deepEqual(dropped, ['modBots.aFieldFromANewerRelease']);
   assert.match(settingsProblems(cleaned).join('\n'), /"quizWriteMinutes" is not/);
   assert.ok(!('quizWriteMinutes' in cleaned.modBots));
+});
+
+test('malformed shapes pass through dropUnknownFields without a throw, drop nothing, and settingsProblems still names them', () => {
+  const bad: [string, (c: Record<string, any>) => void][] = [
+    ['modBots', (c) => { c.modBots = null; }],
+    ['pool', (c) => { c.pool = 'x'; }],
+    ['pool.sessions.minutes', (c) => { c.pool.sessions.minutes = 5; }],
+    ['pool.strengths', (c) => { c.pool.strengths = []; }],
+    ['warnBar.bands', (c) => { c.warnBar.bands = []; }],
+    ['cosmetics.events', (c) => { c.cosmetics.events = null; }],
+    ['jobGraceMinutes', (c) => { c.jobGraceMinutes = 7; }],
+  ];
+  for (const [name, mangle] of bad) {
+    const given = structuredClone(settings) as Settings;
+    mangle(given as unknown as Record<string, any>);
+    const out = dropUnknownFields(given);
+    assert.deepEqual(out.dropped, [], name);
+    assert.deepEqual(out.settings, given, name);
+    assert.ok(settingsProblems(out.settings).length > 0, name);
+  }
 });

@@ -148,11 +148,13 @@ const sessionsHeld = (x: unknown): boolean => {
   const { from, to } = w as Record<string, unknown>;
   return inRange(from, SESSION_BOUNDS.hour.least, SESSION_BOUNDS.hour.most) && inRange(to, SESSION_BOUNDS.hour.least, SESSION_BOUNDS.hour.most);
 };
+/** The fields a persona's `habits` knows: a persona's, not the settings', so not in SETTING_FIELDS. */
+export const HABIT_FIELDS: readonly string[] = ['perDay', 'minutes', 'hours'];
 /** A persona's habits, or the words of what is wrong: the pool's bounds, with `hours` a non-empty list of whole hours, none twice. */
 export function habitsProblem(h: unknown): string | null {
   if (typeof h !== 'object' || h === null || Array.isArray(h)) return 'habits are not an object';
   const o = h as Record<string, unknown>;
-  const stray = strayAt(o, 'habits');
+  const stray = Object.keys(o).find((k) => !HABIT_FIELDS.includes(k));
   if (stray !== undefined) return `"${stray}" is not one of the habits (perDay, minutes, hours)`;
   if (o.perDay !== undefined && !inRange(o.perDay, SESSION_BOUNDS.perDay.least, SESSION_BOUNDS.perDay.most)) return `perDay is not a whole number from ${SESSION_BOUNDS.perDay.least} to ${SESSION_BOUNDS.perDay.most}`;
   if (o.minutes !== undefined && !minutesHeld(o.minutes)) return `minutes is not a least and a most, whole, from ${SESSION_BOUNDS.minutes.least} to ${SESSION_BOUNDS.minutes.most}, the least not above the most`;
@@ -362,8 +364,7 @@ function jobGraceRule(v: unknown): string | null {
  * The fields each strict setting knows, by dotted path from the settings: the one table the rules below read their known fields from
  * and `dropUnknownFields` drops against, so the rule that refuses a field and the drop that removes it cannot disagree
  * (docs/plans/2026-11-27-release-order-design.md, D4). A setting whose rule does not refuse an unknown field (the economy, a card's
- * settings, `hints`, `modelTiers`) has no entry. `habits` is a persona's, not the settings', so no setting holds it: `habitsProblem` reads
- * it here and the drop never finds it.
+ * settings, `hints`, `modelTiers`) has no entry. Every entry is a path of the settings (a persona's `habits` is HABIT_FIELDS).
  */
 export const SETTING_FIELDS: { readonly [path: string]: readonly string[] } = {
   'phases.honeymoon': PHASE_KEYS.honeymoon,
@@ -394,7 +395,6 @@ export const SETTING_FIELDS: { readonly [path: string]: readonly string[] } = {
   jobGraceMinutes: JOBS.map((j) => j.name),
   reachRarity: BEYOND_POST,
   reachLasts: BEYOND_POST,
-  habits: ['perDay', 'minutes', 'hours'],
 };
 
 /** Settings without the fields the code does not know, at each path the table names, and each dropped path (`modBots.quizWriteMinutes`). Pure: the input is not changed, and a missing field is not filled. */

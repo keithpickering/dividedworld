@@ -34,7 +34,7 @@ export async function databaseSettingsProblems(instance: Instance, db: Db, { unk
   if (unknownFields === 'drop') {
     const { settings: cleaned, dropped } = dropUnknownFields(whole);
     // The path only, never a value: the function log shows the gap between the rows and this code.
-    for (const path of dropped) console.warn(`settings: dropped "${path}", a field this code does not know`);
+    if (dropped.length) console.warn(`settings: dropped ${dropped.map((p) => `"${p}"`).join(', ')}, fields this code does not know`);
     kept = cleaned;
   }
   const tuned: Instance = { ...instance, settings: deepFreeze(kept) };
