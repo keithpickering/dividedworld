@@ -910,7 +910,7 @@ describe('Settings › Sound', () => {
       expect(within(group(g)).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(['Off', 'On']);
       expect(radio(g, 'Off')).toBeChecked();
     }
-    expect(screen.getByText('Sounds that cards and other game effects make on the board. Every one is also shown as a caption at the bottom of the screen.')).toBeInTheDocument();
+    expect(screen.getByText('Sounds that cards and other game effects make on the board. Every one is also shown as a caption at the bottom of the screen. A phone set to silent keeps them silent.')).toBeInTheDocument();
     expect(screen.getByText('Sounds the board itself makes, apart from the game.')).toBeInTheDocument();
     expect(screen.queryByText(/This forum has none yet/u)).toBeNull();
     expect(screen.queryByRole('slider')).toBeNull();
