@@ -76,7 +76,9 @@ begin
   if (r -> 'summary') is distinct from (select to_jsonb(o) from thread_open o where o.id = t) then raise exception 'the summary is not the thread_open row'; end if;
 
   -- Each piece against the direct read.
-  if (r -> 'acts') is distinct from (select jsonb_agg(to_jsonb(a) order by a.seq) from acts_public a where a.thread = t and a.seq between 21 and 40 and a.kind not in ('edit', 'card')) then
+  -- A post on the page also carries its current version (0456: the id a tag drawn on its words names), the same for every reader.
+  if (r -> 'acts') is distinct from (select jsonb_agg(case when post_kind(a.kind) then to_jsonb(a) || jsonb_build_object('version', post_current_version(a.id)) else to_jsonb(a) end order by a.seq)
+                                     from acts_public a where a.thread = t and a.seq between 21 and 40 and a.kind not in ('edit', 'card')) then
     raise exception 'acts differ from acts_public'; end if;
   if (r -> 'plays') is distinct from (select jsonb_agg(to_jsonb(a) order by a.created_at, a.id) from acts_public a where a.id = any (array[splat_play, setter] || layers)) or jsonb_array_length(r -> 'plays') is distinct from 12 then
     raise exception 'plays differ from acts_public: %', r -> 'plays'; end if;
