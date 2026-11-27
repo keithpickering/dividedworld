@@ -8525,4 +8525,29 @@ describe('a clear that is final (lasting gags, section 2.4)', () => {
     expect((await fake.playCard('passing', boFace, opener, {}, '')).ok).toBe(false);
     expect((await fake.playCard('forever', boFace, opener, {}, '')).ok).toBe(true);
   });
+
+  test('a clear for one version of the post only frees its slot on that version, and the slot is taken again once the post is edited', async () => {
+    const forVersion = (s: unknown) => { const v = (s as { version?: string } | null)?.version; return v === undefined ? false : { version: v }; };
+    const once: CardRules = { ...base, key: 'once', name: 'Once', drawsEffect: { cleared: forVersion }, canApply: (target, effects, _config, now) => landsOn(once, target, effects, now) };
+    const other: CardRules = { ...base, key: 'other', name: 'Other', drawsEffect: {} };
+    const afterClear = async (edited: boolean) => {
+      const fake = createFake({ instance: { ...instance, cards: [once, other] as unknown as Instance['cards'], machine: [] }, settings: { postEffects: 1 } });
+      const ana = fake.seed.account('ana');
+      const bo = fake.seed.account('bo');
+      const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+      const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+      const { act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+      fake.seed.cards(bo, { once: 1, other: 3 });
+      fake.signInAs(bo);
+      const play = must(await fake.playCard('once', boFace, opener, {}, ''));
+      expect((await fake.playCard('other', boFace, opener, {}, '')).ok).toBe(false);
+      fake.signInAs(ana);
+      must(await fake.saveEffect(play.id, anaFace, { version: opener }));
+      if (edited) must(await fake.edit(opener, anaFace, 'First post, edited'));
+      fake.signInAs(bo);
+      return (await fake.playCard('other', boFace, opener, {}, '')).ok;
+    };
+    expect(await afterClear(false)).toBe(true);
+    expect(await afterClear(true)).toBe(false);
+  });
 });

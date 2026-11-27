@@ -3052,8 +3052,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const named = r?.skim ? (a.payload.config as { quadrant?: unknown } | undefined)?.quadrant : undefined;
         /* A play whose card draws an effect says so, and says it is cleared where its saved state clears it for the post as it is now (effect_cleared, post_version). */
         const answer = r?.drawsEffect?.cleared?.(effects.get(a.id)?.state);
-        const version = (() => { const e = edits(acts.get(a.target)!); return e.length > 0 ? e[e.length - 1]!.id : a.target; })();
-        const cleared = answer === true || (typeof answer === 'object' && answer.version === version);
+        const version = (): Id => { const e = edits(acts.get(a.target)!); return e.length > 0 ? e[e.length - 1]!.id : a.target; };
+        const cleared = answer === true || (typeof answer === 'object' && answer !== null && answer.version === version());
         out.push({ card: String(a.payload.card), act: a.id, ...(r?.drawsEffect ? { drawing: true as const } : {}), ...(cleared ? { cleared: true as const } : {}), ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(r?.rewind ? { rewind: r.rewind, at: iso(a.at) } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}), ...(typeof named === 'string' ? { quadrant: named as Quadrant } : {}) });
       } else if (a.kind === 'set') {
         const f = faceDown.get(a.id);
