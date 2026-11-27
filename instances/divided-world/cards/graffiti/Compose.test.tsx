@@ -16,6 +16,8 @@ import { cursor } from '../whoops/cursor.ts';
 import { landing } from '../../../../engine/ui/cards/land.ts';
 import { instance } from '../../index.ts';
 import { CANS, graffiti } from '../graffiti.ts';
+import { createPortal } from 'react-dom';
+import { BbCode } from '../../../../engine/ui/bbcode/render.tsx';
 import { Compose, DrawMode, type DrawModeProps } from './Compose.tsx';
 import * as spray from './spray.ts';
 
@@ -39,12 +41,17 @@ beforeEach(() => {
 const unders: HTMLElement[] = [];
 afterEach(() => { vi.useRealTimers(); for (const el of unders.splice(0)) el.remove(); });
 
-function mountCompose(o: { readonly submit?: ComposeProps['submit'] } = {}) {
+function mountCompose(o: { readonly submit?: ComposeProps['submit']; readonly post?: Act; readonly words?: string } = {}) {
   /* The element around the post's words, which the engine owns and the card draws into. */
   const under = document.createElement('div');
-  document.body.append(under);
-  unders.push(under);
-  const props = { post: POST, box: BOX, under, submit: vi.fn(o.submit ?? ok), cancel: vi.fn(), hold: vi.fn(), ready: vi.fn(), children: <p>The post&apos;s words.</p> } satisfies ComposeProps;
+  /* With `words` the element sits in a content area, the post's body, as the engine's does: that is where the marks and the images are found. */
+  const area = document.createElement('div');
+  if (o.words !== undefined) { area.setAttribute('data-kb-content-area', ''); area.style.fontSize = '15px'; area.append(under); }
+  document.body.append(o.words !== undefined ? area : under);
+  unders.push(o.words !== undefined ? area : under);
+  /* With `words`, the post's words are drawn by the renderer inside it, as the engine does, so the marks the card lays over them are on the page. */
+  const children = o.words === undefined ? <p>The post&apos;s words.</p> : createPortal(<BbCode text={o.words} />, under);
+  const props = { post: o.post ?? POST, box: BOX, under, submit: vi.fn(o.submit ?? ok), cancel: vi.fn(), hold: vi.fn(), ready: vi.fn(), children } satisfies ComposeProps;
   const world = renderInWorld(<Compose {...props} />);
   return { ...world, props, under, surface: under.querySelector('[data-kb-draw-surface]') as HTMLElement };
 }
@@ -113,15 +120,21 @@ describe('Compose, on the post a card is played on', () => {
     expect(props.submit).toHaveBeenCalledTimes(1);
     const [config, first] = vi.mocked(props.submit).mock.calls[0]!;
     expect(config).toEqual({});
-    expect(first).toEqual({ strokes: [{ can: 'pink', cap: 'fat', aspect: 1.5, points: [[0.2, 0.3], [0.4, 0.3], [0.6, 0.3]] }] });
+    /* A 600 by 400 px box at 15 px to the em is 40 by 26.67 ems; the line's center is (240, 120) px, and with no words on the page the group is attached to the box. */
+    expect(first).toEqual({
+      box: { w: 40, h: 26.67 },
+      groups: [{ at: [0.4, 0.3], anchor: { kind: 'box' }, unit: 'em', strokes: [{ can: 'pink', cap: 'fat', points: [[-8, 0], [0, 0], [8, 0]] }] }],
+    });
   });
 
-  test('keeps points in shares of the box to 4 decimals, and thins the ones a pixel or two apart', () => {
+  test('keeps points in ems from the group\'s center to a hundredth, and thins the ones a pixel or two apart', () => {
     const { surface, props } = mountCompose();
     drag(surface, [[0.123456, 0.3], [0.1236, 0.3], [0.3, 0.3333333]]);
     act(() => { screen.getByRole('button', { name: 'Tag it' }).click(); });
-    const first = vi.mocked(props.submit).mock.calls[0]![1] as { strokes: { points: number[][] }[] };
-    expect(first.strokes[0]!.points).toEqual([[0.1235, 0.3], [0.3, 0.3333]]);
+    const first = vi.mocked(props.submit).mock.calls[0]![1] as { groups: { strokes: { points: number[][] }[] }[] };
+    const points = first.groups[0]!.strokes[0]!.points;
+    expect(points).toHaveLength(2);
+    expect(points.flat().every((n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-9)).toBe(true);
   });
 
   test('a stroke drawn is painted on the post as the model adds it, under what the post wears', () => {
@@ -130,7 +143,7 @@ describe('Compose, on the post a card is played on', () => {
     const last = vi.mocked(spray.paintWall).mock.calls.at(-1)!;
     expect(last[3]).toHaveLength(1);
     expect(last[3][0]!.kind).toBe('draw');
-    expect((last[3][0]!.payload as { strokes: unknown[] }).strokes).toHaveLength(1);
+    expect((last[3][0]!.payload as { groups: { strokes: unknown[] }[] }).groups[0]!.strokes).toHaveLength(1);
   });
 
   test('Tag it waits for a drawing, and the toolbar counts it: Wall 0% of 40% grows', async () => {
@@ -207,10 +220,10 @@ describe('a stencil', () => {
     await user.click(screen.getByRole('radio', { name: 'Top left' }));
     const shown = vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
     expect(shown).toHaveLength(1);
-    const drawn = (shown[0]!.payload as { strokes: { can: string; points: number[][] }[] }).strokes;
-    expect(drawn).toHaveLength(4);
-    expect(drawn.every((s) => s.can === 'pink')).toBe(true);
-    expect(drawn.flatMap((s) => s.points).every(([x, y]) => x! <= 1 / 3 && y! <= 1 / 3)).toBe(true);
+    const group = (shown[0]!.payload as { groups: { at: number[]; strokes: { can: string }[] }[] }).groups[0]!;
+    expect(group.strokes).toHaveLength(4);
+    expect(group.strokes.every((s) => s.can === 'pink')).toBe(true);
+    expect(group.at).toEqual([0.1667, 0.1667]);
     expect(props.hold).toHaveBeenLastCalledWith(ASK);
     await user.click(tag());
     expect(props.submit).toHaveBeenCalledWith({}, { stencil: 'crown', can: 'pink', spot: 0 });
@@ -237,11 +250,12 @@ describe('review fixes', () => {
   });
 
   /* The composer's box is the post body's (`.kb-act-main`), the box the wall paints in, not the words' element, which on a one-line post is a strip (found in a browser: a Fat stroke read 84%). */
-  test('a stroke on a one-line post is kept in the body\'s box, aspect and shares, and the surface covers that box', async () => {
+  test('a stroke on a one-line post is framed in the body\'s box, and the surface covers that box', async () => {
     const user = userEvent.setup();
     const cell = document.createElement('div');
     cell.className = 'kb-act-main';
     cell.setAttribute('data-kb-content-area', '');
+    cell.style.fontSize = '15px';
     const under = document.createElement('div');
     cell.append(under);
     document.body.append(cell);
@@ -254,13 +268,14 @@ describe('review fixes', () => {
     expect(surface.style.width).toBe('600px');
     expect(surface.style.height).toBe('200px');
     await user.click(screen.getByRole('radio', { name: 'Fat' }));
-    /* rects sit at 0,0 in jsdom with no size, so shares come from the box: 300,100 is the middle. */
+    /* rects sit at 0,0 in jsdom with no size, so px come from the box: 300,100 is the middle. */
     act(() => { fireEvent.pointerDown(surface, { clientX: 300, clientY: 100, pointerId: 1, button: 0, pointerType: 'mouse' }); });
     act(() => { fireEvent.pointerUp(surface, { clientX: 300, clientY: 100, pointerId: 1, pointerType: 'mouse' }); });
     await user.click(tag());
-    const first = (submit.mock.calls[0] as unknown[])[1] as { strokes: { aspect: number; points: number[][] }[] };
-    expect(first.strokes[0]!.aspect).toBe(3);
-    expect(first.strokes[0]!.points).toEqual([[0.5, 0.5]]);
+    const first = (submit.mock.calls[0] as unknown[])[1] as { box: unknown; groups: { at: number[]; strokes: { points: number[][] }[] }[] };
+    expect(first.box).toEqual({ w: 40, h: 13.33 });
+    expect(first.groups[0]!.at).toEqual([0.5, 0.5]);
+    expect(first.groups[0]!.strokes[0]!.points).toEqual([[0, 0]]);
   });
 
   /* The body is whatever element carries the marker (the ORIGIN box's area is one and is no `.kb-act-main`), and the class alone is none. */
@@ -338,39 +353,75 @@ describe('review fixes', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
   });
 
-  test('the preview is painted with the aspect that is stored, rounded to three figures', () => {
+  test('the preview is the draw as it will be sent, painted where it was drawn', () => {
     const under = document.createElement('div');
     document.body.append(under);
     unders.push(under);
-    const { container } = renderInWorld(<Compose post={POST} box={{ w: 601, h: 400 }} under={under} submit={ok} cancel={() => {}} hold={() => {}} ready={() => {}}><p>x</p></Compose>);
-    void container;
+    renderInWorld(<Compose post={POST} box={{ w: 600, h: 400 }} under={under} submit={ok} cancel={() => {}} hold={() => {}} ready={() => {}}><p>x</p></Compose>);
     drag(under.querySelector('[data-kb-draw-surface]') as HTMLElement, LINE);
-    const painted = (vi.mocked(spray.paintWall).mock.calls.at(-1)![3][0]!.payload as { strokes: { aspect: number }[] }).strokes[0]!.aspect;
-    expect(painted).toBe(1.5);
+    const painted = vi.mocked(spray.paintWall).mock.calls.at(-1)![3][0]!.payload as { box: unknown; groups: { at: number[]; anchor: unknown }[] };
+    expect(painted.box).toEqual({ w: 40, h: 26.67 });
+    expect(painted.groups[0]).toMatchObject({ at: [0.4, 0.3], anchor: { kind: 'box' } });
+  });
+});
+
+/* The drawer's screen finds what a tag was drawn over in its own layout: the marks the card lays over the words while drawing, and the images (`data-kb-img`). */
+describe('tagging a post\'s words and images', () => {
+  const rect = (x: number, y: number, w = 0, h = 0) => ({ x, y, left: x, top: y, width: w, height: h, right: x + w, bottom: y + h, toJSON: () => ({}) }) as DOMRect;
+  /** Each word's mark sits at its place; the images at theirs. Everything else is where jsdom puts it. */
+  const layout = (marks: Record<string, DOMRect>, images: Record<string, DOMRect> = {}) => {
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const m = this.getAttribute('data-kb-word-mark'), i = this.getAttribute('data-kb-img');
+      return (m !== null ? marks[m] : i !== null ? images[i] : undefined) ?? real.call(this);
+    });
+  };
+  const edited = (words: string, extra: Partial<Act> = {}) => ({ ...POST, payload: { body: words }, currentPayload: { body: words }, ...extra }) as Act;
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  test('the words carry a mark at each word\'s first character while a drawing is open, and Tag it attaches to the word under the drawing', async () => {
+    const user = userEvent.setup();
+    layout({ 0: rect(0, 10, 0, 21), 6: rect(45, 10, 0, 21), 12: rect(90, 10, 0, 21) });
+    const { under, props, surface } = mountCompose({ post: edited('Hello there world'), words: 'Hello there world' });
+    expect([...under.querySelectorAll('[data-kb-word-mark]')].map((m) => m.getAttribute('data-kb-word-mark'))).toEqual(['0', '6', '12']);
+    await user.click(screen.getByRole('radio', { name: 'Fat' }));
+    drag(surface, [[100 / 600, 25 / 400], [140 / 600, 25 / 400]]);
+    await user.click(tag());
+    const first = vi.mocked(props.submit).mock.calls[0]![1] as { groups: { anchor: unknown; unit: string }[] };
+    /* The center is (120, 25) px: inside "world," (90 to 139.5 across, 10 to 31 down), 2 ems right of its mark and 1 em below its line's top. */
+    expect(first.groups[0]).toMatchObject({ unit: 'em', anchor: { kind: 'text', version: 'post-1', at: 12, len: 5, dx: 2, dy: 1 } });
+  });
+
+  test('a ring drawn over an image is attached to it, in the image\'s widths', async () => {
+    const user = userEvent.setup();
+    layout({}, { 0: rect(100, 50, 200, 150) });
+    const { props, surface } = mountCompose({ post: edited('[img]https://x.test/a.png[/img]'), words: '[img]https://x.test/a.png[/img]' });
+    drag(surface, [[180 / 600, 125 / 400], [220 / 600, 125 / 400]]);
+    await user.click(tag());
+    const first = vi.mocked(props.submit).mock.calls[0]![1] as { groups: { anchor: unknown; unit: string; em: number }[] };
+    expect(first.groups[0]).toMatchObject({ unit: 'image', em: 13.33, anchor: { kind: 'image', version: 'post-1', n: 0, src: 'https://x.test/a.png', nth: 0, x: 0.5, y: 0.5 } });
+  });
+
+  test('a post that has been edited, whose current version the page does not hold, is tagged against the box', async () => {
+    const user = userEvent.setup();
+    layout({ 0: rect(0, 10, 0, 21) });
+    const { props, surface } = mountCompose({ post: edited('Hello', { editedAt: '2026-10-30T00:00:00.000Z' }), words: 'Hello' });
+    drag(surface, [[20 / 600, 25 / 400], [60 / 600, 25 / 400]]);
+    await user.click(tag());
+    expect((vi.mocked(props.submit).mock.calls[0]![1] as { groups: { anchor: unknown }[] }).groups[0]!.anchor).toEqual({ kind: 'box' });
   });
 });
 
 describe('the meter on a wall that is already there', () => {
-  const stripe = { can: 'red', cap: 'fat', aspect: 1.5, points: [[0.05, 0.5], [0.95, 0.5]] };
-  const wall = [{ kind: 'draw', payload: { strokes: [stripe] } }];
   const meterText = () => screen.getByText(/^Wall \d+% of 40%$/).textContent;
 
-  test('counts a stroke over ink already there as nothing more, and one beside it as its own cells', () => {
-    const { surface } = mountDraw({ wall, covered: 0 });
-    const before = meterText();
-    expect(before).not.toBe('Wall 0% of 40%');
+  test('starts from the cells the server says are covered, and counts the drawing\'s own cells on top in full', () => {
+    const { surface } = mountDraw({ covered: 1000 });
+    expect(meterText()).toBe('Wall 10% of 40%');
     act(() => { screen.getByRole('radio', { name: 'Fat' }).click(); });
     drag(surface, [[0.05, 0.5], [0.5, 0.5], [0.95, 0.5]]);
-    expect(strokes(surface)).toBe(1);
-    expect(meterText()).toBe(before);
-    drag(surface, [[0.1, 0.85], [0.5, 0.85], [0.9, 0.85]]);
-    expect(meterText()).not.toBe(before);
-  });
-
-  test('washes the wall already has take ink out of it before the meter counts', () => {
-    const washed = [...wall, { kind: 'wash', payload: { strokes: [{ aspect: 1.5, points: [[0, 0.5], [1, 0.5]] }] } }];
-    mountDraw({ wall: washed });
-    expect(meterText()).toBe('Wall 0% of 40%');
+    const after = Number(/\d+/.exec(meterText()!)![0]);
+    expect(after).toBeGreaterThanOrEqual(10 + 8);
   });
 
   test('a wall whose strokes are not read yet starts from the cells the server says are covered', () => {
@@ -405,7 +456,7 @@ describe('the Draw tile\'s draw mode', () => {
     await user.click(screen.getByRole('radio', { name: 'Teal' }));
     drag(surface, LINE);
     await user.click(tag());
-    expect(props.submit).toHaveBeenCalledWith({ strokes: [expect.objectContaining({ can: 'teal', cap: 'stock' })] });
+    expect(props.submit).toHaveBeenCalledWith({ box: expect.anything(), groups: [expect.objectContaining({ strokes: [expect.objectContaining({ can: 'teal', cap: 'stock' })] })] });
     await vi.waitFor(() => expect(props.done).toHaveBeenCalled());
     try { expect(localStorage.getItem('kb-graffiti-can:acct-1')).toBe('teal'); } catch { /* storage is off here */ }
   });
