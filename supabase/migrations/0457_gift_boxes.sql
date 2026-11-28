@@ -18,7 +18,7 @@
 --   (a) #1264: the gift lands at the open on the post's own checks alone (the post's slots, its stack, its wards, a rewind and the gift's own landing rules), whatever has happened to the giver since: no ban of the caster, no lockout (place_cast skips not_locked_out
 --       when its marker names an open), no hand and no wallet (the gift was paid for and held at the wrap).
 --   (b) #1270: a present is refused, in plain words, on a post whose character no account owns (a staff character's, a Mod Bot's): nobody could open it. A present on the giver's own post is allowed.
---   (c) giftProblem's refusal of a gift that needs words of its own (a message, a reply, a surface) holds in the server too.
+--   (c) giftProblem's refusal of a gift that needs words of its own (a message, a reply, a surface) holds in the server too, and so does its refusal of a card that writes (an open buys no write tokens and meets no old voice, so the job would only refund).
 -- Carried findings: the box's slot is freed before the gift is tried (the open Act is written first, in a block of its own; the kept play_post row reads it at once), so a one-slot post takes an effect-drawing gift from an effect-drawing box; the wrap writes a card-ledger
 -- row for the gift card of its own (the box's row carries the box's price alone, the gift's the gift's extra price); a gift a trap catches at the open counts as landed (did `landed`, the gift's own Act carries `caught`).
 --
@@ -1045,7 +1045,7 @@ end $function$;
 -- ---- 6. place_cast and play_card ----
 
 -- place_cast, copied whole from 0454_final_clears.sql, its latest definition (the old signature is dropped, since the new one adds trailing defaults). It gains `gift_card`, `gift_config`, `gift_price` and `as_id`:
---   * a wrapper without a gift, a gift on any other card, a gift that is no card, a wrapper, not a Move on a post, or a card that needs words of its own are refused in plain words (giftProblem's, engine/rules/cards.ts);
+--   * a wrapper without a gift, a gift on any other card, a gift that is no card, a wrapper, not a Move on a post, a card that needs words of its own or one that writes are refused in plain words (giftProblem's, engine/rules/cards.ts);
 --   * a present on a post no account owns is refused in plain words (owner decision, #1270); the giver's own post is allowed;
 --   * `gift_box` is written beside the box's Act, once, when the box lands;
 --   * `as_id` names the Act's id ahead (open_gift writes the open Act, which names the gift, before the gift is tried);
@@ -1136,6 +1136,7 @@ begin
     if gift_kind.wraps then raise exception 'a present can''t hold another present' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     if gift_kind.play <> 'cast' or not ('post' = any (gift_kind.reaches)) then raise exception 'a present holds a Move that is cast on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     if gift_kind.needs_message is not null or gift_kind.replies or gift_kind.surface then raise exception 'a present can''t hold a card that needs words of its own' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if gift_kind.writes then raise exception 'a present can''t hold a card that writes' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     if octet_length(coalesce(gift_config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
     if payer is null then raise exception 'a staff character''s card holds no gift' using errcode = '22023'; end if;
   end if;

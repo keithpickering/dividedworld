@@ -1146,5 +1146,7 @@ test('giftProblem refuses a gift an open with no words could never land, in true
   assert.equal(giftProblem(present, { ...plain, needsMessage: 'say why' }, {}), words);
   assert.equal(giftProblem(present, { ...plain, replies: true }, {}), words);
   assert.equal(giftProblem(present, { ...plain, surface: {} as never }, {}), words);
+  // A card that writes buys its tokens and meets the old voice at its own play; an open makes neither, so its job would only refund (the owner's #1263 answer, extended).
+  assert.equal(giftProblem(present, { ...plain, writes: {} as never }, {}), "a present can't hold a card that writes");
   assert.equal(giftProblem(present, plain, {}), null);
 });

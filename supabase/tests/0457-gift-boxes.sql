@@ -112,9 +112,11 @@ begin
     ('gbuse', 'Gb Use', 'sweet', 'uncommon', 'use', '{post}', interval '7 days', 1, false, '{"kind": "ward", "upTo": "common"}');
   insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack, draws_effect, needs_message) values
     ('gbtalk', 'Gb Talk', 'salty', 'common', 'cast', '{post}', null, 1, false, 'Say something.');
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack, draws_effect, writes) values
+    ('gbwrite', 'Gb Write', 'salty', 'common', 'cast', '{post}', null, 1, false, true);
   insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, draws_effect) values
     ('gbsnare', 'Gb Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null, false);
-  perform pg_temp.hand(ann, 'gbbox', 'gbbox2', 'gbdraw', 'gblong', 'gbthread', 'gbplain', 'gbward', 'gbuse', 'gbtalk');
+  perform pg_temp.hand(ann, 'gbbox', 'gbbox2', 'gbdraw', 'gblong', 'gbthread', 'gbplain', 'gbward', 'gbuse', 'gbtalk', 'gbwrite');
   perform pg_temp.hand(bob, 'gbward', 'gbsnare', 'gbbox');
   perform pg_temp.hand(cat, 'gbbox', 'gblong', 'gbdraw2');
   -- A staff character's post: nobody can open a present left there.
@@ -146,6 +148,7 @@ begin
   r := pg_temp.wrap(ann, a, p, 'gbbox2'); perform pg_temp.expect(r.said = '22023 a present can''t hold another present', format('a wrapper as the gift: %s', r.said));
   r := pg_temp.wrap(ann, a, p, 'gbuse'); perform pg_temp.expect(r.said = '22023 a present holds a Move that is cast on a post', format('a Use as the gift: %s', r.said));
   r := pg_temp.wrap(ann, a, p, 'gbthread'); perform pg_temp.expect(r.said = '22023 a present holds a Move that is cast on a post', format('a Move beyond a post as the gift: %s', r.said));
+  r := pg_temp.wrap(ann, a, p, 'gbwrite'); perform pg_temp.expect(r.said = '22023 a present can''t hold a card that writes', format('a gift that writes: %s', r.said));
   r := pg_temp.wrap(ann, a, p, 'gbtalk'); perform pg_temp.expect(r.said = '22023 a present can''t hold a card that needs words of its own', format('a gift that needs words: %s', r.said));
   r := pg_temp.wrap(bob, b, p, 'gblong'); perform pg_temp.expect(r.said = 'P0001 you hold no "gblong" card to wrap; the Vending Machine sells them', format('a gift not held: %s', r.said));
   r := pg_temp.wrap(ann, a, staffpost, 'gblong'); perform pg_temp.expect(r.said = '22023 a present is left on a player''s post, since only its author can open it', format('a post no account owns (#1270): %s', r.said));

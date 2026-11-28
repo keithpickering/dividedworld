@@ -989,6 +989,8 @@ export function giftProblem(wrapper: Pick<CardRules, 'name' | 'wraps'>, gift: Ca
   if (!castOnPost(gift)) return 'a present holds a Move that is cast on a post';
   // An open is made with no message, no reply and no first draw to give, so a card that needs one could never land from it.
   if (gift.needsMessage !== undefined || gift.replies === true || gift.surface !== undefined) return "a present can't hold a card that needs words of its own";
+  // A card that writes buys its tokens and meets the old voice at its own play; an open makes neither, so its job would only refund and the gift would land and make nothing.
+  if (gift.writes !== undefined) return "a present can't hold a card that writes";
   const checked = gift.validateConfig(config);
   return checked.ok ? null : checked.why;
 }
