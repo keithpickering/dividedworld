@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slog forms bench</title>
+<!--
+  A bench for #1276: the forms other cards' effects take in Console Slog's terminal as the words are typed. Its look is
+  docs/research/2026-11-28-console-slog/01-bench.html. A bench is a reference for look and feel, never code to copy.
+-->
+<style>
+:root { --paper: #fff; --ink: #000; --muted: #555; --rule: #000; --font: Verdana, Geneva, sans-serif; --mono: "Courier New", Courier, monospace; --neon: #19e3ff; --phosphor: #33ff66; color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--font); padding: 20px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 .3em; }
+.head { max-width: 988px; margin: 0 auto 16px; }
+.head p { color: var(--muted); font-size: 13.75px; max-width: 80ch; }
+:focus-visible { outline: 2px solid var(--neon); outline-offset: 2px; }
+.bench { max-width: 988px; margin: 0 auto 16px; border: 1px solid var(--rule); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.bench fieldset { border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 -1px -1px 0; padding: 10px 12px 12px; display: grid; gap: 4px; align-content: start; font-size: 12.5px; min-width: 0; }
+.bench legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold; letter-spacing: .06em; text-transform: uppercase; }
+.bench label { display: flex; gap: 6px; align-items: flex-start; min-height: 22px; }
+.bench button { font: 12px var(--font); padding: 3px 8px; border: 1px solid var(--rule); background: #eee; cursor: pointer; justify-self: start; }
+.stage { display: flex; justify-content: center; }
+.window { width: 988px; max-width: 100%; border: 1px solid var(--rule); }
+.board { background: #fff; color: #000; font: 13px/1.5 var(--font); padding: 14px; }
+.post { border: 1px solid #000; display: grid; grid-template-columns: 150px 1fr; }
+.postbit { border-right: 1px solid #000; padding: 8px; font-size: 11px; background: #e6e6e6; }
+.postbit b { font-size: 12px; display: block; }
+@media (max-width: 600px) { .post { grid-template-columns: 1fr; } .postbit { border-right: 0; border-bottom: 1px solid #000; } }
+.main { display: grid; grid-template-rows: 1fr auto; min-width: 0; }
+.foot { border-top: 1px solid #000; padding: 6px 10px; font-size: 11px; color: #555; }
+.term { position: relative; min-height: 240px; background: #050805; color: var(--phosphor); font: 14px/1.5 var(--mono); padding: 12px 14px 16px; cursor: text; user-select: none; -webkit-user-select: none; touch-action: manipulation; overflow: hidden; }
+.term::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 2px 3px); }
+.term .bar { color: #9cffb5; opacity: .75; margin-bottom: 6px; }
+.term pre { margin: 0; white-space: pre; font: inherit; text-shadow: 0 0 4px rgba(51,255,102,.55); }
+.rest { visibility: hidden; }
+.cursor { display: inline-block; width: .6em; height: 1.05em; vertical-align: -.15em; background: var(--phosphor); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+.inv { background: var(--phosphor); color: #050805; text-shadow: none; }
+.dim { opacity: .6; }
+.bright { color: #d8ffe2; text-shadow: 0 0 6px rgba(160,255,190,.9); }
+.ywa { color: #050805; background: #9cffb5; text-shadow: none; }
+.cap { position: absolute; right: 10px; bottom: 8px; font: 11px var(--mono); color: #9cffb5; text-align: right; z-index: 2; }
+.cap i { display: block; height: 3px; background: var(--phosphor); margin-top: 2px; width: 0; margin-left: auto; transition: width .15s; }
+.term.fab pre > span, .term.fab pre { }
+.fabline { text-shadow: 0 0 5px currentColor; }
+.spark { position: absolute; inset: 0; pointer-events: none; font: inherit; white-space: pre; color: #c8ffd8; opacity: .55; padding: inherit; }
+.notes { max-width: 988px; margin: 14px auto 0; font-size: 13.75px; }
+.notes li { margin-bottom: .4em; }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>Slog forms bench</h1>
+  <p>How other cards' effects show up in Console Slog's terminal as the post is typed out (#1276). Click the terminal and mash keys, or tap it. Each press types 3 characters, so the streak is not part of this bench. Pick a form for each card below; the post starts over when you change one. Sound is off until you turn it on.</p>
+</div>
+
+<form class="bench" onsubmit="return false">
+  <fieldset>
+    <legend>Autocorrect</legend>
+    <label><input type="radio" name="ac" value="A"> A: <code>[Goomba]</code> in brackets, the replacement only</label>
+    <label><input type="radio" name="ac" value="B" checked> B: <code>[Goomba]</code> in reverse video, like a strip of tape</label>
+  </fieldset>
+  <fieldset>
+    <legend>THIS</legend>
+    <label><input type="radio" name="th" value="A" checked> A: the line breaks under the phrase's line; an arrow climbs from the phrase's last letter</label>
+    <label><input type="radio" name="th" value="B"> B: the line breaks the same; carets under the whole phrase, then the note</label>
+  </fieldset>
+  <fieldset>
+    <legend>Laugh Track</legend>
+    <label><input type="radio" name="lt" value="A" checked> A: the murmur rises as the cursor nears; the hit plays when the phrase is typed; the phrase brightens</label>
+    <label><input type="radio" name="lt" value="B"> B: A, plus a stage direction typed after it: <code>(audience boos)</code></label>
+    <label><input type="checkbox" id="snd"> Sound on</label>
+  </fieldset>
+  <fieldset>
+    <legend>You Were Saying?</legend>
+    <label><input type="radio" name="yw" value="A"> A: the tail types on after the words, in reverse video</label>
+    <label><input type="radio" name="yw" value="B" checked> B: a second prompt line, then the tail, as another file</label>
+  </fieldset>
+  <fieldset>
+    <legend>Under the words</legend>
+    <label><input type="radio" name="ug" value="none" checked> None</label>
+    <label><input type="radio" name="ug" value="fab"> Feelin' Fab: the phosphor takes the foil's colors, line by line, a color terminal</label>
+    <label><input type="radio" name="ug" value="glitter"> Glitter Bomb: sparkle glyphs (<code>* + . '</code>) twinkle in the empty cells</label>
+    <label><input type="radio" name="ug" value="hidden"> Either, hidden under the black ground until release (today)</label>
+    <button type="button" id="reset">Start over</button>
+    <button type="button" id="all">Type it all</button>
+  </fieldset>
+</form>
+
+<div class="stage">
+  <div class="window">
+    <div class="board">
+      <div class="post">
+        <div class="postbit"><b>Mrs. Hooligan</b>Board Certified<br>Posts: 1,207</div>
+        <div class="main">
+          <div class="term" id="term" tabindex="0" role="button" aria-label="Console Slog: press any key or tap to type out this post">
+            <div class="bar">C:\DW\POSTS&gt; type 4471.txt</div>
+            <pre id="out"></pre>
+            <div class="cap" id="cap" aria-live="polite"></div>
+          </div>
+          <div class="foot">Console Slog · Autocorrect · THIS · Laugh Track · You Were Saying?</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ul class="notes">
+  <li>The post's words: "Come fight me like a man and I'll show ya how to fight. I've been training all week and nobody on this board can take a punch."</li>
+  <li>Autocorrect: "man" to "Goomba", the second "fight" to "do the Mario". THIS on "nobody on this board can take a punch", noted "bold words". Laugh Track cues "Come fight me" with a boo. You Were Saying?'s tail: "...anyway that's why I quit the dojo".</li>
+  <li>The terminal wraps lines itself, at the number of columns that fit, so the art lines up under the letters (monospace).</li>
+</ul>
+
+<script>
+const POST = "Come fight me like a man and I'll show ya how to fight. I've been training all week and nobody on this board can take a punch.";
+const AC = [{ at: POST.indexOf('man'), len: 3, to: 'Goomba' }, { at: POST.lastIndexOf('fight'), len: 5, to: 'do the Mario' }];
+const TH = { at: POST.indexOf('nobody'), len: 'nobody on this board can take a punch'.length, note: 'bold words' };
+const LT = { at: 0, len: 'Come fight me'.length, kind: 'boos' };
+const TAIL = '...anyway that\'s why I quit the dojo';
+const $ = (s) => document.querySelector(s);
+const form = (n) => document.querySelector(`input[name=${n}]:checked`).value;
+
+/* Tokens: runs of characters with a class, and markers. Each character is a unit a press types. */
+function tokens() {
+  const out = [];
+  let i = 0;
+  const push = (text, cls = '', tag = null) => out.push({ text, cls, tag });
+  while (i < POST.length) {
+    const ac = AC.find((a) => a.at === i);
+    if (ac) { push(form('ac') === 'A' ? `[${ac.to}]` : `[${ac.to}]`, form('ac') === 'A' ? '' : 'inv'); i += ac.len; continue; }
+    if (i === LT.at) { push(POST.slice(i, i + LT.len), 'lt', 'lt'); i += LT.len; if (form('lt') === 'B') push(` (audience ${LT.kind})`, 'dim'); continue; }
+    if (i === TH.at) { push(POST.slice(i, i + TH.len), '', 'th'); i += TH.len; continue; }
+    const next = Math.min(...[...AC.map((a) => a.at), LT.at, TH.at, POST.length].filter((n) => n > i));
+    push(POST.slice(i, next));
+    i = next;
+  }
+  return out;
+}
+
+/* Lays the tokens out into lines of `cols`, word-wrapped, then puts THIS's art under the line the phrase ends on. */
+function layout(cols) {
+  const cells = []; // {ch, cls, tag}
+  for (const t of tokens()) for (const ch of t.text) cells.push({ ch, cls: t.cls, tag: t.tag });
+  const lines = [[]];
+  let word = [];
+  const flushWord = () => {
+    const line = lines[lines.length - 1];
+    if (line.length + word.length > cols && line.length > 0) { while (line.length && line[line.length - 1].ch === ' ') line.pop(); lines.push([]); }
+    lines[lines.length - 1].push(...word);
+    word = [];
+  };
+  for (const c of cells) { word.push(c); if (c.ch === ' ') flushWord(); }
+  flushWord();
+  /* Where the THIS phrase sits: its first and last cell, by line and column. */
+  let first = null, last = null;
+  lines.forEach((l, li) => l.forEach((c, ci) => { if (c.tag === 'th') { if (!first) first = { li, ci }; last = { li, ci }; } }));
+  const rows = lines.map((l) => ({ cells: l }));
+  if (last) {
+    const art = [];
+    const pad = (n) => ' '.repeat(Math.max(0, n));
+    if (form('th') === 'A') {
+      const col = last.ci;
+      art.push(pad(col) + '^');
+      art.push(pad(col) + '|');
+      const label = `THIS: ${TH.note}`;
+      if (col + 5 + label.length <= cols) art.push(pad(col) + '|___ ' + label);
+      else if (col >= label.length + 4) art.push(pad(col - label.length - 4) + label + ' ___|');
+      else { art.push(pad(col) + '|'); art.push(label); }
+    } else {
+      const from = last.li === first.li ? first.ci : 0;
+      art.push(pad(from) + '^'.repeat(last.ci - from + 1));
+      art.push(pad(from) + `\\__ THIS: ${TH.note}`);
+    }
+    rows.splice(last.li + 1, 0, ...art.map((a) => ({ cells: [...a].map((ch) => ({ ch, cls: 'bright', tag: null })), art: true })));
+  }
+  /* You Were Saying?'s tail, after the words. */
+  if (form('yw') === 'A') {
+    rows.push({ cells: [...TAIL].map((ch) => ({ ch, cls: 'ywa', tag: 'yw' })) });
+  } else {
+    rows.push({ cells: [] });
+    rows.push({ cells: [...'C:\\DW\\POSTS> type continued.txt'].map((ch) => ({ ch, cls: 'dim', tag: null })) });
+    rows.push({ cells: [...TAIL].map((ch) => ({ ch, cls: '', tag: 'yw' })) });
+  }
+  const units = [];
+  rows.forEach((r, i) => { units.push(...r.cells); if (i < rows.length - 1) units.push({ ch: '\n', cls: '', tag: null }); });
+  return units;
+}
+
+let units = [], shown = 0, heard = false;
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+function cols() {
+  const term = $('#term');
+  const probe = document.createElement('span');
+  probe.textContent = 'M'.repeat(50);
+  probe.style.font = getComputedStyle(term).font;
+  probe.style.visibility = 'hidden'; probe.style.position = 'absolute';
+  document.body.append(probe);
+  const w = probe.getBoundingClientRect().width / 50;
+  probe.remove();
+  const inner = term.clientWidth - 28;
+  return Math.max(20, Math.floor(inner / w));
+}
+function paint() {
+  const html = (from, to) => {
+    let s = '';
+    for (let i = from; i < to; i++) {
+      const u = units[i];
+      const cls = u.tag === 'lt' && heard ? 'bright' : u.cls === 'lt' ? '' : u.cls;
+      s += cls ? `<span class="${cls}">${esc(u.ch)}</span>` : esc(u.ch);
+    }
+    return s;
+  };
+  $('#out').innerHTML = html(0, shown) + '<span class="cursor"></span><span class="rest">' + html(shown, units.length) + '</span>';
+  if (form('ug') === 'fab') foil();
+}
+const FOIL = ['#ff9be8', '#9bd8ff', '#b6ffcb', '#fff39b', '#c9a9ff'];
+function foil() {
+  /* A color terminal: each typed line takes the next of the foil's hues; the post's ink stays light enough to read on the black. */
+  const out = $('#out');
+  const html = out.innerHTML.split('\n');
+  out.innerHTML = html.map((l, i) => `<span class="fabline" style="color:${FOIL[i % FOIL.length]}">${l}</span>`).join('\n');
+}
+let sparkTimer = null;
+function sparkle() {
+  clearInterval(sparkTimer);
+  document.querySelector('.spark')?.remove();
+  if (form('ug') !== 'glitter') return;
+  const term = $('#term');
+  const layer = document.createElement('div');
+  layer.className = 'spark'; layer.setAttribute('aria-hidden', 'true');
+  term.append(layer);
+  const draw = () => {
+    const c = cols() + 2, rows = Math.ceil(term.clientHeight / 21);
+    const typed = units.slice(0, shown).map((u) => u.ch).join('').split('\n');
+    let s = '\n';
+    for (let r = 0; r < rows; r++) {
+      let line = '';
+      for (let k = 0; k < c; k++) {
+        const busy = (typed[r] ?? '')[k] !== undefined && (typed[r] ?? '')[k] !== ' ';
+        line += !busy && Math.random() < 0.025 ? "*+.'"[Math.floor(Math.random() * 4)] : ' ';
+      }
+      s += line + '\n';
+    }
+    layer.textContent = s;
+  };
+  draw();
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) sparkTimer = setInterval(draw, 700);
+}
+function rebuild(keep) {
+  const before = shown;
+  units = layout(cols());
+  shown = keep ? Math.min(before, units.length) : 0;
+  if (!keep) heard = false;
+  paint(); caption(); sparkle();
+}
+
+/* Laugh Track: how near the cursor is to the cue's end (the phrase typed out), 0 to 1, over the 40 units before it. */
+const cueEnd = () => units.findLastIndex((u) => u.tag === 'lt') + 1;
+function caption() {
+  const end = cueEnd();
+  const near = heard ? 0 : Math.max(0, 1 - (end - shown) / 40);
+  const cap = $('#cap');
+  if (heard) cap.innerHTML = `[the audience ${LT.kind}]`;
+  else if (near > 0) cap.innerHTML = `[the crowd murmurs]<i style="width:${Math.round(near * 80)}px"></i>`;
+  else cap.innerHTML = '';
+  murmur(near);
+}
+
+let ctx = null, noise = null, gain = null;
+function audio() {
+  if (ctx || !$('#snd').checked) return ctx;
+  ctx = new AudioContext();
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (0.5 + 0.5 * Math.sin(i / 900));
+  noise = ctx.createBufferSource(); noise.buffer = buf; noise.loop = true;
+  const band = ctx.createBiquadFilter(); band.type = 'bandpass'; band.frequency.value = 700; band.Q.value = 0.8;
+  gain = ctx.createGain(); gain.gain.value = 0;
+  noise.connect(band).connect(gain).connect(ctx.destination); noise.start();
+  return ctx;
+}
+function murmur(near) { if (audio() && gain) gain.gain.setTargetAtTime(near * 0.12, ctx.currentTime, 0.1); }
+function boo() {
+  if (!audio()) return;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'sawtooth'; o.frequency.setValueAtTime(180, ctx.currentTime); o.frequency.linearRampToValueAtTime(120, ctx.currentTime + 1.2);
+  g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.1); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.4);
+  o.connect(g).connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 1.5);
+}
+
+function press(n = 3) {
+  if (shown >= units.length) return;
+  const end = cueEnd();
+  const was = shown;
+  shown = Math.min(units.length, shown + n);
+  if (!heard && was < end && shown >= end) { heard = true; boo(); }
+  paint(); caption();
+}
+const term = $('#term');
+term.addEventListener('keydown', (e) => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace') return;
+  e.preventDefault(); press();
+});
+term.addEventListener('pointerdown', (e) => { term.focus({ preventScroll: true }); press(); });
+document.querySelector('.bench').addEventListener('change', (e) => { if (e.target.id === 'snd') { audio(); return; } rebuild(false); });
+$('#reset').onclick = () => rebuild(false);
+$('#all').onclick = () => press(units.length);
+new ResizeObserver(() => rebuild(true)).observe(term);
+rebuild(false);
+</script>
+</body>
+</html>
