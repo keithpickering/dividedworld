@@ -78,7 +78,7 @@ function useParted(on: boolean, thread: string | null, ready: boolean) {
     const timers = new Set<ReturnType<typeof setTimeout>>();
     let every: ReturnType<typeof setInterval> | undefined;
     const secondLine = () => {
-      const words = document.querySelector('#post-43 .dw-hotbox-words');
+      const words = document.querySelector('#post-43 .kb-act-grid > [data-kb-content-area] [data-kb-words-box]');
       if (!words) return null;
       const tops = new Map<number, { left: number; top: number; height: number }>();
       const walk = document.createTreeWalker(words, NodeFilter.SHOW_TEXT);

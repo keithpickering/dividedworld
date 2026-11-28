@@ -14,7 +14,7 @@ import { MAX_TILE_DENSITY, MAX_TILE_PIXELS, TILE_NEAR_PX, TILE_PX, mostTiles } f
  * touch phone's at 3, so that a tile is drawn at the layer's cap, 2, and the density cap can be seen to hold; the config has no projects, each spec sets
  * its own size as e2e/a11y.spec.ts does). Sizes and rects are CSS px and canvas width and height are canvas px, and the spec keeps them apart. In each:
  *
- * - Pixels. Every frame of the scroll is sampled in the page (`scrollRun`): every canvas under the post's `.kb-act-main` holds at most
+ * - Pixels. Every frame of the scroll is sampled in the page (`scrollRun`): every canvas under the post's row (`.kb-act-grid`: its content area and the layers a card that fills the row draws) holds at most
  *   `MAX_TILE_PIXELS` canvas px and is drawn at most at `MAX_TILE_DENSITY` per CSS px of its box, whatever the screen's density (and on these dense
  *   screens it is drawn at that density, so the cap is exercised and is not passed at 1 by accident); the canvases that hold any number at most
  *   `mostTiles(window height)` times the effect's sheets; no place in the post holds more canvases with pixels than the effect's sheets; none that holds
@@ -230,7 +230,8 @@ async function open(page: Page, id: string): Promise<void> {
 
 /** Reads one frame of the post, in the page (handed over before the page loads, as `window.__kbSample`): the same code runs in every frame of a scroll and at its end. */
 const readFrame = () => {
-  const main = document.querySelector<HTMLElement>('#post-43 .kb-act-main')!;
+  /* The post's row, which holds its content area and a layer a card that fills the row draws in (Hot Box's smoke, `.kb-row-layer`: docs/plans/2026-11-27-season-two-cards-design.md, section 7): a canvas of either is the post's. */
+  const main = document.querySelector<HTMLElement>('#post-43 .kb-act-grid')!;
   const canvases = [...main.querySelectorAll<HTMLCanvasElement>('canvas')].map((c) => {
     const r = c.getBoundingClientRect();
     return { w: c.width, h: c.height, cw: r.width, ch: r.height, top: r.top, bottom: r.bottom, left: r.left };
