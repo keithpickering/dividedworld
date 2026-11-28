@@ -45,14 +45,16 @@ end $$;
 create function pg_temp.draw(who uuid, through uuid, play uuid, cells bit(10000)) returns uuid language plpgsql as $$
 declare got text;
 begin
-  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)::text', who, through, play, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}'::jsonb, cells::text));
+  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 4000)::text', who, through, play, '{"groups": []}'::jsonb, translate(cells::text, '1', 'k'), '[]'::jsonb));
   if got like 'ERROR:%' then raise exception 'a draw was refused: %', got; end if;
   return (got::jsonb ->> 'id')::uuid;
 end $$;
 create function pg_temp.wash(who uuid, through uuid, play uuid, cells bit(10000)) returns uuid language plpgsql as $$
 declare got text;
 begin
-  got := pg_temp.as_val(null, format('select wash_surface(%L, %L, %L, %L, %L)::text', who, through, play, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}'::jsonb, cells::text));
+  -- A wash takes every coat (40 tenths, 'E') of every live draw of the play on its set cells, in the order the draws were made, as the sponge would with presses to spare.
+  got := pg_temp.as_val(null, format('select wash_surface(%L, %L, %L, %L, %L)::text', who, through, play, '{"cuts": []}'::jsonb,
+    (select coalesce(jsonb_agg(jsonb_build_object('draw', c.draw, 'takes', translate(cells::text, '1', 'E')) order by k.created_at, c.draw), '[]'::jsonb) from surface_coats c join acts k on k.id = c.draw where c.play = wash.play)));
   if got like 'ERROR:%' then raise exception 'a wash was refused: %', got; end if;
   return (got::jsonb ->> 'id')::uuid;
 end $$;
@@ -79,9 +81,9 @@ begin
   d2 := pg_temp.draw(cal, c, play, pg_temp.cells(300, 600));
   d3 := pg_temp.draw(ann, a2, play, pg_temp.cells(2000, 100));
   d4 := pg_temp.draw(ann, a2, play, pg_temp.cells(5000, 50));
-  -- Ann washes 0..450: it uncovers 450 cells, 300 of them Bob's (0..300) and 150 Cal's (300..450), whatever the draws first covered.
+  -- Ann washes 0..450: it clears 600 cells in all, 450 of Bob's (0..450) and 150 of Cal's (300..450), each tag being paid and cleared by itself.
   w1 := pg_temp.wash(ann, a, play, pg_temp.cells(0, 450));
-  -- The same cells again: they are bare now, so it uncovers nothing and cuts no one.
+  -- The same cells again: they are bare now, so it clears nothing and cuts no one.
   w2 := pg_temp.wash(ann, a, play, pg_temp.cells(0, 450));
   -- 600..700 is Cal's alone (Bob's tag ended at 600): 100 cells, Cal's.
   w3 := pg_temp.wash(ann, a, play, pg_temp.cells(600, 100));
@@ -91,22 +93,28 @@ end $$;
 
 create temp table sl as select * from pg_temp.world();
 
--- The oracle: what a wash cut, by replaying the wall's Acts backward from it (a cell counts for the draw that last inked it, and a cell already bare counts for no one), as jsonb [{draw, cells}] in order of
--- the first cell. The server writes the same figures into the wash's own payload under the lock, from the owners it already holds; this is the other way of reading them, from the Acts alone.
+-- A coat string's painted cells as bits: any character but '0' is a cell.
+create function pg_temp.bits(coats text) returns bit(10000) language sql immutable as $$
+  select translate(coats, '123456789abcdefghijklmnopqrstuvwxyzABCDE', repeat('1', 40))::bit(10000)
+$$;
+-- The oracle: what a wash cut, by replaying the wall's Acts forward to it (a draw holds the cells it painted until a later wash on them, and a wash takes the cells of every older draw that still holds them),
+-- as jsonb [{draw, took}] in the order the draws were made. The server writes the same figures into the wash's own payload under the lock, from the grids it holds; this is the other way of reading them, from the Acts alone.
 create function pg_temp.oracle(in_wash uuid) returns jsonb language plpgsql as $$
 declare
-  w acts%rowtype; rest bit(10000); a record; hit bit(10000); got jsonb := '[]'::jsonb;
+  w acts%rowtype; mine bit(10000); a record; held bit(10000); got jsonb := '[]'::jsonb; later bit(10000); wv record;
 begin
   select * into w from acts x where x.id = in_wash;
-  rest := (w.payload ->> 'cells')::bit(10000);
-  for a in select x.id, x.kind, (x.payload ->> 'cells')::bit(10000) as covers from acts x
-           where x.target_act_id = w.target_act_id and x.kind in ('draw', 'wash') and (x.created_at, x.id) < (w.created_at, w.id) order by x.created_at desc, x.id desc loop
-    exit when bit_count(rest) = 0;
-    hit := rest & a.covers;
-    if a.kind = 'draw' and bit_count(hit) > 0 then got := got || jsonb_build_array(jsonb_build_object('draw', a.id, 'cells', bit_count(hit), 'first', position('1' in hit::text))); end if;
-    rest := rest & ~a.covers;
+  select coalesce(bit_or(pg_temp.bits(e ->> 'takes')), repeat('0', 10000)::bit(10000)) into mine from jsonb_array_elements(w.payload -> 'takes') e;
+  for a in select d.id, pg_temp.bits(d.payload ->> 'coats') as paint, d.created_at, d.target_act_id from acts d
+           where d.target_act_id = w.target_act_id and d.kind = 'draw' and (d.created_at, d.id) < (w.created_at, w.id) order by d.created_at, d.id loop
+    held := a.paint;
+    for wv in select pg_temp.bits(e ->> 'takes') as cells from acts v, jsonb_array_elements(v.payload -> 'takes') e
+             where v.target_act_id = w.target_act_id and v.kind = 'wash' and (v.created_at, v.id) > (a.created_at, a.id) and (v.created_at, v.id) < (w.created_at, w.id) loop
+      held := held & ~wv.cells;
+    end loop;
+    if bit_count(held & mine) > 0 then got := got || jsonb_build_array(jsonb_build_object('draw', a.id::text, 'took', bit_count(held & mine))); end if;
   end loop;
-  return coalesce((select jsonb_agg(jsonb_build_object('draw', e ->> 'draw', 'took', (e -> 'cells')) order by (e ->> 'first')::integer) from jsonb_array_elements(got) e), '[]'::jsonb);
+  return got;
 end $$;
 
 -- ---- 1. A wash records what it uncovered and whom it cut, in its own payload, written under the lock ----
@@ -116,13 +124,13 @@ declare
   got jsonb;
 begin
   select * into w from sl;
-  select payload - 'cells' - 'strokes' into got from acts where id = w.w1;
-  if got is distinct from jsonb_build_object('uncovered', 450, 'cut', jsonb_build_array(jsonb_build_object('draw', w.d1, 'took', 300), jsonb_build_object('draw', w.d2, 'took', 150))) then
-    raise exception 'the first wash took 450 cells, 300 of Bob''s and 150 of Cal''s: %', got;
+  select payload - 'cuts' - 'takes' into got from acts where id = w.w1;
+  if got is distinct from jsonb_build_object('uncovered', 600, 'cut', jsonb_build_array(jsonb_build_object('draw', w.d1, 'took', 450), jsonb_build_object('draw', w.d2, 'took', 150))) then
+    raise exception 'the first wash cleared 600 cells, 450 of Bob''s and 150 of Cal''s: %', got;
   end if;
-  select payload - 'cells' - 'strokes' into got from acts where id = w.w2;
+  select payload - 'cuts' - 'takes' into got from acts where id = w.w2;
   if got is distinct from jsonb_build_object('uncovered', 0, 'cut', '[]'::jsonb) then raise exception 'a wash over bare cells took none: %', got; end if;
-  select payload - 'cells' - 'strokes' into got from acts where id = w.w3;
+  select payload - 'cuts' - 'takes' into got from acts where id = w.w3;
   if got is distinct from jsonb_build_object('uncovered', 100, 'cut', jsonb_build_array(jsonb_build_object('draw', w.d2, 'took', 100))) then raise exception 'the third wash took 100 of Cal''s: %', got; end if;
   if exists (select 1 from acts where id in (w.d1, w.d2, w.d3, w.d4) and (payload ? 'cut' or payload ? 'uncovered')) then raise exception 'a draw records neither'; end if;
   if exists (select 1 from pg_proc where proname = 'wash_effect') then raise exception 'there is no per-row replay: the figures are stored'; end if;
@@ -151,7 +159,7 @@ begin
   end loop;
   if bad <> 0 then raise exception 'the stored figures differ from the replay in % of the washes', bad; end if;
   -- A draw that arrives carrying the keys keeps neither: they are the server's.
-  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)::text', m_bob, m_b, pl, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}], "cut": [1], "uncovered": 999}'::jsonb, pg_temp.cells(9000, 5)::text));
+  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 4000)::text', m_bob, m_b, pl, '{"groups": [], "cut": [1], "uncovered": 999}'::jsonb, translate(pg_temp.cells(9000, 5)::text, '1', 'k'), '[]'::jsonb));
   if got like 'ERROR:%' or exists (select 1 from acts where id = (got::jsonb ->> 'id')::uuid and (payload ? 'cut' or payload ? 'uncovered')) then raise exception 'a draw keeps neither key: %', got; end if;
 end $$;
 
@@ -167,8 +175,8 @@ begin
   if bobs -> 0 is distinct from jsonb_build_object('act', w.d1, 'kind', 'draw', 'play', w.play, 'post', w.post, 'character', w.b, 'mine', w.b, 'at', bobs -> 0 -> 'at', 'cells', 600) then
     raise exception 'Bob''s draw row: its Act, the play and post, the character, its 600 cells: %', bobs -> 0;
   end if;
-  if bobs -> 1 is distinct from jsonb_build_object('act', w.w1, 'kind', 'cut', 'play', w.play, 'post', w.post, 'character', w.a, 'mine', w.b, 'at', bobs -> 1 -> 'at', 'cells', 300) then
-    raise exception 'Bob''s cut row: the wash, its character, the 300 of his cells it took: %', bobs -> 1;
+  if bobs -> 1 is distinct from jsonb_build_object('act', w.w1, 'kind', 'cut', 'play', w.play, 'post', w.post, 'character', w.a, 'mine', w.b, 'at', bobs -> 1 -> 'at', 'cells', 450) then
+    raise exception 'Bob''s cut row: the wash, its character, the 450 of his cells it took: %', bobs -> 1;
   end if;
   if (bobs -> 0 ->> 'at')::timestamptz >= (bobs -> 1 ->> 'at')::timestamptz then raise exception 'the cut row is the wash''s own time, after the draw'; end if;
   cals := pg_temp.read(w.cal, 'my_draws');
@@ -192,7 +200,7 @@ begin
   select * into w from sl;
   anns := pg_temp.read(w.ann, 'my_walls_drawn_on');
   if (select array_agg(r ->> 'kind' || ':' || (r ->> 'character')::uuid || ':' || (r ->> 'cells')) from jsonb_array_elements(anns) r)
-     is distinct from array['draw:' || w.b || ':600', 'draw:' || w.c || ':600', 'wash:' || w.a || ':450', 'wash:' || w.a || ':0', 'wash:' || w.a || ':100', 'wash:' || w.a || ':50'] then
+     is distinct from array['draw:' || w.b || ':600', 'draw:' || w.c || ':600', 'wash:' || w.a || ':600', 'wash:' || w.a || ':0', 'wash:' || w.a || ':100', 'wash:' || w.a || ':50'] then
     raise exception 'Ann reads the others'' draws and her own washes, each wash with the cells it uncovered (the second, none), and not her own mask''s draw: %', anns;
   end if;
   if exists (select 1 from jsonb_array_elements(anns) r where (r ->> 'mine')::uuid <> w.a or (r ->> 'post')::uuid <> w.post or (r ->> 'play')::uuid <> w.play) then raise exception 'each row is for her post''s character: %', anns; end if;

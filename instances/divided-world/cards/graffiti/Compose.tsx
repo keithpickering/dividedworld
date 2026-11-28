@@ -10,27 +10,36 @@
  *   splat is scrubbed. It asks its own question before leaving (`asks`), as there is no engine compose to ask it.
  *
  * **The drawing.** A press draws and never scrubs: the surface is lifted (`data-kb-over-ink`), so Whoops! and the wall start nothing under it.
- * Strokes are kept in shares of the post body's box to four decimals, with the drawer's `aspect`, thinned of points under a few pixels apart, within
- * the bounds of graffiti.ts (120 strokes, 300 points to a stroke, 3,000 in all; past one nothing more is added and the toolbar says so). The touch
+ * Strokes are kept in px of the post body's box, at this screen's text size (a Stock stroke is 1.07 ems wide), thinned of points under a few pixels
+ * apart, within the bounds of graffiti.ts (120 strokes, 300 points to a stroke, 3,000 in all; past one nothing more is added and the toolbar says so). The touch
  * rules are the wall's and Whoops!'s (../wiping.ts): a mouse or pen is read by pointer events and a finger by touch events; a quick swipe up or down is the page's
  * and draws nothing, a sideways swipe or a press held draws, a tap is a dab, and a second finger is the page's. A fine mouse shows a drawn can
  * (whoops/cursor.ts, mode `can`). Freehand is a pointer act; the Stencils tab is the keyboard's path to everything it can make, at the cost of a
  * tag.
  *
- * **The meter** counts this drawing's cells as it grows, unioned with the wall's own cells (draft.ts), so ink over ink adds nothing. A refusal
- * from the server is shown in the toolbar in its words and the drawing is kept.
+ * **Tagging** (docs/plans/2026-11-27-graffiti-everywhere-design.md, sections 1 to 4). While draw mode is open the post's words carry a `TextLayer` of
+ * `mark` runs (`Marked`), an empty `data-kb-word-mark` element at each word's first character, words split on whitespace in the visible text, so every
+ * word's left edge and line can be measured; images carry `data-kb-img`. At Tag it the drawing is measured against them (`measureTagging`) and `inputOf`
+ * (draft.ts) groups it and attaches each group to what is under it. The post's version is what the page's read carries with the post (`version`: its latest edit, or its own Act), or the tails' version
+ * after an edit lands in the page; where neither says (a post edited since the page read it) a group is attached to the box, which any version accepts.
+ *
+ * **The meter** is the wall's `covered` plus this drawing's own painted cells, counted in full (draft.ts). A refusal from the server is shown in the
+ * toolbar in its words and the drawing is kept.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { forgedList, forgedSet } from '../../../../engine/bbcode/quoted.ts';
+import { contentOf } from '../../../../engine/rules/anchor.ts';
+import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
 import type { ComposeProps } from '../../../../engine/ui/cards/types.ts';
-import { bodyOf } from '../../../../engine/ui/cards/body.ts';
+import { bodyOf, wordsBoxOf } from '../../../../engine/ui/cards/body.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
-import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
+import { LOST_ANSWER, type Act, type Answer } from '../../../../engine/ui/data/api.ts';
 import { usePlayer } from '../../../../engine/ui/player.tsx';
 import { BOUNDS, CANS, type Can, type Cap } from '../graffiti.ts';
 import { cursor } from '../whoops/cursor.ts';
 import { HOLD_MS, swipeKind } from '../wiping.ts';
-import { addPoint, inputOf, lastCan, meterOf, paintAct, rememberCan, undo, wallCells, type Draft, type Pt, type Stroke } from './draft.ts';
+import { addPoint, bare, inputOf, lastCan, meterOf, paintAct, rememberCan, undo, wordsOf, type Draft, type Picture, type Pt, type Stroke, type Tagging, type Word } from './draft.ts';
 import { paintWall, wallDensity, type Box, type WallAct } from './spray.ts';
 import type { StencilKey } from './stencils.ts';
 import { dockHostOf, Toolbar, type ToolbarTab } from './Toolbar.tsx';
@@ -42,9 +51,73 @@ export const LEAVE_ASK = 'Leave without tagging? Your drawing isn\'t saved.';
 const DEFAULT_LIMIT = 40;
 /** Points closer than this to the one before are dropped, px. */
 const MIN_STEP_PX = 4;
-const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
-const clamp = (n: number) => Math.min(1, Math.max(0, n));
+const hundredth = (n: number) => Math.round(n * 100) / 100;
+const clamp = (n: number, most: number) => Math.min(most, Math.max(0, n));
 const NO_ACTS: readonly WallAct[] = [];
+/** The text size a screen is taken to have where it cannot be read: the board's 15px. */
+const DEFAULT_EM = 15;
+
+/* ---------------------------------------------------------------- the marks and the layout ---- */
+
+const MARK = 'data-kb-word-mark';
+
+/** The post's visible text and images as the screen draws them (the renderer's verdict on its quotes included). */
+const contentFor = (post: Act) => contentOf(String(post.currentPayload.body ?? ''), forgedSet(forgedList(post.currentPayload)));
+
+/** The version a post is at as its own Act says: the page's `version` unless the post has been edited since (an `editedAt` the version does not account for), else its own id while it has no edit; null where it is not known. */
+const currentVersionOf = (post: Act): string | null => {
+  if (post.editedAt === null) return post.version ?? post.id;
+  return post.version !== undefined && post.version !== post.id ? post.version : null;
+};
+
+/** A mark at each word's first character: the empty element a word's left and line are measured by. */
+function marksOf(text: string): readonly TextRun[] {
+  return wordsOf(text).map(({ start }): TextRun => ({
+    start, end: start, key: `kbgw${start}`, z: 0, mode: 'mark',
+    render: ({ key }) => <span key={key} {...{ [MARK]: start }} aria-hidden="true" />,
+  }));
+}
+
+/** The post's words with the marks draw mode measures them by laid over them. */
+export function Marked({ post, children }: { readonly post: Act; readonly children: ReactNode }) {
+  const body = String(post.currentPayload.body ?? ''), forged = (forgedList(post.currentPayload) ?? []).join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the words and their verdict are what the marks are made from
+  const runs = useMemo(() => marksOf(contentFor(post).text), [body, forged]);
+  return <TextLayer runs={runs}>{children}</TextLayer>;
+}
+
+/** The text size of the post's words in px, as this screen draws them. */
+function emOf(surface: HTMLElement | null): number {
+  const body = surface ? bodyOf(surface) : null;
+  const el = body ? wordsBoxOf(body) ?? body : null;
+  const px = el ? parseFloat(getComputedStyle(el).fontSize) : Number.NaN;
+  return Number.isFinite(px) && px > 0 ? px : DEFAULT_EM;
+}
+
+/**
+ * What a drawing is tagged against on this screen now: each word's mark and each image, in px from the surface's top left (the post body's box), the post's
+ * text and images, and the version a tag would name. Read at Tag it, never while drawing.
+ */
+function measureTagging(surface: HTMLElement | null, box: Box, post: Act | null, version: string | null): Tagging {
+  const emPx = emOf(surface);
+  const body = surface ? bodyOf(surface) : null;
+  if (!surface || !body || !post || version === null) return { ...bare(box, emPx), version };
+  const content = contentFor(post);
+  const lens = new Map(wordsOf(content.text).map((w) => [w.start, w.len]));
+  const origin = surface.getBoundingClientRect();
+  const own = (el: Element) => bodyOf(el) === body;
+  const words = [...body.querySelectorAll(`[${MARK}]`)].filter(own).flatMap((el): Word[] => {
+    const start = Number(el.getAttribute(MARK)), len = lens.get(start);
+    if (len === undefined) return [];
+    const r = el.getBoundingClientRect();
+    return [{ start, len, x: r.left - origin.left, y: r.top - origin.top, h: r.height > 0 ? r.height : 1.4 * emPx }];
+  });
+  const pictures = [...body.querySelectorAll('[data-kb-img]')].filter(own).flatMap((el): Picture[] => {
+    const r = el.getBoundingClientRect();
+    return [{ n: Number(el.getAttribute('data-kb-img')), x: r.left - origin.left, y: r.top - origin.top, w: r.width, h: r.height }];
+  });
+  return { box, emPx, version, text: content.text, images: content.images, words, pictures };
+}
 
 const FULL: Record<'strokes' | 'points', string> = {
   strokes: `That's the most one tag can hold: ${BOUNDS.strokes} strokes. Tag it, or Undo a stroke to make room.`,
@@ -54,9 +127,11 @@ const FULL: Record<'strokes' | 'points', string> = {
 export interface DrawModeProps {
   /** The post body's box (px): what a stroke's shares are of, and its aspect. Nothing is drawn before it is known. */
   readonly box: Box | null;
-  /** The wall's live Acts, oldest first, whose cells the drawing is added to; null where they are not read yet. */
-  readonly wall: readonly WallAct[] | null;
-  /** The cells the wall covers, from the page's read: the meter's start while `wall` is null. */
+  /** No longer read: the meter counts the wall's `covered` and the drawing's own cells, and never the wall's strokes (design section 7). Kept so a host that still passes it type-checks. */
+  readonly wall?: readonly WallAct[] | null;
+  /** The post the drawing is on: what its tags are attached to (its words, its images, its current version). Without it every group is attached to the box. */
+  readonly post?: Act;
+  /** The cells the wall covers, from the page's read: the meter's start. */
   readonly covered: number;
   /** The most cells the wall may cover: the card's limit as cells. */
   readonly most: number;
@@ -66,7 +141,7 @@ export interface DrawModeProps {
   readonly dockPending?: boolean;
   /** Ask the question before leaving here (a host that is no engine compose); false where the engine asks (`hold`, `cancel`). */
   readonly asks: boolean;
-  /** Land the drawing: `{ strokes }` or `{ stencil, can, spot }`. The answer is the server's, or its refusal in its words. */
+  /** Land the drawing: `{ box, groups }` or `{ stencil, can, spot }`. The answer is the server's, or its refusal in its words. */
   readonly submit: (input: unknown) => Promise<Answer<unknown>>;
   /** Leave. Never asks where `asks` is false: the engine has asked. */
   readonly cancel: () => void;
@@ -108,17 +183,29 @@ export function DrawMode(p: DrawModeProps) {
   const draft: Draft | null = freehand ?? (tab === 'stencils' && stencil !== null ? { kind: 'stencil', stencil, can, spot } : null);
   /* A new object each render: the strokes change in place, so the memos below are keyed by what they change with. */
   const version = strokes.current.reduce((n, s) => n + s.points.length, strokes.current.length);
-  const cells = useMemo(() => (p.wall ? wallCells(p.wall) : null), [p.wall]);
+  /* While the pointer is down the meter and the preview do not group the drawing again at every point (draft.ts `groupsIn`); the lift renders once more, grouped in full. */
+  const live = useRef<Live | null>(null);
+  const inking = live.current !== null;
+  /* What a drawing is counted and previewed against needs no measuring of the words: the attachment changes neither (draft.ts `bare`). */
+  const em = emOf(surfaceEl);
+  const frame = useMemo(() => bare(p.box ?? { w: 1, h: 1 }, em), [p.box?.w, p.box?.h, em]); // eslint-disable-line react-hooks/exhaustive-deps
   const meter = useMemo(
-    () => meterOf(cells, p.covered, draft, p.most),
+    () => meterOf(p.covered, draft, p.most, frame, inking),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cells, p.covered, p.most, tab, stencil, can, spot, version, strokes.current.length],
+    [p.covered, p.most, frame, tab, stencil, can, spot, version, strokes.current.length, inking],
   );
+  /* The version a tag names is the version of the words the marks were measured against, which is the post this component holds: the version its read carried
+     with its body (`currentVersionOf`). The tails the page holds can be ahead of that body (an edit they have already delivered that the post has not been refreshed
+     with), and a newer version beside the old words' offsets is a tag the server cannot refuse; so tails are not read here. A post edited since its page read it (`editedAt` set while
+     `version` is still its own id or absent) has no known version: its groups are attached to the box, which any version accepts. A stale version is refused by the server ("reload"). */
+  const postVersion = p.post ? currentVersionOf(p.post) : null;
   const held = strokes.current.length > 0 || stencil !== null;
 
   const now = useRef({ can, cap, box: p.box, locked: false, busy: false, asking: null as string | null, tab });
   now.current = { can, cap, box: p.box, locked: busy || asking !== null, busy, asking, tab };
 
+  /** The pointer lifts (or is taken): the drawing is rendered once more, now grouped in full. */
+  const lift = () => { live.current = null; setVersion((v) => v + 1); };
   const changed = () => { setVersion((v) => v + 1); setRefusal(null); };
 
   /* ---------------------------------------------------- what the host is told ---- */
@@ -130,9 +217,9 @@ export function DrawMode(p: DrawModeProps) {
   const onDraft = useRef(p.onDraft);
   onDraft.current = p.onDraft;
   const act = useMemo(
-    () => paintAct(draft),
+    () => paintAct(draft, frame, inking),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tab, stencil, can, spot, version, strokes.current.length],
+    [frame, tab, stencil, can, spot, version, strokes.current.length, inking],
   );
   useEffect(() => { onDraft.current?.(act); }, [act]);
   useEffect(() => () => { onDraft.current?.(null); }, []);
@@ -168,7 +255,7 @@ export function DrawMode(p: DrawModeProps) {
     setBusy(true);
     setRefusal(null);
     let answer: Answer<unknown>;
-    try { answer = await p.submit(inputOf(draft)); } catch { answer = { ok: false, error: LOST_ANSWER, uncertain: true }; }
+    try { answer = await p.submit(inputOf(draft, measureTagging(surfaceEl, p.box ?? frame.box, p.post ?? null, postVersion))); } catch { answer = { ok: false, error: LOST_ANSWER, uncertain: true }; }
     if (!alive.current) return;
     setBusy(false);
     if (!answer.ok) { setRefusal(answer.error); return; }
@@ -184,16 +271,13 @@ export function DrawMode(p: DrawModeProps) {
 
   /* ------------------------------------------------------------ a stroke ---- */
 
-  const live = useRef<Live | null>(null);
   const gesture = useRef<Gesture | null>(null);
 
-  /** Where a point of the screen lies in the post body's box, in shares of it, to a ten-thousandth. */
-  const shareAt = (clientX: number, clientY: number): Pt => {
-    const el = surfaceEl!;
-    const rect = el.getBoundingClientRect();
+  /** Where a point of the screen lies in the post body's box, in px from its top left, to a hundredth. */
+  const pointAt = (clientX: number, clientY: number): Pt => {
+    const rect = surfaceEl!.getBoundingClientRect();
     const box = now.current.box!;
-    const w = rect.width > 0 ? rect.width : box.w, h = rect.height > 0 ? rect.height : box.h;
-    return [tenThousandth(clamp((clientX - rect.left) / w)), tenThousandth(clamp((clientY - rect.top) / h))];
+    return [hundredth(clamp(clientX - rect.left, box.w)), hundredth(clamp(clientY - rect.top, box.h))];
   };
 
   const begin = (clientX: number, clientY: number, pointer: number, touch: boolean): boolean => {
@@ -202,7 +286,7 @@ export function DrawMode(p: DrawModeProps) {
     const total = strokes.current.reduce((n, s) => n + s.points.length, 0);
     if (strokes.current.length >= BOUNDS.strokes) { setNotice(FULL.strokes); return false; }
     if (total >= BOUNDS.totalPoints) { setNotice(FULL.points); return false; }
-    strokes.current.push({ can: c, cap: k, aspect: Number((box.w / box.h).toPrecision(3)), points: [shareAt(clientX, clientY)] });
+    strokes.current.push({ can: c, cap: k, points: [pointAt(clientX, clientY)] });
     live.current = { pointer, touch, lx: clientX, ly: clientY };
     changed();
     return true;
@@ -210,7 +294,7 @@ export function DrawMode(p: DrawModeProps) {
 
   const extend = (s: Live, clientX: number, clientY: number) => {
     if (Math.hypot(clientX - s.lx, clientY - s.ly) < MIN_STEP_PX) return;
-    const added = addPoint(strokes.current, shareAt(clientX, clientY));
+    const added = addPoint(strokes.current, pointAt(clientX, clientY));
     if (added !== 'ok') { setNotice(FULL[added]); return; }
     s.lx = clientX;
     s.ly = clientY;
@@ -236,7 +320,7 @@ export function DrawMode(p: DrawModeProps) {
   const onPointerEnd = (e: PointerEvent) => {
     const s = live.current;
     if (e.pointerType === 'touch' || !s || s.touch || e.pointerId !== s.pointer) return;
-    live.current = null;
+    lift();
     cursor.press(false);
     if (e.type === 'pointerup') showCursor(e);
     else if (surfaceEl) cursor.leave(surfaceEl);
@@ -251,7 +335,7 @@ export function DrawMode(p: DrawModeProps) {
   const onTouchStart = (e: TouchEvent) => {
     if (e.touches.length > 1) {
       if (gesture.current) { settle(gesture.current); gesture.current.state = 'page'; }
-      live.current = null;
+      lift();
       return;
     }
     const tc = e.changedTouches[0];
@@ -291,7 +375,7 @@ export function DrawMode(p: DrawModeProps) {
     /* A tap on the post is one dab, as a click is. */
     if (e.type === 'touchend' && g.state === 'wait') begin(g.x0, g.y0, g.id, true);
     gesture.current = null;
-    if (live.current?.touch) live.current = null;
+    if (live.current?.touch) lift();
   };
 
   /* The input is native listeners on the lifted surface, each calling the latest handler: a touchmove must be able to refuse the page's scroll. */
@@ -345,7 +429,7 @@ export function DrawMode(p: DrawModeProps) {
 }
 
 /** The card's `CardUi.Compose`: the drawing beneath every layer of the post, and the toolbar under the post. */
-export function Compose({ box, under, submit, cancel, hold, ready, children }: ComposeProps) {
+export function Compose({ post, box, under, submit, cancel, hold, ready, children }: ComposeProps) {
   const { settings } = useKayfa();
   const most = (settings.cardSettings['graffiti.limit'] ?? DEFAULT_LIMIT) * 100;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -399,10 +483,10 @@ export function Compose({ box, under, submit, cancel, hold, ready, children }: C
   const onBox: CSSProperties = size ? { left: cell ? cell.left : 0, top: cell ? cell.top : 0, width: size.w, height: size.h } : {};
   return (
     <>
-      {children}
+      <Marked post={post}>{children}</Marked>
       {under && size && createPortal(<canvas ref={canvasRef} className="kb-graffiti-ink" data-kb-effect-ink aria-hidden="true" style={onBox} />, under)}
       <DrawMode
-        box={size} wall={NO_ACTS} covered={0} most={most} dockHost={dockHost} dockPending={dockHost === null} asks={false}
+        box={size} post={post} covered={0 /* a play makes its own wall: a post holds one live wall at a time (stack 1), so a new wall covers nothing; a Draw on a wall that is there is DrawMode with its `covered` */} most={most} dockHost={dockHost} dockPending={dockHost === null} asks={false}
         submit={(first) => submit({}, first)} cancel={cancel} hold={hold} onDraft={setDraft} overlayStyle={onBox} overlayHost={under}
       />
       <div ref={setFallback} className="kb-graffiti-dockhost" />

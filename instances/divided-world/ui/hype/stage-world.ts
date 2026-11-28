@@ -104,6 +104,11 @@ function wave(y: number, x0: number, x1: number, amp: number, n = 24): [number, 
   });
 }
 
+/** The box a stage wall is drawn in, in ems: a post body three times as wide as it is tall, at the board's 15px. */
+const WALL_BOX = { w: 60, h: 20 } as const;
+/** Shares of that box (0 to 1, across and down) as ems from the box's center, a group's own units. */
+const ems = (points: [number, number][]): [number, number][] => points.map(([x, y]) => [Math.round((x - 0.5) * WALL_BOX.w * 100) / 100, Math.round((y - 0.5) * WALL_BOX.h * 100) / 100]);
+
 /** Seeds the world on `fake`, for `instance`. */
 export function buildStage(fake: Fake, instance: Instance, options: StageOptions): Made {
   const now = Date.now();
@@ -302,11 +307,11 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
     await setOf('fourDChess', second, '4d-chess', who('D-Guy'), dguy, { card: 'whoops', quadrant: 'excitedNegative' });
     await setOf('steelChair', second, 'steel-chair', who('Chadluminum'), kindWords, {}, { says: 'to be fair' });
     for (const wall of walls) {
-      const drawn = await as(owner[wall.by]!, () => fake.draw(wall.play, who(wall.by), { strokes: [
-        { can: 'pink', cap: 'fat', aspect: 3, points: wave(0.3, 0.04, 0.9, 0.08) },
-        { can: 'lime', cap: 'fat', aspect: 3, points: wave(0.6, 0.1, 0.95, 0.12) },
-        { can: 'orange', cap: 'stock', aspect: 3, points: wave(0.82, 0.05, 0.7, 0.06) },
-      ] }));
+      const drawn = await as(owner[wall.by]!, () => fake.draw(wall.play, who(wall.by), { box: WALL_BOX, groups: [{ at: [0.5, 0.5], anchor: { kind: 'box' }, unit: 'em', strokes: [
+        { can: 'pink', cap: 'fat', points: ems(wave(0.3, 0.04, 0.9, 0.08)) },
+        { can: 'lime', cap: 'fat', points: ems(wave(0.6, 0.1, 0.95, 0.12)) },
+        { can: 'orange', cap: 'stock', points: ems(wave(0.82, 0.05, 0.7, 0.06)) },
+      ] }] }));
       if (!drawn.ok) throw new Error(`the stage's wall was refused: ${drawn.error}`);
     }
   })();

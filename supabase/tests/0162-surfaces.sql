@@ -1,13 +1,13 @@
 -- Surfaces (supabase/migrations/0317_surfaces.sql; docs/plans/2026-11-11-graffiti-plan.md, Task 2): a play whose layer any character may add to, kept as draws and washes (Acts) and a derived row
--- of the play's own (`surfaces`): the covered cells, the draw that last inked each, and the live list. The card is this file's own (`sfwall`, with the surface flag); every name is prefixed sf.
+-- of the play's own (`surfaces`): the covered cells (the sum of each live draw's painted cells, paid for tag by tag since 0456), and the live list. The card is this file's own (`sfwall`, with the surface flag); every name is prefixed sf.
 --
 --  1. a play opens an empty surface, and a second wall card on the post is refused by the stack
---  2. a draw covers its cells and returns `covered`; a draw over a covered cell adds nothing
+--  2. a draw covers its cells and returns `covered`; a draw over a covered cell is paid for again
 --  3. a draw past the limit is refused with the wall's own figures and writes nothing
 --  4. two draws racing under the limit cannot both pass (two sessions)
---  5. a wash by the post's character uncovers its cells; by anyone else, the author's other mask included, is refused; a wash on a full wall lands; a wash that cuts nothing is not kept
---  6. a draw wholly painted over leaves `live`, and the indices are renumbered
---  7. the 49th live draw is refused; painting over one is the way out, and a wash is never refused for the count
+--  5. a wash by the post's character clears its cells; by anyone else, the author's other mask included, is refused; a wash on a full wall lands; a wash that changes nothing is not kept
+--  6. a draw wholly painted over stays live; a draw that is washed away leaves `live`, and its wash with it
+--  7. the 49th live draw is refused; painting over one is no way out, a wash that clears one is, and a wash is never refused for the count
 --  8. a banned or barred drawer is refused in those checks' own words; a drawer playing the post author's other mask is not
 --  9. an ended play refuses a draw and a wash
 -- 10. rebuild_surface equals the stored row after a mixed run of twenty Acts
@@ -24,7 +24,7 @@ declare
   ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid(); cal uuid := gen_random_uuid();
   a uuid := gen_random_uuid(); b uuid := gen_random_uuid(); c uuid := gen_random_uuid();
   t uuid := gen_random_uuid(); p uuid; pl uuid; said text[]; rounds integer := 8;
-  payload text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+  payload text := '{"groups": []}';
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'sf-race-ann@test.invalid'), (%2$L, 'sf-race-bob@test.invalid'), (%3$L, 'sf-race-cal@test.invalid');
@@ -43,10 +43,10 @@ begin
     $sql$, p, a, t, pl));
     -- Each tag is 3,000 fresh cells on a wall limited to 4,000: either alone passes, both cannot.
     said := tests.race_service(
-      format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)', bob, b, pl, payload, (repeat('0', 0) || repeat('1', 3000) || repeat('0', 7000))),
-      format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)', cal, c, pl, payload, (repeat('0', 3000) || repeat('1', 3000) || repeat('0', 4000))));
-    if (select bit_count(cover) from surfaces where play = pl) > 4000 then raise exception 'round %: two draws both passed the limit (%)', i, said; end if;
-    if (select bit_count(cover) from surfaces where play = pl) is distinct from 3000 then raise exception 'round %: neither draw landed (%)', i, said; end if;
+      format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 4000)', bob, b, pl, payload, (repeat('0', 0) || repeat('k', 3000) || repeat('0', 7000)), '[]'),
+      format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 4000)', cal, c, pl, payload, (repeat('0', 3000) || repeat('k', 3000) || repeat('0', 4000)), '[]'));
+    if (select covered from surfaces where play = pl) > 4000 then raise exception 'round %: two draws both passed the limit (%)', i, said; end if;
+    if (select covered from surfaces where play = pl) is distinct from 3000 then raise exception 'round %: neither draw landed (%)', i, said; end if;
     if (said[1] is null) = (said[2] is null) then raise exception 'round %: exactly one draw should be refused: %', i, said; end if;
     if coalesce(said[1], said[2]) is distinct from 'this wall is 30% covered, and its limit is 40%; this tag would take it to 60%' then raise exception 'round %: the loser is refused with the figures the winner left: %', i, said; end if;
     if (select count(*) from acts where target_act_id = pl and kind = 'draw') is distinct from 1 then raise exception 'round %: one draw is an Act', i; end if;
@@ -59,7 +59,7 @@ declare
   ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid();
   a uuid := gen_random_uuid(); b uuid := gen_random_uuid();
   t uuid := gen_random_uuid(); p uuid; pl uuid; said text[]; landed integer := 0; refused integer := 0; r surfaces%rowtype; s surfaces%rowtype;
-  payload text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+  payload text := '{"groups": []}';
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'sf-rw-ann@test.invalid'), (%2$L, 'sf-rw-bob@test.invalid');
@@ -73,23 +73,23 @@ begin
     perform tests.commit(format($sql$
       insert into acts (id, character, kind, thread, payload) values (%1$L, %2$L, 'post', %3$L, '{"body": "Race me."}');
       insert into acts (id, character, kind, thread, target_act_id, payload) values (%4$L, %2$L, 'card', %3$L, %1$L, '{"card": "sfracewall", "message": "", "config": {}, "layer": 1}');
-      do $x$ begin perform open_surface(%4$L); perform draw_on_surface(%5$L, %6$L, %4$L, %7$L, %8$L, 4000); end $x$;
-    $sql$, p, a, t, pl, bob, b, payload, (repeat('1', 4000) || repeat('0', 6000))));
+      do $x$ begin perform open_surface(%4$L); perform draw_on_surface(%5$L, %6$L, %4$L, %7$L, %8$L, '[]', 4000); end $x$;
+    $sql$, p, a, t, pl, bob, b, payload, (repeat('k', 4000) || repeat('0', 6000))));
     said := tests.race_service(
-      format('select wash_surface(%L, %L, %L, %L, %L)', ann, a, pl, payload, (repeat('1', 1000) || repeat('0', 9000))),
-      format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)', bob, b, pl, payload, (repeat('0', 4000) || repeat('1', 500) || repeat('0', 5500))));
+      format('select wash_surface(%L, %L, %L, %L, %L)', ann, a, pl, '{"cuts": []}', jsonb_build_array(jsonb_build_object('draw', (select draw from surface_coats where play = pl), 'takes', repeat('E', 1000) || repeat('0', 9000)))),
+      format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 4000)', bob, b, pl, payload, (repeat('0', 4000) || repeat('k', 500) || repeat('0', 5500)), '[]'));
     if said[1] is not null then raise exception 'round %: the wash is never refused: %', i, said[1]; end if;
     if said[2] is null then
       landed := landed + 1;
-      if (select bit_count(cover) from surfaces where play = pl) is distinct from 3500 then raise exception 'round %: the draw landed on the freed cells: %', i, (select bit_count(cover) from surfaces where play = pl); end if;
+      if (select covered from surfaces where play = pl) is distinct from 3500 then raise exception 'round %: the draw landed on the freed cells: %', i, (select covered from surfaces where play = pl); end if;
     else
       refused := refused + 1;
       if said[2] is distinct from 'this wall is 40% covered, and its limit is 40%; this tag would take it to 45%' then raise exception 'round %: the draw before the wash is refused with the full wall''s figures: %', i, said[2]; end if;
-      if (select bit_count(cover) from surfaces where play = pl) is distinct from 3000 then raise exception 'round %: the wash alone leaves 3,000 cells', i; end if;
+      if (select covered from surfaces where play = pl) is distinct from 3000 then raise exception 'round %: the wash alone leaves 3,000 cells', i; end if;
     end if;
     select * into s from surfaces where play = pl;
     r := rebuild_surface(pl);
-    if r.cover is distinct from s.cover or r.owners is distinct from s.owners or r.live is distinct from s.live then raise exception 'round %: the stored row is what the Acts rebuild', i; end if;
+    if r.covered is distinct from s.covered or r.washes is distinct from s.washes or r.live is distinct from s.live then raise exception 'round %: the stored row is what the Acts rebuild', i; end if;
   end loop;
 end $$;
 
@@ -100,7 +100,7 @@ declare
   ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid(); cal uuid := gen_random_uuid();
   a uuid := gen_random_uuid(); b uuid := gen_random_uuid(); c uuid := gen_random_uuid();
   t uuid := gen_random_uuid(); p uuid := gen_random_uuid(); pl uuid := gen_random_uuid();
-  payload text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+  payload text := '{"groups": []}';
   url text := current_setting('kayfabb.scratch_url');
   said_a text; said_b text; n integer; s surfaces%rowtype; r surfaces%rowtype; at_a timestamptz; at_b timestamptz;
 begin
@@ -127,13 +127,13 @@ begin
         perform pg_sleep(0.025);
       end loop;
     end $x$;
-    select draw_on_surface(%2$L, %3$L, %1$L, %4$L, %5$L, 9000);
+    select draw_on_surface(%2$L, %3$L, %1$L, %4$L, %5$L, '[]', 9000);
     commit;
-  $sql$, pl, cal, c, payload, (repeat('0', 1000) || repeat('1', 3000) || repeat('0', 6000))));
+  $sql$, pl, cal, c, payload, (repeat('0', 1000) || repeat('k', 3000) || repeat('0', 6000))));
   perform pg_sleep(0.3);
   -- The marker leads the query: pg_stat_activity keeps only the first track_activity_query_size bytes (1024), and a draw's payload would cut a trailing one off.
-  perform extensions.dblink_send_query('ord_a', format($sql$/* sf-order-a */ select draw_on_surface(%L, %L, %L, %L, %L, 9000)$sql$,
-    bob, b, pl, payload, (repeat('1', 3000) || repeat('0', 7000))));
+  perform extensions.dblink_send_query('ord_a', format($sql$/* sf-order-a */ select draw_on_surface(%L, %L, %L, %L, %L, '[]', 9000)$sql$,
+    bob, b, pl, payload, (repeat('k', 3000) || repeat('0', 7000))));
   begin loop select count(*) into n from extensions.dblink_get_result('ord_b') as r(x text); exit when n = 0; end loop;
   exception when others then said_b := sqlerrm; end;
   begin loop select count(*) into n from extensions.dblink_get_result('ord_a') as r(x text); exit when n = 0; end loop;
@@ -147,7 +147,7 @@ begin
   if at_a <= at_b then raise exception 'the draw that took the lock second is the later Act: a at %, b at %', at_a, at_b; end if;
   select * into s from surfaces where play = pl;
   r := rebuild_surface(pl);
-  if r.cover is distinct from s.cover or r.owners is distinct from s.owners or r.live is distinct from s.live then raise exception 'the stored row is what the Acts rebuild when the later writer takes the lock first'; end if;
+  if r.covered is distinct from s.covered or r.washes is distinct from s.washes or r.live is distinct from s.live then raise exception 'the stored row is what the Acts rebuild when the later writer takes the lock first'; end if;
 end $$;
 
 -- ---- 4d. An admin's End this card that commits while a draw waits on the lock: the draw is refused, not landed. B holds the row lock and ends the card; A, already past its early check, waits for the lock. ----
@@ -156,7 +156,7 @@ declare
   ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid();
   a uuid := gen_random_uuid(); b uuid := gen_random_uuid();
   t uuid := gen_random_uuid(); p uuid := gen_random_uuid(); pl uuid := gen_random_uuid();
-  payload text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+  payload text := '{"groups": []}';
   url text := current_setting('kayfabb.scratch_url');
   said_a text; said_b text; n integer;
 begin
@@ -190,7 +190,7 @@ begin
     commit;
   $sql$, pl, ann));
   perform pg_sleep(0.3);
-  perform extensions.dblink_send_query('end_a', format($sql$/* sf-end-a */ select draw_on_surface(%L, %L, %L, %L, %L, 4000)$sql$, bob, b, pl, payload, (repeat('1', 100) || repeat('0', 9900))));
+  perform extensions.dblink_send_query('end_a', format($sql$/* sf-end-a */ select draw_on_surface(%L, %L, %L, %L, %L, '[]', 4000)$sql$, bob, b, pl, payload, (repeat('k', 100) || repeat('0', 9900))));
   begin loop select count(*) into n from extensions.dblink_get_result('end_b') as r(x text); exit when n = 0; end loop;
   exception when others then said_b := sqlerrm; end;
   begin loop select count(*) into n from extensions.dblink_get_result('end_a') as r(x text); exit when n = 0; end loop;
@@ -251,13 +251,15 @@ begin
 end $$;
 
 -- A draw or a wash by the service role, as the act function calls them; the answer as text, or the refusal.
+-- A draw lays 2 coats on each set cell ('k' is 20 tenths); a wash takes every coat (40 tenths, 'E') of every live draw of the play on its set cells, as the sponge would with presses to spare.
 create function pg_temp.draw(who uuid, through uuid, play uuid, cells bit(10000), most integer default 4000) returns text language sql as $$
-  select pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, %s)::text', who, through, play, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}'::jsonb, cells::text, most))
+  select pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, %L, %s)::text', who, through, play, '{"groups": []}'::jsonb, translate(cells::text, '1', 'k'), '[]'::jsonb, most))
 $$;
 create function pg_temp.wash(who uuid, through uuid, play uuid, cells bit(10000)) returns text language sql as $$
-  select pg_temp.as_val(null, format('select wash_surface(%L, %L, %L, %L, %L)::text', who, through, play, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}'::jsonb, cells::text))
+  select pg_temp.as_val(null, format('select wash_surface(%L, %L, %L, %L, %L)::text', who, through, play, '{"cuts": []}'::jsonb,
+    (select coalesce(jsonb_agg(jsonb_build_object('draw', c.draw, 'takes', translate(cells::text, '1', 'E'))), '[]'::jsonb) from surface_coats c where c.play = wash.play)))
 $$;
-create function pg_temp.covered(play uuid) returns integer language sql as $$ select bit_count(cover) from surfaces where surfaces.play = covered.play $$;
+create function pg_temp.covered(play uuid) returns integer language sql as $$ select covered from surfaces where surfaces.play = covered.play $$;
 create function pg_temp.live(play uuid) returns integer language sql as $$ select cardinality(live) from surfaces where surfaces.play = live.play $$;
 create function pg_temp.draws(play uuid) returns integer language sql as $$ select count(*)::integer from acts where target_act_id = draws.play and kind = 'draw' $$;
 
@@ -323,17 +325,15 @@ begin
   pl := (played::jsonb ->> 'id')::uuid;
   select * into s from surfaces where surfaces.play = pl;
   if s.play is null then raise exception 'a play of a surface card opens its surface'; end if;
-  if s.post is distinct from p or bit_count(s.cover) <> 0 or s.live <> '{}' or cardinality(s.owners) <> 10000 or s.most_live <> 48
-     or exists (select 1 from unnest(s.owners) o where o <> 0) then
+  if s.post is distinct from p or s.covered <> 0 or s.live <> '{}' or s.washes <> '{}' or s.most_live <> 48 or exists (select 1 from surface_coats where play = pl) then
     raise exception 'the surface opens empty on its post: %', s;
   end if;
-  if length(s.cover::text) <> 10000 then raise exception 'the cover is 10,000 cells'; end if;
   -- A second wall on the post is refused by the card's stack, in the stack's words.
   played := pg_temp.as_val(null, format('select play_card(%L, %L, %L, %L, %L, 0, %L)::text', bob, 'sfwall', b, p, '{}', ''));
   if played is distinct from 'ERROR: This post is already a wall. Draw on it instead.' then raise exception 'a second wall is refused in the wall''s words: %', played; end if;
 end $$;
 
--- ---- 2 and 3. A draw covers its cells; over a covered cell it adds nothing; past the limit it is refused with the wall's figures ----
+-- ---- 2 and 3. A draw covers its cells; over a covered cell it is paid for again; past the limit it is refused with the wall's figures ----
 do $$
 declare
   ann uuid := tests.account('sf-2-ann'); bob uuid := tests.account('sf-2-bob');
@@ -349,21 +349,20 @@ begin
     raise exception 'a draw answers with its Act, covered and live: %', got;
   end if;
   if pg_temp.covered(w.play) <> 3100 then raise exception 'the row covers 3,100 cells'; end if;
-  if (select (payload ->> 'cells')::bit(10000) from acts where id = d1) is distinct from pg_temp.cells(0, 3100) then raise exception 'the draw keeps its cells in its payload'; end if;
+  if (select payload ->> 'coats' from acts where id = d1) is distinct from translate(pg_temp.cells(0, 3100)::text, '1', 'k') then raise exception 'the draw keeps its coats in its payload'; end if;
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 100));
-  if (got::jsonb ->> 'covered')::integer <> 3100 then raise exception 'a draw over covered cells adds nothing: %', got; end if;
-  if (select owners[1] from surfaces where play = w.play) is distinct from 2 or (select owners[101] from surfaces where play = w.play) is distinct from 1 then raise exception 'the later draw owns the cells it painted over'; end if;
-  -- Past the limit: 3,100 + 1,500 new cells is 46%.
+  if (got::jsonb ->> 'covered')::integer <> 3200 then raise exception 'a draw over covered cells is paid for again: %', got; end if;
+  -- Past the limit: 3,200 + 1,500 cells is 47%.
   before_acts := pg_temp.draws(w.play);
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(3100, 1500));
-  if got is distinct from 'ERROR: this wall is 31% covered, and its limit is 40%; this tag would take it to 46%' then raise exception 'the refusal carries the wall''s figures: %', got; end if;
-  if pg_temp.draws(w.play) <> before_acts or pg_temp.covered(w.play) <> 3100 then raise exception 'a refused draw writes nothing'; end if;
+  if got is distinct from 'ERROR: this wall is 32% covered, and its limit is 40%; this tag would take it to 47%' then raise exception 'the refusal carries the wall''s figures: %', got; end if;
+  if pg_temp.draws(w.play) <> before_acts or pg_temp.covered(w.play) <> 3200 then raise exception 'a refused draw writes nothing'; end if;
   -- Up to the limit exactly is allowed.
-  got := pg_temp.draw(bob, b, w.play, pg_temp.cells(3100, 900));
+  got := pg_temp.draw(bob, b, w.play, pg_temp.cells(3100, 800));
   if (got::jsonb ->> 'covered')::integer <> 4000 then raise exception 'a draw to the limit lands: %', got; end if;
-  -- A draw that adds nothing lands even on a full wall, and the limit is read from the argument.
+  -- A draw over cells already painted costs its own cells, so a full wall refuses it; the limit is read from the argument.
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 10));
-  if got like 'ERROR:%' then raise exception 'a draw that adds no cells lands on a full wall: %', got; end if;
+  if got is distinct from 'ERROR: this wall is 40% covered, and its limit is 40%; this tag would take it to 41%' then raise exception 'a draw over painted cells is refused on a full wall: %', got; end if;
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(5000, 1), 4000);
   if got not like 'ERROR: this wall is 40% covered, and its limit is 40%; this tag would take it to 41%' then raise exception 'the full wall refuses one more cell: %', got; end if;
   -- A limit that is not a whole percent shows rounded down, so the figure after is always above it: 4,060 is 40%, and 4,061 cells is 41%, never "limit 41%, would take it to 41%".
@@ -384,9 +383,8 @@ begin
   got := pg_temp.wash(ann, a, w.play, pg_temp.cells(0, 200));
   if got like 'ERROR:%' then raise exception 'a wash on a full wall lands: %', got; end if;
   if (got::jsonb ->> 'covered')::integer <> 3800 or pg_temp.covered(w.play) <> 3800 or got::jsonb ->> 'kind' <> 'wash' or (got::jsonb ->> 'character')::uuid <> a then
-    raise exception 'a wash uncovers its cells: %', got;
+    raise exception 'a wash clears its cells: %', got;
   end if;
-  if exists (select 1 from surfaces s, generate_series(1, 200) i where s.play = w.play and s.owners[i] <> 0) then raise exception 'washed cells have no owner'; end if;
   -- It stays live: the draw before it is live and inked under it.
   if pg_temp.live(w.play) <> 2 or (select live[2] from surfaces where play = w.play) is distinct from (got::jsonb ->> 'id')::uuid then raise exception 'a wash that cuts live ink stays live: %', got; end if;
   -- Anyone else is refused: another player's mask, and the author's own other mask (a public fact: it is not the post's character).
@@ -408,15 +406,15 @@ begin
   -- A long run of small washes over bare cells does not grow the live list.
   for i in 0..39 loop perform pg_temp.wash(ann, a, w.play, pg_temp.cells(9100 + i, 1)); end loop;
   if (select live from surfaces where play = w.play) is distinct from live_before then raise exception 'a run of washes that cut nothing grows nothing'; end if;
-  -- A wash that is wholly inside an earlier wash's cells leaves the earlier one out (it cut the same ink): the later cuts nothing, then.
+  -- A wash that is wholly inside an earlier wash's cells changes nothing: it is not kept.
   got := pg_temp.wash(ann, a, w.play, pg_temp.cells(10, 50));
   if pg_temp.live(w.play) <> 2 then raise exception 'a second wash over washed cells cuts nothing and is not kept: %', got; end if;
-  -- A wash that is a superset of an earlier one takes its place.
+  -- A wash that is a superset of an earlier one clears more of the draw: both stay live while the draw does.
   got := pg_temp.wash(ann, a, w.play, pg_temp.cells(0, 400));
-  if pg_temp.live(w.play) <> 2 or (select live[2] from surfaces where play = w.play) is distinct from (got::jsonb ->> 'id')::uuid then raise exception 'a wash over the earlier wash takes its place: %', got; end if;
+  if pg_temp.live(w.play) <> 3 or (select live[3] from surfaces where play = w.play) is distinct from (got::jsonb ->> 'id')::uuid then raise exception 'a wash over the earlier wash is live beside it: %', got; end if;
 end $$;
 
--- ---- 6. A draw wholly painted over leaves live; a draw that is washed away leaves live; renumbering ----
+-- ---- 6. A draw wholly painted over stays live (overlap is paid); a draw that is washed away leaves live, and the wash that took it leaves with it ----
 do $$
 declare
   ann uuid := tests.account('sf-6-ann'); bob uuid := tests.account('sf-6-bob');
@@ -428,18 +426,15 @@ begin
   d2 := (pg_temp.draw(bob, b, w.play, pg_temp.cells(1000, 100))::jsonb ->> 'id')::uuid;
   d3 := (pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 100))::jsonb ->> 'id')::uuid;
   select * into s from surfaces where play = w.play;
-  if s.live <> array[d2, d3] then raise exception 'the painted-over draw leaves live, and the rest keep their order: %', s.live; end if;
-  -- Renumbered: d2 is index 1 and d3 index 2.
-  if s.owners[1] <> 2 or s.owners[100] <> 2 or s.owners[1001] <> 1 or s.owners[1100] <> 1 or s.owners[101] <> 0 then raise exception 'the owners are renumbered with live: % %', s.owners[1], s.owners[1001]; end if;
+  if s.live <> array[d1, d2, d3] or s.covered <> 300 then raise exception 'the painted-over draw stays live and its cells are paid twice: % %', s.live, s.covered; end if;
   -- A draw wholly washed away leaves live too, and the wash that took it leaves with it.
   got := pg_temp.wash(ann, a, w.play, pg_temp.cells(1000, 100));
   select * into s from surfaces where play = w.play;
-  if s.live <> array[d3] then raise exception 'a washed-away draw leaves live, and its wash with it: %', s.live; end if;
-  if s.owners[1] <> 1 then raise exception 'renumbered again'; end if;
+  if s.live <> array[d1, d3] or s.covered <> 200 or s.washes <> '{}' then raise exception 'a washed-away draw leaves live, and its wash with it: %', s.live; end if;
   -- All of it gone: nothing is live.
   perform pg_temp.wash(ann, a, w.play, pg_temp.cells(0, 100));
   select * into s from surfaces where play = w.play;
-  if s.live <> '{}' or bit_count(s.cover) <> 0 then raise exception 'an empty wall holds nothing live: %', s.live; end if;
+  if s.live <> '{}' or s.covered <> 0 or exists (select 1 from surface_coats where play = w.play) then raise exception 'an empty wall holds nothing live: %', s.live; end if;
   -- The Acts all stay.
   if pg_temp.draws(w.play) <> 3 then raise exception 'every draw is still an Act'; end if;
 end $$;
@@ -459,12 +454,12 @@ begin
   end loop;
   if pg_temp.live(w.play) <> 48 then raise exception '48 live draws'; end if;
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(100, 1));
-  if got is distinct from 'ERROR: this wall holds 48 tags; paint over one or wait for a wash' then raise exception 'the 49th is refused in the wall''s words: %', got; end if;
+  if got is distinct from 'ERROR: This wall is full: it holds 48 tags. It has room again when its author washes one off.' then raise exception 'the 49th is refused in the wall''s words: %', got; end if;
   if pg_temp.draws(w.play) <> 48 or pg_temp.covered(w.play) <> 48 then raise exception 'a refused draw writes nothing'; end if;
-  -- Painting over one is the way out: the draw it covers leaves live, so the count is still 48.
+  -- Painting over one is no way out: the draw it covers stays live, and the wall still holds 48.
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 1));
-  if got like 'ERROR:%' or pg_temp.live(w.play) <> 48 or exists (select 1 from surfaces where play = w.play and first_draw = any (live)) then raise exception 'painting over a tag is allowed at 48: %', got; end if;
-  -- A wash is never refused for the count.
+  if got is distinct from 'ERROR: This wall is full: it holds 48 tags. It has room again when its author washes one off.' or not exists (select 1 from surfaces where play = w.play and first_draw = any (live)) then raise exception 'painting over a tag frees nothing at 48: %', got; end if;
+  -- A wash is never refused for the count, and one that clears a tag frees its place.
   got := pg_temp.wash(ann, a, w.play, pg_temp.cells(10, 1));
   if got like 'ERROR:%' or pg_temp.live(w.play) <> 47 then raise exception 'a wash lands at 48 and frees a tag: %', got; end if;
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(100, 1));
@@ -535,10 +530,12 @@ begin
   if (select count(*) from acts where target_act_id = w.play and kind in ('draw', 'wash')) is distinct from 20 then raise exception 'twenty Acts'; end if;
   select * into s from surfaces where play = w.play;
   r := rebuild_surface(w.play);
-  if r.cover is distinct from s.cover or r.owners is distinct from s.owners or r.live is distinct from s.live or r.post is distinct from s.post or r.play is distinct from s.play then
+  if r.covered is distinct from s.covered or r.washes is distinct from s.washes or r.live is distinct from s.live or r.post is distinct from s.post or r.play is distinct from s.play then
     raise exception 'rebuild_surface differs from the stored row: live % against %', r.live, s.live;
   end if;
-  if cardinality(s.live) < 2 or bit_count(s.cover) = 0 then raise exception 'the run left something to compare'; end if;
+  if exists (select draw, coats, painted from rebuild_surface_coats(w.play) except select draw, coats, painted from surface_coats where play = w.play)
+     or exists (select draw, coats, painted from surface_coats where play = w.play except select draw, coats, painted from rebuild_surface_coats(w.play)) then raise exception 'rebuild_surface_coats differs from the stored grids'; end if;
+  if cardinality(s.live) < 2 or s.covered = 0 then raise exception 'the run left something to compare'; end if;
 end $$;
 
 -- ---- 11. A set surface card springs with its draft ----
@@ -570,7 +567,10 @@ begin
   if spring -> 'payload' ->> 'did' <> 'landed' or (spring -> 'payload' ->> 'drawn') is distinct from 'true' then raise exception 'the spring says the draft was drawn: %', spring; end if;
   struck := (select k.id from acts k where k.kind = 'card' and k.target_act_id = q1 and k.payload ->> 'card' = 'sfwall');
   if struck is null then raise exception 'the wall landed on the quoting post'; end if;
-  if (select bit_count(cover) from surfaces where play = struck) is distinct from 500 then raise exception 'the draft is the first draw, covering 500 cells: %', (select bit_count(cover) from surfaces where play = struck); end if;
+  if (select covered from surfaces where play = struck) is distinct from 500 then raise exception 'the draft is the first draw, covering 500 cells: %', (select covered from surfaces where play = struck); end if;
+  if (select payload ->> 'cells' from acts d where d.kind = 'draw' and d.target_act_id = struck) is distinct from pg_temp.cells(0, 500)::text or (select coats[1] from surface_coats where play = struck) is distinct from 20::smallint or exists (select 1 from surface_places where draw in (select id from acts where target_act_id = struck)) then
+    raise exception 'a draft is laid as an old-shaped draw, by the legacy rule (20 tenths on each set cell), with no places';
+  end if;
   if not exists (select 1 from acts d where d.kind = 'draw' and d.target_act_id = struck and d.character = a) then raise exception 'the first draw is by the setter'; end if;
   if exists (select 1 from face_down_draws where play = set1) then raise exception 'the draft row is deleted once read'; end if;
   -- The draft over the limit: the wall opens bare, and the spring says so.
@@ -581,7 +581,7 @@ begin
   perform tests.unbecome();
   if spring -> 'payload' ->> 'did' <> 'landed' or (spring -> 'payload' ->> 'drawn') is distinct from 'false' then raise exception 'the spring says the draft did not fit: %', spring; end if;
   struck := (select k.id from acts k where k.kind = 'card' and k.target_act_id = q2 and k.payload ->> 'card' = 'sfwall');
-  if struck is null or (select bit_count(cover) from surfaces where play = struck) is distinct from 0 or (select cardinality(live) from surfaces where play = struck) is distinct from 0 then raise exception 'the wall opens bare'; end if;
+  if struck is null or (select covered from surfaces where play = struck) is distinct from 0 or (select cardinality(live) from surfaces where play = struck) is distinct from 0 then raise exception 'the wall opens bare'; end if;
   if exists (select 1 from acts d where d.kind = 'draw' and d.target_act_id = struck) then raise exception 'no draw was written'; end if;
   if exists (select 1 from face_down_draws where play = set2) then raise exception 'the draft row is deleted once read, drawn or not'; end if;
 end $$;
@@ -595,23 +595,24 @@ declare
   page jsonb; d1 uuid; d2 uuid; w1 uuid; listed jsonb; target jsonb;
 begin
   d1 := (pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 300))::jsonb ->> 'id')::uuid;
-  d2 := (pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 100))::jsonb ->> 'id')::uuid;
+  d2 := (pg_temp.draw(bob, b, w.play, pg_temp.cells(5000, 10))::jsonb ->> 'id')::uuid;
   w1 := (pg_temp.wash(ann, a, w.play, pg_temp.cells(250, 10))::jsonb ->> 'id')::uuid;
+  perform pg_temp.wash(ann, a, w.play, pg_temp.cells(5000, 10));
   perform pg_temp.draw(bob, b, w.play, pg_temp.cells(250, 5));
-  -- An old draw: painted over and gone from live.
+  -- An old draw: washed away and gone from live.
   perform pg_temp.draw(bob, b, w.play, pg_temp.cells(2000, 10));
   perform pg_temp.draw(bob, b, w.play, pg_temp.cells(2000, 10));
   perform tests.become(ann);
   page := thread_page(t, 1, null, 20, array[]::text[]);
   perform tests.unbecome();
-  if (page -> 'surfaces' -> w.play::text ->> 'covered')::integer <> (select bit_count(cover) from surfaces where play = w.play) then raise exception 'the page carries the wall''s covered: %', page -> 'surfaces'; end if;
+  if (page -> 'surfaces' -> w.play::text ->> 'covered')::integer <> (select covered from surfaces where play = w.play) then raise exception 'the page carries the wall''s covered: %', page -> 'surfaces'; end if;
   if page -> 'surfaces' -> w.play::text -> 'live' is distinct from (select to_jsonb(live) from surfaces where play = w.play) then raise exception 'the page carries the live ids'; end if;
   if page::text like '%"strokes"%' or page::text like '%"owners"%' or page::text like '%"cells"%' then raise exception 'the page carries no strokes, owners or cells'; end if;
   -- card_target shows covered on the effect.
   perform tests.become(bob);
   target := card_target(w.post);
   perform tests.unbecome();
-  if (target -> 'effects' -> 0 ->> 'covered')::integer <> (select bit_count(cover) from surfaces where play = w.play) then raise exception 'card_target shows covered: %', target -> 'effects'; end if;
+  if (target -> 'effects' -> 0 ->> 'covered')::integer <> (select covered from surfaces where play = w.play) then raise exception 'card_target shows covered: %', target -> 'effects'; end if;
   -- surface_acts: the live Acts oldest first, each draw with its share, and the count of the older draws.
   perform tests.become(bob);
   listed := surface_acts(w.play);
@@ -623,13 +624,13 @@ begin
     raise exception 'surface_acts counts the older draws: %', listed ->> 'older';
   end if;
   if (listed ->> 'older')::integer < 1 then raise exception 'one draw is no longer live'; end if;
-  if (select sum((x ->> 'share')::integer) from jsonb_array_elements(listed -> 'acts') x where x ->> 'kind' = 'draw') is distinct from (select bit_count(cover) from surfaces where play = w.play) then
+  if (select sum((x ->> 'share')::integer) from jsonb_array_elements(listed -> 'acts') x where x ->> 'kind' = 'draw') is distinct from (select covered from surfaces where play = w.play) then
     raise exception 'the live draws share the covered cells between them: %', listed;
   end if;
   if exists (select 1 from jsonb_array_elements(listed -> 'acts') x where x ->> 'kind' = 'wash' and x ? 'share') then raise exception 'a wash has no share'; end if;
-  if (listed ->> 'covered')::integer <> (select bit_count(cover) from surfaces where play = w.play) then raise exception 'and the wall''s covered'; end if;
+  if (listed ->> 'covered')::integer <> (select covered from surfaces where play = w.play) then raise exception 'and the wall''s covered'; end if;
   -- The surfaces row is readable by a player, the drafts are not.
-  if pg_temp.as_val(bob, format('select bit_count(cover) from surfaces where play = %L', w.play)) like 'ERROR:%' then raise exception 'a signed-in player reads the surface row'; end if;
+  if pg_temp.as_val(bob, format('select covered from surfaces where play = %L', w.play)) like 'ERROR:%' then raise exception 'a signed-in player reads the surface row'; end if;
 end $$;
 
 -- ---- 13. Append-only, and the only writer ----
@@ -655,14 +656,14 @@ begin
     if sqlerrm not like 'a draw or a wash is written only through%' then raise; end if;
   end;
   -- A draw of a post's own words, not of a card, is refused, and so is one with strokes that are no array.
-  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)::text', bob, b, w.post, '{"strokes": []}'::jsonb, pg_temp.cells(0, 1)::text));
+  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 4000)::text', bob, b, w.post, '{"groups": []}'::jsonb, translate(pg_temp.cells(0, 1)::text, '1', 'k'), '[]'));
   if got not like 'ERROR:%' then raise exception 'a post is no wall: %', got; end if;
-  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)::text', bob, b, w.play, '{"strokes": 3}'::jsonb, pg_temp.cells(0, 1)::text));
-  if got not like 'ERROR:%' then raise exception 'strokes are an array: %', got; end if;
-  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)::text', bob, b, w.play, jsonb_build_object('strokes', '[]'::jsonb, 'pad', repeat('x', 66000)), pg_temp.cells(0, 1)::text));
+  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 4000)::text', bob, b, w.play, '{"groups": 3}'::jsonb, translate(pg_temp.cells(0, 1)::text, '1', 'k'), '[]'));
+  if got not like 'ERROR:%' then raise exception 'groups are an array: %', got; end if;
+  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 4000)::text', bob, b, w.play, jsonb_build_object('groups', '[]'::jsonb, 'pad', repeat('x', 66000)), translate(pg_temp.cells(0, 1)::text, '1', 'k'), '[]'));
   if got not like 'ERROR:%' then raise exception 'a draw is at most 64 KiB: %', got; end if;
   -- The API roles execute none of the writers.
-  if pg_temp.as_val(bob, format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)', bob, b, w.play, '{"strokes": []}'::jsonb, pg_temp.cells(0, 1)::text)) not like 'ERROR: permission denied%' then
+  if pg_temp.as_val(bob, format('select draw_on_surface(%L, %L, %L, %L, %L, %L, 4000)', bob, b, w.play, '{"groups": []}'::jsonb, translate(pg_temp.cells(0, 1)::text, '1', 'k'), '[]')) not like 'ERROR: permission denied%' then
     raise exception 'a player does not call draw_on_surface';
   end if;
   if pg_temp.as_val(bob, format('select open_surface(%L)', w.play)) not like 'ERROR: permission denied%' then raise exception 'a player does not open a surface'; end if;
@@ -685,7 +686,7 @@ begin
   if got not like 'ERROR:%' then raise exception 'a retired character draws nothing: %', got; end if;
 end $$;
 
--- ---- 15. Many small disjoint washes on one drawing all stay live while it owns cells, and all leave with it ----
+-- ---- 15. Many small disjoint washes on one drawing all stay live while it holds paint, and all leave with it ----
 do $$
 declare
   ann uuid := tests.account('sf-15-ann'); bob uuid := tests.account('sf-15-bob');
@@ -702,12 +703,14 @@ begin
   -- Washed off entirely: the drawing and every wash leave.
   perform pg_temp.wash(ann, a, w.play, pg_temp.cells(0, 1000));
   if pg_temp.live(w.play) is distinct from 0 then raise exception 'washed off entirely, nothing is live: %', pg_temp.live(w.play); end if;
-  -- Painted over: the drawing leaves, its washes with it, and the painter is all that is live.
+  -- Painted over: the drawing and its washes stay live (overlap is paid, so painting over frees nothing), and the painter is live beside them.
   perform pg_temp.draw(bob, b, w2.play, pg_temp.cells(0, 1000));
-  if pg_temp.live(w2.play) is distinct from 1 then raise exception 'painted over, only the painter is live: %', pg_temp.live(w2.play); end if;
+  if pg_temp.live(w2.play) is distinct from 42 then raise exception 'painted over, the drawing, its washes and the painter are live: %', pg_temp.live(w2.play); end if;
+  perform pg_temp.wash(ann, a, w2.play, pg_temp.cells(0, 1000));
+  if pg_temp.live(w2.play) is distinct from 0 then raise exception 'washed off entirely, both drawings and every wash leave: %', pg_temp.live(w2.play); end if;
 end $$;
 
--- ---- 16. Readers get the strokes, never the cells ----
+-- ---- 16. Readers get the groups, never the coats or the cells ----
 do $$
 declare
   ann uuid := tests.account('sf-16-ann'); bob uuid := tests.account('sf-16-bob');
@@ -717,12 +720,12 @@ declare
 begin
   d := pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 100));
   wsh := pg_temp.wash(ann, a, w.play, pg_temp.cells(0, 10));
-  if d like '%"cells"%' or wsh like '%"cells"%' or d not like '%"strokes"%' then raise exception 'a write answers with the strokes and no cells'; end if;
+  if d like '%"cells"%' or wsh like '%"cells"%' or d like '%"coats"%' or wsh like '%"takes"%' or d not like '%"groups"%' then raise exception 'a write answers with the groups and no coats, takes or cells'; end if;
   perform tests.become(bob);
   listed := surface_acts(w.play);
   perform tests.unbecome();
-  if listed::text like '%"cells"%' or listed::text not like '%"strokes"%' then raise exception 'surface_acts carries the strokes and no cells: %', left(listed::text, 200); end if;
-  if (select payload ->> 'cells' from acts where target_act_id = w.play and kind = 'draw') is null then raise exception 'but the Act keeps its cells for rebuild_surface'; end if;
+  if listed::text like '%"cells"%' or listed::text like '%"coats"%' or listed::text like '%"takes"%' or listed::text not like '%"groups"%' then raise exception 'surface_acts carries the groups and no coats or cells: %', left(listed::text, 200); end if;
+  if (select payload ->> 'coats' from acts where target_act_id = w.play and kind = 'draw') is null or (select payload -> 'takes' from acts where target_act_id = w.play and kind = 'wash') is null then raise exception 'but the Acts keep their coats and takes for rebuild_surface'; end if;
 end $$;
 
 -- ---- 17. A back taken back takes its draft with it ----
@@ -784,7 +787,7 @@ declare
   ann uuid := tests.account('sf-19-ann'); a uuid := tests.character(ann, 'Sf Nineteen Ann');
   t uuid := tests.thread('Sf nineteen'); w record := pg_temp.wall(a, t);
   pc uuid; pc2 uuid; pp uuid; pp2 uuid; d1 uuid; d_other uuid; got jsonb; el jsonb; r jsonb;
-  payload jsonb := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}], "pool": "2030-01-08"}';
+  payload jsonb := '{"groups": [], "pool": "2030-01-08"}';
 begin
   perform set_config('kayfabb.staff_writer', 'on', true);
   insert into characters (name, staff, staff_kind, debuted_at) values ('Sf Persona', 'sf-persona', 'persona', now()) returning id into pc;
@@ -793,10 +796,10 @@ begin
   pp2 := tests.act(pc2, 'post', t, '{"body": "Another pool post.", "pool": "2030-01-08"}');
   perform set_config('kayfabb.staff_writer', '', true);
   perform tests.become_service();
-  got := staff_draw_on_surface('sf-persona', w.play, payload, pg_temp.cells(0, 100), 4000);
+  got := staff_draw_on_surface('sf-persona', w.play, payload, translate(pg_temp.cells(0, 100)::text, '1', 'k'), '[]', 4000);
   d1 := (got ->> 'id')::uuid;
   -- A draw of the day with no marker is nobody's to adopt, and nor is a draw of the other persona's with the first one's tie.
-  d_other := (staff_draw_on_surface('sf-persona2', w.play, '{"strokes": []}', pg_temp.cells(200, 10), 4000) ->> 'id')::uuid;
+  d_other := (staff_draw_on_surface('sf-persona2', w.play, '{"groups": []}', translate(pg_temp.cells(200, 10)::text, '1', 'k'), '[]', 4000) ->> 'id')::uuid;
   el := (select e from jsonb_array_elements(pool_orphans('2030-01-13')) e where e ->> 'staff' = 'sf-persona' and e ->> 'day' = '2030-01-08');
   if el ->> 'card' is distinct from d1::text then raise exception 'the persona''s wall draw of the day is adopted as its card: %', el; end if;
   el := (select e from jsonb_array_elements(pool_orphans('2030-01-13')) e where e ->> 'staff' = 'sf-persona2' and e ->> 'day' = '2030-01-08');
@@ -807,50 +810,35 @@ begin
   if (select card_act from pool_spends where staff = 'sf-persona' and day = '2030-01-08') is distinct from d1 then raise exception 'the draw is the spend''s card'; end if;
 end $$;
 
--- ---- 20. The prune keeps exactly what is needed: after each of sixty random draws and washes over a small patch, replaying the live list alone reproduces the wall's cover and owners, every live draw owns a cell,
--- and every live wash has a cell inked by a live draw before it that no live wash after it covers ----
+-- ---- 20. The prune keeps exactly what is needed: after each of sixty random draws and washes over a small patch, the live draws are exactly the rows of surface_coats, each with paint, `covered` is their painted cells,
+-- every live wash changed a draw that is still live, and the Acts alone give the same row and the same grids ----
 do $$
 declare
   ann uuid := tests.account('sf-20-ann'); bob uuid := tests.account('sf-20-bob');
   a uuid := tests.character(ann, 'Sf Twenty Ann'); b uuid := tests.character(bob, 'Sf Twenty Bob');
   t uuid := tests.thread('Sf twenty'); w record := pg_temp.wall(a, t);
-  s surfaces%rowtype; ink bit(10000); seen bit(10000); later bit(10000); own integer[]; c bit(10000); k text;
-  at integer; len integer; got text; washes integer := 0; draws integer := 0;
+  s surfaces%rowtype; r surfaces%rowtype; at integer; len integer; got text; washes integer := 0; draws integer := 0; alive uuid[]; x record;
 begin
   for i in 1..60 loop
     at := floor(random() * 190)::integer; len := 1 + floor(random() * 10)::integer;
     if random() < 0.55 then got := pg_temp.draw(bob, b, w.play, pg_temp.cells(at, len), 10000); draws := draws + 1;
     else got := pg_temp.wash(ann, a, w.play, pg_temp.cells(at, len)); washes := washes + 1; end if;
+    if got like 'ERROR:%' then raise exception 'step % was refused: %', i, got; end if;
     select * into s from surfaces where play = w.play;
-    ink := repeat('0', 10000)::bit(10000); own := array_fill(0, array[200]);
-    for j in 1..cardinality(s.live) loop
-      select a2.kind, (a2.payload ->> 'cells')::bit(10000) into k, c from acts a2 where a2.id = s.live[j];
-      if k = 'draw' then
-        ink := ink | c;
-        for x in 0..199 loop if get_bit(c, x) = 1 then own[x + 1] := j; end if; end loop;
-      else
-        ink := ink & ~c;
-        for x in 0..199 loop if get_bit(c, x) = 1 then own[x + 1] := 0; end if; end loop;
-      end if;
+    alive := array(select c.draw from surface_coats c where c.play = w.play);
+    if exists (select 1 from surface_coats c where c.play = w.play and (c.painted < 1 or c.painted <> (select count(*) from unnest(c.coats) v where v >= 2))) then raise exception 'step %: a live draw holds paint, counted right', i; end if;
+    if s.covered is distinct from (select coalesce(sum(painted), 0) from surface_coats where play = w.play) then raise exception 'step %: covered is the sum of the live draws'' painted cells', i; end if;
+    if array(select u.id from unnest(s.live) u(id) join acts k on k.id = u.id where k.kind = 'draw' order by array_position(s.live, u.id)) is distinct from array(select c.draw from surface_coats c join acts k on k.id = c.draw where c.play = w.play order by array_position(s.live, c.draw)) or cardinality(alive) is distinct from (select count(*) from unnest(s.live) u(id) join acts k on k.id = u.id where k.kind = 'draw') then
+      raise exception 'step %: the live draws are the rows of surface_coats', i;
+    end if;
+    for x in select u.id from unnest(s.live) u(id) join acts k on k.id = u.id where k.kind = 'wash' loop
+      if not (s.washes ? x.id::text) or not exists (select 1 from jsonb_array_elements_text(s.washes -> x.id::text) d where d::uuid = any (alive)) then raise exception 'step %: a live wash changed no live draw', i; end if;
     end loop;
-    if ink is distinct from s.cover then raise exception 'step %: the live list alone does not reproduce the cover', i; end if;
-    if own is distinct from (select array_agg(o::integer order by n) from unnest(s.owners[1:200]) with ordinality u(o, n)) then raise exception 'step %: the live list alone does not reproduce the owners', i; end if;
-    seen := repeat('0', 10000)::bit(10000);
-    for j in 1..cardinality(s.live) loop
-      select a2.kind, (a2.payload ->> 'cells')::bit(10000) into k, c from acts a2 where a2.id = s.live[j];
-      if k = 'draw' then
-        if not (j = any (s.owners)) then raise exception 'step %: a live draw owns no cell', i; end if;
-        seen := seen | c;
-      else
-        later := repeat('0', 10000)::bit(10000);
-        for y in j + 1..cardinality(s.live) loop
-          select (a2.payload ->> 'cells')::bit(10000) into c from acts a2 where a2.id = s.live[y] and a2.kind = 'wash';
-          if c is not null then later := later | c; end if;
-        end loop;
-        select (a2.payload ->> 'cells')::bit(10000) into c from acts a2 where a2.id = s.live[j];
-        if bit_count(seen & c & ~later) = 0 then raise exception 'step %: a live wash that wipes nothing visible is kept', i; end if;
-      end if;
-    end loop;
+    if (select count(*) from jsonb_object_keys(s.washes)) is distinct from (select count(*) from unnest(s.live) u(id) join acts k on k.id = u.id where k.kind = 'wash') then raise exception 'step %: washes names the live washes and no others', i; end if;
+    r := rebuild_surface(w.play);
+    if r.covered is distinct from s.covered or r.live is distinct from s.live or r.washes is distinct from s.washes then raise exception 'step %: the Acts rebuild a different row', i; end if;
+    if exists (select draw, coats, painted from rebuild_surface_coats(w.play) except select draw, coats, painted from surface_coats where play = w.play)
+       or exists (select draw, coats, painted from surface_coats where play = w.play except select draw, coats, painted from rebuild_surface_coats(w.play)) then raise exception 'step %: the Acts rebuild different grids', i; end if;
   end loop;
   if draws < 10 or washes < 10 then raise exception 'the run mixed draws and washes (% and %)', draws, washes; end if;
 end $$;

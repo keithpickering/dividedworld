@@ -13,7 +13,8 @@ import { QUADRANTS, isPost } from './types.ts';
 import { parse, safeColor } from '../bbcode/parse.ts';
 import { visibleWalk, type Stretch } from '../bbcode/visible.ts';
 import { phraseIn } from '../bbcode/phrase.ts';
-import { GRID, cellsOf, toBits, type SurfaceStroke } from './surface.ts';
+import { GRID, coatsOf, takesOf, toCoatString, type SurfaceStroke } from './surface.ts';
+import type { DrawFrame } from './frame.ts';
 
 /**
  * Where a card can land (the card mechanic's design, section 7): a post, a character, a thread or a
@@ -547,8 +548,21 @@ export interface CardRules<Config = unknown> {
   readonly surface?: {
     readonly limitKey: string;
     readonly mostLive: number;
+    /** The paint's depth in tenths of a coat: what one stroke lays where its core is, and the most a cell holds (docs/plans/2026-11-27-graffiti-everywhere-design.md, section 5). */
+    readonly coats: { readonly line: number; readonly most: number };
     validateDraw(input: unknown): Verdict<{ readonly strokes: readonly SurfaceStroke[]; readonly payload: Record<string, unknown> }>;
-    validateWash(input: unknown): Verdict<{ readonly strokes: readonly SurfaceStroke[]; readonly payload: Record<string, unknown> }>;
+    /**
+     * The frame a kept draw (`validateDraw`'s payload) is counted in, where its drawer's screen declared it: its box in ems of the post's text, and
+     * each image group's `em`. The server holds it to the post the draw is on (frame.ts, `frameProblem`), so a declared frame can never make a tag
+     * count less than it covers. Null for a draw whose frame the card sets itself (a stencil, counted in a fixed box). A card whose count is framed
+     * by a box its drawer sends gives this; one without it is counted in a frame it does not take from the drawer.
+     */
+    frameOf?(payload: Record<string, unknown>): DrawFrame | null;
+    /**
+     * Given the live draws it cuts (payloads as stored), so it can place a group's presses in its drawer's frame. Each cut names the draw, the presses in that
+     * draw's own frame (shares of its drawer's box), and the sponge's `radius` (a share of that box's width) and the box's `aspect`.
+     */
+    validateWash(input: unknown, draws: ReadonlyMap<Id, unknown>): Verdict<{ readonly cuts: readonly { readonly draw: Id; readonly presses: readonly (readonly [number, number])[]; readonly radius: number; readonly aspect: number }[]; readonly payload: Record<string, unknown> }>;
   };
   /** For a card whose effect holds state (Whoops!'s strokes): checks a state to be saved. */
   validateState?(state: unknown): Verdict<unknown>;
@@ -657,8 +671,11 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   return ok({ price, config: checked.value, message: said.value, tokens });
 }
 
-/** A draw as decided: the card's payload, the cells its strokes cover as Postgres `bit(10000)` text, and the most cells the layer may cover. */
-export interface DecidedDraw { readonly payload: Record<string, unknown>; readonly cells: string; readonly most: number }
+/** An Act's id, as the server names it. */
+export type Id = string;
+
+/** A draw as decided: the card's payload, its coats as a coat string (`toCoatString`), and the most cells the layer may cover. */
+export interface DecidedDraw { readonly payload: Record<string, unknown>; readonly coats: string; readonly most: number }
 
 const noSurface = (rules: Pick<CardRules, 'name'>) => refuse(`${rules.name} has no surface to draw on`);
 
@@ -674,16 +691,23 @@ export function decideDraw(rules: CardRules, settings: Settings, input: unknown)
   if (rules.surface === undefined) return noSurface(rules);
   const checked = rules.surface.validateDraw(input);
   if (!checked.ok) return checked;
-  return ok({ payload: checked.value.payload, cells: toBits(cellsOf(checked.value.strokes)), most: surfaceMost(rules.key, rules.surface.limitKey, settings) });
+  return ok({ payload: checked.value.payload, coats: toCoatString(coatsOf(checked.value.strokes, rules.surface.coats)), most: surfaceMost(rules.key, rules.surface.limitKey, settings) });
 }
 
-/** A wash on a surface card: the card's payload and the cells its strokes cover, which the server takes off the layer. */
+/** A wash on a surface card: the card's payload and, for each draw it cuts, what its presses take as a coat string, which the server takes off that draw's coats. */
 /** `settings` is unused: a wash has no limit to read. It is kept so a draw and a wash are decided the same way. */
-export function decideWash(rules: CardRules, _settings: Settings, input: unknown): Verdict<{ readonly payload: Record<string, unknown>; readonly cells: string }> {
+export function decideWash(rules: CardRules, _settings: Settings, input: unknown, draws: ReadonlyMap<Id, unknown>): Verdict<{ readonly payload: Record<string, unknown>; readonly takes: readonly { readonly draw: Id; readonly takes: string }[] }> {
   if (rules.surface === undefined) return noSurface(rules);
-  const checked = rules.surface.validateWash(input);
+  const checked = rules.surface.validateWash(input, draws);
   if (!checked.ok) return checked;
-  return ok({ payload: checked.value.payload, cells: toBits(cellsOf(checked.value.strokes)) });
+  // A draw cut in several pieces (one per group) is taken in one go, so the server and every screen round its take once.
+  const byDraw = new Map<Id, { presses: (readonly [number, number])[]; radius: number; aspect: number }>();
+  for (const c of checked.value.cuts) {
+    const had = byDraw.get(c.draw);
+    if (had === undefined) byDraw.set(c.draw, { presses: [...c.presses], radius: c.radius, aspect: c.aspect });
+    else had.presses.push(...c.presses);
+  }
+  return ok({ payload: checked.value.payload, takes: [...byDraw].map(([draw, c]) => ({ draw, takes: toCoatString(takesOf(c.presses, c.radius, c.aspect)) })) });
 }
 
 /** A surface card's first draw, decided with its play: refused when it names none, so a play always starts with a tag on the surface. */

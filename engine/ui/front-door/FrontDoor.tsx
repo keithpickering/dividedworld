@@ -20,9 +20,10 @@
  * (`stageSound`), both released when the door unmounts. The "Sound: on" toggle is the visitor's mute; its press is also the gesture that unlocks audio.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { Attachment } from '../../rules/anchor.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
-import { BYTES, cellsOf, count, GRID, hasCell, union, type Cells } from '../../rules/surface.ts';
+import { coatsOf, paintedCount } from '../../rules/surface.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { stageEffects } from '../appearance.ts';
 import { stageSound } from '../audio/sound.ts';
@@ -45,6 +46,7 @@ import type { FrontDoorCharacter } from '../types.ts';
 import { PersonaMark } from '../updates/Persona.tsx';
 import './front-door.css';
 import { frontDoorId, frontDoorPlayId } from './ids.ts';
+import { absolutePictures, absoluteSrc } from './pictures.ts';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 
@@ -53,16 +55,25 @@ const STAGED_AT = '2026-01-01T00:00:00.000Z';
 
 const idOf = frontDoorId;
 
+/** A staged draw's marks on a picture name it by the address the page draws it from (`./pictures.ts`), as the post's own words are filled, so a mark finds its picture. */
+function markedOnPictures(payload: Record<string, unknown>): Record<string, unknown> {
+  const groups: unknown = payload.groups;
+  if (!Array.isArray(groups)) return payload;
+  return { ...payload, groups: groups.map((g: { anchor?: { kind?: string; src?: string } } | null) => g?.anchor?.kind === 'image' && typeof g.anchor.src === 'string' ? { ...g, anchor: { ...g.anchor, src: absoluteSrc(g.anchor.src, window.location.origin) } } : g) };
+}
+
 /**
- * A staged wall's draws as a wall's live Acts, oldest first, each with the share of the wall it owns: a later draw owns the cells it covers
- * (`surfaceStep` in data/fake.ts prunes a draw left owning nothing, so a staged wall drops it too and shows what a live thread would).
+ * Where a staged draw's groups are, as `surface_acts` gives them for the post's current version: each group attached to the words or picture of a version is
+ * placed where it was drawn when that is the post's version (a made-up post has just the one), and has fallen (null) when it names another. A group on the box has no entry, and
+ * a draw with no groups (the old shape) has none. An empty list for a draw with attachments would drop every group to its spot in the box, whatever the screen shows.
  */
-function wallShares(draws: readonly Cells[]): readonly number[] {
-  const owners = new Uint16Array(GRID * GRID);
-  draws.forEach((cells, k) => { for (let i = 0; i < owners.length; i++) if (hasCell(cells, i)) owners[i] = k + 1; });
-  const owned = new Array<number>(draws.length).fill(0);
-  for (const o of owners) if (o !== 0) owned[o - 1]!++;
-  return owned;
+function placesOf(payload: Record<string, unknown>, version: string): { grp: number; place: Attachment | null }[] {
+  const groups: unknown = payload.groups;
+  if (!Array.isArray(groups)) return [];
+  return groups.flatMap((g: { anchor?: Attachment } | null, grp: number) => {
+    const at = g?.anchor;
+    return at === undefined || at.kind === 'box' ? [] : [{ grp, place: 'version' in at && at.version === version ? at : null }];
+  });
 }
 
 /** A made-up character is in the ladder's first rung, the one every new character starts in. */
@@ -136,9 +147,8 @@ export function FrontDoor() {
   /* A post's picture must be an http(s) address (`safeImageSrc`), and a bundled file's address is root-relative, so a staged
      picture that starts with a single `/` is made absolute against the page's own origin. These words are the instance's
      committed content, never a player's; a protocol-relative or absolute address is left to the parser as anywhere. */
-  const fill = useCallback((text: string) => text
-    .replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH)
-    .replace(/\[img\](\/(?!\/)[^[]*)\[\/img\]/giu, (_m, src: string) => `[img]${new URL(src, window.location.origin).href}[/img]`), [settings]);
+  const fill = useCallback((text: string) => absolutePictures(text
+    .replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH), window.location.origin), [settings]);
 
   const cast = useMemo(() => new Map(door.cast.map((c) => {
     const rank = Math.min(Math.max(c.rank, 0), Math.max(instance.ranks.length - 1, 0));
@@ -182,17 +192,17 @@ export function FrontDoor() {
         if (p.state !== undefined) plays.setStates({ [id]: { state: p.state, savedAt: STAGED_AT } });
         const rules = instance.cards.find((c) => c.key === p.card);
         if (p.draws === undefined || !rules?.surface) return;
-        const kept: { readonly by: string; readonly payload: Record<string, unknown>; readonly cells: Cells }[] = [];
+        /* A wall's draws are each its own coats (the surface's `coats` rules): a draw owns the cells it paints, ink over another's ink is paid for again, and the wall covers the sum. A draw that paints nothing is no live Act, as a thread's would not be. */
+        const kept: { readonly by: string; readonly payload: Record<string, unknown>; readonly painted: number }[] = [];
         for (const d of p.draws) {
           const verdict = rules.surface.validateDraw(d.draw);
-          if (verdict.ok) kept.push({ by: d.by, payload: verdict.value.payload, cells: cellsOf(verdict.value.strokes) });
+          if (verdict.ok) kept.push({ by: d.by, payload: markedOnPictures(verdict.value.payload), painted: paintedCount(coatsOf(verdict.value.strokes, rules.surface.coats)) });
         }
-        const shares = wallShares(kept.map((k) => k.cells));
-        const wall: SurfaceAct[] = kept.flatMap((k, n) => shares[n] === 0 ? [] : [{
+        const wall: SurfaceAct[] = kept.flatMap((k, n) => k.painted === 0 ? [] : [{
           id: idOf(`draw:${i}:${j}:${n}`), character: idOf(k.by), kind: 'draw', thread: idOf('thread'), targetActId: id, seq: null, createdAt: STAGED_AT,
-          payload: k.payload, currentPayload: {}, editedAt: null, shownEditedAt: null, share: shares[n]!,
+          payload: k.payload, currentPayload: {}, editedAt: null, shownEditedAt: null, share: k.painted, places: placesOf(k.payload, idOf(String(i))),
         }]);
-        plays.setSurfaceActs(id, count(kept.reduce<Cells>((all, k) => union(all, k.cells), new Uint8Array(BYTES))), wall);
+        plays.setSurfaceActs(id, kept.reduce((n, k) => n + k.painted, 0), wall);
       });
     });
     return { plays, tallies, mine: createMine() };

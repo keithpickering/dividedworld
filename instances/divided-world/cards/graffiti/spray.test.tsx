@@ -1,16 +1,18 @@
 /**
  * Graffiti's spray painter (plan Task 8). jsdom has no canvas, so a 2D context is faked as a small pixel buffer: it rasterizes what spray.ts
  * uses (round-capped polylines and circles under a scale-and-shift transform, drawImage of a sprite, putImageData) with source-over and
- * destination-out, so a test reads the ink's alpha at a pixel, and it logs every arc, so the speckle can be compared between calls.
+ * destination-out, so a test reads the ink's alpha at a pixel, and it logs every arc.
+ * The wall's own fields (coats, takes, placement, the press that goes to the top group) are read from `Wall` (docs/plans/2026-11-27-graffiti-everywhere-plan.md, Task 7).
  */
-import { afterEach, describe, expect, test } from 'vitest';
-import { CAPS } from '../graffiti.ts';
-import { cellsOf, GRID } from '../../../../engine/rules/surface.ts';
-import { hitAt, paintWall, wallDensity, type WallAct } from './spray.ts';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { takesOf, GRID } from '../../../../engine/rules/surface.ts';
+import { CAPS, CAPS_EM, COATS, SPONGE, SPONGE_EM, graffiti } from '../graffiti.ts';
+import { Wall, hitAt, paintWall, wallDensity, type GroupSrc, type Press, type WallAct, type Walker } from './spray.ts';
 import { MAX_CANVAS_PX } from '../whoops/paint.ts';
+import { ROW_PX } from '../whoops/scrub.ts';
 
 const realGetContext = HTMLCanvasElement.prototype.getContext;
-afterEach(() => { HTMLCanvasElement.prototype.getContext = realGetContext; });
+afterEach(() => { HTMLCanvasElement.prototype.getContext = realGetContext; vi.restoreAllMocks(); });
 
 interface Arc { readonly x: number; readonly y: number; readonly r: number; readonly alpha: number }
 interface Px { a: number; r: number; g: number; b: number }
@@ -116,194 +118,474 @@ function fakeCanvases() {
   return { arcs, strokes, pixels: (cv: HTMLCanvasElement) => buffers.get(cv)!() };
 }
 
-const BOX = { w: 400, h: 200 };
-const stroke = (points: [number, number][], cap: keyof typeof CAPS = 'stock', can = 'red', aspect = 2) => ({ can, cap, aspect, points });
-const draw = (...strokes: ReturnType<typeof stroke>[]): WallAct => ({ kind: 'draw', payload: { strokes } });
-const wash = (points: [number, number][], aspect = 2): WallAct => ({ kind: 'wash', payload: { strokes: [{ aspect, points }] } });
-const canvasOf = () => { const c = document.createElement('canvas'); c.width = BOX.w; c.height = BOX.h; return c; };
-/** The wall painted on a fresh canvas at density 1: its pixels, and the arcs drawn. */
-function paintOn(acts: readonly WallAct[], box = BOX) {
-  const f = fakeCanvases();
-  const c = canvasOf();
-  c.width = box.w; c.height = box.h;
-  paintWall(c.getContext('2d') as CanvasRenderingContext2D, box, 1, acts);
-  const p = f.pixels(c);
-  return { alpha: (x: number, y: number) => p[y * box.w + x]!.a, px: p, arcs: [...f.arcs], strokes: [...f.strokes] };
+const BOX = { w: 600, h: 400 };
+const EM = 15;
+const layout = (over: Partial<Parameters<typeof Wall.of>[1]> = {}) => ({ box: BOX, emPx: EM, ...over });
+type G = { at: [number, number]; anchor: unknown; unit: 'em' | 'image'; em?: number; strokes: { can: string; cap: string; points: [number, number][] }[] };
+/** A group of one stroke, in the group's units (ems), around its origin; at the middle of the box, a box attachment, unless told. */
+const group = (points: [number, number][], over: Partial<G> = {}, cap = 'stock', can = 'red'): G => ({ at: [0.5, 0.5], anchor: { kind: 'box' }, unit: 'em', strokes: [{ can, cap, points }], ...over });
+const draw = (id: string, ...groups: G[]): WallAct => ({ kind: 'draw', id, payload: { box: { w: 40, h: 26.7 }, groups } });
+const legacy = (id: string, ...strokes: { can: string; cap: keyof typeof CAPS; aspect: number; points: [number, number][] }[]): WallAct => ({ kind: 'draw', id, payload: { strokes } });
+const SPAN: [number, number][] = [[-10, 0], [10, 0]];
+const wallOf = (acts: readonly WallAct[], over = {}) => Wall.of(acts, layout(over));
+const canvasOf = (box = BOX) => { const c = document.createElement('canvas'); c.width = box.w; c.height = box.h; return c; };
+/** One straight pass of the sponge along a row, as a drag does: a point every 5 px. Returns the presses it made. */
+function pass(wall: Wall, y: number, x0 = 130, x1 = 470, walker: Walker = { last: null, left: 0 }): Press[] {
+  const out: Press[] = [];
+  for (let x = x0; x <= x1; x += 5) out.push(...wall.walk(walker, [x, y]));
+  return out;
 }
+/** The wall painted on a fresh canvas at density 1: its pixels. */
+function paintOn(wall: Wall | readonly WallAct[], box = BOX, draft?: WallAct | null) {
+  const f = fakeCanvases();
+  const c = canvasOf(box);
+  paintWall(c.getContext('2d') as CanvasRenderingContext2D, box, 1, wall, draft);
+  const p = f.pixels(c);
+  return { alpha: (x: number, y: number) => p[y * box.w + x]!.a, px: p, arcs: [...f.arcs], at: (x: number, y: number) => p[y * box.w + x]! };
+}
+const coats = (wall: Wall, k: number, x: number, y: number) => wall.groups[k]!.coatsAt(x, y);
 
-describe('paintWall', () => {
-  test('the core is the can\'s color at alpha 0.92, a capsule of the cap\'s width', () => {
-    const w = paintOn([draw(stroke([[0.25, 0.5], [0.75, 0.5]], 'fat'))]);
-    /* Fat: 0.04 across the 400 px box is 16 px wide, so 8 px from the line; down, 8 px * aspect 2 on a box 200 tall / 400 wide, which is 8 px too at aspect 2. */
-    const core = w.strokes.filter((s) => s.op === 'source-over');
-    expect(core).toEqual([{ alpha: 0.92, width: 16, op: 'source-over' }]);
-    /* The core over the overspray's 0.35 is nearly opaque, and in the can's red. */
-    expect(w.alpha(200, 100)).toBeGreaterThanOrEqual(0.92);
-    expect(w.px[100 * 400 + 200]!.r).toBeGreaterThan(200);
-    expect(w.px[100 * 400 + 200]!.g).toBeLessThan(60);
-    expect(w.alpha(200, 100 - 7)).toBeGreaterThanOrEqual(0.92);
+describe('the painter lays coats', () => {
+  test('a stroke lays COATS.line tenths once on its core, and at most COATS.most where strokes of a drawing cross', () => {
+    const one = wallOf([draw('a', group(SPAN))]);
+    expect(coats(one, 0, 300, 200)).toBe(COATS.line);
+    expect(coats(one, 0, 300, 200 + 8 + 4)).toBe(0);
+    /* Two strokes in one group that cross: four coats' worth is 40 tenths, and a third crossing is held there. */
+    const g = group(SPAN);
+    g.strokes.push({ can: 'red', cap: 'stock', points: [[-10, 0], [10, 0]] }, { can: 'red', cap: 'stock', points: [[0, -5], [0, 5]] }, { can: 'red', cap: 'stock', points: [[-10, 0], [10, 0]] });
+    const many = wallOf([draw('a', g)]);
+    expect(coats(many, 0, 300, 200)).toBe(COATS.most);
+    expect(coats(many, 0, 200, 200)).toBe(COATS.most);
+    expect(coats(many, 0, 300, 200 - 40)).toBe(COATS.line);
   });
 
-  test('the speckle of one stroke is the same on two calls, and differs for a stroke that moved', () => {
-    const base = (dx: number) => stroke([[0.2 + dx, 0.3], [0.5 + dx, 0.35], [0.6 + dx, 0.5]], 'fat');
-    const speck = (dx: number) => paintOn([draw(base(dx))]).arcs.filter((a) => a.r < 1);
-    const a = speck(0), b = speck(0), c = speck(0.1);
-    expect(a.length).toBeGreaterThan(10);
-    expect(b).toEqual(a);
-    const rel = (s: Arc[], dx: number) => s.map((d) => [Math.round((d.x - dx * 400) * 1000), Math.round(d.y * 1000)]);
-    expect(rel(c, 0.1)).not.toEqual(rel(a, 0));
-    for (const d of a) { expect(d.r).toBeGreaterThanOrEqual(0.3); expect(d.r).toBeLessThanOrEqual(0.8); expect(d.alpha).toBe(0.5); }
+  test('a stroke is its cap in ems wide, on this screen\'s text size', () => {
+    const r = (CAPS_EM.stock * EM) / 2;
+    const w = wallOf([draw('a', group(SPAN))]);
+    expect(w.hitAt(300, 200 + r - 2.5)).toBe(true);
+    expect(w.hitAt(300, 200 + r + 2.5)).toBe(false);
+    const big = wallOf([draw('a', group(SPAN))], { emPx: 30 });
+    expect(big.hitAt(300, 200 + r * 2 - 2.5)).toBe(true);
   });
 
-  test('speckle lies beyond the overspray and its count grows with the path\'s length and the cap\'s width', () => {
-    const count = (cap: keyof typeof CAPS, x1: number) => paintOn([draw(stroke([[0.1, 0.5], [x1, 0.5]], cap))]).arcs.filter((a) => a.r < 1).length;
-    expect(count('fat', 0.9)).toBeGreaterThan(count('fat', 0.4));
-    expect(count('fat', 0.9)).toBeGreaterThan(count('skinny', 0.9));
-    const rw = (CAPS.fat / 2) * BOX.w;
-    for (const d of paintOn([draw(stroke([[0.1, 0.5], [0.9, 0.5]], 'fat'))]).arcs.filter((a) => a.r < 1)) {
-      const ex = Math.max(0, Math.max(0.1 * 400 - d.x, d.x - 0.9 * 400));
-      expect(Math.hypot(ex, d.y - 100)).toBeGreaterThanOrEqual(1.9 * rw - 1e-6);
-    }
-  });
-
-  test('a Fat cap\'s overspray reaches farther than a Skinny cap\'s', () => {
-    const reach = (cap: keyof typeof CAPS) => {
-      const w = paintOn([draw(stroke([[0.3, 0.5], [0.7, 0.5]], cap))]);
-      let n = 0;
-      for (let y = 100; y < 200; y++) if (w.alpha(200, y) > 0) n = y - 100;
-      return n;
-    };
-    expect(reach('fat')).toBeGreaterThan(reach('skinny') + 8);
-    expect(reach('fat')).toBeLessThanOrEqual(Math.ceil(1.9 * 8) + 1);
-  });
-
-  test('where points lie closer than a third of the core\'s radius, a second core stamp is laid at alpha 0.2', () => {
-    const rw = (CAPS.fat / 2) * BOX.w;
-    const tight = paintOn([draw(stroke([[0.5, 0.5], [0.5 + (rw / 5) / 400, 0.5]], 'fat'))]);
-    const loose = paintOn([draw(stroke([[0.5, 0.5], [0.5 + (rw * 2) / 400, 0.5]], 'fat'))]);
-    expect(tight.arcs.filter((a) => a.alpha === 0.2)).toHaveLength(1);
-    expect(loose.arcs.filter((a) => a.alpha === 0.2)).toHaveLength(0);
-  });
-
-  test('a wash clears the core pixels of a draw before it, and a draw after the wash is intact', () => {
-    const line = (y: number) => stroke([[0.2, y], [0.8, y]], 'fat');
-    const w = paintOn([draw(line(0.3)), draw(line(0.7)), wash([[0.5, 0.2], [0.5, 0.5]]), draw(line(0.5))]);
-    /* The wash (sponge 0.06 of 400 px = 24 px wide) crosses the first line at x = 200, y = 60. */
-    expect(w.alpha(200, 60)).toBeLessThan(0.05);
-    expect(w.alpha(150, 60)).toBeGreaterThanOrEqual(0.92);
-    expect(w.alpha(200, 140)).toBeGreaterThanOrEqual(0.92);
-    /* The third line is drawn after the wash, where the wash ran to its end (y = 100): untouched. */
-    expect(w.alpha(200, 100)).toBeGreaterThanOrEqual(0.92);
-  });
-
-  test('a wash in the same paint cuts only what was drawn before it, in order, onto one layer', () => {
-    const w = paintOn([wash([[0.5, 0.5]]), draw(stroke([[0.4, 0.5], [0.6, 0.5]], 'fat'))]);
-    expect(w.alpha(200, 100)).toBeGreaterThanOrEqual(0.92);
+  test('only a stroke\'s own bounds are computed: a group\'s field is the size of its paint, not of the box', () => {
+    const w = wallOf([draw('a', group(SPAN))], { box: { w: 6000, h: 8000 } });
+    const f = w.groups[0]!;
+    expect(f.cells).toBeLessThan(20_000);
   });
 });
 
-describe('paintWall, review findings', () => {
-  const dots = (acts: readonly WallAct[], box = BOX) => paintOn(acts, box).arcs.filter((a) => a.r < 1);
-
-  test('the speckle is the same tag on every screen: equal counts and equal places, normalized to the box', () => {
-    const acts = [draw(stroke([[0.2, 0.3], [0.5, 0.35], [0.6, 0.5]], 'fat'))];
-    const a = dots(acts, { w: 400, h: 200 }), b = dots(acts, { w: 800, h: 400 });
-    expect(a.length).toBeGreaterThan(10);
-    expect(b).toHaveLength(a.length);
-    a.forEach((d, i) => { expect(b[i]!.x / 800).toBeCloseTo(d.x / 400, 6); expect(b[i]!.y / 400).toBeCloseTo(d.y / 200, 6); });
+describe('a pass of the sponge', () => {
+  test('one pass over a fresh 2-coat stroke leaves it inked at its center and see-through; a second leaves it clean', () => {
+    const wall = wallOf([draw('a', group(SPAN))]);
+    const fresh = paintOn(wall).alpha(300, 200);
+    expect(fresh).toBeGreaterThan(0.9);
+    const first = pass(wall, 200);
+    expect(first.length).toBeGreaterThan(20);
+    expect(wall.hitAt(300, 200)).toBe(true);
+    expect(coats(wall, 0, 300, 200)).toBeGreaterThan(8);
+    expect(coats(wall, 0, 300, 200)).toBeLessThan(12);
+    const thin = paintOn(wall).alpha(300, 200);
+    expect(thin).toBeGreaterThan(0.3);
+    expect(thin).toBeLessThan(0.9);
+    pass(wall, 200);
+    expect(wall.hitAt(300, 200)).toBe(false);
+    expect(paintOn(wall).alpha(300, 200)).toBe(0);
   });
 
-  test('a repeated point leaves no gap or NaN in the speckle, which still lies beside the path and within its span', () => {
-    const rw = (CAPS.fat / 2) * BOX.w;
-    const d = dots([draw(stroke([[0.1, 0.5], [0.5, 0.5], [0.5, 0.5], [0.5, 0.5], [0.9, 0.5]], 'fat'))]);
-    expect(d.length).toBeGreaterThan(50);
-    for (const a of d) {
-      expect(Number.isFinite(a.x) && Number.isFinite(a.y)).toBe(true);
-      expect(Math.abs(a.y - 100)).toBeGreaterThanOrEqual(1.9 * rw * Math.cos(Math.PI / 4) * 0 + 1.9 * rw - 1e-6);
-      expect(a.x).toBeGreaterThan(0.1 * 400 - 4 * rw);
-      expect(a.x).toBeLessThan(0.9 * 400 + 4 * rw);
+  test('presses go every third of the sponge\'s radius, which is SPONGE_EM / 2 ems of this screen', () => {
+    const wall = wallOf([draw('a', group(SPAN))]);
+    expect(wall.spongePx).toBe((SPONGE_EM / 2) * EM);
+    const presses = pass(wall, 200, 150, 450);
+    const step = wall.spongePx / 3;
+    expect(presses.length).toBe(Math.floor(300 / step) + 1);
+    const wide = wallOf([draw('a', group(SPAN))], { emPx: 30 });
+    expect(wide.spongePx).toBe(60);
+  });
+
+  test('a press where the wall has no paint is no press', () => {
+    const wall = wallOf([draw('a', group(SPAN))]);
+    expect(wall.press(300, 60)).toBeNull();
+    expect(coats(wall, 0, 300, 200)).toBe(COATS.line);
+  });
+
+  test('presses over two groups where one lies on the other thin only the top one, the later draw', () => {
+    const wall = wallOf([draw('under', group(SPAN)), draw('over', group(SPAN))]);
+    const made = pass(wall, 200);
+    expect(new Set(made.map((p) => `${p.draw}/${p.group}`))).toEqual(new Set(['over/0']));
+    expect(coats(wall, 0, 300, 200)).toBe(COATS.line);
+    expect(coats(wall, 1, 300, 200)).toBeLessThan(12);
+    pass(wall, 200);
+    expect(coats(wall, 1, 300, 200)).toBe(0);
+    expect(coats(wall, 0, 300, 200)).toBe(COATS.line);
+    const third = pass(wall, 200);
+    /* The ends of the top group may still hold a scrap, which the pass takes first; the group beneath is reached under its clean middle. */
+    expect(third.some((p) => p.draw === 'under')).toBe(true);
+    expect(third.filter((p) => p.draw === 'over').every((p) => Math.abs(p.u) > 8)).toBe(true);
+    expect(coats(wall, 0, 300, 200)).toBeLessThan(12);
+  });
+
+  test('a press keeps its group\'s units: a group scaled to half sends presses at twice the px distance', () => {
+    /* 80 ems wide at 15 px is 1,200 px in a 600 px box: shrunk to a little under half. */
+    const wall = wallOf([draw('a', group([[-40, 0], [40, 0]]))]);
+    const f = wall.groups[0]!;
+    expect(f.sx).toBeLessThan(EM * 0.5);
+    expect(f.sx).toBeGreaterThan(EM * 0.4);
+    const made = pass(wall, 200, 100, 400);
+    const xs = made.map((p) => p.u);
+    const spacing = xs[1]! - xs[0]!;
+    expect(spacing * f.sx).toBeCloseTo(wall.spongePx / 3, 0);
+    expect(spacing).toBeGreaterThan((wall.spongePx / 3 / EM) * 1.9);
+    expect(made[0]!.v).toBeCloseTo(0, 1);
+  });
+
+  test('a press is a take at the group\'s own scale and replays the same from the saved cuts', () => {
+    const acts = [draw('a', group(SPAN))];
+    const live = wallOf(acts);
+    const made = pass(live, 200);
+    const cut: WallAct = { kind: 'wash', id: 'w', payload: { cuts: [{ draw: 'a', group: 0, presses: made.map((p) => [p.u, p.v]) }] } };
+    const replayed = wallOf([...acts, cut]);
+    for (const x of [200, 300, 400]) expect(coats(replayed, 0, x, 200)).toBeCloseTo(coats(live, 0, x, 200), 0);
+    expect(coats(replayed, 0, 300, 200)).toBeLessThan(12);
+    /* This visit's own presses are replayed after the saved ones. */
+    const chunk = { draw: 'a', group: 0, presses: made.map((p): [number, number] => [p.u, p.v]) };
+    const twice = Wall.of([...acts, cut], layout(), [chunk]);
+    expect(coats(twice, 0, 300, 200)).toBe(0);
+  });
+
+  test('a wash of a draw that is not live, or of a group it has not, takes nothing', () => {
+    const acts = [draw('a', group(SPAN))];
+    const cut: WallAct = { kind: 'wash', id: 'w', payload: { cuts: [{ draw: 'gone', group: 0, presses: [[0, 0]] }, { draw: 'a', group: 7, presses: [[0, 0]] }] } };
+    expect(coats(wallOf([...acts, cut]), 0, 300, 200)).toBe(COATS.line);
+  });
+});
+
+describe('where a group lands', () => {
+  const text = (dx: number, dy: number) => ({ kind: 'text', version: 'v', at: 4, len: 3, dx, dy });
+  test('a text group lands at its mark plus its offset, and is drawn there', () => {
+    const acts = [draw('a', group([[0, 0], [4, 0]], { anchor: text(2, 1) }))];
+    const at = (x: number, y: number) => wallOf(acts, { measured: () => ({ kind: 'point' as const, x, y }) });
+    const w = at(100, 60);
+    expect([w.groups[0]!.ox, w.groups[0]!.oy]).toEqual([100 + 2 * EM, 60 + EM]);
+    expect(w.hitAt(100 + 2 * EM + 20, 60 + EM)).toBe(true);
+    expect(w.hitAt(300, 200)).toBe(false);
+    /* The same Acts on another screen put it at that screen's mark. */
+    const moved = at(40, 160);
+    expect([moved.groups[0]!.ox, moved.groups[0]!.oy]).toEqual([40 + 2 * EM, 160 + EM]);
+    expect(moved.hitAt(40 + 2 * EM + 20, 160 + EM)).toBe(true);
+    expect(moved.hitAt(100 + 2 * EM + 20, 60 + EM)).toBe(false);
+  });
+
+  test('a group whose mark is missing lands at its spot in the box', () => {
+    const w = wallOf([draw('a', group([[0, 0], [4, 0]], { at: [0.25, 0.75], anchor: text(2, 1) }))], { measured: () => null });
+    expect([w.groups[0]!.ox, w.groups[0]!.oy]).toEqual([0.25 * BOX.w, 0.75 * BOX.h]);
+  });
+
+  test('an Act\'s places say where a group is attached in the post as it is now: a null place is its box spot', () => {
+    const seen: unknown[] = [];
+    const act = { ...draw('a', group([[0, 0], [4, 0]], { at: [0.25, 0.75], anchor: text(2, 1) })), places: [{ grp: 0, place: null }] };
+    const w = wallOf([act], { measured: (g: GroupSrc) => { seen.push(g.anchor); return { kind: 'point' as const, x: 9, y: 9 }; } });
+    expect([w.groups[0]!.ox, w.groups[0]!.oy]).toEqual([0.25 * BOX.w, 0.75 * BOX.h]);
+    expect(seen.every((a) => (a as { kind: string }).kind === 'box')).toBe(true);
+  });
+
+  test('an image group is at its point in the image and a unit as wide as the image', () => {
+    const image = { kind: 'image', version: 'v', n: 0, src: 'x.png', nth: 0, x: 0.5, y: 0.5 };
+    const g = group([[-0.25, 0], [0.25, 0]], { anchor: image, unit: 'image', em: 13.33 });
+    const w = wallOf([draw('a', g)], { measured: () => ({ kind: 'rect' as const, x: 50, y: 50, w: 200, h: 100 }) });
+    expect([w.groups[0]!.ox, w.groups[0]!.oy, w.groups[0]!.sx]).toEqual([150, 100, 200]);
+    expect(w.hitAt(150, 100)).toBe(true);
+    expect(w.hitAt(150 + 50, 100)).toBe(true);
+    /* Narrower on a screen where the image is narrower: the mark scales with it. */
+    const narrow = wallOf([draw('a', g)], { measured: () => ({ kind: 'rect' as const, x: 50, y: 50, w: 100, h: 50 }) });
+    expect(narrow.hitAt(100 + 40, 75)).toBe(false);
+    expect(narrow.hitAt(100 + 20, 75)).toBe(true);
+  });
+
+  test('a wash on an image group capped to its counted share (issue #1261) takes from where its paint is drawn, and the server frames the same takes on its coats', () => {
+    /* A 30-em image, 450 px here, declared 0.5 em, its stroke out to 3 widths: uncapped it would be shrunk to the box and cover it; capped, a width is at most
+       IMAGE_SLACK * 0.5 / 40 of the 600 px box, 37.5 px, so the paint is the stroke's 6 widths and its brush either side of the image's middle, (225, 200). */
+    const image = { kind: 'image', version: 'v', n: 0, src: 'x.png', nth: 0, x: 0.5, y: 0.5 };
+    const act = draw('a', group([[-3, 0], [3, 0]], { anchor: image, unit: 'image', em: 0.5 }));
+    const wall = wallOf([act], { measured: () => ({ kind: 'rect' as const, x: 0, y: 50, w: 450, h: 300 }) });
+    const f = wall.groups[0]!;
+    expect([f.ox, f.oy, f.sx]).toEqual([225, 200, 37.5]);
+    expect(wall.hitAt(225 + 100, 200)).toBe(true);
+    /* Where the uncapped group's paint would have been, there is none to take. */
+    expect(wall.hitAt(520, 200)).toBe(false);
+    expect(wall.press(520, 200)).toBeNull();
+    const made = pass(wall, 200, 130, 320);
+    expect(made.length).toBeGreaterThan(0);
+    expect(coats(wall, 0, 225, 200)).toBeLessThan(COATS.line);
+    /* Each take is in the group's own units, on its stroke: across within its 3 widths and brush, and down on its line. */
+    const r = CAPS_EM.stock / 2 / 0.5;
+    for (const p of made) { expect(Math.abs(p.u)).toBeLessThanOrEqual(3 + r); expect(Math.abs(p.v)).toBeLessThanOrEqual(r); }
+    /* The server frames those takes in the drawer's box as it framed the coats: across the stroke's span about its `at`, 0.5 +- 3 * 0.5 / 40 and the brush. */
+    const cut = graffiti.surface!.validateWash({ cuts: [{ draw: 'a', group: 0, presses: made.map((p) => [p.u, p.v]) }] }, new Map([['a', act.payload]]));
+    expect(cut.ok).toBe(true);
+    if (!cut.ok) return;
+    const reachX = ((3 + r) * 0.5) / 40;
+    for (const [x, y] of cut.value.cuts[0]!.presses) { expect(Math.abs(x - 0.5)).toBeLessThanOrEqual(reachX + 1e-4); expect(Math.abs(y - 0.5)).toBeLessThanOrEqual((r * 0.5) / 26.7 + 1e-4); }
+  });
+
+  test('a group 900 px wide in a 360 px box is shrunk to fit and is inside it', () => {
+    const w = wallOf([draw('a', group([[-30, 0], [30, 0]]))], { box: { w: 360, h: 400 } });
+    const f = w.groups[0]!;
+    expect(f.scale).toBeLessThan(0.45);
+    expect(w.hitAt(5, 200)).toBe(true);
+    expect(w.hitAt(355, 200)).toBe(true);
+  });
+});
+
+describe('the look', () => {
+  const acts = [draw('a', group([[-8, -3], [0, 2], [8, -3]], {}, 'fat'))];
+  test('the overspray is at most 0.35 and lies outside the core, and is the same on every paint', () => {
+    const a = paintOn(wallOf(acts)), b = paintOn(wallOf(acts));
+    expect(b.px.map((p) => p.a)).toEqual(a.px.map((p) => p.a));
+    const rim = (CAPS_EM.fat * EM) / 2;
+    expect(rim).toBeGreaterThan(0);
+    expect(a.px.some((p) => p.a > 0 && p.a < 0.4)).toBe(true);
+    expect(a.alpha(300, 200 - 3 * EM)).toBeLessThanOrEqual(0.92 + 1e-6);
+    expect(a.px.map((p) => p.a).filter((v) => v < 0.9).reduce((m, v) => Math.max(m, v), 0)).toBeLessThanOrEqual(1 - (1 - 0.35) * (1 - 0.5) + 0.01);
+  });
+
+  test('thinned paint takes the halo with it: a pass leaves less overspray, two leave none', () => {
+    const wall = wallOf([draw('a', group(SPAN, {}, 'fat'))]);
+    const sum = () => paintOn(wall).px.reduce((n, p) => n + p.a, 0);
+    const before = sum();
+    pass(wall, 200); const mid = sum();
+    pass(wall, 200); pass(wall, 200); const after = sum();
+    expect(mid).toBeLessThan(before);
+    expect(after).toBeLessThan(mid);
+  });
+
+  test('a draft is painted after the wall and is no ink of its own', () => {
+    const wall = wallOf([draw('a', group(SPAN))]);
+    const draft = draw('', group([[-10, 0], [10, 0]], { at: [0.5, 0.8] }));
+    const p = paintOn(wall, BOX, draft);
+    expect(p.alpha(300, 0.8 * BOX.h)).toBeGreaterThan(0.9);
+    expect(wall.hitAt(300, 0.8 * BOX.h)).toBe(false);
+  });
+});
+
+describe('a draw and a wash from before groups', () => {
+  const B = { w: 400, h: 200 };
+  const old = legacy('old', { can: 'red', cap: 'fat', aspect: 2, points: [[0.25, 0.5], [0.75, 0.5]] });
+  const oldWash = (points: [number, number][]): WallAct => ({ kind: 'wash', payload: { strokes: [{ aspect: 2, points }] } });
+  const wallB = (acts: readonly WallAct[]) => Wall.of(acts, { box: B, emPx: EM });
+
+  test('is one group at its shares, its strokes at their old widths, laid as a 2-coat group', () => {
+    const w = wallB([old]);
+    expect(w.groups).toHaveLength(1);
+    expect(coats(w, 0, 200, 100)).toBe(COATS.line);
+    const r = (CAPS.fat * B.w) / 2;
+    expect(w.hitAt(200, 100 + r - 1)).toBe(true);
+    expect(w.hitAt(200, 100 + r + 1.5)).toBe(false);
+    expect(w.hitAt(0.25 * B.w - r + 1, 100)).toBe(true);
+    const p = paintOn(w, B);
+    expect(p.alpha(200, 100)).toBeGreaterThan(0.9);
+    expect(p.alpha(200, 100 + r + 3)).toBeGreaterThan(0);
+    expect(p.alpha(200, 100 + r + 3)).toBeLessThan(0.5);
+  });
+
+  test('a legacy wash is an instant cut of the draws before it, as stored, and not of one after it', () => {
+    const cut = oldWash([[0.5, 0.4], [0.5, 0.6]]);
+    expect(wallB([old, cut]).hitAt(200, 100)).toBe(false);
+    expect(wallB([old, cut]).hitAt(120, 100)).toBe(true);
+    expect(wallB([old, cut, legacy('later', { can: 'red', cap: 'fat', aspect: 2, points: [[0.45, 0.5], [0.55, 0.5]] })]).hitAt(200, 100)).toBe(true);
+    expect(paintOn(wallB([old, cut]), B).alpha(200, 100 + 12)).toBe(0);
+  });
+
+  test('a press on a legacy group is a share of its box, 0 to 1', () => {
+    const w = wallB([old]);
+    const made = w.press(200, 100)!;
+    expect(made).toMatchObject({ draw: 'old', group: 0, u: 0.5, v: 0.5 });
+  });
+
+  test.each([{ w: 340, h: 200 }, { w: 1000, h: 560 }])('a pass over a legacy draw on a $w px box takes what the server takes: its disc is SPONGE / 2 of the box wide', (B2) => {
+    const aspect = B2.w / B2.h;
+    const draw1 = legacy('old', { can: 'red', cap: 'fat', aspect, points: [[0.2, 0.5], [0.8, 0.5]] });
+    const w = Wall.of([draw1], { box: B2, emPx: EM });
+    const walker: Walker = { last: null, left: 0 };
+    const presses: [number, number][] = [];
+    for (const x of [0.3, 0.55]) for (const p of w.walk(walker, [x * B2.w, 0.5 * B2.h])) presses.push([p.u, p.v]);
+    expect(presses.length).toBeGreaterThan(3);
+    /* The step is a third of the disc's radius, as the server counts it. */
+    expect(Math.abs(presses[1]![0] - presses[0]![0]) * B2.w).toBeCloseTo((SPONGE / 2 * B2.w) / 3, 0);
+    const server = takesOf(presses, SPONGE / 2, aspect);
+    const f = w.groups[0]!;
+    let compared = 0, taken = 0;
+    for (const gx of [30, 35, 40, 45, 50, 55]) for (const gy of [49, 50]) {
+      const x = ((gx + 0.5) / GRID) * B2.w, y = ((gy + 0.5) / GRID) * B2.h;
+      const left = f.coatsAt(x, y);
+      const expected = Math.max(0, COATS.line - server[gy * GRID + gx]!);
+      expect(Math.abs(left - expected), `cell ${gx},${gy}: ${left} against ${expected}`).toBeLessThanOrEqual(1);
+      compared++; if (server[gy * GRID + gx]! > 0) taken++;
     }
-    /* Dots follow the whole path: some lie past the repeated point on either side. */
-    const right = d.filter((a) => a.x > 0.5 * 400).length / d.length;
-    expect(right).toBeGreaterThan(0.35);
-    expect(right).toBeLessThan(0.65);
-    /* Spread along the path past the repeat, not piled at its end. */
-    expect(d.filter((a) => a.x > 250 && a.x < 310).length).toBeGreaterThan(d.length / 10);
+    expect(compared).toBe(12);
+    expect(taken).toBeGreaterThan(6);
+  });
+});
+
+describe('the wall\'s bands', () => {
+  test('spanOf says where a band still has paint, across the box, and none once it is clean', () => {
+    const wall = wallOf([draw('a', group(SPAN))]);
+    const span = wall.spanOf(190, 210)!;
+    expect(span[0]).toBeCloseTo(300 - 150 - 8, -1);
+    expect(span[1]).toBeCloseTo(300 + 150 + 8, -1);
+    expect(wall.spanOf(0, 20)).toBeNull();
+    pass(wall, 200); pass(wall, 200); pass(wall, 200);
+    expect(wall.spanOf(190, 210)).toBeNull();
+    expect(wall.anyPaint()).toBe(false);
+  });
+});
+
+describe('the painter keeps a bitmap for each field', () => {
+  test('a scrub that presses one group of several rasterizes only that group, and the look is the same as a fresh paint', () => {
+    const acts = [draw('a', ...[0.15, 0.35, 0.55, 0.75].map((y) => group(SPAN, { at: [0.5, y] })))];
+    const wall = wallOf(acts);
+    paintOn(wall);
+    expect(wall.groups.every((f) => f.rasters > 0), 'the first paint rasterizes every field').toBe(true);
+    const base = wall.groups.map((f) => f.rasters);
+    /* A frame with nothing pressed rasterizes nothing: it composites from the caches. */
+    paintOn(wall);
+    expect(wall.groups.map((f) => f.rasters), 'a repaint with no press').toEqual(base);
+    const target = wall.groups[2]!;
+    wall.walk({ last: null, left: 0 }, [target.ox + 20, target.oy]);
+    wall.walk({ last: null, left: 0 }, [target.ox + 40, target.oy]);
+    const after = paintOn(wall);
+    const grew = wall.groups.map((f, i) => f.rasters - base[i]!);
+    expect(grew[0], 'the group above').toBe(0);
+    expect(grew[1]).toBe(0);
+    expect(grew[3], 'the group below').toBe(0);
+    expect(grew[2], 'the pressed group').toBeGreaterThan(0);
+    const fresh = wallOf(acts);
+    fresh.walk({ last: null, left: 0 }, [target.ox + 20, target.oy]);
+    fresh.walk({ last: null, left: 0 }, [target.ox + 40, target.oy]);
+    const same = paintOn(fresh);
+    expect(after.px.map((p) => [p.a, p.r, p.g, p.b])).toEqual(same.px.map((p) => [p.a, p.r, p.g, p.b]));
   });
 
-  test('on a box whose aspect is not the stroke\'s (k = 0.5) the core is the ellipse: 16 px across and 8 px down', () => {
-    const w = paintOn([draw(stroke([[0.25, 0.5], [0.75, 0.5]], 'fat', 'red', 1))]);
-    expect(w.strokes.filter((s) => s.op === 'source-over')[0]).toEqual({ alpha: 0.92, width: 16, op: 'source-over' });
-    expect(w.alpha(200, 100 + 3)).toBeGreaterThanOrEqual(0.92);
-    expect(w.alpha(200, 100 + 6)).toBeLessThan(0.92);
-    expect(w.alpha(200, 100 + 6)).toBeGreaterThan(0);
-    expect(w.alpha(200, 100 + 8 * 1.9 * 0.5 + 8)).toBe(0);
+  test('a press that finds no paint rasterizes nothing', () => {
+    const wall = wallOf([draw('a', group(SPAN))]);
+    paintOn(wall);
+    const was = wall.groups[0]!.rasters;
+    expect(wall.press(10, 10)).toBeNull();
+    paintOn(wall);
+    expect(wall.groups[0]!.rasters).toBe(was);
+  });
+});
+
+describe('a wall built over the one before it', () => {
+  test('reuses a field whose inputs and washes are the same, and builds the one whose washes changed', () => {
+    const acts = [draw('a', group(SPAN, { at: [0.5, 0.2] }), group(SPAN, { at: [0.5, 0.7] }))];
+    const before = Wall.of(acts, layout());
+    const same = Wall.of(acts, layout(), [], before);
+    expect(same.groups[0]).toBe(before.groups[0]);
+    expect(same.groups[1]).toBe(before.groups[1]);
+    const washed = Wall.of(acts, layout(), [{ draw: 'a', group: 1, presses: [[0, 0]] }], before);
+    expect(washed.groups[0], 'a group no wash touched').toBe(before.groups[0]);
+    expect(washed.groups[1], 'a group a wash touched').not.toBe(before.groups[1]);
+    expect(washed.groups[1]!.coatsAt(washed.groups[1]!.ox, washed.groups[1]!.oy)).toBeLessThan(COATS.line);
   });
 
-  test('hitAt agrees with cellsOf at every cell center except those on a core\'s edge, with k = 0.5 and k = 1', () => {
-    for (const aspect of [1, 2, 0.6]) {
-      const points: [number, number][] = [[0.15, 0.2], [0.5, 0.6], [0.85, 0.3], [0.85, 0.3], [0.4, 0.9]];
-      const acts = [draw(stroke(points, 'fat', 'red', aspect))];
-      const cells = cellsOf([{ width: CAPS.fat, aspect, points }]);
-      const bit = (x: number, y: number) => (cells[(y * GRID + x) >> 3]! & (0x80 >> ((y * GRID + x) & 7))) !== 0;
-      let ink = 0, edge = 0, bad = 0;
-      for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
-        const mine = hitAt(acts, BOX, ((x + 0.5) / GRID) * BOX.w, ((y + 0.5) / GRID) * BOX.h), theirs = bit(x, y);
-        if (theirs) ink++;
-        if (mine === theirs) continue;
-        const onEdge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const nx = x + dx!, ny = y + dy!; return nx >= 0 && ny >= 0 && nx < GRID && ny < GRID && bit(nx, ny) !== theirs; });
-        edge++;
-        if (!onEdge) bad++;
-      }
-      expect(ink, `aspect ${aspect}`).toBeGreaterThan(300);
-      expect(bad, `aspect ${aspect}`).toBe(0);
-      expect(edge, `aspect ${aspect}`).toBeLessThan(ink * 0.05);
-    }
+  test('builds a group whose spot, or whose text size, changed', () => {
+    const acts = [draw('a', group(SPAN, { at: [0.5, 0.2] }), group(SPAN, { at: [0.5, 0.7] }))];
+    const before = Wall.of(acts, layout());
+    const moved = Wall.of(acts, layout({ measured: (g) => (g.index === 1 ? { kind: 'point', x: 50, y: 300 } : null) }), [], before);
+    expect(moved.groups[0]).toBe(before.groups[0]);
+    const bigger = Wall.of(acts, layout({ emPx: 20 }), [], before);
+    expect(bigger.groups[0]).not.toBe(before.groups[0]);
+  });
+});
+
+/** Every canvas made from now on, in order, until the mocks are restored. */
+function watchCanvases(): HTMLCanvasElement[] {
+  const made: HTMLCanvasElement[] = [];
+  const real = document.createElement.bind(document);
+  vi.spyOn(document, 'createElement').mockImplementation(((tag: string, o?: ElementCreationOptions) => {
+    const el = real(tag, o);
+    if (tag === 'canvas') made.push(el as HTMLCanvasElement);
+    return el;
+  }) as typeof document.createElement);
+  return made;
+}
+
+describe('the painter gives its bitmaps back', () => {
+  test('a field dropped on rebuild releases its bitmaps, and the one kept keeps them', () => {
+    fakeCanvases();
+    const target = canvasOf();
+    const two = [draw('a', group(SPAN, { at: [0.5, 0.2] }), group(SPAN, { at: [0.5, 0.7] }))];
+    const before = Wall.of(two, layout());
+    const made = watchCanvases();
+    paintWall(target.getContext('2d') as CanvasRenderingContext2D, BOX, 1, before);
+    expect(made).toHaveLength(4);
+    expect(made.every((c) => c.width > 0 && c.height > 0)).toBe(true);
+    /* Halos of both fields, then their cores: the second field's are the 2nd and the 4th. */
+    Wall.of([draw('a', group(SPAN, { at: [0.5, 0.2] }))], layout(), [], before);
+    expect([made[1]!.width, made[1]!.height, made[3]!.width, made[3]!.height], 'the dropped field').toEqual([0, 0, 0, 0]);
+    expect(made[0]!.width, 'the kept field').toBeGreaterThan(0);
+    expect(made[2]!.width, 'the kept field').toBeGreaterThan(0);
   });
 
-  test('the overspray does not pile up: at 1.5 core radii on a straight stroke its accumulated alpha is at most about 0.4, and not 0', () => {
-    const w = paintOn([draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat'))]);
-    const at = w.alpha(200, 100 + 12);
-    expect(at).toBeGreaterThan(0);
-    expect(at).toBeLessThanOrEqual(0.4);
-    /* At the core's edge, just outside it, the halo peaks near 0.35. */
-    const edge = w.alpha(200, 100 + 9);
-    expect(edge).toBeGreaterThan(0.2);
-    expect(edge).toBeLessThanOrEqual(0.42);
+  test('a draft\'s fields release their bitmaps when another draft replaces them and when there is none', () => {
+    fakeCanvases();
+    const target = canvasOf();
+    const ctx = target.getContext('2d') as CanvasRenderingContext2D;
+    const wall = wallOf([draw('a', group(SPAN))]);
+    paintWall(ctx, BOX, 1, wall);
+    const made = watchCanvases();
+    const one = draw('d1', group(SPAN, { at: [0.5, 0.8] })), two = draw('d2', group(SPAN, { at: [0.5, 0.1] }));
+    paintWall(ctx, BOX, 1, wall, one);
+    const first = [...made];
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.every((c) => c.width > 0)).toBe(true);
+    paintWall(ctx, BOX, 1, wall, two);
+    expect(first.every((c) => c.width === 0 && c.height === 0), 'the replaced draft').toBe(true);
+    const second = made.slice(first.length);
+    expect(second.every((c) => c.width > 0)).toBe(true);
+    paintWall(ctx, BOX, 1, wall, null);
+    expect(second.every((c) => c.width === 0 && c.height === 0), 'no draft').toBe(true);
   });
 
-  test('a wash along a Fat stroke leaves no ghost: no alpha within the sponge and the widest halo of its path', () => {
-    const w = paintOn([draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat')), wash([[0.3, 0.5], [0.7, 0.5]])]);
-    for (let y = 70; y <= 130; y++) for (let x = 130; x <= 270; x++) expect(w.alpha(x, y), `(${x}, ${y})`).toBe(0);
-    /* Past the wash's ends the stroke is still there. */
-    expect(w.alpha(100, 100)).toBeGreaterThanOrEqual(0.92);
+  test('a pass with no paint in it allocates no canvas (the overspray left beside the wash still has one)', () => {
+    fakeCanvases();
+    const target = canvasOf();
+    const wall = wallOf([draw('a', group(SPAN))]);
+    pass(wall, 200); pass(wall, 200); pass(wall, 200);
+    expect(wall.anyPaint()).toBe(false);
+    const made = watchCanvases();
+    paintWall(target.getContext('2d') as CanvasRenderingContext2D, BOX, 1, wall);
+    expect(made, 'the halo pass only; the clean cores have none').toHaveLength(1);
+  });
+});
+
+describe('the sweep\'s bands tile the box', () => {
+  /** Every y of the box lies within some band's reach (`half` either side of a band's center). */
+  const gaps = (centers: readonly number[], half: number, h: number): number[] => {
+    const bad: number[] = [];
+    for (let y = 0; y <= h; y += 0.25) if (!centers.some((c) => Math.abs(y - c * h) <= half + 1e-9)) bad.push(y);
+    return bad;
+  };
+
+  test('where a press reaches less than a row, the bands are shallower and still leave no gap', () => {
+    const wall = wallOf([draw('a', group(SPAN))], { emPx: 2 });
+    expect(wall.bandHalf()).toBeLessThan(ROW_PX / 2);
+    expect(gaps(wall.bands(BOX.h), wall.bandHalf(), BOX.h), 'y with no band').toEqual([]);
   });
 
-  test('dense points, much closer than a stamp step, do not pile the overspray: stamps are an arc length apart', () => {
-    const dense: [number, number][] = [];
-    for (let i = 0; i <= 480; i++) dense.push([0.2 + (0.6 * i) / 480, 0.5]);
-    const w = paintOn([draw(stroke(dense, 'fat'))]);
-    expect(w.alpha(200, 100 + 12)).toBeGreaterThan(0);
-    expect(w.alpha(200, 100 + 12)).toBeLessThanOrEqual(0.4);
-    expect(w.alpha(200, 100 + 9)).toBeLessThanOrEqual(0.42);
+  test('at the board\'s text size they tile the box, down to its last pixel', () => {
+    const wall = wallOf([draw('a', group(SPAN))]);
+    expect(gaps(wall.bands(BOX.h), wall.bandHalf(), BOX.h), 'y with no band').toEqual([]);
   });
+});
 
-  test('a canvas with no pixels draws nothing and does not throw', () => {
-    const f = fakeCanvases();
-    const c = document.createElement('canvas');
-    c.width = 0; c.height = 0;
-    expect(() => paintWall(c.getContext('2d') as CanvasRenderingContext2D, BOX, 1, [draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat'))])).not.toThrow();
-    expect(f.arcs).toHaveLength(0);
-  });
-
-  test('the shared halo canvas is released after painting, so only the wall\'s own canvas holds pixels', () => {
-    paintOn([draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat'))]);
-    expect([...seen].filter((c) => c.width === BOX.w && c.height === BOX.h)).toHaveLength(1);
-  });
-
-  test('a draw after a wash keeps its own halo', () => {
-    const w = paintOn([wash([[0.5, 0.2], [0.5, 0.8]]), draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat'))]);
-    expect(w.alpha(200, 100 + 12)).toBeGreaterThan(0);
+describe('a wall built over the one before: unit', () => {
+  test('a group that differs only in its unit is laid again, not reused', () => {
+    const em = [draw('a', group(SPAN))], image = [draw('a', group(SPAN, { unit: 'image' }))];
+    const before = Wall.of(em, layout());
+    const after = Wall.of(image, layout(), [], before);
+    expect(after.groups[0]).not.toBe(before.groups[0]);
   });
 });
 
@@ -318,33 +600,12 @@ describe('wallDensity', () => {
 });
 
 describe('hitAt', () => {
-  const acts = [draw(stroke([[0.3, 0.5], [0.7, 0.5]], 'fat'))];
-  test('is true on a core and false on overspray alone, or on bare wall', () => {
-    expect(hitAt(acts, BOX, 200, 100)).toBe(true);
-    expect(hitAt(acts, BOX, 200, 100 + 7)).toBe(true);
-    expect(hitAt(acts, BOX, 200, 100 + 12)).toBe(false);
-    expect(paintOn(acts).alpha(200, 112)).toBeGreaterThan(0);
-    expect(hitAt(acts, BOX, 20, 20)).toBe(false);
-  });
-  test('is false where a later wash cut the core, true again under a draw after it', () => {
-    const w = wash([[0.5, 0.4], [0.5, 0.6]]);
-    expect(hitAt([...acts, w], BOX, 200, 100)).toBe(false);
-    expect(hitAt([...acts, w], BOX, 120, 100)).toBe(true);
-    expect(hitAt([...acts, w, draw(stroke([[0.45, 0.5], [0.55, 0.5]], 'fat'))], BOX, 200, 100)).toBe(true);
-  });
-});
-
-describe('hitAt keeps to a stroke\'s own bounds', () => {
-  const box = { w: 400, h: 300 };
-  const act: WallAct = { kind: 'draw', payload: { strokes: [{ can: 'red', cap: 'fat', aspect: box.w / box.h, points: [[0.1, 0.2], [0.5, 0.2]] }] } };
-  const r = (CAPS.fat * box.w) / 2;
-  test('a point within the brush of an end is ink and one a hair past it is not, with the wall far wider than the stroke', () => {
-    const end = 0.5 * box.w, y = 0.2 * box.h;
-    expect(hitAt([act], box, end + r - 0.5, y)).toBe(true);
-    expect(hitAt([act], box, end + r + 0.5, y)).toBe(false);
-    expect(hitAt([act], box, 0.1 * box.w - r + 0.5, y)).toBe(true);
-    expect(hitAt([act], box, 0.1 * box.w - r - 0.5, y)).toBe(false);
-    expect(hitAt([act], box, 0.3 * box.w, y + r + 0.5)).toBe(false);
-    expect(hitAt([act], box, 0.3 * box.w, y - r + 0.5)).toBe(true);
+  test('is the wall\'s own test, and takes acts too, for a caller with no wall of its own', () => {
+    const acts = [draw('a', group(SPAN))];
+    const wall = wallOf(acts);
+    expect(hitAt(wall, BOX, 300, 200)).toBe(true);
+    expect(hitAt(wall, BOX, 300, 100)).toBe(false);
+    expect(hitAt(acts, BOX, 300, 200)).toBe(true);
+    expect(hitAt([], BOX, 300, 200)).toBe(false);
   });
 });
