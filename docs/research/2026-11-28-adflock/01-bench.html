@@ -1,0 +1,237 @@
+<!doctype html>
+<!--
+  Record, written 2026-11-28. The AdFlock bench: the design session's mockup for
+  docs/plans/2026-11-27-season-two-cards-design.md (AdFlock Minus), made so the owner can see the flock on a post. Each load deals
+  a fresh hand of pop-up windows over the post's row, enough to cover the words, hanging a little over its borders and never
+  over another post. A window drags by its title bar (the cheap way to read without touching a button) or closes by its ×,
+  and some of the ads' own writing gives them a decoy: an × that dodges, an × that opens another ad, or a real close hidden
+  in a tiny "no thanks" link. Every close, real or decoy, is a button in the tab order, so a keyboard meets the same decoys;
+  a focused title bar moves its window with the arrow keys.
+  The ads here are placeholders written for the bench and drawn in CSS, as a start on the writing; the card's are the
+  owner's, with their art. A standalone page: open it in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdFlock Bench</title>
+<style>
+:root { --paper: #fff; --ink: #000; --muted: #555; --rule: #000; --font: Verdana, Geneva, sans-serif; --mono: "Courier New", Courier, monospace; --neon: #19e3ff; color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--font); padding: 20px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 .3em; }
+.head, .notes { max-width: 988px; margin: 0 auto 16px; }
+.head p { color: var(--muted); font-size: 13.75px; max-width: 76ch; }
+:focus-visible { outline: 2px solid var(--neon); outline-offset: 2px; }
+.bench { max-width: 988px; margin: 0 auto 16px; border: 1px solid var(--rule); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.bench fieldset { border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 -1px -1px 0; padding: 10px 12px 12px; display: grid; gap: 6px; align-content: start; font-size: 12.5px; min-width: 0; }
+.bench legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold; letter-spacing: .06em; text-transform: uppercase; }
+.bench label { display: flex; gap: 6px; align-items: center; min-height: 24px; flex-wrap: wrap; }
+.bench input[type=range] { flex: 1; min-width: 90px; }
+.bench output { font: 12px var(--mono); min-width: 4.5ch; text-align: right; }
+.bench button { font: 12px var(--font); padding: 3px 8px; border: 1px solid var(--rule); background: #eee; cursor: pointer; }
+.stage { display: flex; justify-content: center; }
+.window { width: 988px; max-width: 100%; border: 1px solid var(--rule); }
+.board { --b-bg: #fff; --b-fg: #000; --b-head: #e6e6e6; --b-rule: #000; --b-muted: #555; background: var(--b-bg); color: var(--b-fg); font: 13px/1.5 var(--font); padding: 14px; }
+.window.dark .board { --b-bg: #0b0b0b; --b-fg: #f2f2f2; --b-head: #1d1d1d; --b-rule: #f2f2f2; --b-muted: #b4b4b4; }
+.crumbs { font-size: 11px; color: var(--b-muted); margin-bottom: 8px; }
+.other { border: 1px solid var(--b-rule); padding: 8px 10px; font-size: 12px; color: var(--b-muted); margin-bottom: 14px; position: relative; z-index: 3; background: var(--b-bg); }
+.rowwrap { position: relative; margin-bottom: 14px; }
+.post { border: 1px solid var(--b-rule); display: grid; grid-template-columns: 150px 1fr; background: var(--b-bg); }
+.postbit { border-right: 1px solid var(--b-rule); padding: 8px; font-size: 11px; background: var(--b-head); }
+.postbit b { font-size: 12px; display: block; }
+.body { padding: 10px 12px; min-height: 240px; }
+.body p { margin: 0 0 1em; }
+@media (max-width: 600px) { .post { grid-template-columns: 1fr; } .postbit { border-right: 0; border-bottom: 1px solid var(--b-rule); } }
+/* The flock's layer: the row's size plus the overhang, clipped there, so a window may hang over the row's border and never reaches the next post. */
+.flock { position: absolute; inset: calc(-1 * var(--hang)) calc(-1 * var(--hang)); overflow: hidden; pointer-events: none; z-index: 2; }
+
+/* A window. */
+.ad { position: absolute; pointer-events: auto; background: #c0c0c0; border: 2px solid; border-color: #fff #404040 #404040 #fff; box-shadow: 2px 3px 0 rgba(0,0,0,.35); font: 11px/1.3 Tahoma, Verdana, sans-serif; color: #000; width: 230px; max-width: calc(100% - 8px); }
+.ad .tb { display: flex; align-items: center; gap: 4px; padding: 2px 3px 2px 6px; background: linear-gradient(90deg, #000080, #1084d0); color: #fff; font-weight: bold; cursor: move; user-select: none; touch-action: none; }
+.ad .tb span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ad .x { width: 18px; height: 16px; padding: 0; font: bold 11px/1 Tahoma, sans-serif; background: #c0c0c0; border: 2px solid; border-color: #fff #404040 #404040 #fff; cursor: pointer; color: #000; flex: none; }
+.ad .x.tiny { width: 10px; height: 10px; font-size: 7px; border-width: 1px; }
+.ad .bd { padding: 8px; display: grid; gap: 6px; }
+.ad .art { height: 64px; display: grid; place-items: center; font-size: 34px; border: 1px inset #808080; }
+.ad .cta { justify-self: center; font: bold 12px Tahoma, sans-serif; padding: 4px 12px; background: #c0c0c0; border: 2px solid; border-color: #fff #404040 #404040 #fff; cursor: pointer; }
+.ad .nt { justify-self: center; font-size: 8.5px; color: #333; text-decoration: underline; background: none; border: 0; cursor: pointer; padding: 0; }
+.ad.loud { background: #ff0; border-color: #f0f; }
+.ad.loud .tb { background: linear-gradient(90deg, #f0f, #0ff); color: #000; }
+.ad.chat { width: 210px; background: #fff; border: 1px solid #ccc; border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+.ad.chat .tb { background: #4a8; border-radius: 10px 10px 0 0; }
+.ad.slick { width: 250px; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-family: system-ui, sans-serif; }
+.ad.slick .tb { background: #fff; color: #888; font-weight: normal; border-bottom: 1px solid #eee; border-radius: 6px 6px 0 0; }
+.ad.slick .x { background: #fff; border: 0; color: #aaa; }
+.ad.slick .cta { background: #635bff; color: #fff; border: 0; border-radius: 20px; padding: 6px 16px; }
+.stats { max-width: 988px; margin: 10px auto 0; font: 12.5px var(--mono); }
+.notes { font-size: 13.75px; }
+.notes li { margin-bottom: .4em; }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>AdFlock bench</h1>
+  <p>Each <b>Reload the page</b> deals a fresh flock over the post. Drag a window by its title bar to read past it, or try its ×. Not every × is honest. Keyboard: Tab reaches each window's buttons; on a focused title bar the arrow keys move the window.</p>
+</div>
+
+<form class="bench" onsubmit="return false">
+  <fieldset>
+    <legend>Flock</legend>
+    <label>Cover the words, share <input type="range" id="cover" min="0.2" max="1.6" step="0.05" value="1.1"><output for="cover"></output></label>
+    <label>Most windows <input type="range" id="most" min="2" max="16" step="1" value="9"><output for="most"></output></label>
+    <label>Overhang px <input type="range" id="hang" min="0" max="40" step="2" value="14"><output for="hang"></output></label>
+    <button type="button" id="reload">Reload the page</button>
+  </fieldset>
+  <fieldset>
+    <legend>Decoys</legend>
+    <label>Dodging × <input type="checkbox" id="d-dodge" checked></label>
+    <label>× opens another ad <input type="checkbox" id="d-spawn" checked></label>
+    <label>Close hidden in "no thanks" <input type="checkbox" id="d-nothanks" checked></label>
+    <label>Most spawned per load <input type="range" id="spawnmost" min="0" max="8" step="1" value="3"><output for="spawnmost"></output></label>
+  </fieldset>
+  <fieldset>
+    <legend>Window</legend>
+    <label><input type="radio" name="board" value="light" checked> Light</label>
+    <label><input type="radio" name="board" value="dark"> Dark</label>
+  </fieldset>
+</form>
+
+<div class="stage">
+  <div class="window" id="window">
+    <div class="board">
+      <div class="crumbs">Divided World » The Pipe » Honest review of the new Mario movie trailer</div>
+      <div class="other">The post above (Gloomba): "it's fine." Its words are never under the flock.</div>
+      <div class="rowwrap" id="rowwrap">
+        <div class="post">
+          <div class="postbit"><b>Gloomba</b>Pipe Dweller<br>Posts: 412</div>
+          <div class="body" id="body">
+            <p>Okay so I've watched the trailer eleven times and I have notes. First: the Goomba design is perfect and I will hear nothing against it. Second: Luigi's mustache is doing something new and I don't think it's legal.</p>
+            <p>Third, and this is the big one: there is a two-frame shot at 1:14 where you can see a Wiggler in the background, and I am choosing to believe this means a Wiggler subplot. A Wiggler redemption arc. A Wiggler who learns to be calm.</p>
+            <p>Fourth: if they cut the Wiggler I am starting a petition. Sign it here, in this thread, by replying "wiggle". That counts, legally.</p>
+          </div>
+        </div>
+        <div class="flock" id="flock" aria-label="Pop-up ads"></div>
+      </div>
+      <div class="other">The post below (Pipewrench): "wiggle". Its words are never under the flock either.</div>
+    </div>
+  </div>
+</div>
+<p class="stats" id="stats"></p>
+
+<ul class="notes">
+  <li>The flock covers the whole row, postbit and all, and hangs over the row's borders by the overhang; it is clipped there, so another post is never covered.</li>
+  <li>The three decoys: a dodging × leaps away twice before it can be caught; a hydra × closes its window and pops another up elsewhere, until the load's spawns are spent; a "no thanks" ad's × is dead, and its real close is the tiny link. Every window drags, always.</li>
+  <li>A decoy is the ad's own writing, not chance: each ad says which kind it has, so the same ad always cheats the same way and a regular learns it.</li>
+  <li>Every press is answered at once; nothing is timed, so reduced motion changes only the dodge, which jumps where it would slide.</li>
+</ul>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const knobs = ['cover','most','hang','spawnmost'];
+  const K = {};
+  const read = () => { for (const k of knobs) { K[k] = parseFloat($(k).value); const o = document.querySelector(`output[for=${k}]`); if (o) o.textContent = $(k).value; } $('rowwrap').style.setProperty('--hang', K.hang + 'px'); };
+  knobs.forEach((k) => $(k).addEventListener('input', read)); read();
+
+  // Placeholder ads, written for the bench: each its look, title, art, words, call to action and decoy (null, 'dodge', 'spawn', 'nothanks').
+  const ADS = [
+    { look: 'slick', title: 'aura.finance', art: '📈', text: 'Stake your Aura. Earn 4,000% APY*. *Annual Pretend Yield.', cta: 'Connect wallet', decoy: 'nothanks', nt: 'No thanks, I prefer being poor' },
+    { look: 'classic', title: 'Congratulations!!!', art: '🏆', text: 'You are the 1,000,000th visitor to this post! Click to claim your FREE Steel Chair.', cta: 'CLAIM', decoy: 'dodge' },
+    { look: 'chat', title: 'Mod Bot (1 new message)', art: '🤖', text: 'hey. saw your post. you seem cool. want to see my rulebook?', cta: 'Reply', decoy: 'spawn' },
+    { look: 'loud', title: 'DOWNLOAD MORE RAM', art: '💾', text: 'Your forum is running at 3% of its potential. Install 64 GB of RAM directly into your browser. Works on phones.', cta: 'DOWNLOAD', decoy: 'spawn' },
+    { look: 'slick', title: 'Sponsored', art: '🍞', text: 'ToastOS Pro: your toaster, now with a subscription. First slice free. Darkness levels sold separately.', cta: 'Start free trial', decoy: null },
+    { look: 'classic', title: 'Warning', art: '⚠️', text: 'Your extended warranty on this post is about to expire. Act now to keep your opinions covered.', cta: 'Renew', decoy: 'nothanks', nt: 'let my opinions lapse' },
+    { look: 'slick', title: 'Your AI companion', art: '💞', text: 'Meet Mario.ai: he remembers every star you ever stole. He is not mad. He is just disappointed.', cta: 'Chat now', decoy: 'dodge' },
+    { look: 'loud', title: 'Doctors HATE this card', art: '🃏', text: 'Local Jabroni lost 400 Aura with ONE weird trick. Mod Bots are FURIOUS.', cta: 'Learn the trick', decoy: null },
+    { look: 'classic', title: 'Rate your ad experience', art: '⭐', text: 'How would you rate this pop-up? Your feedback helps us show you more pop-ups.', cta: '★★★★★', decoy: 'spawn' },
+    { look: 'chat', title: 'Hot Wigglers in your thread', art: '🐛', text: 'Calm, single Wigglers want to meet YOU. Must love flowers.', cta: 'Meet them', decoy: null },
+    { look: 'slick', title: 'Cookies', art: '🍪', text: 'We value your privacy. Please accept 412 cookies to continue not reading this post.', cta: 'Accept all', decoy: 'nothanks', nt: 'manage 412 preferences' },
+  ];
+  const LOOK_W = { classic: 230, loud: 240, chat: 210, slick: 250 };
+  let spawned = 0;
+
+  function deal() {
+    const fl = $('flock'); fl.textContent = ''; spawned = 0;
+    const R = fl.getBoundingClientRect();
+    const body = $('body').getBoundingClientRect();
+    // Enough windows to cover the share of the words' box asked for, at most `most`.
+    const area = body.width * body.height * K.cover;
+    const hand = [...ADS].sort(() => Math.random() - .5);
+    const els = [];
+    let covered = 0;
+    while (covered < area && els.length < Math.min(K.most, hand.length)) { const el = make(hand[els.length]); covered += el.offsetWidth * el.offsetHeight; els.push(el); }
+    // Spread: one window to each cell of a grid over the words, jittered within its cell, so the flock covers rather than piles up.
+    const cols = Math.max(1, Math.round(Math.sqrt(els.length * body.width / Math.max(1, body.height)))), rows = Math.ceil(els.length / cols);
+    els.sort(() => Math.random() - .5).forEach((el, i) => {
+      const c = i % cols, r = Math.floor(i / cols), cw = body.width / cols, rh = body.height / rows;
+      const cx = body.left - R.left + (c + .5) * cw + (Math.random() - .5) * cw * .5, cy = body.top - R.top + (r + .5) * rh + (Math.random() - .5) * rh * .5;
+      move(el, cx - el.offsetWidth / 2, cy - el.offsetHeight / 2); raise(el);
+    });
+    stats();
+  }
+
+  function make(ad) {
+    const el = document.createElement('div');
+    el.className = 'ad ' + ad.look; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', ad.title);
+    const decoy = ad.decoy && $('d-' + ad.decoy).checked ? ad.decoy : null;
+    el.innerHTML = `<div class="tb" tabindex="0" aria-label="${ad.title}: drag, or arrow keys to move"><span>${ad.title}</span><button type="button" class="x ${decoy === 'nothanks' ? 'tiny' : ''}" aria-label="Close">×</button></div>
+      <div class="bd"><div class="art" aria-hidden="true">${ad.art}</div><div>${ad.text}</div><button type="button" class="cta">${ad.cta}</button>${decoy === 'nothanks' ? `<button type="button" class="nt">${ad.nt}</button>` : ''}</div>`;
+    $('flock').appendChild(el);
+    const x = el.querySelector('.x');
+    const close = () => { el.remove(); stats(); };
+    x.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // A dodging × leaps away twice and is caught on the third press.
+      if (decoy === 'dodge') { const tries = (+el.dataset.tries || 0) + 1; el.dataset.tries = String(tries); if (tries < 3) { dodge(el); return; } }
+      // A hydra: the window closes and another pops up somewhere on the post, until this load's spawns are spent; then its × simply closes.
+      if (decoy === 'spawn' && spawned < K.spawnmost) { spawned++; close(); const more = make(ADS[Math.floor(Math.random() * ADS.length)]); place(more, $('body').getBoundingClientRect(), $('flock').getBoundingClientRect()); stats(); return; }
+      if (decoy === 'nothanks') { return; }
+      close();
+    });
+    el.querySelector('.nt')?.addEventListener('click', close);
+    el.querySelector('.cta').addEventListener('click', () => { if (spawned < K.spawnmost) { spawned++; const more = make(ADS[Math.floor(Math.random() * ADS.length)]); place(more, $('body').getBoundingClientRect(), $('flock').getBoundingClientRect()); stats(); } });
+    drag(el);
+    el.addEventListener('pointerdown', () => raise(el));
+    return el;
+  }
+  let top = 10;
+  const raise = (el) => { el.style.zIndex = String(++top); };
+
+  // Scatter over the words' box, clamped inside the flock layer (the row plus the overhang).
+  function place(el, body, R) {
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const x = body.left - R.left + Math.random() * Math.max(1, body.width - w * .6) - w * .2;
+    const y = body.top - R.top + Math.random() * Math.max(1, body.height - h * .6) - h * .2;
+    move(el, x, y); raise(el);
+  }
+  function move(el, x, y) {
+    const R = $('flock').getBoundingClientRect();
+    el.style.left = Math.max(0, Math.min(R.width - el.offsetWidth, x)) + 'px';
+    el.style.top = Math.max(0, Math.min(R.height - el.offsetHeight, y)) + 'px';
+  }
+  function dodge(el) {
+    const R = $('flock').getBoundingClientRect();
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.style.transition = reduce ? '' : 'left .18s, top .18s';
+    move(el, Math.random() * (R.width - el.offsetWidth), Math.random() * (R.height - el.offsetHeight));
+    setTimeout(() => { el.style.transition = ''; }, 200);
+  }
+  function drag(el) {
+    const tb = el.querySelector('.tb');
+    let start = null;
+    tb.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; tb.setPointerCapture(e.pointerId); start = { x: e.clientX, y: e.clientY, l: el.offsetLeft, t: el.offsetTop }; });
+    tb.addEventListener('pointermove', (e) => { if (!start) return; move(el, start.l + e.clientX - start.x, start.t + e.clientY - start.y); });
+    tb.addEventListener('pointerup', () => { start = null; });
+    tb.addEventListener('keydown', (e) => { const d = { ArrowLeft: [-20, 0], ArrowRight: [20, 0], ArrowUp: [0, -20], ArrowDown: [0, 20] }[e.key]; if (d && e.target === tb) { e.preventDefault(); move(el, el.offsetLeft + d[0], el.offsetTop + d[1]); raise(el); } });
+  }
+  const stats = () => { $('stats').textContent = `${$('flock').children.length} windows up · ${spawned} spawned this load`; };
+
+  $('reload').addEventListener('click', deal);
+  document.querySelectorAll('input[name=board]').forEach((r) => r.addEventListener('change', () => $('window').classList.toggle('dark', r.value === 'dark' && r.checked)));
+  ['cover','most','hang'].forEach((k) => $(k).addEventListener('change', deal));
+  requestAnimationFrame(deal);
+})();
+</script>
+</body>
+</html>

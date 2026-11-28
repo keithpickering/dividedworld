@@ -123,6 +123,9 @@ followed to the letter, leads a game to no difficulty at all. So reading, postin
 meet the usual standards: contrast, focus, keyboard and labels. A card or a game effect that is meant to be tough to
 get through has an accessible path that takes about as long and costs about as much as the one it replaces: Whoops!'s
 wash control is timed like a scrub, and reduced motion makes Stick Around's snap-back instant, but it still snaps back.
+The front door, shown to a visitor who has no settings yet, draws card effects at their full colors unless the device
+asks for more contrast: it demonstrates the game, and a reader who needs contrast gets it from their device's own
+setting.
 
 ## An effect fills the post, border to border
 

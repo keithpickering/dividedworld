@@ -129,6 +129,13 @@ describe('compareBoard: the rest of the rules', () => {
     expect(compareBoard(board, moved('line', { y: 20 }), center).map((m) => m.field)).toEqual(['y']);
   });
 
+  test('tall compares height only, so a part under rows only the build draws is held by how tall it is and by nothing else', () => {
+    const tall = manifest(lm('line', { box: 'tall' }));
+    expect(compareBoard(board, moved('line', { y: 300 }), tall)).toEqual([]);
+    expect(compareBoard(board, moved('line', { width: 90 }), tall)).toEqual([]);
+    expect(compareBoard(board, moved('line', { height: 5 }), tall).map((m) => m.field)).toEqual(['height']);
+  });
+
   test('position compares x and y only; height compares y and height only; none compares no box', () => {
     const wide = moved('line', { width: 200, height: 50 });
     expect(compareBoard(board, wide, manifest(lm('line', { box: 'position' })))).toEqual([]);
