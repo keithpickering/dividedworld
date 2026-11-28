@@ -100,7 +100,9 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const shownPresent = useShownPresent(lens);
   const presenting = rewound !== null && bodyOf !== undefined && shownPresent === rewound.rewind.play;
   const hidden = useMemo(() => hiddenByRewind(rewound, presenting), [rewound, presenting]);
-  const words = rewound && bodyOf && !presenting ? bodyOf(rewound.rewind.version) : children;
+  /* The version whose words are drawn in place of the post's now (null where none): the effects are given it (`EffectProps.rewound`) so one that reads the words reads these. */
+  const rewoundTo = rewound && bodyOf && !presenting ? rewound.rewind.version : null;
+  const words = rewoundTo && bodyOf ? bodyOf(rewoundTo) : children;
   /*
    * The tails of the plays here that write, read for the page together (tails.ts): a post with none of them is never read. The version drawn
    * is the post's current one, the newest any play has a row for, and a failed regeneration keeps the tail the play had (`resolveWritten`).
@@ -289,6 +291,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
         <BoundEffect
           key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach} cardKey={key}
           post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
+          {...(rewoundTo !== null ? { rewound: rewoundTo } : {})}
           {...(kept ? { kept: true as const } : {})} written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
           save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
           give={give} moreGifts={moreGifts} wallet={wallet}

@@ -196,6 +196,8 @@ export type Written = { readonly text: string } | { readonly waiting: true } | {
 export interface EffectProps {
   /** The post, as every reader sees it now (its current words included). */
   readonly post: Act;
+  /** Under a live rewind, the version of the post whose words are drawn in place of `post`'s (Time Machine design, 4.2); absent otherwise. An effect that reads the words reads these. */
+  readonly rewound?: Act;
   /**
    * This card's plays on the post, ordered by layer, then by when they were played: one for most cards, up to the card's stack for the rest. A card named by another's
    * `CardUi.drawnBy` is also given that card's plays that fall on the post: they follow the card's own, and each carries its `reach` (a post's own plays carry none), which is how

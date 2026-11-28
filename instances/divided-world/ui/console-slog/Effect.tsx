@@ -16,7 +16,7 @@
  * mash (a key, a tap or a switch press each reveal the same), and reduced motion changes only the cursor, which holds still, and never what a press costs.
  *
  * What is kept. The count of units out is the reader's own, in their browser (`readerMemory`, engine/ui/cards/reader-memory.ts), keyed by the play. An edit
- * keeps it, trimmed to the new length. The last unit out releases the reader (`EffectProps.release`), on every device, and a released reader sees the
+ * keeps it, trimmed to the new length, and so does a rewind that starts or ends (the words typed are the rewound version's while one is live). The last unit out releases the reader (`EffectProps.release`), on every device, and a released reader sees the
  * post as written (`children`). A release that did not land is tried again on the next press, so the reader is never stuck at the end.
  *
  * Screen readers. The prompt line is the button, named "Console Slog: press any key or tap to type out this post", and the typed text is plain text in the
@@ -112,7 +112,7 @@ function drawRest(units: readonly Unit[], from: number): ReactNode[] {
   return out;
 }
 
-export function ConsoleSlogEffect({ post, plays, released, reader, moment, show, met, release, children }: EffectProps) {
+export function ConsoleSlogEffect({ post, rewound, plays, released, reader, moment, show, met, release, children }: EffectProps) {
   const { settings } = useKayfa();
   const slog: SlogSettings = {
     rhythmMs: settings.cardSettings['consoleSlog.rhythmMs'] ?? DEFAULTS.rhythmMs,
@@ -122,7 +122,9 @@ export function ConsoleSlogEffect({ post, plays, released, reader, moment, show,
     bands: settings.cardSettings['consoleSlog.bands'] ?? DEFAULTS.bands,
   };
   const playId = plays[0]?.id ?? '';
-  const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
+  /* The words the reader would see now: the rewound version's under a live rewind (the one the BBCode renderer draws, `EffectProps.rewound`), the post's own otherwise. */
+  const words = (rewound ?? post).currentPayload.body;
+  const body = typeof words === 'string' ? words : '';
   const units = useMemo(() => unitsOf(parse(body), slog.bands), [body, slog.bands]);
   const total = units.length;
   const live = moment === null;

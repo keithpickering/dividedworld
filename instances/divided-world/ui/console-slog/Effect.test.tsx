@@ -30,25 +30,25 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-interface Options { readonly releaseWith?: () => Promise<{ ok: boolean }>; readonly body?: string; readonly released?: boolean; readonly still?: boolean; readonly bands?: number; readonly reader?: { author: boolean; caster: boolean } }
+interface Options { readonly releaseWith?: () => Promise<{ ok: boolean }>; readonly body?: string; readonly released?: boolean; readonly still?: boolean; readonly bands?: number; readonly reader?: { author: boolean; caster: boolean }; readonly rewound?: string }
 function mount(o: Options = {}) {
   const release = vi.fn(async (id: string) => (o.releaseWith ? o.releaseWith() : { ok: true as const, value: { play: id, releasedAt: '2026-11-28T12:00:00.000Z' } }));
   const show = vi.fn<(view: CardView | null) => void>();
-  const props = (body: string, released: boolean): EffectProps => ({
+  const props = (body: string, released: boolean, rewound: string | null): EffectProps => ({
     covered: false, post: postOf(body), plays: [play], states: {}, released: released ? new Set([play.id]) : new Set(), written: new Map(), reader: o.reader ?? { author: false, caster: false }, place: 'thread', reach: 'post',
     still: o.still ?? false, moment: null, show, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: release as unknown as EffectProps['release'],
-    nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p data-words>As the author wrote it.</p>,
+    nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, ...(rewound !== null ? { rewound: postOf(rewound) } : {}), children: <p data-words>{rewound ?? 'As the author wrote it.'}</p>,
   });
   const settings = { cardSettings: { 'consoleSlog.rhythmMs': 450, 'consoleSlog.perStep': 5, 'consoleSlog.mostPerPress': 8, 'consoleSlog.drain': 12, 'consoleSlog.bands': o.bands ?? 16 } };
   /* The post is edited, and the play released, from outside: a host holds both, as the engine does. */
-  let set: (next: { body: string; released: boolean }) => void = () => {};
+  let set: (next: { body: string; released: boolean; rewound: string | null }) => void = () => {};
   function Host() {
-    const [now, setNow] = useState({ body: o.body ?? SIXTY, released: o.released ?? false });
+    const [now, setNow] = useState<{ body: string; released: boolean; rewound: string | null }>({ body: o.body ?? SIXTY, released: o.released ?? false, rewound: o.rewound ?? null });
     set = setNow;
-    return <ConsoleSlogEffect {...props(now.body, now.released)} />;
+    return <ConsoleSlogEffect {...props(now.body, now.released, now.rewound)} />;
   }
   const world = renderInWorld(<Host />, { settings });
-  return { ...world, release, show, again: (body: string, released = false) => act(() => set({ body, released })) };
+  return { ...world, release, show, again: (body: string, released = false) => act(() => set({ body, released, rewound: null })), rewind: (body: string | null, current = o.body ?? SIXTY) => act(() => set({ body: current, released: false, rewound: body })) };
 }
 const region = () => screen.getByRole('button', { name: NAME });
 const typed = () => document.querySelector('[data-kb-slog-shown]')?.textContent ?? '';
@@ -63,6 +63,25 @@ const fast = (times: number): number[] => {
 };
 
 describe('Console Slog', () => {
+  test('under a live rewind it types the words the reader would see, and a released reader sees those same words', () => {
+    const { rewind } = mount({ rewound: 'older words' });
+    slow(3);
+    expect(typed()).toBe('old');
+    for (let i = 0; i < 20; i++) { act(() => { vi.advanceTimersByTime(1000); }); press(); }
+    expect(typed()).toBe('older words');
+    expect(rewind).toBeTypeOf('function');
+  });
+
+  test('a rewind that starts or ends keeps the count valid, trimmed as an edit trims it', () => {
+    const { rewind } = mount({ body: SIXTY });
+    for (let i = 0; i < 30; i++) { act(() => { vi.advanceTimersByTime(1000); }); press(); }
+    expect(typed().length).toBe(30);
+    rewind('short');
+    expect(typed()).toBe('short');
+    rewind(null);
+    expect(typed(), 'the five units kept are the first five of the words now').toBe('abcde');
+  });
+
   test('is an empty command prompt with the post\'s number, a cursor and a button the page can name', () => {
     mount();
     expect(typed()).toBe('');
