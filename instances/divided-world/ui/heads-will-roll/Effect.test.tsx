@@ -1,0 +1,257 @@
+/**
+ * Heads Will Roll's effect (docs/plans/2026-11-27-season-two-cards-plan.md, Task 7; design sections 1.3 and 2): the post's live reaction tiles are round heads that the orbit
+ * (orbit.ts) moves each frame, every head a real button in mass order, with the React head last. The deck is faked, so a test sees each press and each picker call; the frames
+ * and the observers are faked and flushed by hand, and jsdom has no layout, so the host's box is the one `getBoundingClientRect` is told.
+ */
+import { act, cleanup, fireEvent, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import type { Act } from '../../../../engine/ui/data/api.ts';
+import type { CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import type { Chip, ReactionDeck } from '../../../../engine/ui/reactions/deck.ts';
+import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
+import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
+import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
+import { reelSeconds } from './orbit.ts';
+
+/* The orbit is the real one; its steps are counted. */
+const steps = vi.hoisted(() => ({ n: 0 }));
+vi.mock('./orbit.ts', async (original) => {
+  const actual = await original<typeof import('./orbit.ts')>();
+  return {
+    ...actual,
+    createOrbit: (...args: Parameters<typeof actual.createOrbit>) => {
+      const orbit = actual.createOrbit(...args);
+      return { ...orbit, step: (dt: number) => { steps.n++; orbit.step(dt); } };
+    },
+  };
+});
+import { HeadsWillRollEffect } from './Effect.tsx';
+
+const post = { id: 'post-1', character: 'author', kind: 'post', thread: 't', payload: { body: 'Hello.' }, currentPayload: { body: 'Hello.' }, targetActId: null, seq: 1, createdAt: '2026-11-27T10:00:00.000Z', editedAt: null, shownEditedAt: null } as unknown as Act;
+const chip = (key: string, emoji: string, count: number, extra: Partial<Chip> = {}): Chip => ({ key, name: key, emoji, quadrant: null, count, open: true, pending: null, local: false, ...extra });
+/* Three kinds: the heaviest first is "fire" (6), then the Overreaction "wow" (2 x 2 = 4 by default), then "tea" (1). */
+const CHIPS = [chip('tea', 'T', 1), chip('wow', 'W', 2, { local: true }), chip('fire', 'F', 6)];
+
+interface DeckOptions { readonly chips?: readonly Chip[]; readonly canReact?: boolean; readonly own?: string[]; readonly refusal?: string | null }
+function deckOf(o: DeckOptions = {}) {
+  const press = vi.fn((_kind: string) => 'held' as const);
+  const open = vi.fn();
+  const deck: ReactionDeck = {
+    chips: o.chips ?? CHIPS, own: (o.own ?? []).map((kind) => ({ act: `a-${kind}`, kind, character: 'c1' })), pending: [], canReact: o.canReact ?? true, press, undo: () => {},
+    refusal: o.refusal ?? null, landed: null, picker: { isOpen: false, open, close: () => {} },
+  };
+  return { deck, press, open };
+}
+
+const propsOf = (deck: ReactionDeck | undefined, views: (CardView | null)[], still = false, covered = false): EffectProps => ({
+  post, plays: [], states: {}, released: new Set<string>(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still, moment: null,
+  show: (v: CardView | null) => { views.push(v); }, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false as const, error: 'no' }), release: async () => ({ ok: false as const, error: 'no' }),
+  nameOf: () => 'Spritey', give: async () => ({ ok: false as const, error: 'no' }), moreGifts: async () => {}, wallet: null, covered,
+  ...(deck ? { reactions: deck } : {}),
+  children: <p>Hello.</p>,
+}) as unknown as EffectProps;
+
+/* A fake rAF flushed by hand, a fake IntersectionObserver the test drives, and a 300 x 200 box. */
+let queue = new Map<number, FrameRequestCallback>();
+let nextId = 1;
+const flush = (t: number) => { const run = [...queue.values()]; queue.clear(); for (const cb of run) cb(t); };
+let observers: { cb: IntersectionObserverCallback; seen: Set<Element> }[] = [];
+class FakeObserver {
+  readonly entry = { cb: undefined as unknown as IntersectionObserverCallback, seen: new Set<Element>() };
+  constructor(cb: IntersectionObserverCallback) { this.entry.cb = cb; observers.push(this.entry); }
+  observe(el: Element) { this.entry.seen.add(el); }
+  unobserve(el: Element) { this.entry.seen.delete(el); }
+  disconnect() { this.entry.seen.clear(); }
+  takeRecords() { return []; }
+}
+const see = (isIntersecting: boolean) => act(() => { for (const o of observers) for (const el of o.seen) o.cb([{ target: el, isIntersecting } as IntersectionObserverEntry], o as unknown as IntersectionObserver); });
+
+function mount(deck: ReactionDeck | undefined, o: { still?: boolean; covered?: boolean } = {}) {
+  const views: (CardView | null)[] = [];
+  const world = renderInWorld(<HeadsWillRollEffect {...propsOf(deck, views, o.still ?? false, o.covered ?? false)} />);
+  return { ...world, views };
+}
+const heads = () => screen.queryAllByRole('button');
+const labels = () => heads().map((b) => b.getAttribute('aria-label'));
+
+beforeEach(() => {
+  queue = new Map(); nextId = 1; observers = []; steps.n = 0;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { const id = nextId++; queue.set(id, cb); return id; });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => { queue.delete(id); });
+  vi.stubGlobal('IntersectionObserver', FakeObserver);
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 200, width: 300, height: 200, toJSON: () => ({}) }));
+  document.documentElement.setAttribute('data-kb-motion', 'full');
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe('Heads Will Roll: the heads', () => {
+  test('three kinds make three heads in mass order, with the React head last', () => {
+    mount(deckOf().deck);
+    expect(labels()).toEqual([
+      'F 6, press to catch',
+      'W 2, press to catch, an Overreaction',
+      'T 1, press to catch',
+      'React, press to pick a new reaction',
+    ]);
+  });
+
+  test("a kind the reader sent says it is theirs, and a pending one says how to undo it", () => {
+    mount(deckOf({ own: ['fire'], chips: [chip('fire', 'F', 6), chip('tea', 'T', 1, { pending: { kind: 'tea', until: 0 } as never })] }).deck);
+    expect(labels().slice(0, 2)).toEqual(['F 6, press to catch, yours', 'T 1, press to catch, counting soon, press to undo']);
+  });
+
+  test('a new kind joins at a count of one, whatever its chip says', () => {
+    mount(deckOf({ chips: [chip('fire', 'F', 6), chip('new', 'N', 0)] }).deck);
+    expect(labels()[1]).toBe('N 1, press to catch');
+  });
+
+  test('a pointer press catches the head at once, once', () => {
+    const { deck, press } = deckOf();
+    mount(deck);
+    fireEvent.pointerDown(heads()[0]!, { button: 0, pointerType: 'mouse' });
+    fireEvent.click(heads()[0]!);
+    expect(press).toHaveBeenCalledTimes(1);
+    expect(press).toHaveBeenCalledWith('fire');
+  });
+
+  test('Enter starts a reel-in and the reaction lands after the computed time', () => {
+    const { deck, press } = deckOf();
+    const m = mount(deck);
+    const seconds = reelSeconds(0, { reelBase: 0.8, reelPerSpeed: 0.12 });
+    act(() => { fireEvent.keyDown(heads()[1]!, { key: 'Enter' }); });
+    expect(press).not.toHaveBeenCalled();
+    expect(document.querySelector('.dw-hwr-reel')).not.toBeNull();
+    expect(lastView(m).state).toBe('Reeling in a head');
+    act(() => { vi.advanceTimersByTime(seconds * 1000 - 1); });
+    expect(press).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(2); });
+    expect(press).toHaveBeenCalledTimes(1);
+    expect(press).toHaveBeenCalledWith('wow');
+    expect(document.querySelector('.dw-hwr-reel')).toBeNull();
+  });
+
+  test('Space reels in too, and a second Enter cancels it', () => {
+    const { deck, press } = deckOf();
+    mount(deck);
+    act(() => { fireEvent.keyDown(heads()[0]!, { key: ' ' }); });
+    expect(document.querySelector('.dw-hwr-reel')).not.toBeNull();
+    act(() => { fireEvent.keyDown(heads()[0]!, { key: 'Enter' }); });
+    expect(document.querySelector('.dw-hwr-reel')).toBeNull();
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(press).not.toHaveBeenCalled();
+  });
+
+  test('a press the browser reports only as a click (an assistive switch) reels in as a key does', () => {
+    const { deck, press } = deckOf();
+    mount(deck);
+    act(() => { fireEvent.click(heads()[0]!); });
+    expect(press).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(press).toHaveBeenCalledWith('fire');
+  });
+
+  test('under still the heads stand still and a pointer press reels in too, for the same time', () => {
+    const { deck, press } = deckOf();
+    mount(deck, { still: true });
+    see(true);
+    expect(queue.size).toBe(0);
+    fireEvent.pointerDown(heads()[0]!, { button: 0, pointerType: 'mouse' });
+    fireEvent.click(heads()[0]!);
+    expect(press).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(reelSeconds(0, { reelBase: 0.8, reelPerSpeed: 0.12 }) * 1000 + 1); });
+    expect(press).toHaveBeenCalledTimes(1);
+    expect(steps.n).toBe(0);
+  });
+
+  test('the React head opens the picker with only the new kinds, and a press on it needs no reel', () => {
+    const { deck, open, press } = deckOf();
+    mount(deck);
+    const react = heads().at(-1)!;
+    fireEvent.pointerDown(react, { button: 0, pointerType: 'mouse' });
+    fireEvent.click(react);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith(react, true);
+    expect(press).not.toHaveBeenCalled();
+  });
+
+  test("on the author's own screen the heads are plain: no React head, no button, no press", () => {
+    const { deck, press, open } = deckOf({ canReact: false });
+    mount(deck);
+    expect(heads()).toHaveLength(0);
+    const plain = screen.getAllByRole('img');
+    expect(plain.map((p) => p.getAttribute('aria-label'))).toEqual(['F 6', 'W 2, an Overreaction', 'T 1']);
+    fireEvent.pointerDown(plain[0]!, { button: 0 });
+    fireEvent.click(plain[0]!);
+    expect(press).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  test('a refusal from the server is said in a status line', () => {
+    mount(deckOf({ refusal: 'You have used all your reactions.' }).deck);
+    expect(screen.getByRole('status').textContent).toContain('You have used all your reactions.');
+  });
+
+  test("the post's words are drawn, and a post without a deck (a moment, History) has words and no heads", () => {
+    mount(undefined);
+    expect(screen.getByText('Hello.')).toBeTruthy();
+    expect(heads()).toHaveLength(0);
+  });
+
+  test('its Lens view is a short status that says how the reel-in works by key', () => {
+    const m = mount(deckOf().deck);
+    const view = lastView(m);
+    expect(viewProblems(view, { holds: false, covers: false })).toEqual([]);
+    expect(view.report).toMatch(/Enter or Space/);
+    expect(view.report).toMatch(/again to cancel/);
+  });
+});
+
+const lastView = (m: { views: (CardView | null)[] }) => m.views.filter(Boolean).at(-1)!;
+
+describe('Heads Will Roll: what it costs', () => {
+  test('an off-screen effect does not step, and one on screen steps each frame until it is covered or gone', () => {
+    const m = mount(deckOf().deck);
+    expect(queue.size).toBe(0);
+    flush(16); flush(32);
+    expect(steps.n).toBe(0);
+    see(true);
+    expect(queue.size).toBe(1);
+    flush(16); flush(32); flush(48);
+    expect(steps.n).toBe(3);
+    see(false);
+    expect(queue.size).toBe(0);
+    flush(64);
+    expect(steps.n).toBe(3);
+    m.unmount();
+  });
+
+  test('a covered post does not step either', () => {
+    mount(deckOf().deck, { covered: true });
+    see(true);
+    flush(16);
+    expect(steps.n).toBe(0);
+  });
+
+  test('the loop is cancelled when the post goes', () => {
+    const m = mount(deckOf().deck);
+    see(true);
+    expect(queue.size).toBe(1);
+    m.unmount();
+    expect(queue.size).toBe(0);
+  });
+
+  test("a head is moved by transform alone: a frame writes no left, top or font size", () => {
+    mount(deckOf().deck);
+    see(true);
+    const before = heads().map((b) => [b.style.left, b.style.top, b.style.fontSize]);
+    flush(16); flush(32);
+    expect(heads().map((b) => [b.style.left, b.style.top, b.style.fontSize])).toEqual(before);
+    expect(heads()[0]!.style.transform).toMatch(/translate/);
+  });
+});
