@@ -33,6 +33,8 @@ export interface CompressorLike { threshold: { value: number }; knee: { value: n
 export interface SourceLike { buffer: unknown; loop: boolean; onended: (() => void) | null; connect(to: unknown): unknown; disconnect(): unknown; start(when?: number): unknown; stop(when?: number): unknown }
 export interface AudioContextLike {
   readonly currentTime: number; readonly destination: unknown;
+  /** The context's own state (`'running'` once it sounds); a browser may run it before the `resume()` promise settles, or never settle it. */
+  readonly state?: string;
   resume(): Promise<void>; suspend(): Promise<void>;
   /** The promise form, or the legacy callback form (old WebKit) that returns nothing: the mixer takes either. */
   decodeAudioData(bytes: ArrayBuffer, ok?: (b: { readonly duration: number }) => void, fail?: (e: unknown) => void): Promise<{ readonly duration: number }> | void;
@@ -46,7 +48,11 @@ export type LoopStop = 'stopped' | 'bus' | 'replaced';
 export interface LoopHandle { setGain(g: number): void; stop(fadeMs: number): void }
 export interface Mixer {
   setBus(bus: SoundBus, s: { on: boolean; volume: number }): void;
-  /** Resolves whether the mixer is now unlocked: false when the browser refused, so the next gesture may try again. */
+  /**
+   * Resolves whether the mixer is now unlocked: false when the browser refused, so the next gesture may try again. Each call asks the context to
+   * resume, synchronously, so it is inside the gesture; a context already `'running'` after that is unlocked at once, and any resume that resolves
+   * unlocks the mixer and settles every call still waiting (a resume the browser never answers is then no one's problem).
+   */
   unlock(): Promise<boolean>; suspend(): Promise<void>; resume(): Promise<void>;
   warm(slots: readonly SoundSlot[]): void;
   play(slot: SoundSlot, o?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number; voices?: number }): Promise<{ lengthMs: number } | null>;
@@ -61,6 +67,9 @@ export function createMixer(deps: MixerDeps): Mixer {
   /** The context once made; `ctx` is the same context once it has resumed, and only then may anything sound. */
   let made: AudioContextLike | null = null;
   let ctx: AudioContextLike | null = null;
+  /** The unlock() calls whose resume has not answered yet; the first resume that resolves (or a context seen running) settles them all as unlocked.
+   * Bounded by the gestures made before the first unlock; it is emptied then, and nothing is added after. */
+  const waiting = new Set<(unlocked: boolean) => void>();
   const buses: Record<SoundBus, { on: boolean; volume: number; node: GainNodeLike | null }> = {
     game: { on: false, volume: 100, node: null },
     interface: { on: false, volume: 100, node: null },
@@ -151,6 +160,16 @@ export function createMixer(deps: MixerDeps): Mixer {
     }
     return pending;
   }
+  /** The mixer is unlocked: the context may sound, the warmed files decode, and every unlock() still waiting is answered true. */
+  function open(c: AudioContextLike): void {
+    if (!ctx) {
+      ctx = c;
+      for (const slot of warmed.values()) warmSlot(slot);
+    }
+    const settle = [...waiting];
+    waiting.clear();
+    for (const w of settle) w(true);
+  }
   /** Fetch a warmed slot's bytes if nothing holds its src, and decode it if there is a context. Never throws, makes no context. */
   function warmSlot(slot: SoundSlot): void {
     try {
@@ -236,14 +255,22 @@ export function createMixer(deps: MixerDeps): Mixer {
       if (s.on) { for (const slot of warmed.values()) if (slot.bus === bus) warmSlot(slot); }
       else for (const end of [...loops[bus]]) end('bus');
     },
-    async unlock() {
+    unlock() {
+      if (ctx) return Promise.resolve(true);
+      let c: AudioContextLike;
+      let asked: Promise<void>;
       try {
         made ??= deps.makeContext();
-        await made.resume();
-        ctx = made;
-        for (const slot of warmed.values()) warmSlot(slot);
-        return true;
-      } catch { /* a browser that refuses leaves the mixer locked; the next gesture tries again */ return false; }
+        c = made;
+        asked = Promise.resolve(c.resume());
+        asked.catch(() => { /* a refusal is read below where it matters, and never left unhandled */ });
+      } catch { /* a browser that refuses leaves the mixer locked; the next gesture tries again */ return Promise.resolve(false); }
+      if (c.state === 'running') { open(c); return Promise.resolve(true); }
+      return new Promise<boolean>((resolve) => {
+        const waiter = (unlocked: boolean): void => resolve(unlocked);
+        waiting.add(waiter);
+        asked.then(() => open(c), () => { if (waiting.delete(waiter)) resolve(false); });
+      });
     },
     async suspend() { try { await made?.suspend(); } catch { /* nothing to suspend */ } },
     async resume() { try { await made?.resume(); } catch { /* nothing to resume */ } },

@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { captions } from './captions.ts';
-import { CAPTION_MS, HELD_FROM, resetSound, setSoundPreference, useSound, useWarmSounds } from './sound.ts';
+import { CAPTION_MS, createSound, HELD_FROM, resetSound, setSoundPreference, useSound, useWarmSounds } from './sound.ts';
 import type { AudioContextLike, GainNodeLike, SourceLike } from './mixer.ts';
 import type { SoundSlot } from './types.ts';
 
@@ -142,6 +142,69 @@ describe('the page sound', () => {
     await gesture('touchend');
     expect(makeContext).toHaveBeenCalledTimes(1);
     expect(context.resume).toHaveBeenCalledTimes(1);
+  });
+
+  test('a resume that never settles does not hold the next gesture back: a pointerdown, then a click, unlocks', async () => {
+    resetSound({ makeContext: () => { const c = makeContext(); c.resume = context.resume = vi.fn().mockReturnValueOnce(new Promise<void>(() => {})).mockResolvedValue(undefined); return c; }, fetchBytes });
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture('pointerdown');
+    await gesture('click');
+    expect(context.resume).toHaveBeenCalledTimes(2);
+    await act(async () => { await result.current.play('boo'); });
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+  });
+
+  test('a context that reads running after resume() is unlocked at once, though the promise never settles, and the listeners are gone', async () => {
+    resetSound({ makeContext: () => { const c = makeContext() as AudioContextLike & { state?: string }; c.resume = context.resume = vi.fn(() => { c.state = 'running'; return new Promise<void>(() => {}); }); return c; }, fetchBytes });
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture('pointerdown');
+    await gesture('click');
+    expect(context.resume).toHaveBeenCalledTimes(1);
+    await act(async () => { await result.current.play('boo'); });
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['click', 'pointerup'])('a %s alone unlocks a fresh page', async (type) => {
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture(type);
+    await act(async () => { await result.current.play('boo'); });
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+  });
+
+  describe('navigator.audioSession', () => {
+    const w = window as unknown as { AudioContext?: unknown };
+    const nav = navigator as unknown as { audioSession?: unknown };
+    let saved: unknown;
+    let built = 0;
+    beforeEach(() => {
+      saved = w.AudioContext; built = 0;
+      w.AudioContext = class { currentTime = 0; destination = {}; constructor() { built++; } resume = async () => {}; suspend = async () => {}; };
+      resetSound();
+    });
+    afterEach(() => { w.AudioContext = saved; delete nav.audioSession; });
+    const unlockOnce = async () => { on('game'); renderHook(() => useSound(), { wrapper: wrap }); await gesture('pointerdown'); };
+
+    test('making the context sets its type to ambient where it exists', async () => {
+      const session = { type: 'auto' };
+      Object.defineProperty(nav, 'audioSession', { value: session, configurable: true });
+      await unlockOnce();
+      expect(session.type).toBe('ambient');
+      expect(built).toBe(1);
+    });
+
+    test('where it is absent the context is still made', async () => {
+      await unlockOnce();
+      expect(built).toBe(1);
+    });
+
+    test('where setting the type throws the context is still made', async () => {
+      Object.defineProperty(nav, 'audioSession', { value: { set type(_v: string) { throw new Error('no'); } }, configurable: true });
+      await unlockOnce();
+      expect(built).toBe(1);
+    });
   });
 
   test('a refused resume leaves the listeners, the next gesture unlocks, and the one after does nothing', async () => {
@@ -481,5 +544,95 @@ describe('the page warms the sounds a screen names', () => {
     renderHook(() => useWarmSounds([]), { wrapper: warmWrap });
     expect(warmed.calls).toEqual([]);
     expect(fetchBytes).not.toHaveBeenCalled();
+  });
+});
+
+describe('the front door stages the game bus over the account\'s preference', () => {
+  const pref = (gameSound: 'off' | 'on', gameVolume = 80) => ({ gameSound, gameVolume, interfaceSound: 'on' as const, interfaceVolume: 40 });
+  /** The last setting each bus was given. */
+  const watch = () => {
+    const sound = createSound({ makeContext, fetchBytes });
+    const spy = vi.spyOn(sound.mixer, 'setBus');
+    const last = (bus: 'game' | 'interface') => spy.mock.calls.filter((c) => c[0] === bus).at(-1)?.[1];
+    return { sound, last };
+  };
+
+  test('a stage turns the game bus on, a later preference with it off leaves it on, and the release turns it off', () => {
+    const { sound, last } = watch();
+    sound.setSoundPreference(pref('off'));
+    expect(last('game')?.on).toBe(false);
+    const release = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')?.on).toBe(true);
+    sound.setSoundPreference(pref('off'));
+    expect(last('game')?.on).toBe(true);
+    release();
+    expect(last('game')?.on).toBe(false);
+    sound.dispose();
+  });
+
+  test('stage, release, then a preference with the game on: it is on', () => {
+    const { sound, last } = watch();
+    const release = sound.stageSound({ gameSound: 'on' });
+    release();
+    sound.setSoundPreference(pref('on'));
+    expect(last('game')?.on).toBe(true);
+    sound.dispose();
+  });
+
+  test('a release called twice, or after a newer stage, releases only its own; the newest stage held wins', () => {
+    const { sound, last } = watch();
+    sound.setSoundPreference(pref('off'));
+    const first = sound.stageSound({ gameSound: 'on' });
+    const second = sound.stageSound({ gameSound: 'off' });
+    expect(last('game')?.on).toBe(false);
+    first();
+    first();
+    expect(last('game')?.on).toBe(false);
+    second();
+    expect(last('game')?.on).toBe(false);
+    const third = sound.stageSound({ gameSound: 'on' });
+    const fourth = sound.stageSound({ gameSound: 'off' });
+    third();
+    expect(last('game')?.on).toBe(false);
+    fourth();
+    expect(last('game')?.on).toBe(false);
+    const fifth = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')?.on).toBe(true);
+    fifth();
+    sound.dispose();
+  });
+
+  test('a release with no preference ever told puts the game bus back to the mixer\'s default, off', () => {
+    const { sound, last } = watch();
+    const release = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')?.on).toBe(true);
+    release();
+    expect(last('game')).toEqual({ on: false, volume: 100 });
+    sound.dispose();
+  });
+
+  test('stage, release, stage (a StrictMode double effect): held after the second, back to the preference after its release', () => {
+    const { sound, last } = watch();
+    sound.setSoundPreference(pref('off'));
+    sound.stageSound({ gameSound: 'on' })();
+    const release = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')?.on).toBe(true);
+    release();
+    expect(last('game')?.on).toBe(false);
+    sound.dispose();
+  });
+
+  test('while staged the volume is the last preference\'s, and the interface bus follows the preference alone', () => {
+    const { sound, last } = watch();
+    sound.setSoundPreference(pref('off', 30));
+    const release = sound.stageSound({ gameSound: 'on' });
+    expect(last('game')).toEqual({ on: true, volume: 30 });
+    sound.setSoundPreference({ gameSound: 'off', gameVolume: 65, interfaceSound: 'off', interfaceVolume: 10 });
+    expect(last('game')).toEqual({ on: true, volume: 65 });
+    expect(last('interface')).toEqual({ on: false, volume: 10 });
+    release();
+    expect(last('game')).toEqual({ on: false, volume: 65 });
+    expect(last('interface')).toEqual({ on: false, volume: 10 });
+    sound.dispose();
   });
 });
