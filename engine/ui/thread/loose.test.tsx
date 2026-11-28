@@ -7,6 +7,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { CardUi, EffectProps } from '../cards/types.ts';
+import { ReactionRowScope } from '../reactions/Reactions.tsx';
+import { createMine } from '../reactions/mine.ts';
+import { createTallies } from './tallies.ts';
+import { useState } from 'react';
 import { LoadedThread } from '../loaded.tsx';
 import { REACTION_GRACE_MS } from '../reactions/mine.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
@@ -199,5 +203,26 @@ describe('in the ORIGIN box of a thread spun from the post', () => {
     w.fake.seed.card(w.pipe, w.ids[2]!, 'plain');
     const origin = await spun(w);
     await waitFor(() => expect(origin.getByTestId('fx-plain')).toHaveAttribute('data-deck', 'none'));
+  });
+});
+
+describe('the scope that holds a post\'s row', () => {
+  test('its children keep their DOM nodes when it turns on and off (the ORIGIN box turns it on while a card is live)', async () => {
+    const w = world();
+    const tallies = createTallies();
+    const mine = createMine();
+    let flip: (on: boolean) => void = () => {};
+    const Toggle = () => {
+      const [on, setOn] = useState(false);
+      flip = setOn;
+      return <ReactionRowScope on={on} loose={on} act={w.ids[2]!} author={w.spritey} tallies={tallies} mine={mine}><p data-testid="words">post 3</p></ReactionRowScope>;
+    };
+    renderIn(w.fake, <Toggle />);
+    const words = screen.getByTestId('words');
+    act(() => { flip(true); });
+    expect(screen.getByTestId('words')).toBe(words);
+    act(() => { flip(false); });
+    expect(screen.getByTestId('words')).toBe(words);
+    expect(words.isConnected).toBe(true);
   });
 });

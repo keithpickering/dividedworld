@@ -20,7 +20,7 @@
  * Under Off (the player's Motion setting, or the device's reduced motion) nothing moves: the ring and the count are simply there, and
  * a pending tile shows the seconds left as text, for the same 5 seconds.
  */
-import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { createContext, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { blindPlaysOf, createPlays, localKindsOf, useAt, usePlays, type LocalKind, type Plays } from '../cards/plays.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { emojiOfKey } from '../../rules/emoji.ts';
@@ -314,14 +314,14 @@ export function useReactionRow({ act, author, authorName = 'this character', tal
   };
 }
 
-/** What a post gives the reactions row it holds: the one row its Acts' tiles and its card's deck both draw from (`ReactionRowScope`). */
-interface Held { readonly act: Id; readonly author: Id | null; readonly row: ReactionRow; readonly loose: boolean }
+/** What a post gives the reactions row it holds: `row` is null while the scope is off, and until the row's first report. */
+interface Held { readonly act: Id; readonly author: Id | null; readonly on: boolean; readonly row: ReactionRow | null; readonly loose: boolean }
 const RowCtx = createContext<Held | null>(null);
 
 /** The deck a post gives its effects, where a card that draws the reactions is live on it; undefined everywhere else. */
 export const useReactionDeck = (): ReactionDeck | undefined => {
   const held = useContext(RowCtx);
-  if (held === null || !held.loose) return undefined;
+  if (held === null || !held.loose || held.row === null) return undefined;
   /* Only the deck's own fields: an effect is never handed the row's drawing or the picker's layer. */
   const { chips, own, pending, canReact, press, undo, refusal, landed, picker } = held.row;
   return { chips, own, pending, canReact, press, undo, refusal, landed, picker: { isOpen: picker.isOpen, open: picker.open, close: picker.close } };
@@ -330,20 +330,30 @@ export const useReactionDeck = (): ReactionDeck | undefined => {
 /**
  * One reaction row for a post, held above the post's words and its row so that both the row's tiles and a card's effect draw from the same one (a second would be a second send queue
  * for the Act). `loose` is whether a card that draws the reactions is live on the post: the row then draws its bar with one line, and the picker is drawn here, where no tile opens it.
+ * The children stand in one place in the tree whether `on` or not: the row's hook runs in a sibling that draws nothing and reports the row up, so a scope turning on or off never remounts the words.
  */
 export function ReactionRowScope({ on, loose, children, ...args }: RowArgs & { readonly on: boolean; readonly loose: boolean; readonly children: ReactNode }) {
-  if (!on) return <>{children}</>;
-  return <ScopeOn loose={loose} {...args}>{children}</ScopeOn>;
+  const [row, setRow] = useState<ReactionRow | null>(null);
+  const held: Held = { act: args.act, author: args.author, on, row: on ? row : null, loose: loose && on };
+  return (
+    <RowCtx.Provider value={held}>
+      {children}
+      {on && <RowHost {...args} report={setRow} />}
+      {held.loose && row?.picker.node}
+    </RowCtx.Provider>
+  );
 }
-function ScopeOn({ loose, children, ...args }: RowArgs & { readonly loose: boolean; readonly children: ReactNode }) {
+/** Runs the row's hook and says the row to its scope before the screen is painted; memoized, so the scope's own renders leave it alone. */
+const RowHost = memo(function RowHost({ report, ...args }: RowArgs & { readonly report: (row: ReactionRow) => void }) {
   const row = useReactionRow(args);
-  return <RowCtx.Provider value={{ act: args.act, author: args.author, row, loose }}>{children}{loose && row.picker.node}</RowCtx.Provider>;
-}
+  useLayoutEffect(() => { report(row); });
+  return null;
+});
 
 /** The row drawn as tiles, from one's own `useReactionRow`, or the post's, where its scope holds the row for this Act and author. */
 export function Reactions(props: Props) {
   const held = useContext(RowCtx);
-  if (held !== null && held.act === props.act && held.author === props.author) return <RowView {...props} row={held.row} loose={held.loose} />;
+  if (held !== null && held.on && held.act === props.act && held.author === props.author) return held.row === null ? null : <RowView {...props} row={held.row} loose={held.loose} />;
   return <OwnRow {...props} />;
 }
 function OwnRow(props: Props) {
