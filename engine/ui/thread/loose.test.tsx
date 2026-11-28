@@ -2,12 +2,13 @@
  * A post wearing a live play of a card that draws the reactions (`CardUi.drawsReactions`) has no tiles in its row: the row keeps its bar with one line, and the card's `Effect` is
  * given the row's logic as `EffectProps.reactions`, the same press with the same grace and undo. The cards here are the engine's own test cards, never an instance's.
  */
+import userEvent from '@testing-library/user-event';
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { CardUi, EffectProps } from '../cards/types.ts';
-import { ReactionRowScope } from '../reactions/Reactions.tsx';
+import { ReactionRowScope, useReactionDeck } from '../reactions/Reactions.tsx';
 import { createMine } from '../reactions/mine.ts';
 import { createTallies } from './tallies.ts';
 import { useState } from 'react';
@@ -22,7 +23,9 @@ const rules = (key: string): CardRules => ({
 const instance: Instance = { ...testInstance, cards: [...testInstance.cards, rules('loose'), rules('plain')] };
 
 /** An effect with a press button and a picker button that use the deck it is given. */
+let deck: EffectProps['reactions'];
 const Loose = ({ reactions, children }: EffectProps) => {
+  deck = reactions;
   return (
     <div data-testid="fx-loose" data-deck={reactions === undefined ? 'none' : reactions.canReact ? 'live' : 'plain'}>
       {reactions?.chips.map((c) => <span key={c.key} data-testid={`chip-${c.key}`} data-local={String(c.local)}>{c.key} {c.count}{c.pending ? ' pending' : ''}</span>)}
@@ -174,6 +177,135 @@ describe('a post that wears a card that draws the reactions', () => {
     open(w);
     const article = await post3();
     await waitFor(() => expect(within(article).getByTestId('chip-fire')).toHaveAttribute('data-local', 'false'));
+  });
+});
+
+describe('the deck\'s presses and the row\'s announcements', () => {
+  const status = () => document.querySelector<HTMLElement>('#post-3 [data-kb-row-status]');
+  const live = async (w: ReturnType<typeof world>) => {
+    open(w);
+    const article = await post3();
+    await waitFor(() => expect(within(article).getByTestId('fx-loose')).toHaveAttribute('data-deck', 'live'));
+    return article;
+  };
+
+  test('a press at the cap is busy and sends nothing', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose');
+    const react = vi.spyOn(w.fake, 'react');
+    await live(w);
+    const got: string[] = [];
+    act(() => { for (const k of ['fire', 'tea', 'tomato', 'zzz']) got.push(deck!.press(k)); });
+    expect(got).toEqual(['held', 'held', 'held', 'busy']);
+    await wait(REACTION_GRACE_MS + 100);
+    await waitFor(() => expect(react).toHaveBeenCalledTimes(3));
+    expect(react.mock.calls.map((c) => c[2])).not.toContain('zzz');
+  });
+
+  test('a press of a kind already sent is kept and sends nothing', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose');
+    const me = w.fake.seed.account('unused');
+    void me;
+    const react = vi.spyOn(w.fake, 'react');
+    await live(w);
+    act(() => { deck!.press('tea'); });
+    await wait(REACTION_GRACE_MS + 100);
+    await waitFor(() => expect(react).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(deck!.own.map((o) => o.kind)).toContain('tea'));
+    let got = '';
+    act(() => { got = deck!.press('tea'); });
+    expect(got).toBe('kept');
+    await wait(REACTION_GRACE_MS + 100);
+    expect(react).toHaveBeenCalledTimes(1);
+  });
+
+  test('a picker opened while a kind is pending shows it as yours, sending', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose');
+    await live(w);
+    act(() => { deck!.press('tea'); });
+    act(() => { deck!.picker.open(document.body); });
+    const dialog = within(await screen.findByRole('dialog', { name: /^React to / }));
+    expect(dialog.getByRole('button', { name: 'Tea, Calm, your reaction, sending. Press again to undo' })).toHaveAttribute('data-kb-pending', '');
+  });
+
+  test('the row announces a deck press and its undo, and is busy while it sends', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose');
+    await live(w);
+    expect(status()).not.toBeNull();
+    await wait(50);
+    act(() => { deck!.press('fire'); });
+    await waitFor(() => expect(status()).toHaveTextContent('Reacting with Fire as Pipewrench in 5 seconds'));
+    act(() => { deck!.press('fire'); });
+    await waitFor(() => expect(status()).toHaveTextContent('Fire undone'));
+  });
+});
+
+describe('where the post draws no effects, the row is not loose', () => {
+  test('while the author edits the post', async () => {
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'loose');
+    open(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await waitFor(() => expect(within(article).getByText(LINE)).toBeInTheDocument());
+    act(() => { fireEvent.click(within(article).getByRole('button', { name: 'Edit' })); });
+    await waitFor(() => expect(within(article).queryByText(LINE)).toBeNull());
+    expect(within(article).queryByTestId('fx-loose')).toBeNull();
+  });
+
+  test('while a shown moment replaces the effects, and again after Back to now', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose');
+    open(w);
+    const article = await post3();
+    await waitFor(() => expect(within(article).getByText(LINE)).toBeInTheDocument());
+    await userEvent.click(within(article).getByRole('button', { name: /^loose, 1 play/iu }));
+    const lens = within(screen.getByRole('dialog', { name: 'Cards on this post' }));
+    await userEvent.click(lens.getByRole('button', { name: /^1 play · / }));
+    await userEvent.click(lens.getAllByRole('button', { name: 'As it landed' })[0]!);
+    await waitFor(() => expect(within(article).queryByText(LINE)).toBeNull());
+    expect(within(article).getByRole('button', { name: 'React' })).toBeInTheDocument();
+    await userEvent.click(lens.getAllByRole('button', { name: 'As it landed' })[0]!);
+    await waitFor(() => expect(within(article).getByText(LINE)).toBeInTheDocument());
+  });
+
+  test('on a post whose quotes are being concealed', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose');
+    w.fake.seed.concealing(w.ids[2]!);
+    open(w);
+    const article = await post3();
+    expect(within(article).queryByTestId('fx-loose')).toBeNull();
+    expect(within(article).queryByText(LINE)).toBeNull();
+  });
+
+  test('on a hidden post', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose');
+    w.fake.seed.hide(w.ids[2]!, 'hide');
+    open(w);
+    const article = await post3();
+    expect(within(article).queryByTestId('fx-loose')).toBeNull();
+    expect(within(article).queryByText(LINE)).toBeNull();
+  });
+});
+
+describe('the deck context', () => {
+  test('a consumer of it is not drawn again by a pending tick while no card is live', async () => {
+    const w = world();
+    const mine = createMine();
+    const tallies = createTallies();
+    let renders = 0;
+    const Probe = () => { useReactionDeck(); renders += 1; return null; };
+    renderIn(w.fake, <ReactionRowScope on loose={false} act={w.ids[2]!} author={w.spritey} tallies={tallies} mine={mine}><Probe /></ReactionRowScope>);
+    await act(async () => {});
+    const before = renders;
+    act(() => { mine.hold({ act: w.ids[2]!, kind: 'fire', character: w.pipe, due: Date.now() + 4000 }); });
+    await wait(3000);
+    act(() => { tallies.merge(w.ids[2]!, { tea: 2 }); });
+    expect(renders).toBe(before);
   });
 });
 

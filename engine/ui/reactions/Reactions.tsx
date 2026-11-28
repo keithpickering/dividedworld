@@ -20,7 +20,7 @@
  * Under Off (the player's Motion setting, or the device's reduced motion) nothing moves: the ring and the count are simply there, and
  * a pending tile shows the seconds left as text, for the same 5 seconds.
  */
-import { createContext, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { createContext, memo, useMemo, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { blindPlaysOf, createPlays, localKindsOf, useAt, usePlays, type LocalKind, type Plays } from '../cards/plays.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { emojiOfKey } from '../../rules/emoji.ts';
@@ -317,15 +317,15 @@ export function useReactionRow({ act, author, authorName = 'this character', tal
 /** What a post gives the reactions row it holds: `row` is null while the scope is off, and until the row's first report. */
 interface Held { readonly act: Id; readonly author: Id | null; readonly on: boolean; readonly row: ReactionRow | null; readonly loose: boolean }
 const RowCtx = createContext<Held | null>(null);
+/** The deck, set only while a card that draws the reactions is live on the post: a post's effects read this one, so a tally or a pending tick draws them again only where a card uses the deck. */
+const DeckCtx = createContext<ReactionDeck | undefined>(undefined);
 
 /** The deck a post gives its effects, where a card that draws the reactions is live on it; undefined everywhere else. */
-export const useReactionDeck = (): ReactionDeck | undefined => {
-  const held = useContext(RowCtx);
-  if (held === null || !held.loose || held.row === null) return undefined;
-  /* Only the deck's own fields: an effect is never handed the row's drawing or the picker's layer. */
-  const { chips, own, pending, canReact, press, undo, refusal, landed, picker } = held.row;
-  return { chips, own, pending, canReact, press, undo, refusal, landed, picker: { isOpen: picker.isOpen, open: picker.open, close: picker.close } };
-};
+export const useReactionDeck = (): ReactionDeck | undefined => useContext(DeckCtx);
+
+/** Only the deck's own fields: an effect is never handed the row's drawing or the picker's layer. */
+const deckOf = ({ chips, own, pending, canReact, press, undo, refusal, landed, picker }: ReactionRow): ReactionDeck =>
+  ({ chips, own, pending, canReact, press, undo, refusal, landed, picker: { isOpen: picker.isOpen, open: picker.open, close: picker.close } });
 
 /**
  * One reaction row for a post, held above the post's words and its row so that both the row's tiles and a card's effect draw from the same one (a second would be a second send queue
@@ -334,12 +334,17 @@ export const useReactionDeck = (): ReactionDeck | undefined => {
  */
 export function ReactionRowScope({ on, loose, children, ...args }: RowArgs & { readonly on: boolean; readonly loose: boolean; readonly children: ReactNode }) {
   const [row, setRow] = useState<ReactionRow | null>(null);
-  const held: Held = { act: args.act, author: args.author, on, row: on ? row : null, loose: loose && on };
+  const live = on ? row : null;
+  const isLoose = loose && on;
+  const held = useMemo<Held>(() => ({ act: args.act, author: args.author, on, row: live, loose: isLoose }), [args.act, args.author, on, live, isLoose]);
+  const deck = useMemo(() => (isLoose && live !== null ? deckOf(live) : undefined), [isLoose, live]);
   return (
     <RowCtx.Provider value={held}>
-      {children}
-      {on && <RowHost {...args} report={setRow} />}
-      {held.loose && row?.picker.node}
+      <DeckCtx.Provider value={deck}>
+        {children}
+        {on && <RowHost {...args} report={setRow} />}
+        {isLoose && live?.picker.node}
+      </DeckCtx.Provider>
     </RowCtx.Provider>
   );
 }
@@ -395,8 +400,9 @@ function RowView({ pickerAt = 'row', row, loose }: Props & { readonly row: React
   /* A card that draws the reactions has them loose in the post: the row keeps its bar and says where they went. */
   if (loose) {
     return (
-      <div ref={rowEl} className="kb-reactions" data-kb-over-ink="" data-kb-loose="">
+      <div className="kb-reactions" data-kb-over-ink="" data-kb-loose="" aria-busy={busy || undefined}>
         <p className="kb-reactions-line kb-small">{LOOSE_LINE}</p>
+        {canReact && <span role="status" className="kb-visually-hidden" data-kb-row-status="">{said}</span>}
       </div>
     );
   }

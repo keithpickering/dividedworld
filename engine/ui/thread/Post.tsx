@@ -273,7 +273,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   const fill = useRowFilling({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, order: ui.rowOrder, covering: cover });
   /* The row's one logic, held for the post: its tiles draw from it, and so does a card that draws the reactions (`CardUi.drawsReactions`), whose live play leaves the row one line. */
   const ownerOf = useOwnerOf();
-  const loose = useLooseReactions({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', cards: ui.cards });
+  const loose = useLooseReactions({ plays, actId: act.id, eligible: (act.kind === 'post' || act.kind === 'spin') && !editing && act.hidden !== true && act.concealing !== true, cards: ui.cards });
   const { actingCharacters: acting } = usePlayer();
   const own = useMyHidden(act.id, act.character !== null && acting.some((c) => c.id === act.character), act.hidden === true);
   const canEdit = act.hidden !== true || own != null;
