@@ -214,3 +214,16 @@
 .kb-act-grid:has(> .kb-row-layer) .kb-origin[data-kb-over-ink] {
   z-index: var(--kb-over-z);
 }
+
+/* The marks strip (marks.css, 3) and its callout (4) hang over the words' first line, where the ORIGIN box's top edge can be: a card's mark is the way into the Lens, so it stands over the box, and the callout over it, still under a shut cover. A landed meta cell is a context of its own and lifts them whole. */
+.kb-act-grid:has(> .kb-row-layer) .kb-marks {
+  z-index: calc(var(--kb-over-z) + 1);
+}
+
+.kb-act-grid:has(> .kb-row-layer) .kb-marks .kb-callout {
+  z-index: calc(var(--kb-over-z) + 2);
+}
+
+.kb-act-grid:has(> .kb-row-layer) > .kb-act-meta[data-kb-landed] {
+  z-index: calc(var(--kb-over-z) + 1);
+}

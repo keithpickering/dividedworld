@@ -33,6 +33,8 @@ export interface RowFilling {
   readonly value: RowFill;
   /** The `div.kb-row-layer`s, innermost first so the outermost is on top; null while no card has a live play here. */
   readonly layers: ReactNode;
+  /** The level the row's over-ink box stands at while a layer is up (cover.tsx `overInkZ`); the grid carries it as `--kb-over-z`. */
+  readonly overZ: number;
 }
 
 /** The post's fill layers for a thread's post: one for each card that fills the row and has a live play on the post's own reach, in `order`'s ranks. */
@@ -72,5 +74,5 @@ export function useRowFilling({ plays, actId, eligible, now, cards, order, cover
   const layers = keys.length === 0 ? null : [...keys].reverse().map((key) => (
     <div key={key} ref={ref(key)} className="kb-row-layer" style={{ zIndex: rowZ(order, key) }} data-kb-card={key} data-kb-covered={coveredBy(key) ? 'true' : undefined} />
   ));
-  return { value, layers };
+  return { value, layers, overZ: covering.overZ };
 }

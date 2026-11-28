@@ -160,7 +160,7 @@ export function FoldedRow({ fold, cover, fill, id, bar, before, children }: {
       <RowCoverCtx.Provider value={cover?.rowCover ?? null}>
         <CoveredCtx.Provider value={(cover?.shut ?? 0) > 0}>
           <RowFillCtx.Provider value={fill?.value ?? null}>
-            <div ref={fold.grid} className="kb-act-grid" style={fill?.layers && cover ? ({ '--kb-over-z': cover.overZ } as CSSProperties) : undefined} {...(fold.folding ? { id, hidden: !fold.folded } : {})}>{cover?.host}{fill?.layers}{children}</div>
+            <div ref={fold.grid} className="kb-act-grid" style={fill?.layers ? ({ '--kb-over-z': fill.overZ } as CSSProperties) : undefined} {...(fold.folding ? { id, hidden: !fold.folded } : {})}>{cover?.host}{fill?.layers}{children}</div>
           </RowFillCtx.Provider>
         </CoveredCtx.Provider>
       </RowCoverCtx.Provider>

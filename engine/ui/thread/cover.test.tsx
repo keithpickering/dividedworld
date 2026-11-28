@@ -12,6 +12,7 @@ import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { CardUi, CoverProps, EffectProps } from '../cards/types.ts';
 import { useThread } from './context.ts';
+import { overInkZ, ROW_Z_BASE, rowZ } from './cover.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 
@@ -335,6 +336,34 @@ describe('the row\'s layers are in the instance\'s order (InstanceUi.rowOrder)',
     await waitFor(() => expect(covers(again).length).toBe(1));
     expect(overZ(again), 'under the shut cover').toBeLessThan(z(covers(again)[0]!));
     expect(overZ(again), 'over the layer ranked inside the cover').toBeGreaterThan(z(layer(again)));
+    /* The marks strip stands at the level above it and the callout above that (fold.css), still under the shut cover. */
+    expect(overZ(again) + 2, 'the callout is under the shut cover').toBeLessThan(z(covers(again)[0]!));
+    expect(Math.min(z(layer(again)), overZ(again)), 'every level of the row is over what a card draws inside the body (an effect\'s element there keeps under ROW_Z_BASE)').toBeGreaterThanOrEqual(ROW_Z_BASE);
+  });
+
+  test('the CSS lifts the marks strip and the callout over the ORIGIN box, so a mark on its top edge stays pressable, and frees nothing without a layer', () => {
+    const fold = fs.readFileSync(path.resolve(here, 'fold.css'), 'utf8').replace(/\s+/gu, ' ');
+    expect(fold).toMatch(/\.kb-act-grid:has\(> \.kb-row-layer\) \.kb-marks \{[^}]*z-index: calc\(var\(--kb-over-z\) \+ 1\);/u);
+    expect(fold).toMatch(/\.kb-act-grid:has\(> \.kb-row-layer\) \.kb-marks \.kb-callout \{[^}]*z-index: calc\(var\(--kb-over-z\) \+ 2\);/u);
+    expect(fold).toMatch(/\.kb-act-grid:has\(> \.kb-row-layer\) > \.kb-act-meta\[data-kb-landed\] \{[^}]*z-index: calc\(var\(--kb-over-z\) \+ 1\);/u);
+  });
+
+  test('no effect element a card draws in the body stands at or over the row\'s lowest level, so a shut cover hides it (the grid is the context, the body is not)', () => {
+    const root = path.resolve(here, '../../..');
+    const dirs = ['engine/ui/cards', 'instances/divided-world/cards'];
+    const files = dirs.flatMap((d) => (fs.readdirSync(path.join(root, d), { recursive: true }) as string[]).filter((f) => f.endsWith('.css')).map((f) => path.join(root, d, f)));
+    expect(files.length).toBeGreaterThan(5);
+    const worst = Math.max(...files.flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/z-index:\s*(\d+)/gu)].map((m) => Number(m[1]))));
+    expect(worst, 'the highest z-index an effect or card stylesheet sets (Whoops! cursor, 60)').toBeGreaterThanOrEqual(60);
+    expect(worst).toBeLessThan(ROW_Z_BASE);
+    expect(fs.readFileSync(path.resolve(here, 'thread.css'), 'utf8')).toMatch(/\.kb-act-grid \{\s*isolation: isolate;/u);
+  });
+
+  test('the level is defined from the order alone: over every layer with no cover, and between the layers around a cover', () => {
+    expect(overInkZ(['a', 'b'], undefined)).toBeGreaterThan(rowZ(['a', 'b'], 'a'));
+    expect(overInkZ(['a', 'b'], undefined)).toBeGreaterThan(rowZ(['a', 'b'], 'zzz'));
+    expect(overInkZ(['a', 'b'], 'a') + 2).toBeLessThan(rowZ(['a', 'b'], 'a'));
+    expect(overInkZ(['a', 'b'], 'a'), 'over the layer ranked inside the cover').toBeGreaterThan(rowZ(['a', 'b'], 'b'));
   });
 
   test('a row with no fill layer names no over-ink level', async () => {

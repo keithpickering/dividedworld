@@ -40,13 +40,21 @@ export interface RowCovering {
 }
 
 /** The stacking of a row layer, the outermost highest, within the band above the post's own cells (5 and up) that fold.css gives a cover and a fill: a layer ranked outside another draws over it. */
-export const rowZ = (order: readonly string[] | undefined, key: string): number => 5 + 2 * ((order?.length ?? 0) - rowRank(order, key));
+export const rowZ = (order: readonly string[] | undefined, key: string): number => ROW_Z_BASE + ROW_Z_STEP * ((order?.length ?? 0) - rowRank(order, key));
 
 /**
- * The level an over-ink box (the ORIGIN box, spin/Origin.tsx) stands at in the row's grid while a fill layer is up (`--kb-over-z`, thread/fold.css): over every layer, and under the cover that is drawn, if one is. Layers are two levels
- * apart, so the level just under a cover is over every layer ranked inside it and under every layer ranked outside it; with no cover it is over the topmost layer a card unranked in the order could have.
+ * The lowest level of the row's layers and covers. An effect's own element inside the post's body (Whoops!'s cursor at 60 and drips at 50, Graffiti's at 6) is stacked in the grid's context while a layer is up (the body is no context then, fold.css),
+ * so every level the row gives is over any such element: a shut cover hides them as it hides the body. An effect keeps its elements under this.
  */
-export const overInkZ = (order: readonly string[] | undefined, cover: string | undefined): number => (cover === undefined ? rowZ(order, '') + 1 : rowZ(order, cover) - 1);
+export const ROW_Z_BASE = 100;
+/** The room between two ranks: an over-ink box, the marks strip over it and the callout over that stand in the three levels under a cover (fold.css). */
+const ROW_Z_STEP = 4;
+
+/**
+ * The level an over-ink box (the ORIGIN box, spin/Origin.tsx) stands at in the row's grid while a fill layer is up (`--kb-over-z`, thread/fold.css): over every layer, and under the cover that is drawn, if one is. Layers are four levels
+ * apart, so the three levels under a cover (this one, the marks' above it, the callout's above that) are over every layer ranked inside it and under every layer ranked outside it; with no cover it is over the topmost layer a card unranked in the order could have.
+ */
+export const overInkZ = (order: readonly string[] | undefined, cover: string | undefined): number => (cover === undefined ? rowZ(order, '') + 1 : rowZ(order, cover) - 3);
 
 /**
  * Whether a post covers its row and the reader's state of it, for a thread's post. It covers while the post wears a live play, on its own reach, of a card that covers the row;
