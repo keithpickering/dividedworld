@@ -3368,8 +3368,14 @@ export interface KayfaApi {
    * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql). A surface card's play carries
    * its first draw (`first`, the card's own shape): a play without one is refused ("draw your tag first"), the refusal on the field `first`.
    * A card that replies carries `reply`, the caster's post written with the play: it lands under the target while the play is in force, and a play without one is refused ("write the reply this card carries"). A cast that is caught writes none.
+   * A card that wraps another (design 1.4) carries `gift`, the card from the caster's hand it holds and the configuration of it, sent apart from `config` so it never joins the box's payload; any other card is refused one, and a wrapper without one is refused. The caster pays the box's price and the gift's own on the post, both at the wrap.
+   * A card that wraps another (design 1.4) carries `gift`, the card from the caster's hand it holds and the configuration of it, sent apart from `config` so it never joins the box's payload; any other card is refused one, and a wrapper without one is refused. The caster pays the box's price and the gift's own on the post, both at the wrap.
    */
-  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }, boardThread?: Id): Promise<Answer<Act>>;
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }, boardThread?: Id, gift?: { readonly card: string; readonly config: Readonly<Record<string, unknown>> }): Promise<Answer<Act>>;
+  /**
+   * Open a present (design 1.4): only the account that owns the post's character can; anyone else is refused ("only this post's author can open it"), and so is a box already opened or ended. The box's play ends and its slot is free, then the gift it holds is tried on the post as a cast by the giver's character, at no price. `did` is `landed` with the gift's own play, or `returned` with the words the landing refused it in (a ward, a full post), the gift then back in its giver's hand and `gift` null.
+   */
+  openGift(box: Id): Promise<Answer<{ readonly box: Id; readonly did: 'landed' | 'returned'; readonly gift: Act | null; readonly why: string | null }>>;
   /**
    * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
    * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.

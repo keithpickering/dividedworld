@@ -2186,6 +2186,15 @@ test('a rewind is a cast card on a post alone, with a time up, and none of what 
   }
 });
 
+test('a card that wraps another stacks one and reaches a post alone', () => {
+  const bad = (more: Record<string, unknown>) => instanceProblems(withCards({ wraps: true, ...more })).join('\n');
+  assert.deepEqual(instanceProblems(withCards({ wraps: true })), [], 'a well-formed wrapper');
+  assert.deepEqual(instanceProblems(withCards({ wraps: true, stack: 1, reaches: ['post'] })), []);
+  assert.match(bad({ stack: 2 }), /card "splat" wraps a card, and a present stacks at most 1/);
+  assert.match(bad({ reaches: ['post', 'thread'] }), /card "splat" wraps a card, and a card that wraps reaches a post alone/);
+  assert.match(bad({ reaches: ['character'] }), /card "splat" wraps a card, and a card that wraps reaches a post alone/);
+});
+
 test('the modBots check holds the quiz settings, naming the field', () => {
   const mod = (over: Record<string, unknown>) => settingsProblems({ ...settings, modBots: { ...settings.modBots, ...over } }).join('\n');
   assert.match(mod({ quizQuestionsPerDay: -1 }), /"quizQuestionsPerDay" is not/);

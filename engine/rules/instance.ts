@@ -774,7 +774,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
     out.push(...surfaceProblems(c));
-    out.push(...playProblems(c, new Set(instance.reactions.map((r) => r.key))), ...reachProblems(c, instance.settings), ...drawProblems(c), ...driveProblems(c, instance.settings), ...needsMessageProblems(c));
+    out.push(...playProblems(c, new Set(instance.reactions.map((r) => r.key))), ...reachProblems(c, instance.settings), ...drawProblems(c), ...driveProblems(c, instance.settings), ...needsMessageProblems(c), ...wrapsProblems(c));
   }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
@@ -1246,6 +1246,18 @@ function drawProblems(c: CardRules): string[] {
   const out: string[] = [];
   for (const k of c.draws) if (typeof k !== 'string' || !/^[a-z0-9-]{1,40}$/.test(k)) out.push(`${who} draws ${JSON.stringify(k)}; a draw is lowercase letters, digits and hyphens, 1 to 40`);
   for (const k of duplicates(c.draws.filter((k) => typeof k === 'string'), (k) => k)) out.push(`${who} draws "${k}" twice`);
+  return out;
+}
+
+/** A card that wraps another (design 1.4): one box to a post, on a post alone, since the gift it holds is cast on one. */
+function wrapsProblems(c: CardRules): string[] {
+  if (c.wraps === undefined) return [];
+  const who = `card "${c.key}" wraps a card`;
+  const out: string[] = [];
+  if (c.wraps !== true) out.push(`card "${c.key}" wraps ${JSON.stringify(c.wraps)}; wraps is true or left out`);
+  if (c.stack !== undefined && c.stack !== 1) out.push(`${who}, and a present stacks at most 1`);
+  const reaches = Array.isArray(c.reaches) ? c.reaches : ['post'];
+  if (reaches.length !== 1 || reaches[0] !== 'post') out.push(`${who}, and a card that wraps reaches a post alone`);
   return out;
 }
 
