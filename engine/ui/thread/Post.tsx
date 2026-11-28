@@ -30,7 +30,8 @@ import { Link } from '../router.tsx';
 import { Origin } from '../spin/Origin.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
-import { Reactions } from '../reactions/Reactions.tsx';
+import { ReactionRowScope, Reactions } from '../reactions/Reactions.tsx';
+import { useLooseReactions } from './loose.ts';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { lowerFirst } from '../copy-words.ts';
 import { cardNameOf } from '../../rules/card-names.ts';
@@ -270,6 +271,9 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   const cover = useRowCovering({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, grid: fold.grid, post: act.id, order: ui.rowOrder });
   /* A card that fills the row (`CardUi.fillsRow`) has its effect drawn in a layer over the row, in the instance's order; it is covered while a cover outside it is shut. */
   const fill = useRowFilling({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, order: ui.rowOrder, covering: cover });
+  /* The row's one logic, held for the post: its tiles draw from it, and so does a card that draws the reactions (`CardUi.drawsReactions`), whose live play leaves the row one line. */
+  const ownerOf = useOwnerOf();
+  const loose = useLooseReactions({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', cards: ui.cards });
   const { actingCharacters: acting } = usePlayer();
   const own = useMyHidden(act.id, act.character !== null && acting.some((c) => c.id === act.character), act.hidden === true);
   const canEdit = act.hidden !== true || own != null;
@@ -335,6 +339,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
       data-kb-arrived={slid ? 'slide' : undefined}
       data-kb-fold={folding ? (fold.folded ? 'open' : 'folded') : undefined}
     >
+    <ReactionRowScope on={act.kind === 'post' || act.kind === 'spin'} loose={loose} act={act.id} author={ownerOf(act)} authorName={spoken} tallies={tallies} mine={mine} plays={plays}>
     <FoldedRow
       fold={fold} cover={cover} fill={fill} id={`post-${seq}-row`} bar={{ person, name, spoken, seq, marks }}
       before={<>
@@ -356,6 +361,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
         </div>
         <Actions act={act} about={{ seq, name: spoken }} canEdit={canEdit} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
     </FoldedRow>
+    </ReactionRowScope>
     </article>
     </AppealCtx.Provider>
   );

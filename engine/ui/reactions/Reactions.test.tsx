@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Page } from '../glass/Page.tsx';
-import { POPOVER_ROOM, POPOVER_WIDTH } from './Picker.tsx';
+import { Picker, POPOVER_ROOM, POPOVER_WIDTH } from './Picker.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { usePlayer } from '../player.tsx';
 import { createTallies } from '../thread/tallies.ts';
@@ -1739,5 +1739,33 @@ describe('the can\'t-be-taken-back tooltip', () => {
       await wait(REACTION_GRACE_MS * 2);
       expect(react).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('a picker that offers only new kinds (onlyNew)', () => {
+  const SKULL = '\u{1F480}';
+  const local = [{ key: localKey(SKULL), emoji: SKULL, quadrant: 'excitedNegative' as Quadrant, play: 'p1', ended: false }];
+  const draw = (w: ReturnType<typeof world>, extra: { readonly onlyNew?: true; readonly onPost?: readonly string[] }) => renderIn(
+    w.fake,
+    <Picker subject="Spritey's post" as={null} own={[]} pending={[]} local={local} press={() => 'held'} undo={() => {}} anchor={{ current: document.body }} onClose={() => {}} {...extra} />,
+  );
+
+  test('leaves out the kinds on the post: the chips\' kinds and the post\'s local kinds', async () => {
+    const w = world();
+    draw(w, { onlyNew: true, onPost: ['fire', 'tea'] });
+    const p = within(await screen.findByRole('dialog', { name: /^React to / }));
+    expect(p.queryByRole('button', { name: 'Fire, Hype' })).toBeNull();
+    expect(p.queryByRole('button', { name: 'Tea, Calm' })).toBeNull();
+    expect(p.queryByRole('button', { name: new RegExp(`${SKULL}.*added by a card`, 'u') })).toBeNull();
+    expect(p.getByRole('button', { name: 'Tomato, Heat' })).toBeInTheDocument();
+    expect(p.getByRole('button', { name: 'Zzz, Groan' })).toBeInTheDocument();
+  });
+
+  test('without onlyNew the picker lists every kind, the post\'s own included', async () => {
+    const w = world();
+    draw(w, { onPost: ['fire', 'tea'] });
+    const p = within(await screen.findByRole('dialog', { name: /^React to / }));
+    expect(p.getByRole('button', { name: 'Fire, Hype' })).toBeInTheDocument();
+    expect(p.getByRole('button', { name: new RegExp(`${SKULL}.*added by a card`, 'u') })).toBeInTheDocument();
   });
 });

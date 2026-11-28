@@ -47,7 +47,7 @@ import { MomentFrame, MomentView, useShownMoment, useShownPresent } from './Mome
 import { backoff, REPEAT_TRIES, tailStore, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { actsOnPost, createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, useRewound, withHandedOut, type Plays } from './plays.ts';
+import { actsOnPost, createPlays, hiddenByRewind, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, useRewound, withHandedOut, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
 import { WORDS_BOX } from './body.ts';
 import { surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
@@ -59,6 +59,7 @@ import { useOwnerOf } from '../thread/context.ts';
 import { CoveredCtx, rowRank, useCovered, useRowCover } from '../thread/cover.tsx';
 import { useRowFill } from '../thread/fill.tsx';
 import { useRowFold } from '../thread/fold.tsx';
+import { useReactionDeck } from '../reactions/Reactions.tsx';
 import { LateNote } from '../jobs/LateNote.tsx';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
@@ -98,7 +99,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const lens = useLensStore();
   const shownPresent = useShownPresent(lens);
   const presenting = rewound !== null && bodyOf !== undefined && shownPresent === rewound.rewind.play;
-  const hidden = useMemo(() => new Set(presenting ? [rewound.rewind.play] : rewound?.hidden.map((p) => p.id)), [rewound, presenting]);
+  const hidden = useMemo(() => hiddenByRewind(rewound, presenting), [rewound, presenting]);
   const words = rewound && bodyOf && !presenting ? bodyOf(rewound.rewind.version) : children;
   /*
    * The tails of the plays here that write, read for the page together (tails.ts): a post with none of them is never read. The version drawn
@@ -269,6 +270,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const rowFold = useRowFold();
   const rowCover = useRowCover();
   const rowFill = useRowFill();
+  const deck = useReactionDeck();
   /* The fill layers' portals, drawn beside the post's own tree so that a layer coming or going never remounts the words. */
   const filled: ReactNode[] = [];
   /* `inRow`: a card that fills the row is drawn in its layer over the row (thread/fill.tsx), not around the words; a shown moment and a present have no row to fill. */
@@ -294,6 +296,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
           reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
           {...(rowFold !== null && reach === 'post' && card.foldsRow ? { fold: rowFold } : {})}
           {...(rowCover !== null && reach === 'post' && card.coversRow ? { cover: rowCover } : {})}
+          {...(deck !== undefined && reach === 'post' && card.drawsReactions ? { reactions: deck } : {})}
           ink={claims.at(`${reach}:${key}`, from + i)} {...(reach === 'post' ? { surface: surfaceOf(key, mine, of) } : {})}
         >
           {layer ? null : wrapped}
