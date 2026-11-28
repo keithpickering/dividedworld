@@ -1,0 +1,293 @@
+<!doctype html>
+<!--
+  Record, written 2026-11-28. The Tune It Out bench: the design session's mockup for
+  docs/plans/2026-11-27-season-two-cards-design.md (Tune It Out), made so the owner can turn the two dials. The post's row is
+  an old TV: fine tuning owns the snow and vertical hold owns the roll, each readable alone, against a station hidden on a
+  plane picked at random for this reader. A few false stations on the plane are other channels; a channel's segment plays
+  for its length and then the signal slips and its station moves. Hiss swells as the post comes into view and is mixed
+  against each channel's sound by the dials as the picture is. Once both dials are in tolerance the picture snaps clear,
+  and it stays tuned for this reader.
+  The channels here are placeholders drawn and voiced in the page (color bars and a tone, a test card and a beep, a weather
+  crawl and a lounge chord); the card's are short clips the owner supplies. A standalone page: open it in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tune It Out Bench</title>
+<style>
+:root { --paper: #fff; --ink: #000; --muted: #555; --rule: #000; --font: Verdana, Geneva, sans-serif; --mono: "Courier New", Courier, monospace; --neon: #19e3ff; color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--font); padding: 20px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 .3em; }
+.head, .notes { max-width: 988px; margin: 0 auto 16px; }
+.head p { color: var(--muted); font-size: 13.75px; max-width: 76ch; }
+:focus-visible { outline: 2px solid var(--neon); outline-offset: 2px; }
+.bench { max-width: 988px; margin: 0 auto 16px; border: 1px solid var(--rule); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.bench fieldset { border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 -1px -1px 0; padding: 10px 12px 12px; display: grid; gap: 6px; align-content: start; font-size: 12.5px; min-width: 0; }
+.bench legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold; letter-spacing: .06em; text-transform: uppercase; }
+.bench label { display: flex; gap: 6px; align-items: center; min-height: 24px; flex-wrap: wrap; }
+.bench input[type=range] { flex: 1; min-width: 90px; }
+.bench output { font: 12px var(--mono); min-width: 4.5ch; text-align: right; }
+.bench button { font: 12px var(--font); padding: 3px 8px; border: 1px solid var(--rule); background: #eee; cursor: pointer; }
+.stage { display: flex; justify-content: center; }
+.window { width: 988px; max-width: 100%; border: 1px solid var(--rule); }
+.board { --b-bg: #fff; --b-fg: #000; --b-head: #e6e6e6; --b-rule: #000; --b-muted: #555; background: var(--b-bg); color: var(--b-fg); font: 13px/1.5 var(--font); padding: 14px; }
+.window.dark .board { --b-bg: #0b0b0b; --b-fg: #f2f2f2; --b-head: #1d1d1d; --b-rule: #f2f2f2; --b-muted: #b4b4b4; }
+.crumbs { font-size: 11px; color: var(--b-muted); margin-bottom: 8px; }
+.spacer { border: 1px dashed var(--b-rule); color: var(--b-muted); font-size: 11px; padding: 8px; margin-bottom: 14px; height: 160px; display: grid; place-items: center; }
+/* The post's row; the cover is the row's own size, postbit and all. */
+.rowwrap { position: relative; margin-bottom: 14px; }
+.post { border: 1px solid var(--b-rule); display: grid; grid-template-columns: 150px 1fr; background: var(--b-bg); }
+.postbit { border-right: 1px solid var(--b-rule); padding: 8px; font-size: 11px; background: var(--b-head); }
+.postbit b { font-size: 12px; display: block; }
+.body { padding: 10px 12px; min-height: 200px; }
+.body p { margin: 0 0 1em; }
+@media (max-width: 600px) { .post { grid-template-columns: 1fr; } .postbit { border-right: 0; border-bottom: 1px solid var(--b-rule); } }
+
+.cover { position: absolute; inset: 0; background: #000; border: 1px solid var(--b-rule); overflow: hidden; display: grid; grid-template-columns: 1fr auto; }
+/* The set's controls stand beside the screen, as on a real set, so the screen keeps the row's full height; on a phone they sit under it. */
+.cover .panel { flex-direction: column; border-top: 0; border-left: 2px solid #120b05; padding: 6px 10px; justify-content: center; gap: 6px; flex-wrap: nowrap; }
+.cover .panel .knob { width: 44px; height: 44px; }
+.cover .panel .knob::after { top: 4px; height: 13px; }
+@media (max-width: 600px) { .cover { grid-template-columns: none; grid-template-rows: 1fr auto; } .cover .panel { flex-direction: row; border-left: 0; border-top: 2px solid #120b05; padding: 6px 10px; } .knob { width: 48px; height: 48px; } }
+.cover.done { display: none; }
+.screen { position: relative; overflow: hidden; background: #000; }
+.screen .pic { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+.screen .pic .post { border: 0; }
+.screen .blank { position: absolute; left: 0; right: 0; height: 18px; background: #000; }
+.screen canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.screen canvas.noise { image-rendering: pixelated; mix-blend-mode: normal; }
+.screen .vignette { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 60px 20px rgba(0,0,0,.75); background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.18) 2px 3px); }
+.cap { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); background: #000; color: #fff; font: bold 13px/1.3 var(--mono); padding: 2px 8px; text-transform: uppercase; white-space: nowrap; max-width: 92%; overflow: hidden; text-overflow: ellipsis; }
+.panel { display: flex; gap: 18px; align-items: center; justify-content: center; padding: 8px 10px; background: linear-gradient(#3a2a1a, #23180d); border-top: 2px solid #120b05; color: #e9d9b8; font: bold 10px var(--font); letter-spacing: .12em; text-transform: uppercase; flex-wrap: wrap; }
+.dial { display: grid; justify-items: center; gap: 4px; }
+.knob { width: 58px; height: 58px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #d8d0c0, #8a8070 55%, #3a342a); border: 2px solid #120b05; position: relative; cursor: grab; touch-action: none; box-shadow: 0 3px 6px rgba(0,0,0,.6); }
+.knob::after { content: ""; position: absolute; left: 50%; top: 5px; width: 4px; height: 18px; margin-left: -2px; background: #120b05; border-radius: 2px; }
+.knob .rot { position: absolute; inset: 0; }
+.knob:focus-visible { outline: 3px solid var(--neon); outline-offset: 3px; }
+.lamp { width: 10px; height: 10px; border-radius: 50%; background: #300; box-shadow: inset 0 0 2px #000; }
+.lamp.on { background: #f33; box-shadow: 0 0 8px #f33; }
+.results, .stats { max-width: 988px; margin: 10px auto 0; font: 12.5px var(--mono); }
+.notes { font-size: 13.75px; }
+.notes li { margin-bottom: .4em; }
+.debug { position: absolute; right: 8px; top: 8px; width: 120px; height: 120px; border: 1px solid #0f0; background: rgba(0,0,0,.6); z-index: 5; display: none; }
+.debug.on { display: block; }
+.debug i { position: absolute; width: 8px; height: 8px; margin: -4px; border-radius: 50%; }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>Tune It Out bench</h1>
+  <p>Press <b>Sound on</b> first if you want to hear it (the browser waits for a press). Scroll the post into view: the hiss swells. Turn <b>Fine tuning</b> to clear the snow and <b>Vertical hold</b> to stop the roll. Drag a dial round, scroll on it, or focus it and use the arrow keys; every input moves it by the same steps. You'll pass other channels on the way. Each plays its segment, then the signal slips and that channel moves. Lock both dials and the post is yours for good, in this browser.</p>
+</div>
+
+<form class="bench" onsubmit="return false">
+  <fieldset>
+    <legend>Signal</legend>
+    <label>Snow falloff (fine) <input type="range" id="wx" min="0.03" max="0.5" step="0.01" value="0.18"><output for="wx"></output></label>
+    <label>Roll falloff (hold) <input type="range" id="wy" min="0.03" max="0.5" step="0.01" value="0.18"><output for="wy"></output></label>
+    <label>Lock tolerance <input type="range" id="tol" min="0.005" max="0.1" step="0.005" value="0.025"><output for="tol"></output></label>
+    <label>Most roll, screens/s <input type="range" id="roll" min="0.2" max="6" step="0.1" value="2.2"><output for="roll"></output></label>
+  </fieldset>
+  <fieldset>
+    <legend>Dials</legend>
+    <label>Dial turns, end to end <input type="range" id="turns" min="0.5" max="4" step="0.25" value="1.5"><output for="turns"></output></label>
+    <label>Arrow step <input type="range" id="step" min="0.002" max="0.03" step="0.001" value="0.008"><output for="step"></output></label>
+    <label>Show the hidden plane <input type="checkbox" id="plane"></label>
+  </fieldset>
+  <fieldset>
+    <legend>Channels</legend>
+    <label>Channels <input type="range" id="nch" min="0" max="3" step="1" value="3"><output for="nch"></output></label>
+    <label>Channel width <input type="range" id="cw" min="0.02" max="0.2" step="0.01" value="0.08"><output for="cw"></output></label>
+    <label>Segment seconds <input type="range" id="seg" min="3" max="20" step="1" value="12"><output for="seg"></output></label>
+  </fieldset>
+  <fieldset>
+    <legend>Sound and view</legend>
+    <button type="button" id="sound">Sound on</button>
+    <label>Hiss level <input type="range" id="hiss" min="0" max="1" step="0.05" value="0.35"><output for="hiss"></output></label>
+    <label>Reduced motion <input type="checkbox" id="still"></label>
+    <label><input type="radio" name="board" value="light" checked> Light</label>
+    <label><input type="radio" name="board" value="dark"> Dark</label>
+    <button type="button" id="retune">Forget my tuning (new station)</button>
+  </fieldset>
+</form>
+
+<div class="stage">
+  <div class="window" id="window">
+    <div class="board">
+      <div class="crumbs">Divided World » Off-Topic » I finally watched the director's cut</div>
+      <div class="spacer">another post (scroll so the next one comes into view)</div>
+      <div class="rowwrap" id="rowwrap">
+        <div class="post" id="post" inert>
+          <div class="postbit"><b>Pipewrench</b>Plumber, Probably<br>Posts: 88</div>
+          <div class="body">
+            <p>Three hours and forty minutes. I want it on the record that I watched the whole thing, including the part where the camera holds on a teapot for six minutes, which the commentary track describes as "the emotional climax".</p>
+            <p>Verdict: the teapot was the best actor in it. I would watch a sequel about the teapot. I would not watch the director's cut of the sequel about the teapot.</p>
+            <p>Somebody tell me the theatrical cut is worse so I can feel like this was worth it.</p>
+          </div>
+        </div>
+        <div class="cover" id="cover">
+          <div class="screen" id="screen">
+            <div class="pic" id="pic" aria-hidden="true"></div>
+            <canvas class="chan" id="chan" aria-hidden="true"></canvas>
+            <canvas class="noise" id="noise" width="160" height="96" aria-hidden="true"></canvas>
+            <div class="vignette"></div>
+            <div class="debug" id="debug"></div>
+            <div class="cap" id="cap" role="status" aria-live="polite">[static hiss]</div>
+          </div>
+          <div class="panel">
+            <div class="dial"><div class="knob" id="kx" tabindex="0" role="slider" aria-label="Fine tuning" aria-valuemin="0" aria-valuemax="100"><span class="rot"></span></div>Fine tuning</div>
+            <div class="dial"><span class="lamp" id="lamp" aria-hidden="true"></span>Tuned</div>
+            <div class="dial"><div class="knob" id="ky" tabindex="0" role="slider" aria-label="Vertical hold" aria-valuemin="0" aria-valuemax="100"><span class="rot"></span></div>Vertical hold</div>
+          </div>
+        </div>
+      </div>
+      <div class="spacer">another post</div>
+    </div>
+  </div>
+</div>
+<p class="stats" id="stats"></p>
+
+<ul class="notes">
+  <li>The cover is the post's whole row, postbit included. Under it the post is inert until tuned.</li>
+  <li>The station is chosen at random in this browser, so no two readers' dials match, and "it's on 7" helps nobody.</li>
+  <li>Reduced motion: the snow is a still pattern that thins, and the picture does not roll; vertical hold shows as a tear line that straightens instead.</li>
+</ul>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const knobs = ['wx','wy','tol','roll','turns','step','nch','cw','seg','hiss'];
+  const K = {};
+  const read = () => { for (const k of knobs) { K[k] = parseFloat($(k).value); const o = document.querySelector(`output[for=${k}]`); if (o) o.textContent = $(k).value; } K.still = $('still').checked; };
+  knobs.concat(['still']).forEach((k) => $(k).addEventListener('input', read)); read();
+
+  const STORE = 'tune-it-out-bench';
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  let state;
+  function fresh() { return { tx: rnd(.1, .9), ty: rnd(.1, .9), x: rnd(0, 1), y: rnd(0, 1), tuned: false }; }
+  try { state = JSON.parse(localStorage.getItem(STORE) ?? 'null') ?? fresh(); } catch { state = fresh(); }
+  const keep = () => { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {} };
+  keep();
+
+  // The picture of the post, drawn twice so a roll wraps, with a blanking bar between.
+  const pic = $('pic');
+  const clone = () => { const c = $('post').cloneNode(true); c.removeAttribute('id'); c.removeAttribute('inert'); return c; };
+  pic.append(clone(), Object.assign(document.createElement('div'), { className: 'blank' }), clone());
+
+  // Channels: a station each on the plane, a drawing, a sound, a caption.
+  const CH = [
+    { name: 'color bars', cap: '[color bars: a steady tone]', draw: bars, tone: { type: 'sine', f: 1000, g: .08 } },
+    { name: 'test card', cap: '[test card: a beep every second]', draw: card, tone: { type: 'square', f: 660, g: .04, beep: true } },
+    { name: 'weather', cap: '[weather map: lounge music]', draw: weather, tone: { type: 'triangle', f: 220, g: .06, chord: true } },
+  ];
+  const stations = CH.map(() => ({ x: rnd(0, 1), y: rnd(0, 1), since: null }));
+  const moveAway = (s) => { do { s.x = rnd(0, 1); s.y = rnd(0, 1); } while (Math.hypot(s.x - state.tx, s.y - state.ty) < .2); s.since = null; };
+  stations.forEach(moveAway);
+
+  const g = (d, w) => Math.exp(-(d * d) / (2 * w * w));
+
+  // Dials: a full turn is 1/turns of the range; drag round, wheel, or arrow keys, all in the same steps.
+  function dial(el, axis) {
+    let last = null;
+    const angle = (e) => { const r = el.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)); };
+    const nudge = (d) => { if (state.tuned) return; state[axis] = Math.min(1, Math.max(0, state[axis] + d)); keep(); };
+    el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId); last = angle(e); el.style.cursor = 'grabbing'; });
+    el.addEventListener('pointermove', (e) => { if (last === null) return; const a = angle(e); let d = a - last; if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI; last = a; nudge(d / (2 * Math.PI) / K.turns); });
+    el.addEventListener('pointerup', () => { last = null; el.style.cursor = ''; });
+    el.addEventListener('wheel', (e) => { e.preventDefault(); nudge(Math.sign(e.deltaY) * K.step); }, { passive: false });
+    el.addEventListener('keydown', (e) => {
+      const m = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 5, PageDown: -5 }[e.key];
+      if (m) { e.preventDefault(); nudge(m * K.step); }
+    });
+  }
+  dial($('kx'), 'x'); dial($('ky'), 'y');
+
+  // Sound: a noise source for the hiss and one oscillator a channel, each with a gain the dials set.
+  let ac = null, hissGain, chGains = [];
+  $('sound').addEventListener('click', () => {
+    if (ac) { ac.close(); ac = null; $('sound').textContent = 'Sound on'; return; }
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+    const bp = ac.createBiquadFilter(); bp.type = 'highpass'; bp.frequency.value = 900;
+    hissGain = ac.createGain(); hissGain.gain.value = 0;
+    src.connect(bp).connect(hissGain).connect(ac.destination); src.start();
+    chGains = CH.map((c) => {
+      const o = ac.createOscillator(); o.type = c.tone.type; o.frequency.value = c.tone.f;
+      const gn = ac.createGain(); gn.gain.value = 0; o.connect(gn).connect(ac.destination); o.start();
+      if (c.tone.chord) { const o2 = ac.createOscillator(); o2.type = 'triangle'; o2.frequency.value = c.tone.f * 1.26; o2.connect(gn); o2.start(); const o3 = ac.createOscillator(); o3.type = 'triangle'; o3.frequency.value = c.tone.f * 1.5; o3.connect(gn); o3.start(); }
+      return gn;
+    });
+    $('sound').textContent = 'Sound off';
+  });
+
+  // How much of the post is in view: the hiss swells as it scrolls in.
+  let inView = 0;
+  new IntersectionObserver((es) => { inView = es[0].intersectionRatio; }, { threshold: Array.from({ length: 21 }, (_, i) => i / 20) }).observe($('rowwrap'));
+
+  // Noise frames, a few made once and cycled; reduced motion holds one.
+  const nc = $('noise'), nx = nc.getContext('2d');
+  const frames = Array.from({ length: 6 }, () => { const im = nx.createImageData(nc.width, nc.height); for (let i = 0; i < im.data.length; i += 4) { const v = Math.random() * 255 | 0; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; } return im; });
+
+  const cc = $('chan'), cx = cc.getContext('2d');
+  function bars(t, w, h) { const cols = ['#c0c0c0','#c0c000','#00c0c0','#00c000','#c000c0','#c00000','#0000c0']; cols.forEach((c, i) => { cx.fillStyle = c; cx.fillRect(i * w / 7, 0, w / 7 + 1, h * .75); }); cx.fillStyle = '#111'; cx.fillRect(0, h * .75, w, h * .25); cx.fillStyle = '#fff'; cx.font = `bold ${Math.max(12, h / 12)}px monospace`; cx.fillText('CH 3', 12, h * .9); }
+  function card(t, w, h) { cx.fillStyle = '#777'; cx.fillRect(0, 0, w, h); cx.strokeStyle = '#fff'; cx.lineWidth = 2; for (let x = 0; x < w; x += 24) { cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, h); cx.stroke(); } for (let y = 0; y < h; y += 24) { cx.beginPath(); cx.moveTo(0, y); cx.lineTo(w, y); cx.stroke(); } cx.fillStyle = '#222'; cx.beginPath(); cx.arc(w / 2, h / 2, Math.min(w, h) * .35, 0, 7); cx.fill(); cx.fillStyle = (t % 1) < .15 ? '#fff' : '#c00'; cx.font = `bold ${Math.max(12, h / 8)}px sans-serif`; cx.textAlign = 'center'; cx.fillText('PLEASE STAND BY', w / 2, h / 2 + 8); cx.textAlign = 'left'; }
+  function weather(t, w, h) { cx.fillStyle = '#123a8a'; cx.fillRect(0, 0, w, h); cx.fillStyle = '#3a7a2a'; cx.beginPath(); cx.ellipse(w * .45, h * .5, w * .3, h * .3, .3, 0, 7); cx.fill(); cx.fillStyle = '#fff'; cx.font = `bold ${Math.max(12, h / 10)}px sans-serif`; cx.fillText('72°', w * .4, h * .45); cx.fillStyle = '#000'; cx.fillRect(0, h - 26, w, 26); cx.fillStyle = '#ff0'; cx.font = 'bold 15px sans-serif'; const msg = 'LOCAL FORECAST · SCATTERED REACTIONS THIS AFTERNOON · CHANCE OF SPLATS 40% · '; cx.fillText(msg + msg, w - ((t * 80) % (w + 600)), h - 8); }
+
+  let prev = performance.now(), roll = 0, f = 0, holdTear = 0;
+  function frame(now) {
+    const dt = Math.min(.05, (now - prev) / 1000); prev = now;
+    const screen = $('screen'), W = screen.clientWidth, H = screen.clientHeight;
+    if (cc.width !== W || cc.height !== H) { cc.width = W; cc.height = H; }
+    // The station the fine tuning is nearest decides what the picture is: the post, or a channel.
+    const n = K.nch;
+    let best = { kind: 'post', x: state.tx, y: state.ty, w: K.wx }, bestS = g(state.x - state.tx, K.wx);
+    for (let i = 0; i < n; i++) { const s = stations[i], sv = g(state.x - s.x, K.cw) * .95; if (sv > bestS) { bestS = sv; best = { kind: 'chan', i, x: s.x, y: s.y, w: K.cw }; } }
+    const snow = 1 - g(state.x - best.x, best.w);
+    const hold = 1 - g(state.y - best.y, K.wy);
+    const locked = best.kind === 'post' && Math.abs(state.x - state.tx) < K.tol && Math.abs(state.y - state.ty) < K.tol;
+    // A channel plays its segment, then slips: its station moves and the dial is left on static.
+    for (let i = 0; i < n; i++) { const s = stations[i]; if (best.kind === 'chan' && best.i === i && snow < .6) { s.since ??= now; if (now - s.since > K.seg * 1000) moveAway(s); } else if (s.since !== null && now - s.since > 1500) s.since = null; }
+
+    // Picture.
+    $('pic').style.display = best.kind === 'post' ? '' : 'none';
+    cx.clearRect(0, 0, W, H);
+    if (best.kind === 'chan') CH[best.i].draw(now / 1000, W, H);
+    const ph = $('pic').firstElementChild.offsetHeight + 18;
+    if (!K.still) roll = (roll + hold * K.roll * dt) % 1; else roll = 0;
+    const off = roll * ph;
+    $('pic').style.transform = `translateY(${-off}px) ${K.still && hold > .15 ? `skewX(${(hold * 12).toFixed(1)}deg)` : ''}`;
+    cc.style.transform = `translateY(${(-off % H)}px)`;
+    // Snow.
+    if (!K.still) f = (f + 1) % frames.length; nx.putImageData(frames[f], 0, 0);
+    nc.style.opacity = (locked ? 0 : Math.min(1, .08 + snow * 1.02)).toFixed(3);
+    $('lamp').classList.toggle('on', locked);
+    // Sound.
+    if (ac) {
+      const t = ac.currentTime, v = inView;
+      hissGain.gain.setTargetAtTime(locked ? 0 : K.hiss * v * (.15 + .85 * snow), t, .05);
+      chGains.forEach((gn, i) => { const on = best.kind === 'chan' && best.i === i; const c = CH[i].tone; let lv = on ? c.g * v * (1 - snow) * (1 - .6 * hold) : 0; if (on && c.beep && (now / 1000 % 1) > .2) lv = 0; gn.gain.setTargetAtTime(lv, t, .03); });
+    }
+    $('cap').textContent = locked ? '[signal locked]' : best.kind === 'chan' && snow < .7 ? CH[best.i].cap : snow > .5 ? '[static hiss]' : '[a voice through static]';
+    $('kx').querySelector('.rot').parentElement.style.transform = `rotate(${(state.x * K.turns * 360).toFixed(1)}deg)`;
+    $('ky').style.transform = `rotate(${(state.y * K.turns * 360).toFixed(1)}deg)`;
+    $('kx').setAttribute('aria-valuenow', Math.round(state.x * 100)); $('ky').setAttribute('aria-valuenow', Math.round(state.y * 100));
+    // The hidden plane, for the bench only.
+    const dbg = $('debug'); dbg.classList.toggle('on', $('plane').checked);
+    if ($('plane').checked) dbg.innerHTML = `<i style="left:${state.tx * 100}%;top:${state.ty * 100}%;background:#0f0"></i>` + stations.slice(0, n).map((s) => `<i style="left:${s.x * 100}%;top:${s.y * 100}%;background:#f0f"></i>`).join('') + `<i style="left:${state.x * 100}%;top:${state.y * 100}%;background:#fff;width:6px;height:6px"></i>`;
+    $('stats').textContent = `fine ${(state.x * 100).toFixed(1)} · hold ${(state.y * 100).toFixed(1)} · snow ${(snow * 100) | 0}% · roll ${(hold * 100) | 0}% · on ${best.kind === 'post' ? 'the post' : CH[best.i].name} · in view ${(inView * 100) | 0}%`;
+    if (locked && !state.tuned) { state.tuned = true; keep(); setTimeout(() => { $('cover').classList.add('done'); $('post').removeAttribute('inert'); }, 700); }
+    requestAnimationFrame(frame);
+  }
+  if (state.tuned) { $('cover').classList.add('done'); $('post').removeAttribute('inert'); }
+  requestAnimationFrame(frame);
+
+  $('retune').addEventListener('click', () => { state = fresh(); keep(); stations.forEach(moveAway); $('cover').classList.remove('done'); $('post').setAttribute('inert', ''); });
+  document.querySelectorAll('input[name=board]').forEach((r) => r.addEventListener('change', () => $('window').classList.toggle('dark', r.value === 'dark' && r.checked)));
+})();
+</script>
+</body>
+</html>

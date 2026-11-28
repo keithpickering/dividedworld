@@ -1,0 +1,583 @@
+<!doctype html>
+<!--
+  Record, written 2026-11-27. The Heads Will Roll bench: the design session's mockup for
+  docs/plans/2026-11-27-season-two-cards-design.md (Heads Will Roll), made so the owner can tune the orbit by hand. A post's
+  live reaction tiles come loose and orbit inside its content area, each head's mass its count (an Overreaction head's
+  times a multiple), the light ones pulled round the heavy ones and bouncing off the area's borders. A pointer catches a
+  head by pressing it; a key or switch press reels it in over the time a pointer catch takes, which the bench measures.
+  The React tile orbits too, and its picker offers only kinds the post has not got. A press is pending for the grace
+  (5 seconds here) and a second catch of the same head undoes it.
+  Two modes: Flat, the heads falling round each other in the plane of the post; and Space (the owner's "a more 3D take"),
+  the content area as a box of space seen from the side, angled down, the heaviest heads drifting as suns and the rest
+  orbiting them in circles, passing in front of and behind them. In both, every head rolls as it moves.
+  A standalone page: open it in a browser. It is a reference for how the heads look and move, not code to copy.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heads Will Roll Bench</title>
+<style>
+:root {
+  --paper: #ffffff; --ink: #000000; --muted: #555555; --rule: #000000;
+  --font: Verdana, Geneva, sans-serif; --mono: "Courier New", Courier, monospace;
+  --glass-neon: #19e3ff;
+  --pepperoni: #d24a2c; --sweet: #e86fa8; --salty: #3f8fd2;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--font); padding: 20px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 .3em; }
+h2 { font-size: 15px; margin: 1.2em 0 .4em; }
+p { margin: 0 0 .8em; }
+.head, .notes, .results { max-width: 988px; margin: 0 auto 16px; }
+.head p { color: var(--muted); font-size: 13.75px; max-width: 76ch; }
+:focus-visible { outline: 2px solid var(--glass-neon); outline-offset: 2px; }
+
+.bench { max-width: 988px; margin: 0 auto 16px; border: 1px solid var(--rule); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.bench fieldset { border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 -1px -1px 0; padding: 10px 12px 12px; display: grid; gap: 6px; align-content: start; font-size: 12.5px; min-width: 0; }
+.bench legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold; letter-spacing: .06em; text-transform: uppercase; }
+.bench label { display: flex; gap: 6px; align-items: center; min-height: 24px; flex-wrap: wrap; }
+.bench input[type=range] { flex: 1; min-width: 90px; }
+.bench output { font: 12px var(--mono); min-width: 4.5ch; text-align: right; }
+.bench button { font: 12px var(--font); padding: 3px 8px; border: 1px solid var(--rule); background: #eee; cursor: pointer; }
+
+.stage { display: flex; justify-content: center; }
+.window { width: 988px; max-width: 100%; border: 1px solid var(--rule); }
+.window.phone { width: 390px; }
+.board { --b-bg: #ffffff; --b-fg: #000000; --b-head: #e6e6e6; --b-rule: #000000; --b-muted: #555555; --tile: #f4f4f4; background: var(--b-bg); color: var(--b-fg); font: 13px/1.5 var(--font); padding: 14px; }
+.window.dark .board { --b-bg: #0b0b0b; --b-fg: #f2f2f2; --b-head: #1d1d1d; --b-rule: #f2f2f2; --b-muted: #b4b4b4; --tile: #222; }
+.crumbs { font-size: 11px; color: var(--b-muted); margin-bottom: 8px; }
+.post { border: 1px solid var(--b-rule); margin-bottom: 14px; display: grid; grid-template-columns: 150px 1fr; }
+.window.phone .post { grid-template-columns: 1fr; }
+.postbit { border-right: 1px solid var(--b-rule); padding: 8px; font-size: 11px; background: var(--b-head); }
+.window.phone .postbit { border-right: 0; border-bottom: 1px solid var(--b-rule); }
+.postbit b { font-size: 12px; display: block; }
+.main { display: grid; grid-template-rows: 1fr auto; min-width: 0; }
+/* The content area: the bordered box the heads fill and bounce in. */
+.area { position: relative; padding: 10px 12px; min-height: 220px; overflow: hidden; }
+.area p { margin: 0 0 1em; position: relative; z-index: 1; }
+.area.behind .head-btn { z-index: 0; opacity: var(--behind-alpha); }
+.area.behind p { z-index: 2; pointer-events: none; }
+.row { border-top: 1px solid var(--b-rule); padding: 6px 10px; display: flex; gap: 6px; flex-wrap: wrap; min-height: 38px; align-items: center; font-size: 11px; color: var(--b-muted); }
+.tile { display: inline-flex; gap: 4px; align-items: center; border: 1px solid var(--b-rule); background: var(--tile); color: var(--b-fg); font: 12px var(--font); padding: 2px 7px; border-radius: 3px; cursor: pointer; }
+
+/* A head: a live reaction tile, round, sized by its mass. */
+.head-btn { transform-origin: 50% 50%; position: absolute; left: 0; top: 0; z-index: 3; border-radius: 50%; border: 1.5px solid var(--b-rule); background: var(--tile); color: var(--b-fg); display: grid; place-items: center; padding: 0; cursor: pointer; font-family: var(--font); line-height: 1; will-change: transform; touch-action: manipulation; user-select: none; }
+.head-btn .e { display: block; }
+.head-btn .n { position: absolute; right: -4px; bottom: -4px; font: bold 10px var(--mono); background: var(--b-bg); border: 1px solid var(--b-rule); border-radius: 8px; padding: 0 4px; }
+.head-btn.over { border-color: var(--pepperoni); border-width: 2.5px; }
+.head-btn.react { border-style: dashed; font-weight: bold; }
+.head-btn.mine { box-shadow: 0 0 0 3px var(--glass-neon); }
+.head-btn.pending { box-shadow: 0 0 0 3px var(--salty); }
+.head-btn.target { box-shadow: 0 0 0 4px #ffcc00, 0 0 14px #ffcc00; }
+.head-btn.reeling { outline: 2px dashed var(--glass-neon); outline-offset: 3px; }
+.reel { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 6px; width: 46px; height: 4px; background: rgba(0,0,0,.2); }
+.reel i { display: block; height: 100%; background: var(--glass-neon); width: 0; }
+.picker { position: absolute; z-index: 10; background: var(--b-bg); border: 1px solid var(--b-rule); padding: 6px; display: none; gap: 4px; flex-wrap: wrap; width: 200px; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+.picker.on { display: flex; }
+.picker button { font-size: 18px; border: 1px solid var(--b-rule); background: var(--tile); cursor: pointer; padding: 2px 4px; }
+.picker .cap { width: 100%; font-size: 10.5px; color: var(--b-muted); }
+.area.space { background: radial-gradient(ellipse at 50% 120%, #1b1440 0%, #07051a 55%, #000 100%); color: #e8ecf4; }
+.area.space .stars { display: block; }
+.stars { display: none; position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.area.space p { text-shadow: 0 1px 2px #000; }
+.area.space .head-btn { background: rgba(30, 30, 50, .85); color: #fff; border-color: #9ef4ff; }
+.area.space .head-btn .n { background: #000; color: #fff; border-color: #9ef4ff; }
+.head-btn .e { will-change: transform; }
+.toast { min-height: 1.4em; font-size: 12px; color: var(--b-muted); }
+
+table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+td, th { border: 1px solid var(--rule); padding: 3px 6px; text-align: left; }
+td.n { font-family: var(--mono); text-align: right; }
+.notes { font-size: 13.75px; }
+/* On a phone's own screen the board stacks the postbit over the post, as Divided World does, whichever window is chosen. */
+@media (max-width: 600px) {
+  .post { grid-template-columns: 1fr; }
+  .postbit { border-right: 0; border-bottom: 1px solid var(--b-rule); }
+}
+.notes li { margin-bottom: .4em; }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>Heads Will Roll bench</h1>
+  <p>The post's reactions have come loose. Each head is a live tile: press one to react with it (pending for the grace, press again to undo). A head's mass is its count, an Overreaction head's times the multiple, and the light ones fall round the heavy ones. Press <b>+1</b> on the counts to watch a head grow. To measure, start <b>Catch trials</b>: a gold ring marks a head, and the time from the ring to your press is recorded against that head's size and speed. Those times set the reel-in a key or switch press takes.</p>
+</div>
+
+<form class="bench" onsubmit="return false">
+  <fieldset>
+    <legend>Mode</legend>
+    <label><input type="radio" name="mode" value="flat"> Flat: falling round each other</label>
+    <label><input type="radio" name="mode" value="space" checked> Space: suns and orbits, from the side</label>
+    <label>Spin × rolling <input type="range" id="spin" min="0" max="3" step="0.1" value="0.6"><output for="spin"></output></label>
+    <label>Most turns/s <input type="range" id="maxturn" min="0.05" max="3" step="0.05" value="0.5"><output for="maxturn"></output></label>
+    <label>Pull to the middle <input type="range" id="home" min="0" max="3" step="0.05" value="0.8"><output for="home"></output></label>
+    <label>Space backdrop <input type="checkbox" id="backdrop" checked></label>
+  </fieldset>
+  <fieldset>
+    <legend>Space</legend>
+    <label>Camera tilt ° <input type="range" id="tilt" min="0" max="90" step="1" value="22"><output for="tilt"></output></label>
+    <label>Perspective <input type="range" id="persp" min="0" max="1.5" step="0.05" value="0.55"><output for="persp"></output></label>
+    <label>Suns <input type="range" id="suns" min="1" max="4" step="1" value="2"><output for="suns"></output></label>
+    <label>Sun drift px/s <input type="range" id="drift" min="0" max="120" step="2" value="26"><output for="drift"></output></label>
+    <label>Orbit pace <input type="range" id="opace" min="0.1" max="4" step="0.05" value="1"><output for="opace"></output></label>
+    <label>Orbit gap px <input type="range" id="ogap" min="4" max="60" step="1" value="26"><output for="ogap"></output></label>
+    <label>Orbit wobble ° <input type="range" id="owob" min="0" max="45" step="1" value="12"><output for="owob"></output></label>
+  </fieldset>
+  <fieldset>
+    <legend>Gravity (Flat)</legend>
+    <label>Pull <input type="range" id="g" min="0" max="4000" step="50" value="1400"><output for="g"></output></label>
+    <label>Softening px <input type="range" id="soft" min="5" max="120" step="5" value="40"><output for="soft"></output></label>
+        <label>Heavy pulls light only <input type="checkbox" id="oneway" checked></label>
+  </fieldset>
+  <fieldset>
+    <legend>Motion (Flat)</legend>
+    <label>Least speed px/s <input type="range" id="vmin" min="0" max="200" step="5" value="45"><output for="vmin"></output></label>
+    <label>Most speed px/s <input type="range" id="vmax" min="60" max="900" step="10" value="320"><output for="vmax"></output></label>
+    <label>Wall bounce <input type="range" id="bounce" min="0.3" max="1" step="0.05" value="0.9"><output for="bounce"></output></label>
+    <label>Heads collide <input type="checkbox" id="collide" checked></label>
+    <label>Reduced motion <input type="checkbox" id="still"></label>
+  </fieldset>
+  <fieldset>
+    <legend>Size</legend>
+    <label>Least px <input type="range" id="smin" min="18" max="48" step="1" value="26"><output for="smin"></output></label>
+    <label>px per √mass <input type="range" id="sk" min="2" max="30" step="1" value="11"><output for="sk"></output></label>
+    <label>Most, share of area width <input type="range" id="smax" min="0.15" max="0.6" step="0.01" value="0.34"><output for="smax"></output></label>
+    <label>Overreaction mass × <input type="range" id="over" min="1" max="5" step="0.5" value="2"><output for="over"></output></label>
+    <label>React tile px <input type="range" id="rsize" min="24" max="64" step="1" value="36"><output for="rsize"></output></label>
+  </fieldset>
+  <fieldset>
+    <legend>Words</legend>
+    <label><input type="radio" name="layer" value="over" checked> Heads over the words</label>
+    <label><input type="radio" name="layer" value="behind"> Heads behind the words</label>
+    <label>Behind opacity <input type="range" id="balpha" min="0.15" max="1" step="0.05" value="0.45"><output for="balpha"></output></label>
+    <label><input type="radio" name="len" value="short"> Short post</label>
+    <label><input type="radio" name="len" value="long" checked> Long post</label>
+  </fieldset>
+  <fieldset>
+    <legend>Reel-in (keys, switch)</legend>
+    <label><input type="radio" name="reel" value="measured" checked> From measured catches</label>
+    <label><input type="radio" name="reel" value="formula"> From the formula</label>
+    <label>Base s <input type="range" id="rbase" min="0" max="4" step="0.1" value="0.8"><output for="rbase"></output></label>
+    <label>s per (speed ÷ size) <input type="range" id="rk" min="0" max="0.5" step="0.01" value="0.12"><output for="rk"></output></label>
+  </fieldset>
+  <fieldset>
+    <legend>Window</legend>
+    <label><input type="radio" name="win" value="desktop" checked> Desktop</label>
+    <label><input type="radio" name="win" value="phone"> Phone</label>
+    <label><input type="radio" name="board" value="light" checked> Light</label>
+    <label><input type="radio" name="board" value="dark"> Dark</label>
+    <button type="button" id="trials">Start catch trials</button>
+    <button type="button" id="reset">Reset counts</button>
+  </fieldset>
+</form>
+
+<div class="stage">
+  <div class="window" id="win">
+    <div class="board">
+      <div class="crumbs">Divided World » The Pipe » Who's playing what this weekend</div>
+      <div class="post">
+        <div class="postbit"><b>Gloomba</b>Pipe Dweller<br>Posts: 412</div>
+        <div class="main">
+          <div class="area" id="area">
+            <canvas class="stars" id="stars" aria-hidden="true"></canvas>
+            <div id="words"></div>
+            <div class="picker" id="picker" role="dialog" aria-label="React to Gloomba's post"></div>
+          </div>
+          <div class="row" id="row" aria-label="Reaction counts (bench controls)"></div>
+        </div>
+      </div>
+      <div class="toast" id="toast" role="status"></div>
+    </div>
+  </div>
+</div>
+
+<div class="results">
+  <h2>Catches</h2>
+  <p style="font-size:12.5px;color:var(--muted)">Each pointer catch in a trial, by head. Speed ÷ size is the head's average speed over its diameter while ringed: how many of its own widths it travels a second. The reel-in for a key press on a head is the median of measured catches within ±30% of its speed ÷ size, or the formula when there are fewer than three.</p>
+  <table><thead><tr><th>Head</th><th>Mass</th><th>Size px</th><th>Speed ÷ size</th><th>Catch s</th></tr></thead><tbody id="log"></tbody></table>
+  <p id="summary" style="font:12.5px var(--mono);margin-top:8px"></p>
+</div>
+
+<ul class="notes">
+  <li>The heads fill the content area border to border: its borders are their walls. The reactions row under the post is the bench's control (it is empty on the real card except for this note's counts).</li>
+  <li>Tab reaches the heads in order of mass, heaviest first; Enter or Space on a head starts its reel-in, a second press cancels it. Pointer presses land at once.</li>
+  <li>Space: the box is as wide as the content area and about as deep as it is wide, seen from the side and tilted down. A head's size on screen is its size in the box over its distance, and the heads are drawn far to near, so an orbit passes behind its sun and in front of it. A satellite goes to the sun nearest it when the suns are counted; the nearer orbits go to the heavier satellites, and each orbit's pace follows its sun's mass and its radius, as a planet's does.</li>
+  <li>Reduced motion stills the heads in loose places; a key press and a pointer press both reel in, for the same time.</li>
+</ul>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const knobs = ['maxturn','home','g','soft','over','vmin','vmax','bounce','smin','sk','smax','rsize','balpha','rbase','rk','spin','tilt','persp','suns','drift','opace','ogap','owob'];
+  const K = {};
+  const mode = () => document.querySelector('input[name=mode]:checked').value;
+  const readKnobs = () => {
+    for (const k of knobs) { K[k] = parseFloat($(k).value); const o = document.querySelector(`output[for=${k}]`); if (o) o.textContent = $(k).value; }
+    K.oneway = $('oneway').checked; K.collide = $('collide').checked; K.still = $('still').checked; K.backdrop = $('backdrop').checked;
+  };
+  knobs.concat(['oneway','collide','still','backdrop']).forEach((k) => $(k).addEventListener('input', () => { readKnobs(); if (k === 'suns') assign(); place(); }));
+  readKnobs();
+
+  const WORDS = {
+    short: ['Mario Kart night is back on. Bring your own controller this time, Pipewrench.'],
+    long: [
+      'Mario Kart night is back on. Bring your own controller this time, Pipewrench, because the last one still has your Cheeto dust in the shoulder buttons and I am not cleaning it again.',
+      'Also, I have been informed that someone is "bringing a guest". If the guest is the same person who unplugged the router during the final cup, they are not a guest, they are a war criminal, and I will be treating them as such.',
+      'Snacks: chips are covered. Somebody needs to own drinks. If nobody claims drinks by Friday, drinks become Mrs. Hooligan\'s problem, by the ancient law of the group chat.',
+      'Rainbow Road is mandatory. Complaints can be filed in the usual place, which is the bin.'
+    ],
+  };
+  const setWords = (len) => { $('words').innerHTML = WORDS[len].map((t) => `<p>${t}</p>`).join(''); };
+  setWords('long');
+
+  const START = [
+    { e: '😂', n: 14 }, { e: '🔥', n: 6 }, { e: '👏', n: 3 }, { e: '🙄', n: 2 }, { e: '💀', n: 1 },
+    { e: '🍕', n: 4, over: true },
+  ];
+  const ALL = ['😂','🔥','👏','🙄','💀','😭','🤡','👀','💯','🫠','😡','❤️','🧂','🍬'];
+  let heads = [];
+  const area = $('area');
+  let W = 0, H = 0;
+  const measure = () => { W = area.clientWidth; H = area.clientHeight; };
+
+  const massOf = (h) => h.react ? 0 : Math.max(1, h.n) * (h.over ? K.over : 1);
+  /** A head's size in the box (Space) or on the page (Flat), before perspective. */
+  const sizeOf = (h) => h.react ? K.rsize : Math.min(K.smax * W, K.smin + K.sk * Math.sqrt(massOf(h)));
+  /** What the reader sees: the head's size on screen, after perspective in Space. */
+  const shownSize = (h) => sizeOf(h) * (h.scale ?? 1);
+
+  function makeHead(spec) {
+    const h = { e: spec.e, n: spec.n ?? 0, over: !!spec.over, react: !!spec.react,
+      x: 0, y: 0, vx: 0, vy: 0,              // Flat: page px. Space: x across, y up, z deep (box px), with v for a sun's drift.
+      z: 0, vz: 0, X: 0, Y: 0, Z: 0, scale: 1, sx: 0, sy: 0, psx: null, psy: null, angle: 0,
+      sun: null, orbit: null,
+      mine: false, pending: null, reel: null, trialStart: null, travelled: 0, ringed: 0 };
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'head-btn' + (h.over ? ' over' : '') + (h.react ? ' react' : '');
+    b.innerHTML = `<span class="e"></span>${h.react ? '' : '<span class="n"></span>'}<span class="reel" hidden><i></i></span>`;
+    b.addEventListener('pointerdown', (ev) => { ev.preventDefault(); if (K.still) startReel(h); else catchHead(h, 'pointer'); });
+    b.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); startReel(h); } });
+    h.el = b;
+    area.appendChild(b);
+    return h;
+  }
+
+  // ---- The box (Space): x in [-W/2, W/2], y in [-Hb/2, Hb/2], z in [-D/2, D/2].
+  const box = () => ({ w: W, h: Math.max(80, H * 0.8), d: W * 0.9 });
+
+  function scatter(h) {
+    if (mode() === 'flat') {
+      const s = sizeOf(h);
+      h.x = s / 2 + Math.random() * Math.max(1, W - s);
+      h.y = s / 2 + Math.random() * Math.max(1, H - s);
+      const a = Math.random() * Math.PI * 2, v = K.vmin + Math.random() * (K.vmax - K.vmin) * 0.4;
+      h.vx = Math.cos(a) * v; h.vy = Math.sin(a) * v;
+    } else {
+      const B = box(), s = sizeOf(h);
+      h.X = (Math.random() - .5) * (B.w - s); h.Y = (Math.random() - .5) * (B.h - s) * .5; h.Z = (Math.random() - .5) * (B.d - s);
+      const a = Math.random() * Math.PI * 2;
+      h.vx = Math.cos(a); h.vz = Math.sin(a); h.vy = (Math.random() - .5) * .3;
+    }
+  }
+
+  /** Space: the heaviest heads are suns; each other head orbits the nearest sun, heavier satellites on the nearer rings. */
+  function assign() {
+    if (mode() !== 'space') return;
+    const byMass = [...heads].sort((a, b) => massOf(b) - massOf(a));
+    const suns = byMass.filter((h) => !h.react).slice(0, Math.max(1, Math.min(K.suns, byMass.length - 1)));
+    for (const h of heads) { h.sun = null; }
+    const rings = new Map(suns.map((s) => [s, []]));
+    for (const h of byMass) {
+      if (suns.includes(h)) continue;
+      let best = suns[0], bd = Infinity;
+      for (const s of suns) { const d = (s.X - h.X) ** 2 + (s.Z - h.Z) ** 2; const load = rings.get(s).length * 4000; if (d + load < bd) { bd = d + load; best = s; } }
+      rings.get(best).push(h);
+    }
+    for (const [s, list] of rings) {
+      let r = sizeOf(s) / 2;
+      list.forEach((h, i) => {
+        r += sizeOf(h) / 2 + K.ogap; const radius = r; r += sizeOf(h) / 2;
+        const prev = h.orbit;
+        h.sun = s;
+        h.orbit = { r: radius, phase: prev ? prev.phase : Math.random() * Math.PI * 2, tiltA: (Math.random() - .5) * 2, tiltB: Math.random() * Math.PI * 2, dir: i % 2 ? 1 : 1 };
+      });
+    }
+  }
+
+  function build() {
+    heads.forEach((h) => h.el.remove());
+    measure();
+    heads = START.map((s) => makeHead(s)).concat([makeHead({ e: 'React', react: true })]);
+    heads.forEach(scatter);
+    assign(); order(); place(); row(); stars();
+  }
+
+  // Tab order: heaviest first, the React tile last.
+  function order() { [...heads].sort((a, b) => (b.react ? -1 : 0) - (a.react ? -1 : 0) || massOf(b) - massOf(a)).forEach((h) => area.appendChild(h.el)); area.appendChild($('picker')); }
+
+  /** Space: project a box point to the content area. The camera sits in front of the box, tilted down by `tilt`. */
+  function project(X, Y, Z) {
+    const t = K.tilt * Math.PI / 180, B = box();
+    const up = Y * Math.cos(t) + Z * Math.sin(t);        // screen up
+    const depth = Z * Math.cos(t) - Y * Math.sin(t);     // away from the camera
+    const F = Math.max(B.w, B.d) * (K.persp > 0 ? 1 / K.persp : 1e6);
+    const f = F / (F + depth);
+    // Fit: every corner of the box, drawn at its own perspective, lands inside the content area with room for the largest head's
+    // half, so a head anywhere in the box stays inside the borders. Taken from the box alone, never from where heads are, so the view never zooms.
+    const fAt = (y, z) => F / (F + (z * Math.cos(t) - y * Math.sin(t)));
+    let fNear = 0, maxUp = 0.0001;
+    for (const y of [-B.h / 2, B.h / 2]) for (const z of [-B.d / 2, B.d / 2]) { const fc = fAt(y, z); fNear = Math.max(fNear, fc); maxUp = Math.max(maxUp, Math.abs((y * Math.cos(t) + z * Math.sin(t)) * fc)); }
+    const fx = Math.min(1, 1 / fNear);
+    const half = Math.max(...heads.map((h) => sizeOf(h))) / 2;
+    const fy = Math.min(fx, (H / 2 - half * fNear * fx - 2) / maxUp);
+    return { x: W / 2 + X * f * fx, y: H / 2 - up * f * fy, f: f * fx };
+  }
+
+  function stars() {
+    const c = $('stars'); c.width = W; c.height = H; const g = c.getContext('2d'); g.clearRect(0, 0, W, H);
+    for (let i = 0; i < W * H / 1400; i++) { g.fillStyle = `rgba(255,255,255,${Math.random() * .8 + .1})`; const r = Math.random() < .08 ? 1.6 : .8; g.fillRect(Math.random() * W, Math.random() * H, r, r); }
+  }
+
+  function place() {
+    const sp = mode() === 'space';
+    area.classList.toggle('space', sp && K.backdrop);
+    area.classList.toggle('behind', document.querySelector('input[name=layer]:checked').value === 'behind');
+    area.style.setProperty('--behind-alpha', K.balpha);
+    for (const h of heads) {
+      // The head is laid out once at its size in the box; perspective is a scale on top, so the glyph is never re-laid out each frame (which shimmered).
+      const s = sizeOf(h);
+      const size = s + 'px';
+      if (h.el.style.width !== size) { h.el.style.width = h.el.style.height = size; h.el.style.fontSize = h.react ? '11px' : Math.max(10, s * 0.48) + 'px'; }
+      const e = h.el.querySelector('.e'); if (e.textContent !== h.e) e.textContent = h.e;
+      e.style.transform = h.react ? '' : `rotate(${h.angle.toFixed(3)}rad)`;
+      const n = h.el.querySelector('.n'); const count = String(h.n + (h.pending ? 1 : 0)); if (n && n.textContent !== count) n.textContent = count;
+      h.el.classList.toggle('mine', h.mine); h.el.classList.toggle('pending', !!h.pending);
+      h.el.setAttribute('aria-label', h.react ? 'React: open the picker' : `${h.e} ${h.n}${h.over ? ', an Overreaction' : ''}${h.mine ? ', yours' : ''}. Press to catch.`);
+      h.el.style.transform = `translate(${(h.sx - s / 2).toFixed(2)}px, ${(h.sy - s / 2).toFixed(2)}px) scale(${(h.scale ?? 1).toFixed(4)})`;
+    }
+    // Far to near: each head's place in the stack, written only when the order changes.
+    if (sp) [...heads].sort((a, b) => b.depth - a.depth).forEach((h, i) => { const z = String(3 + i); if (h.el.style.zIndex !== z) h.el.style.zIndex = z; });
+    else for (const h of heads) if (h.el.style.zIndex !== '') h.el.style.zIndex = '';
+  }
+
+  function row() {
+    $('row').innerHTML = 'Bench: ' + heads.filter((h) => !h.react).map((h) => `<button type="button" class="tile" data-i="${heads.indexOf(h)}">${h.e} ${h.n} +1</button>`).join(' ');
+    $('row').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { heads[+b.dataset.i].n++; assign(); order(); place(); row(); }));
+  }
+
+  // ---- Motion.
+  let last = performance.now();
+  function flatStep(dt) {
+    for (const a of heads) {
+      if (a.reel) continue;
+      let ax = 0, ay = 0;
+      for (const b of heads) {
+        if (a === b) continue;
+        const mb = massOf(b); if (mb === 0) continue;
+        if (K.oneway && mb <= massOf(a)) continue;
+        const dx = b.x - a.x, dy = b.y - a.y, r2 = dx * dx + dy * dy + K.soft * K.soft, r = Math.sqrt(r2);
+        const f = K.g * mb / r2;
+        ax += f * dx / r; ay += f * dy / r;
+      }
+      // The same pull home as Space's suns, so a head that bounces into a corner is drawn back out of it.
+      ax += -(a.x - W / 2) / (W / 2) * K.home * 180; ay += -(a.y - H / 2) / (H / 2) * K.home * 180;
+      a.vx += ax * dt; a.vy += ay * dt;
+      const v = Math.hypot(a.vx, a.vy);
+      if (v > K.vmax) { a.vx *= K.vmax / v; a.vy *= K.vmax / v; }
+      if (v < K.vmin) { const t = v === 0 ? Math.random() * 6.28 : Math.atan2(a.vy, a.vx); a.vx = Math.cos(t) * K.vmin; a.vy = Math.sin(t) * K.vmin; }
+      a.x += a.vx * dt; a.y += a.vy * dt;
+      const s = sizeOf(a) / 2;
+      if (a.x < s) { a.x = s; a.vx = Math.abs(a.vx) * K.bounce; } if (a.x > W - s) { a.x = W - s; a.vx = -Math.abs(a.vx) * K.bounce; }
+      if (a.y < s) { a.y = s; a.vy = Math.abs(a.vy) * K.bounce; } if (a.y > H - s) { a.y = H - s; a.vy = -Math.abs(a.vy) * K.bounce; }
+    }
+    if (K.collide) for (let i = 0; i < heads.length; i++) for (let j = i + 1; j < heads.length; j++) {
+      const a = heads[i], b = heads[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01, min = (sizeOf(a) + sizeOf(b)) / 2;
+      if (d >= min) continue;
+      const ma = massOf(a) || 3, mb = massOf(b) || 3, nx = dx / d, ny = dy / d, push = (min - d);
+      a.x -= nx * push * mb / (ma + mb); a.y -= ny * push * mb / (ma + mb); b.x += nx * push * ma / (ma + mb); b.y += ny * push * ma / (ma + mb);
+      const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+      if (rel < 0) { const imp = -2 * rel / (1 / ma + 1 / mb); a.vx -= imp / ma * nx * 0.9; a.vy -= imp / ma * ny * 0.9; b.vx += imp / mb * nx * 0.9; b.vy += imp / mb * ny * 0.9; }
+    }
+    for (const h of heads) { h.sx = h.x; h.sy = h.y; h.scale = 1; h.depth = 0; }
+  }
+
+  function spaceStep(dt, t) {
+    const B = box();
+    // A system wider than the box (a phone's narrow post, a sun with many satellites) draws its rings in to fit: `fit` scales every orbit's radius.
+    // Without it the room left for the sun was negative, and the clamps below flipped it from one side to the other every frame.
+    for (const s of heads) {
+      if (s.sun) continue;
+      const raw = Math.max(sizeOf(s) / 2, ...heads.filter((h) => h.sun === s).map((h) => h.orbit.r + sizeOf(h) / 2));
+      s.fit = Math.min(1, Math.max(0.05, (Math.min(B.w, B.d) / 2 - 2) / raw));
+      s.reach = raw * s.fit;
+    }
+    // Suns drift in the box and bounce off its walls.
+    const room = (half, r) => Math.max(0, half - r);
+    for (const s of heads) {
+      if (s.sun || s.reel) continue;
+      // A system stays inside the box whole, so no satellite crosses the content area's borders.
+      const r = s.reach;
+      s.X += s.vx * K.drift * dt; s.Y += s.vy * K.drift * dt; s.Z += s.vz * K.drift * dt;
+      // Each wall turns the sun back toward the middle; never a flip of sign on a clamp, which is what alternated frame to frame.
+      const rx = room(B.w / 2, r), ry = room(B.h / 2, sizeOf(s) / 2), rz = room(B.d / 2, r);
+      if (s.X > rx) { s.X = rx; s.vx = -Math.abs(s.vx); } else if (s.X < -rx) { s.X = -rx; s.vx = Math.abs(s.vx); }
+      if (s.Y > ry) { s.Y = ry; s.vy = -Math.abs(s.vy); } else if (s.Y < -ry) { s.Y = -ry; s.vy = Math.abs(s.vy); }
+      if (s.Z > rz) { s.Z = rz; s.vz = -Math.abs(s.vz); } else if (s.Z < -rz) { s.Z = -rz; s.vz = Math.abs(s.vz); }
+    }
+    // Suns steer: back toward the middle of the box, more the farther out they are, and away from another sun they come near. Their speed stays the drift,
+    // so a sun curves home rather than stopping, and two systems may pass one another at different depths (it is space), never sun through sun.
+    const suns = heads.filter((h) => !h.sun);
+    for (const a of suns) {
+      let ax = -a.X / (B.w / 2) * K.home, ay = -a.Y / (B.h / 2) * K.home, az = -a.Z / (B.d / 2) * K.home;
+      for (const b of suns) {
+        if (a === b) continue;
+        // Suns part in all three directions, so on a tall, narrow post (a phone's) two systems stack one over the other rather than knotting in the middle.
+        const near = (a.reach ?? sizeOf(a)) + (b.reach ?? sizeOf(b));
+        const dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z, d = Math.hypot(dx, dy, dz) || 0.01;
+        if (d < near) { const k = (near - d) / near * 3; ax += dx / d * k; ay += dy / d * k; az += dz / d * k; }
+      }
+      a.vx += ax * dt; a.vy += ay * dt; a.vz += az * dt;
+      const v = Math.hypot(a.vx, a.vy, a.vz) || 1; a.vx /= v; a.vy /= v; a.vz /= v;
+    }
+    // Satellites go round their sun: a circle in a plane wobbled off the horizontal, at a pace that follows the sun's mass and the radius.
+    for (const h of heads) {
+      if (!h.sun || h.reel) continue;
+      const o = h.orbit, M = massOf(h.sun);
+      const w = K.opace * Math.sqrt(Math.max(1, M) * 4e4 / Math.pow(o.r, 3));
+      o.phase += w * dt;
+      const R = o.r * (h.sun.fit ?? 1);
+      const cx = Math.cos(o.phase) * R, cz = Math.sin(o.phase) * R;
+      const wob = K.owob * Math.PI / 180 * o.tiltA;
+      const cy = Math.sin(o.phase + o.tiltB) * Math.sin(wob) * R;
+      const yRoom = Math.max(0, B.h / 2 - sizeOf(h) / 2);
+      h.X = h.sun.X + cx; h.Y = Math.max(-yRoom, Math.min(yRoom, h.sun.Y + cy)); h.Z = h.sun.Z + cz;
+    }
+    for (const h of heads) { const p = project(h.X, h.Y, h.Z); h.sx = p.x; h.sy = p.y; h.scale = p.f; h.depth = h.Z * Math.cos(K.tilt * Math.PI / 180) - h.Y * Math.sin(K.tilt * Math.PI / 180); }
+  }
+
+  function step(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const pw = W, ph = H; measure(); if (W !== pw || H !== ph) stars();
+    if (!K.still) (mode() === 'flat' ? flatStep : spaceStep)(dt, now / 1000);
+    else if (mode() === 'space') spaceStep(0, now / 1000);
+    for (const h of heads) {
+      // Roll: a head turns by the distance it moved on screen over its radius, so it rolls the way it travels.
+      if (h.psx !== null && !K.still && dt > 0) {
+        // Rolling as a ball rolls along a floor: turned by its sideways travel over its radius, so it keeps one direction for as long as it heads that way.
+        // The turn is eased and capped, so an orbit's swing reads as a roll, never a buzz.
+        const dx = h.sx - h.psx, dy = h.sy - h.psy, r = Math.max(6, shownSize(h) / 2);
+        const cap = K.maxturn * 2 * Math.PI;
+        const want = Math.max(-cap, Math.min(cap, (dx / dt) / r * K.spin));
+        h.omega = (h.omega ?? 0) + (want - (h.omega ?? 0)) * Math.min(1, dt * 3);
+        h.angle += h.omega * dt;
+        if (h.trialStart !== null) { h.travelled += Math.hypot(dx, dy); h.ringed += dt; }
+      }
+      h.psx = h.sx; h.psy = h.sy;
+      if (h.reel) {
+        const p = Math.min(1, (now - h.reel.at) / (h.reel.secs * 1000));
+        h.el.querySelector('.reel i').style.width = (p * 100) + '%';
+        if (p >= 1) { endReel(h); catchHead(h, 'reel'); }
+      }
+    }
+    place();
+    requestAnimationFrame(step);
+  }
+
+  // ---- Catching.
+  const GRACE = 5000;
+  const toast = (t) => { $('toast').textContent = t; };
+  const catches = [];
+  function speedOver(h) { if (K.still) return 0; const s = shownSize(h), v = h.ringed > 0 ? h.travelled / h.ringed : 0; return v / s; }
+  function reelSecs(h) {
+    const r = speedOver(h);
+    if (document.querySelector('input[name=reel]:checked').value === 'measured') {
+      const near = catches.filter((c) => r === 0 ? true : Math.abs(c.ratio - r) <= 0.3 * Math.max(r, 0.01)).map((c) => c.secs).sort((a, b) => a - b);
+      if (near.length >= 3) return near[Math.floor(near.length / 2)];
+    }
+    return K.rbase + K.rk * (r === 0 ? (catches.length ? catches.reduce((s, c) => s + c.ratio, 0) / catches.length : 4) : r);
+  }
+  function startReel(h) {
+    if (h.reel) { endReel(h); toast('Reel-in cancelled.'); return; }
+    if (h.trialStart === null) { h.travelled = 0; h.ringed = 0; }
+    const secs = reelSecs(h);
+    h.reel = { at: performance.now(), secs };
+    h.el.classList.add('reeling'); h.el.querySelector('.reel').hidden = false;
+    toast(`Reeling in ${h.react ? 'the React tile' : h.e}: ${secs.toFixed(1)} s.`);
+  }
+  function endReel(h) { h.reel = null; h.el.classList.remove('reeling'); h.el.querySelector('.reel').hidden = true; }
+
+  function catchHead(h, how) {
+    if (h.trialStart !== null) {
+      const secs = (performance.now() - h.trialStart) / 1000, ratio = speedOver(h);
+      if (how === 'pointer') catches.push({ e: h.react ? 'React' : h.e, mass: massOf(h), size: Math.round(shownSize(h)), ratio, secs, mode: mode() });
+      h.trialStart = null; h.el.classList.remove('target'); logTable(); nextTrial();
+    }
+    if (h.react) { openPicker(h); return; }
+    if (h.pending) { clearTimeout(h.pending); h.pending = null; toast(`Undone: ${h.e}. Nothing was sent.`); return; }
+    if (h.mine) { toast(`You already left ${h.e} on this post.`); return; }
+    h.pending = setTimeout(() => { h.pending = null; h.mine = true; h.n++; assign(); order(); row(); toast(`${h.e} sent.`); }, GRACE);
+    toast(`${h.e} pending for 5 s. Catch it again to undo.`);
+  }
+
+  function openPicker(rt) {
+    const pk = $('picker'), have = new Set(heads.map((h) => h.e));
+    const fresh = ALL.filter((e) => !have.has(e));
+    pk.innerHTML = `<span class="cap">Only kinds not on this post. The rest are out there: catch them.</span>` + fresh.map((e) => `<button type="button">${e}</button>`).join('');
+    const s = shownSize(rt);
+    pk.style.left = Math.max(0, Math.min(W - 200, rt.sx - 100)) + 'px'; pk.style.top = Math.max(0, Math.min(H - 120, rt.sy + s / 2 + 4)) + 'px';
+    pk.style.zIndex = 5000;
+    pk.classList.add('on');
+    pk.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      pk.classList.remove('on');
+      const h = makeHead({ e: b.textContent, n: 0 });
+      h.x = rt.x; h.y = rt.y; h.X = rt.X; h.Y = rt.Y; h.Z = rt.Z; const a = Math.random() * 6.28; h.vx = Math.cos(a) * K.vmax * 0.6; h.vy = Math.sin(a) * K.vmax * 0.6;
+      heads.push(h); assign(); order(); row();
+      h.pending = setTimeout(() => { h.pending = null; h.mine = true; h.n = 1; assign(); order(); row(); toast(`${h.e} sent: a new head, light and fast.`); }, GRACE);
+      toast(`${h.e} pending for 5 s. Catch it to undo.`);
+    }));
+    pk.querySelector('button')?.focus();
+  }
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('picker').classList.remove('on'); });
+  document.addEventListener('pointerdown', (e) => { if (!$('picker').contains(e.target) && !e.target.closest('.head-btn.react')) $('picker').classList.remove('on'); });
+
+  // ---- Trials.
+  let trialsOn = false;
+  function nextTrial() {
+    if (!trialsOn) return;
+    const pool = heads.filter((h) => !h.pending);
+    const h = pool[Math.floor(Math.random() * pool.length)];
+    h.trialStart = performance.now(); h.travelled = 0; h.ringed = 0; h.el.classList.add('target');
+  }
+  $('trials').addEventListener('click', () => {
+    trialsOn = !trialsOn; $('trials').textContent = trialsOn ? 'Stop catch trials' : 'Start catch trials';
+    heads.forEach((h) => { h.trialStart = null; h.el.classList.remove('target'); });
+    if (trialsOn) { heads.forEach((h) => { if (h.pending) { clearTimeout(h.pending); h.pending = null; } h.mine = false; }); nextTrial(); }
+  });
+  function logTable() {
+    $('log').innerHTML = catches.slice(-40).reverse().map((c) => `<tr><td>${c.e} <small>(${c.mode})</small></td><td class="n">${c.mass.toFixed(1)}</td><td class="n">${c.size}</td><td class="n">${c.ratio.toFixed(2)}</td><td class="n">${c.secs.toFixed(2)}</td></tr>`).join('');
+    if (catches.length >= 3) {
+      // Least squares fit of catch seconds on speed ÷ size: the formula's base and slope, to copy into the Reel-in knobs.
+      const n = catches.length, mx = catches.reduce((s, c) => s + c.ratio, 0) / n, my = catches.reduce((s, c) => s + c.secs, 0) / n;
+      const sxy = catches.reduce((s, c) => s + (c.ratio - mx) * (c.secs - my), 0), sxx = catches.reduce((s, c) => s + (c.ratio - mx) ** 2, 0);
+      const k = sxx > 0 ? sxy / sxx : 0, base = my - k * mx;
+      $('summary').textContent = `${n} catches · mean ${my.toFixed(2)} s · fit: catch ≈ ${base.toFixed(2)} s + ${k.toFixed(3)} s × (speed ÷ size)`;
+    }
+  }
+
+  const rescatter = () => setTimeout(() => { measure(); heads.forEach(scatter); assign(); stars(); }, 0);
+  document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', rescatter));
+  document.querySelectorAll('input[name=win]').forEach((r) => r.addEventListener('change', () => { $('win').classList.toggle('phone', r.value === 'phone' && r.checked); rescatter(); }));
+  document.querySelectorAll('input[name=board]').forEach((r) => r.addEventListener('change', () => $('win').classList.toggle('dark', r.value === 'dark' && r.checked)));
+  document.querySelectorAll('input[name=layer]').forEach((r) => r.addEventListener('change', place));
+  document.querySelectorAll('input[name=len]').forEach((r) => r.addEventListener('change', () => { setWords(r.value); rescatter(); }));
+  $('reset').addEventListener('click', build);
+
+  build();
+  requestAnimationFrame(step);
+})();
+</script>
+</body>
+</html>
