@@ -58,10 +58,11 @@ with the task it touched, so that gaps can be counted.
 ## Review, inside this session
 
 1. Per task: a spec reviewer (does the code do what the plan's task says, no less and no more?) and a quality reviewer
-   (is it correct, tested, and written like the code around it?). Each is a subagent, never the task's implementer,
-   with a prompt you write for that task: the task's text, the diff, and what to report. The spec review passes
-   before the quality review starts; each finding is fixed and that reviewer reads again until it reports none, for
-   at most 3 re-reads; after the third, tell the owner what is still open.
+   (is it correct, tested, and written like the code around it, and does every string a player reads that it adds or
+   changes pass `specs/player-copy.md`?). Each is a subagent, never the task's implementer, with a prompt you write for
+   that task: the task's text, the diff, and what to report. The spec review passes before the quality review starts;
+   each finding is fixed and that reviewer reads again until it reports none, for at most 3 re-reads; after the third,
+   tell the owner what is still open.
 2. Poisons: for each check, apply the defect it exists to catch, record the red run in the PR, then make it pass.
 3. One final review of the whole branch by a fresh subagent on Opus, never the builder. It starts once the PR is ready
    and CI is green on the head it will read, so a CI fix never buys a second review. Its brief is the PR number, the
