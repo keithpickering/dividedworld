@@ -15,7 +15,7 @@ import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { usePlayer } from '../player.tsx';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine, REACTION_GRACE_MS } from './mine.ts';
-import { CANT_TAKE_BACK, Reactions, readable, useReactionChips } from './Reactions.tsx';
+import { CANT_TAKE_BACK, Reactions, readable, useReactionChips, useReactionRow } from './Reactions.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { StagedCtx } from '../staged.ts';
 
@@ -1342,6 +1342,23 @@ describe('a post-local reaction and a blind post', () => {
     const view = renderIn(w.fake, <Reactions act={post} author={author} authorName="Spritey" tallies={tallies} mine={mine} plays={plays} />, { instance: veiling });
     return { tallies, mine, plays, ...view };
   }
+
+  describe('the deck\'s chips', () => {
+    test('each says whether its kind is one a card added to the post (local) or the instance\'s own', async () => {
+      const w = world();
+      const tallies = createTallies();
+      const Probe = () => {
+        const r = useReactionRow({ act: w.theirs, author: w.spritey, tallies, mine: createMine(), plays });
+        return <ul>{r.chips.map((c) => <li key={c.key} data-testid={`deck-${c.key}`} data-local={String(c.local)} />)}</ul>;
+      };
+      const plays = createPlays();
+      plays.add([skull(w.theirs, w.pipe)]);
+      renderIn(w.fake, <Probe />, { instance: veiling });
+      act(() => { tallies.merge(w.theirs, { fire: 1, [skullKey]: 2 }); });
+      expect(await screen.findByTestId('deck-fire')).toHaveAttribute('data-local', 'false');
+      expect(screen.getByTestId(`deck-${skullKey}`)).toHaveAttribute('data-local', 'true');
+    });
+  });
 
   describe('the row', () => {
     test('draws a chip for a local key from the key alone, named by the emoji and "added by a card", with its count', async () => {

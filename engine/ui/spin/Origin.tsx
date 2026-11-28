@@ -357,8 +357,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
       default:
         return (
           <>
-            {/* A card that draws the reactions is given the origin post's row logic here too; the box has no row of its own to draw tiles in, so the scope draws nothing but the card's picker. */}
-            <ReactionRowScope on={act.kind === 'post' || act.kind === 'spin'} loose={looseReactions} act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} plays={plays}>
+            {/* A card that draws the reactions is given the origin post's row logic here too; the box has no row of its own to draw tiles in, so the row's logic runs here only while a card that draws the reactions is live, and draws nothing but that card's picker. */}
+            <ReactionRowScope on={looseReactions} loose={looseReactions} act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} plays={plays}>
               <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>
             </ReactionRowScope>
             <LastEdited act={rewound?.rewind.version ?? act} />

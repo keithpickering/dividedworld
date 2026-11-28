@@ -130,11 +130,11 @@ export function useReactionChips(act: Id, author: Id | null, tallies: Tallies, m
   const chipOf = (key: string, count: number | null): Chip | null => {
     const known = instance.reactions.find((r) => r.key === key);
     const pending = pendingOf(key);
-    if (known) return { key, name: readable(key), emoji: known.emoji, quadrant: known.quadrant, count, open: true, pending };
+    if (known) return { key, name: readable(key), emoji: known.emoji, quadrant: known.quadrant, count, open: true, pending, local: false };
     const emoji = emojiOfKey(key);
     if (emoji === null) return null;
     const kind = kindOf(key);
-    return { key, name: localName(emoji, label(kind)), emoji, quadrant: kind?.quadrant ?? null, count, open: kind?.ended !== true, pending };
+    return { key, name: localName(emoji, label(kind)), emoji, quadrant: kind?.quadrant ?? null, count, open: kind?.ended !== true, pending, local: true };
   };
   /* A pending kind is drawn as its tally's count and one more (its own press), and a kind with no chip yet gets one. */
   const counted = [...new Set([...Object.keys(tally).filter((k) => (tally[k] ?? 0) > 0), ...waiting.map((p) => p.kind)])];
@@ -321,7 +321,10 @@ const RowCtx = createContext<Held | null>(null);
 /** The deck a post gives its effects, where a card that draws the reactions is live on it; undefined everywhere else. */
 export const useReactionDeck = (): ReactionDeck | undefined => {
   const held = useContext(RowCtx);
-  return held !== null && held.loose ? held.row : undefined;
+  if (held === null || !held.loose) return undefined;
+  /* Only the deck's own fields: an effect is never handed the row's drawing or the picker's layer. */
+  const { chips, own, pending, canReact, press, undo, refusal, landed, picker } = held.row;
+  return { chips, own, pending, canReact, press, undo, refusal, landed, picker: { isOpen: picker.isOpen, open: picker.open, close: picker.close } };
 };
 
 /**

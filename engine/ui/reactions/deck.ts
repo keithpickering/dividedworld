@@ -7,7 +7,9 @@ import type { Quadrant } from '../../rules/types.ts';
 import type { Pending } from './mine.ts';
 
 /** One chip of the row: the kind's key, its words, its emoji, its quadrant, its count (none where the totals are hidden from the reader), and whether a press can still count. */
-export interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly quadrant: Quadrant | null; readonly count: number | null; readonly open: boolean; readonly pending: Pending | null }
+export interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly quadrant: Quadrant | null; readonly count: number | null; readonly open: boolean; readonly pending: Pending | null;
+  /** The kind is one a card added to this post (a local kind), not one of the instance's own. */
+  readonly local: boolean }
 
 /** The kind that just landed on this screen, and whether it waits for the picker to leave first. */
 export interface Landed { readonly key: string; readonly after: boolean }

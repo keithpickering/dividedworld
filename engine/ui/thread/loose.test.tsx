@@ -21,7 +21,7 @@ const instance: Instance = { ...testInstance, cards: [...testInstance.cards, rul
 const Loose = ({ reactions, children }: EffectProps) => {
   return (
     <div data-testid="fx-loose" data-deck={reactions === undefined ? 'none' : reactions.canReact ? 'live' : 'plain'}>
-      {reactions?.chips.map((c) => <span key={c.key} data-testid={`chip-${c.key}`}>{c.key} {c.count}{c.pending ? ' pending' : ''}</span>)}
+      {reactions?.chips.map((c) => <span key={c.key} data-testid={`chip-${c.key}`} data-local={String(c.local)}>{c.key} {c.count}{c.pending ? ' pending' : ''}</span>)}
       <button type="button" onClick={() => { reactions?.press('fire'); }}>catch fire</button>
       <button type="button" onClick={(e) => reactions?.picker.open(e.currentTarget, true)}>catch another</button>
       {children}
@@ -150,5 +150,54 @@ describe('a post that wears a card that draws the reactions', () => {
     expect(within(article).getByRole('button', { name: 'React' })).toBeInTheDocument();
     expect(within(article).queryByText(LINE)).toBeNull();
     expect(within(article).queryByTestId('fx-loose')).toBeNull();
+  });
+
+  test('a face-down play and a caught play give the row back', async () => {
+    const w = world();
+    const set = w.fake.seed.set(w.spritey, w.ids[2]!, 'loose');
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose', { caught: set });
+    open(w);
+    const article = await post3();
+    await waitFor(() => expect(within(article).getByRole('list', { name: 'Reactions' })).toBeInTheDocument());
+    expect(within(article).getByRole('button', { name: 'React' })).toBeInTheDocument();
+    expect(within(article).queryByText(LINE)).toBeNull();
+    expect(within(article).queryByTestId('fx-loose')).toBeNull();
+  });
+
+  test('a chip of the instance\'s own kinds is not marked local', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose');
+    open(w);
+    const article = await post3();
+    await waitFor(() => expect(within(article).getByTestId('chip-fire')).toHaveAttribute('data-local', 'false'));
+  });
+});
+
+describe('in the ORIGIN box of a thread spun from the post', () => {
+  const spun = async (w: ReturnType<typeof world>) => {
+    const made = await w.fake.spin(w.ids[2]!, (await w.fake.myCharacters())[0]!.id, 'Spun off', 'Taking this elsewhere.');
+    if (!made.ok) throw new Error(made.error);
+    renderIn(w.fake, <LoadedThread thread={made.value.thread.id} />, { path: `/t/${made.value.thread.id}`, cards, instance });
+    return within(await screen.findByRole('group', { name: 'Origin' }));
+  };
+
+  test('the effect is given the deck while the card is live, and its press goes to the origin post', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'loose');
+    const react = vi.spyOn(w.fake, 'react');
+    const origin = await spun(w);
+    await waitFor(() => expect(origin.getByTestId('fx-loose')).toHaveAttribute('data-deck', 'live'));
+    await waitFor(() => expect(origin.getByTestId('chip-fire')).toHaveTextContent('fire 1'));
+    act(() => { fireEvent.click(origin.getByRole('button', { name: 'catch fire' })); });
+    await wait(REACTION_GRACE_MS + 100);
+    await waitFor(() => expect(react).toHaveBeenCalledTimes(1));
+    expect(react.mock.calls[0]).toContain(w.ids[2]);
+  });
+
+  test('a box with no such play is given no deck', async () => {
+    const w = world();
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'plain');
+    const origin = await spun(w);
+    await waitFor(() => expect(origin.getByTestId('fx-plain')).toHaveAttribute('data-deck', 'none'));
   });
 });
