@@ -2339,7 +2339,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const sets = new Set(plays.filter((p) => p.kind === 'set').map((p) => p.id));
     const riders = [...acts.values()].filter((a) => (a.kind === 'spring' || a.kind === 'take_back') && typeof a.payload.set === 'string' && sets.has(a.payload.set)).sort(byDate);
     const named = new Set([...plays, ...riders].map((a) => a.id));
-    const ends = [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && named.has(a.target)).sort(byDate);
+    const ends = [...acts.values()].filter((a) => (a.kind === 'card_end' || a.kind === 'open_gift') && a.target !== null && named.has(a.target)).sort(byDate);
     return { riders, ends };
   };
   /**
@@ -4949,7 +4949,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     kindPlays: (post, card, before, size) => kindPage(post, card, before, size),
     cardEnds(targets) {
       const wanted = new Set(targets);
-      return [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).map(publicAct);
+      return [...acts.values()].filter((a) => (a.kind === 'card_end' || a.kind === 'open_gift') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).map(publicAct);
     },
     tails: (posts) => tails(posts),
     effectStates(plays) {
@@ -5458,7 +5458,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (id === null || summary.firstAct === null || !shownActs.some((a) => a.id === summary.firstAct)) return null;
         const act = core.act(id);
         const read = postPlaysOf([id], now());
-        const shown = read.plays.filter((a) => a.kind !== 'card_end');
+        const shown = read.plays.filter((a) => a.kind !== 'card_end' && a.kind !== 'open_gift');
         const place = summary.origin;
         const play = place?.kind === 'play' ? place : null;
         const pressed = play !== null && play.on?.kind === 'character' && play.at !== null;
@@ -5480,7 +5480,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const spot = acts.get(post);
         return { ...origin, at: spot === undefined ? origin.at : { thread: spot.thread, seq: spot.seq! }, cast: [...origin.cast, ...core.characters(parts.cast.filter((c) => !origin.cast.some((k) => k.id === c)))].sort((x, y) => (x.id < y.id ? -1 : 1)), polls: parts.polls, voters: parts.voters, votersMore: parts.votersMore, myBallots: parts.myBallots };
       })();
-      const originPlays = origin === null ? [] : origin.plays.filter((a) => a.kind !== 'card_end');
+      const originPlays = origin === null ? [] : origin.plays.filter((a) => a.kind !== 'card_end' && a.kind !== 'open_gift');
       const wanted = [...played, ...originPlays].filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
       const ids = [...shownActs, ...under.map((u) => u.act), ...played, ...boardCards, ...(origin?.act ? [origin.act] : []), ...originPlays].map((a) => a.id);
       const pagePolls = pollParts(posts.map((a) => a.id));

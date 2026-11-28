@@ -359,8 +359,8 @@ function springOf(act: Act): { readonly set: Id; readonly card: string; readonly
 const takeBackOf = (act: Act): { readonly set: Id; readonly at: string } | null =>
   act.kind === 'take_back' && typeof act.payload.set === 'string' ? { set: act.payload.set, at: act.createdAt } : null;
 
-/** The play a `card_end` Act ends, or null for any other Act. */
-const endOf = (act: Act): Id | null => (act.kind === 'card_end' && typeof act.targetActId === 'string' ? act.targetActId : null);
+/** The play a `card_end` Act (or the `open_gift` that opens a box) ends, or null for any other Act. */
+const endOf = (act: Act): Id | null => ((act.kind === 'card_end' || act.kind === 'open_gift') && typeof act.targetActId === 'string' ? act.targetActId : null);
 
 /** Layer first, then when it was played, then its id: the order plays are laid over a post, the first innermost. */
 export const inPlayOrder = (a: CardPlay, b: CardPlay): number =>
@@ -872,6 +872,11 @@ export function useRewound(plays: Plays, post: Id): Rewound | null {
   return useMemo(() => rewoundOf(here, Math.max(now, api.now()), keeps), [here, now, api, keeps]);
 }
 
+/** The plays a live rewind does not let show on its post, or the rewind's own while "The present" is shown: not ended, only not drawn (`PostEffects`, and the row's fill layers). */
+export function hiddenByRewind(rewound: Rewound | null, presenting: boolean): ReadonlySet<Id> {
+  return new Set(presenting && rewound ? [rewound.rewind.play] : rewound?.hidden.map((p) => p.id));
+}
+
 /** A card's view on a post (`Plays.view`): what reads it is drawn again when it changes, and nothing else is. */
 export function useCardView(plays: Plays, post: Id, card: string): CardView | null {
   return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.view(post, card));
@@ -903,7 +908,7 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
   plays.setCounts(read.counts);
   await readEffects(api, plays, acts, cards);
   /* The plays' ends ride in the read for the store; they are no plays, so no tally, reaction or caster is read for one. */
-  return acts.filter((a) => a.kind !== 'card_end');
+  return acts.filter((a) => a.kind !== 'card_end' && a.kind !== 'open_gift');
 }
 
 /**

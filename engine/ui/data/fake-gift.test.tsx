@@ -130,7 +130,9 @@ describe('a card wrapped in another, as the server holds it (season two design, 
     const opened = must(await fake.openGift(wrapped.id));
     const act = (await fake.characterActs(boFace, ['open_gift'], { offset: 0, limit: 5 }))[0];
     expect(act).toMatchObject({ kind: 'open_gift', targetActId: wrapped.id, payload: { box: wrapped.id, did: 'landed', gift: opened.gift!.id, why: null } });
-    expect((await fake.cardEnds([wrapped.id])).filter((a) => a.kind === 'card_end')).toEqual([]);
+    /* The box's end rides the reads a page draws plays from, as a card_end does, though it is no admin's. */
+    expect((await fake.cardEnds([wrapped.id])).map((a) => [a.kind, a.id])).toEqual([['open_gift', act!.id]]);
+    expect((await fake.postPlays([opener])).plays.filter((a) => a.kind === 'open_gift').map((a) => a.id)).toEqual([act!.id]);
     const boss = fake.seed.account('boss', { admin: true });
     fake.signInAs(boss);
     expect((await fake.adminQueue()).ended).toEqual([]);

@@ -472,6 +472,19 @@ describe('a play an admin ended', () => {
     expect(livePlays(got.plays, Date.now()).map((p) => p.id)).toEqual(['k2']);
   });
 
+  test('an open_gift ends its box as a card_end does: the box is not live, and one that comes first is held', () => {
+    const open = (box: string) => act(`open-${box}`, 'open_gift', { box, did: 'landed', gift: 'g1', why: null }, box);
+    const plays = createPlays();
+    plays.add([act('k1', 'card', { card: 'present' })]);
+    expect(plays.add([open('k1')])).toBe(true);
+    expect(plays.get('p1').plays.map((p) => p.reversed)).toEqual([true]);
+    expect(livePlays(plays.get('p1').plays, Date.now())).toEqual([]);
+    const early = createPlays();
+    early.add([open('k2')]);
+    early.add([act('k2', 'card', { card: 'present' })]);
+    expect(early.get('p1').plays.map((p) => p.reversed)).toEqual([true]);
+  });
+
   test('a card_end that arrives before its play is held, and the play arrives reversed', () => {
     const plays = createPlays();
     plays.add([end('k1')]);
