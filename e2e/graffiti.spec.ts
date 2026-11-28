@@ -19,21 +19,23 @@ const THREAD = 'Who keeps reacting with a thumbs up?';
 const POST = 2;
 const LIMIT = 40;
 
-/** A wave across the body about the height `y`, as a stroke of the card's own shape (aspect 3, the cells it covers are shares of the box). */
+/** The box the seeded strokes are drawn in, in ems (a body three times as wide as it is tall, at the board's 15px), as the stage and the wall stories draw. */
+const BOX = { w: 60, h: 20 } as const;
+/** A wave across the body about the height `y`, in shares of that box (0 to 1, across and down); the seed turns them into a group's ems from the box's center. */
 type Spec = readonly [can: string, cap: string, y: number, x0: number, x1: number, amp: number];
 /** One fat stroke: a wall of about 8%. */
 const SMALL: readonly Spec[] = [['red', 'fat', 0.3, 0.04, 0.7, 0.08]];
 /** Three: about 25%, enough paint to scrub and to see. */
 const SOME: readonly Spec[] = [['red', 'fat', 0.3, 0.04, 0.7, 0.08], ['orange', 'fat', 0.62, 0.2, 0.9, 0.1], ['lime', 'fat', 0.12, 0.4, 0.95, 0.05]];
-/** Five: the story's wall at 31% of its 40% limit. */
-const NEAR: readonly Spec[] = [...SOME, ['pink', 'stock', 0.82, 0.05, 0.6, 0.06], ['purple', 'fat', 0.45, 0.05, 0.54, 0.12]];
+/** Five: the story's wall at 31% of its 40% limit (the last stroke is short, as the story's: the new pen is wider, so each tag counts its own paint). */
+const NEAR: readonly Spec[] = [...SOME, ['pink', 'stock', 0.82, 0.05, 0.6, 0.06], ['purple', 'fat', 0.45, 0.05, 0.26, 0.12]];
 
 /**
  * Hands the demo player a Graffiti card (and a Whoops!, so the hand is not one card) before the app reads its hand, and, for `wall`, Mrs. Hooligan's play of
  * the card on post 2 with her tag on it (`by` Spritey, another player's mask, for a reader who is neither tagger nor author), as a real draw so the fake's surface model counts it. `__kbWall` settles to the play's id once it is written.
  */
-async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooligan' | 'spritey' = 'hooligan'): Promise<void> {
-  await page.addInitScript(([strokes, by]) => {
+async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooligan' | 'spritey' = 'hooligan', body: string | null = null): Promise<void> {
+  await page.addInitScript(([strokes, by, box, body]) => {
     let demo: unknown;
     Object.defineProperty(globalThis, '__kbDemo', {
       configurable: true,
@@ -48,15 +50,20 @@ async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooli
         w.__kbWall = (async () => {
           const fake = w.__kbFake;
           const target = (await fake.acts(v.thread, 1, 3)).find((a) => a.seq === 2)!;
+          /* A longer post, written by its own author before the play, so the wall is drawn against the words a reader sees. */
+          if (body) fake.seed.edit(target.id, target.character!, body);
           const tagger = v.characters[by];
           const play = fake.seed.card(tagger, target.id, 'graffiti', { layer: 1 });
           const wave = ([can, cap, y, x0, x1, amp]: readonly [string, string, number, number, number, number]) => ({
-            can, cap, aspect: 3,
-            points: Array.from({ length: 25 }, (_, i) => [Math.round((x0 + (x1 - x0) * (i / 24)) * 1e4) / 1e4, Math.round((y + amp * Math.sin((i / 24) * Math.PI * 2)) * 1e4) / 1e4]),
+            can, cap,
+            points: Array.from({ length: 25 }, (_, i) => [
+              Math.round(((x0 + (x1 - x0) * (i / 24)) - 0.5) * box.w * 100) / 100,
+              Math.round(((y + amp * Math.sin((i / 24) * Math.PI * 2)) - 0.5) * box.h * 100) / 100,
+            ]),
           });
           /* Spritey is another player's: the draw is made as that account (the call reads the session as it starts), and the player is signed back in at once. */
           if (by === 'spritey') fake.signInAs(v.other);
-          const drawing = fake.draw(play, tagger, { strokes: strokes.map(wave) });
+          const drawing = fake.draw(play, tagger, { box, groups: [{ at: [0.5, 0.5], anchor: { kind: 'box' }, unit: 'em', strokes: strokes.map(wave) }] });
           if (by === 'spritey') fake.signInAs(v.me);
           const drawn = await drawing;
           if (!drawn.ok) throw new Error(drawn.error);
@@ -64,7 +71,7 @@ async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooli
         })();
       },
     });
-  }, [wall, by] as const);
+  }, [wall, by, BOX, body] as const);
 }
 
 async function openThread(page: Page): Promise<void> {
@@ -207,7 +214,8 @@ test.describe('on a wide screen', () => {
     });
     const saved = await wall();
     const figure = await meter(page);
-    await hold(page, 'Hold to scrub', 3000);
+    /* Washes take coats now, not cells: a pass over a stroke lifts part of its paint, so the hold runs longer than the cell-cutting scrub's 3s. */
+    await hold(page, 'Hold to scrub', 6000);
     await expect.poll(() => inked(page)).toBeLessThan(before * 0.9);
     /* The scrub is this screen's: the wall's own Acts and the covered figure are what they were, and the toolbar still reads them. */
     await page.waitForTimeout(1500);
@@ -243,8 +251,9 @@ test.describe('on a wide screen', () => {
     /* Not a guard the screen alone holds: the data refuses the same tag in the database's own words, with the figures. */
     const refused = await page.evaluate(async () => {
       const w = globalThis as E2eWindow;
-      const rows = Array.from({ length: 8 }, (_, i) => ({ can: 'black', cap: 'fat', aspect: 3, points: [[0.02, 0.05 + i * 0.12], [0.98, 0.05 + i * 0.12]] }));
-      return w.__kbFake.draw(await w.__kbWall!, w.__kbDemo.characters.hooligan, { strokes: rows });
+      const box = { w: 60, h: 20 };
+      const rows = Array.from({ length: 8 }, (_, i) => ({ can: 'black', cap: 'fat', points: [[(0.02 - 0.5) * box.w, (0.05 + i * 0.12 - 0.5) * box.h], [(0.98 - 0.5) * box.w, (0.05 + i * 0.12 - 0.5) * box.h]] }));
+      return w.__kbFake.draw(await w.__kbWall!, w.__kbDemo.characters.hooligan, { box, groups: [{ at: [0.5, 0.5], anchor: { kind: 'box' }, unit: 'em', strokes: rows }] });
     });
     expect(refused).toMatchObject({ ok: false });
     expect((refused as { error: string }).error).toMatch(/^this wall is 31% covered, and its limit is 40%; this tag would take it to \d+%$/u);
@@ -332,6 +341,46 @@ test.describe('on a Pixel 7', () => {
     await swipe();
     await expect(surface(page)).toHaveAttribute('data-kb-strokes', '0');
     await expect(dock(page).getByRole('button', { name: 'Tag it' })).toHaveAttribute('aria-disabled', 'true');
+  });
+});
+
+/*
+ * A mark never changes where a line breaks (design section 2; plan Review focus). Draw mode lays an empty mark at each word (Compose's `Marked`), so the words a reader sees
+ * are measured by them. At the narrowest width a mark that took any width, or was a block, would move a word to another line. Each word's line, the top of its first client
+ * rect, is read from the text itself before draw mode opens and again with the marks in, and the two are the same.
+ */
+test.describe('at 320px', () => {
+  test.use({ viewport: { width: 320, height: 640 }, reducedMotion: 'reduce' });
+  test('a mark at every word leaves every word on the line it was on', async ({ page }) => {
+    const long = Array.from({ length: 60 }, (_, i) => `word${i}${'x'.repeat((i * 7) % 11)}`).join(' ');
+    await world(page, SMALL, 'hooligan', long);
+    await openThread(page);
+    await expect(wallInk(page)).toBeVisible();
+    /* Each word's lines (the tops of the rects it occupies, from the content area's own top) in the post's visible text, read by range over the words' text nodes, marks and the dock aside. */
+    const lines = () => post(page).evaluate((root) => {
+      const area = root.querySelector('[data-kb-content-area]') ?? root;
+      const walker = document.createTreeWalker(area, NodeFilter.SHOW_TEXT, { acceptNode: (n) => n.parentElement?.closest('button, canvas, [aria-hidden="true"]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+      const top = area.getBoundingClientRect().top, out: string[] = [];
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const text = n.textContent ?? '';
+        for (const m of text.matchAll(/\S+/gu)) {
+          const range = document.createRange();
+          range.setStart(n, m.index!);
+          range.setEnd(n, m.index! + m[0].length);
+          out.push(`${m[0]}@${[...range.getClientRects()].map((r) => Math.round(r.top - top)).join(',')}`);
+        }
+      }
+      return out;
+    });
+    const marks = () => post(page).locator('[data-kb-word-mark]').count();
+    expect(await marks(), 'no mark before draw mode').toBe(0);
+    const without = await lines();
+    expect(without.filter((w) => w.startsWith('word')).length, 'the words are all there').toBe(60);
+    expect(new Set(without.map((w) => w.split('@')[1])).size, 'the post wraps over several lines at 320px').toBeGreaterThan(5);
+    await post(page).getByRole('button', { name: 'Draw' }).click();
+    await expect(dock(page)).toBeVisible();
+    expect(await marks(), 'a mark at every word').toBeGreaterThanOrEqual(60);
+    expect(await lines(), 'no word moved to another line').toEqual(without);
   });
 });
 
@@ -707,3 +756,57 @@ for (const width of [1024, 1280, 1600]) {
     }
   });
 }
+
+/*
+ * A tag's frame is held to its post (issue #1259; engine/rules/frame.ts): the fake refuses, as the act function does, a box taller than the post could lay out and an
+ * image group wider than its box. A real tag made through the Draw tile, on the demo's short post and on a long one, at a phone's width and a wide desktop's, at the
+ * smallest and the largest text size Settings offers, lands, and the box it was counted in is the body's own box as Compose measured it.
+ */
+const LONG_WORDS = Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1}. ` + 'The quick brown fox jumps over the lazy dog while everyone on the board argues about whether the sprite sheet is any good at all. '.repeat(3)).join('\n\n');
+for (const width of [320, 1600]) for (const size of [100, 200] as const) for (const [what, body] of [['the demo post', null], ['a long post', LONG_WORDS]] as const) {
+  test.describe(`an honest tag lands, ${width}px at ${size}% text, on ${what}`, () => {
+    test.use({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+    test('its frame is held to the post and passes', async ({ page }) => {
+      await world(page, SMALL, 'hooligan', body);
+      await openThread(page);
+      await expect.poll(() => inked(page)).toBeGreaterThan(100);
+      if (size !== 100) await page.evaluate((s) => document.documentElement.setAttribute('data-kb-text-size', String(s)), size);
+      const measured = await post(page).locator('.kb-act-main').evaluate((el) => {
+        const px = parseFloat(getComputedStyle(el).fontSize);
+        return { w: el.clientWidth / px, h: el.clientHeight / px };
+      });
+      const draws = () => page.evaluate(async () => { const w = globalThis as E2eWindow; return (await w.__kbFake.surfaceActs(await w.__kbWall!))!.acts.filter((a) => a.kind === 'draw'); });
+      const before = (await draws()).length;
+      await post(page).getByRole('button', { name: 'Draw' }).click();
+      await dock(page).getByRole('radio', { name: 'Fat' }).click();
+      /* One stroke over the words near the top and one lower down, within the window (the surface is brought to its top, and a long post's runs far below it). */
+      const tall = (await surface(page).boundingBox())!.height;
+      await stroke(page, 40 / tall, 0.1, 0.9);
+      await stroke(page, Math.min(0.85, 500 / tall), 0.1, 0.9);
+      await dock(page).getByRole('button', { name: 'Tag it' }).click();
+      await expect(dock(page)).toBeHidden();
+      const after = await draws();
+      expect(after.length, 'the tag landed').toBe(before + 1);
+      const box = (after.at(-1)!.payload as { box: { w: number; h: number } }).box;
+      expect(box.w).toBeCloseTo(measured.w, 1);
+      expect(box.h).toBeCloseTo(measured.h, 1);
+    });
+  });
+}
+
+test.describe('a crafted frame, wide', () => {
+  test.use({ viewport: { width: 1280, height: 1100 }, reducedMotion: 'reduce' });
+  test('a box far taller than the post, sent to the data directly, is refused in the words that say it is bigger than the post, and nothing lands', async ({ page }) => {
+    await world(page, SMALL);
+    await openThread(page);
+    const answer = await page.evaluate(async () => {
+      const w = globalThis as E2eWindow;
+      const strokes = Array.from({ length: 10 }, (_, i) => ({ can: 'black', cap: 'fat', points: [[-29, -18 + i * 4], [29, -18 + i * 4]] }));
+      const before = (await w.__kbFake.surfaceActs(await w.__kbWall!))!.acts.length;
+      const drawn = await w.__kbFake.draw(await w.__kbWall!, w.__kbDemo.characters.hooligan, { box: { w: 200, h: 2000 }, groups: [{ at: [0.5, 0.01], anchor: { kind: 'box' }, unit: 'em', strokes }] });
+      return { drawn, same: (await w.__kbFake.surfaceActs(await w.__kbWall!))!.acts.length === before };
+    });
+    expect(answer.drawn).toMatchObject({ ok: false, error: 'That tag is drawn bigger than this post. Reload it and tag again.' });
+    expect(answer.same).toBe(true);
+  });
+});

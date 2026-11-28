@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GRID, cellsOf, count, fromBits, minus, toBits, union, type Cells, type SurfaceStroke } from './surface.ts';
+import { COAT_ALPHABET, GRID, cellsOf, coatsOf, count, fromBits, fromCoatString, legacyCoats, minus, minusCoats, paintedCount, takesOf, toBits, toCoatString, union, type Cells, type SurfaceStroke } from './surface.ts';
 
 const has = (c: Cells, x: number, y: number): boolean => (c[(y * GRID + x) >> 3]! & (0x80 >> ((y * GRID + x) & 7))) !== 0;
 const rowCount = (c: Cells, y: number): number => { let n = 0; for (let x = 0; x < GRID; x++) if (has(c, x, y)) n++; return n; };
@@ -138,4 +138,117 @@ test('a brush of no width or a negative one covers nothing', () => {
 
 test('fromBits refuses ten thousand characters that are not all zeros and ones', () => {
   assert.throws(() => fromBits('2' + '0'.repeat(9999)), /10000/);
+});
+
+// Coats (docs/plans/2026-11-27-graffiti-everywhere-design.md, section 5).
+const RULES = { line: 20, most: 40 };
+const at = (c: Uint8Array, x: number, y: number): number => c[y * GRID + x]!;
+const fat = (points: [number, number][], width = 0.06): SurfaceStroke => ({ width, aspect: 1, points });
+/** Presses every third of `radius` along a horizontal line. */
+const pass = (y: number, from: number, to: number, radius: number): [number, number][] => { const out: [number, number][] = []; for (let x = from; x <= to; x += radius / 3) out.push([x, y]); return out; };
+
+test('one pass of presses every third of the radius takes 10 tenths at the center of a 2-coat stroke and leaves it see-through; a second leaves it clean', () => {
+  const coats = coatsOf([fat([[0.1, 0.505], [0.9, 0.505]])], RULES);
+  assert.equal(at(coats, 50, 50), 20);
+  const take = takesOf(pass(0.505, 0.05, 0.95, 0.03), 0.03, 1);
+  assert.ok(Math.abs(at(take, 50, 50) - 10) <= 1, `took ${at(take, 50, 50)}`);
+  const once = minusCoats(coats, take);
+  assert.ok(at(once, 50, 50) >= 9 && at(once, 50, 50) <= 11);
+  assert.equal(paintedCount(once) > 0, true);
+  const twice = minusCoats(once, take);
+  assert.equal(at(twice, 50, 50), 0);
+});
+
+test('three strokes crossing one patch stack to 40 and no higher, and one stroke that crosses itself lays its line once', () => {
+  const three = coatsOf([fat([[0.2, 0.5], [0.8, 0.5]]), fat([[0.5, 0.2], [0.5, 0.8]]), fat([[0.2, 0.2], [0.8, 0.8]])], RULES);
+  assert.equal(at(three, 50, 50), 40);
+  assert.equal(Math.max(...three), 40);
+  const cross = coatsOf([fat([[0.2, 0.5], [0.8, 0.5], [0.8, 0.52], [0.2, 0.52], [0.2, 0.5], [0.8, 0.5]])], RULES);
+  assert.equal(Math.max(...cross), 20);
+  const capped = coatsOf([fat([[0.5, 0.5]]), fat([[0.5, 0.5]]), fat([[0.5, 0.5]])], { line: 20, most: 30 });
+  assert.equal(at(capped, 50, 50), 30);
+});
+
+test('takesOf is zero at R and beyond, and a press takes most at its center', () => {
+  const t = takesOf([[0.5, 0.5]], 0.05, 1);
+  const R = 0.1;
+  assert.equal(at(t, 50 + Math.round(R * GRID), 50), 0);
+  assert.equal(at(t, 50 + Math.round(R * GRID) + 3, 50), 0);
+  assert.ok(at(t, 50, 50) > at(t, 54, 50));
+  assert.ok(at(t, 50, 50) > 0);
+  assert.ok(Math.max(...takesOf(Array.from({ length: 200 }, () => [0.5, 0.5] as [number, number]), 0.05, 1)) === 40);
+});
+
+test('paintedCount counts 2 and not 1, and minusCoats cleans 1 or less', () => {
+  const c = new Uint8Array(GRID * GRID); c[0] = 2; c[1] = 1; c[2] = 40;
+  assert.equal(paintedCount(c), 2);
+  const b = new Uint8Array(GRID * GRID); b[0] = 1; b[2] = 39; b[3] = 5;
+  const m = minusCoats(c, b);
+  assert.deepEqual([m[0], m[1], m[2], m[3]], [0, 0, 0, 0], '2 - 1 leaves 1, which is clean; 40 - 39 the same');
+  const n = minusCoats(c, new Uint8Array(GRID * GRID));
+  assert.deepEqual([n[0], n[1], n[2]], [2, 0, 40]);
+});
+
+test('a coat string round-trips, and a string of the wrong length or alphabet throws', () => {
+  const c = new Uint8Array(GRID * GRID);
+  for (let i = 0; i < 41; i++) c[i * 7] = i;
+  const s = toCoatString(c);
+  assert.equal(s.length, 10000);
+  assert.equal(COAT_ALPHABET.length, 41);
+  assert.deepEqual(fromCoatString(s), c);
+  assert.throws(() => fromCoatString('0'.repeat(9999)));
+  assert.throws(() => fromCoatString('0'.repeat(9999) + '!'));
+  assert.throws(() => fromCoatString('0'.repeat(9999) + 'F'));
+});
+
+test('legacyCoats lays line on exactly the set cells', () => {
+  const cells = of([3, 4], [99, 99], [0, 0]);
+  const c = legacyCoats(cells, 20);
+  assert.equal(paintedCount(c), 3);
+  assert.deepEqual([at(c, 3, 4), at(c, 99, 99), at(c, 0, 0), at(c, 1, 1)], [20, 20, 20, 0]);
+});
+
+/** The all-cells reference for `takesOf`: every cell center tested against every press, no bounding box. */
+function bruteTakes(presses: [number, number][], radius: number, aspect: number): Uint8Array {
+  const R = 2 * radius, per = (radius / 3) / ((R * 32) / 35);
+  const out = new Uint8Array(GRID * GRID);
+  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
+    let sum = 0;
+    for (const p of presses) {
+      const dx = (x + 0.5) / GRID - p[0], dy = (y + 0.5) / GRID / aspect - p[1] / aspect;
+      const q = (dx * dx + dy * dy) / (R * R);
+      if (q < 1) sum += 10 * per * (1 - q) ** 3;
+    }
+    out[y * GRID + x] = Math.min(40, Math.round(sum));
+  }
+  return out;
+}
+
+test('takesOf matches an all-cells reference at aspects 0.5 and 2, with presses at the edges and corners', () => {
+  const presses: [number, number][] = [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0], [0, 0.5], [1, 0.5], [0.5, 1], [0.37, 0.61], [0.03, 0.97], [0.5, 0.5], [0.5, 0.5]];
+  for (const aspect of [0.5, 1, 2]) for (const radius of [0.02, 0.05]) {
+    assert.deepEqual(takesOf(presses, radius, aspect), bruteTakes(presses, radius, aspect), `aspect ${aspect} radius ${radius}`);
+  }
+});
+
+test('takesOf divides y by the aspect as cellsOf does: aspect 0.5 spans fewer rows than aspect 1, and aspect 2 more', () => {
+  const rows = (c: Uint8Array): number => { let n = 0; for (let y = 0; y < GRID; y++) { let any = false; for (let x = 0; x < GRID; x++) if (c[y * GRID + x]) any = true; if (any) n++; } return n; };
+  const cols = (c: Uint8Array): number => { let n = 0; for (let x = 0; x < GRID; x++) { let any = false; for (let y = 0; y < GRID; y++) if (c[y * GRID + x]) any = true; if (any) n++; } return n; };
+  const one = takesOf([[0.5, 0.5]], 0.05, 1), half = takesOf([[0.5, 0.5]], 0.05, 0.5), two = takesOf([[0.5, 0.5]], 0.05, 2);
+  assert.ok(rows(half) < rows(one) && rows(one) < rows(two), `rows ${rows(half)} ${rows(one)} ${rows(two)}`);
+  assert.equal(cols(half), cols(one));
+  assert.notDeepEqual(half, one);
+});
+
+test('coatsOf: most 99 with five stacked strokes peaks at 40; a stroke that lays no cells adds nothing', () => {
+  const five = Array.from({ length: 5 }, () => fat([[0.5, 0.5]]));
+  assert.equal(Math.max(...coatsOf(five, { line: 20, most: 99 })), 40);
+  assert.equal(paintedCount(coatsOf([fat([[0.5, 0.5]], 0)], RULES)), 0);
+  assert.equal(paintedCount(coatsOf([fat([[Number.NaN, 0.5]])], RULES)), 0);
+  assert.equal(paintedCount(coatsOf([fat([[0.5, Infinity]])], RULES)), 0);
+});
+
+test('coatsOf clamps its cap to 0..40 and treats a negative line as 0, so a byte never wraps', () => {
+  assert.equal(Math.max(...coatsOf([fat([[0.5, 0.5]])], { line: -5, most: 40 })), 0);
+  assert.equal(Math.max(...coatsOf([fat([[0.5, 0.5]])], { line: 20, most: -3 })), 0);
 });

@@ -1233,9 +1233,11 @@ test('a persona\'s Graffiti is offered with its options and played through staff
   assert.deepEqual(play.config, {});
   assert.equal(play.message, '');
   assert.equal(play.first.stencil, 'horns');
-  assert.ok(play.first.strokes.length > 0 && play.first.strokes.every((s: any) => s.can === 'red'), 'the stencil\'s strokes, in the persona\'s can');
-  assert.equal(play.first_cells.length, 10000);
-  assert.ok(play.first_cells.includes('1'), 'the strokes cover cells');
+  const strokes = play.first.groups.flatMap((g: any) => g.strokes);
+  assert.ok(strokes.length > 0 && strokes.every((s: any) => s.can === 'red'), 'the stencil\'s strokes, in the persona\'s can');
+  assert.equal(play.first_coats.length, 10000);
+  assert.ok(/[^0]/.test(play.first_coats), 'the strokes lay coats');
+  assert.deepEqual(play.first_places, [], 'a stencil is attached to its box, which has no place');
   assert.equal(typeof play.most, 'number');
   assert.equal(typeof play.most_live, 'number');
   assert.deepEqual(d.state.spends.find((x) => x.staff === play.staff_key)!.record.cardConfig, horns, 'the pick is on the record');
@@ -1250,7 +1252,7 @@ test('a persona with no valid pick still draws a stencil, one of the card\'s sta
     const play = d.of('staff_play_surface_card')[0]!;
     assert.ok(play, 'a Graffiti was played');
     assert.equal(typeof play.first.stencil, 'string', 'a stencil, never an empty wall');
-    assert.ok(play.first.strokes.length > 0);
+    assert.ok(play.first.groups.flatMap((g: any) => g.strokes).length > 0);
     assert.ok((graffiti.staffConfigs ?? []).some((c) => (c as { stencil: string }).stencil === play.first.stencil));
     return { stencil: play.first.stencil as string, trims: out.picks.flatMap((p) => p.trims.map((t) => t.path)).filter((t) => t.startsWith('card.config')) };
   };
@@ -1275,7 +1277,8 @@ test('a wall pick that is offered draws on that wall through staff_draw_on_surfa
   assert.equal(drew.play, W);
   assert.equal(drew.payload.stencil, 'horns');
   assert.equal(typeof drew.payload.pool, 'string', 'the draw carries its pool day, so a crash before the spend is adopted');
-  assert.equal(drew.cells.length, 10000);
+  assert.equal(drew.coats.length, 10000);
+  assert.deepEqual(drew.places, []);
   assert.equal(typeof drew.most, 'number');
   assert.ok(d.state.spends.some((x) => x.card_act !== null && x.staff === drew.staff_key), 'the draw spends the card slot');
 });

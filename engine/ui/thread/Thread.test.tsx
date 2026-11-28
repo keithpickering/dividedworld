@@ -2479,7 +2479,7 @@ describe('a surface on a post', () => {
   const slab: CardRules<unknown> = {
     key: 'slab', name: 'Slab', alignment: 'salty', rarity: 'common', stack: 1, reaches: ['post'], playPrice: () => 0,
     canApply: (target, effects, _config, now) => landsOn({ key: 'slab', reaches: ['post'] }, target, effects, now),
-    validateConfig: (c) => ok(c), surface: { limitKey: 'slab.limit', mostLive: 48, validateDraw: strokes, validateWash: strokes },
+    validateConfig: (c) => ok(c), surface: { limitKey: 'slab.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: strokes, validateWash: (input) => (typeof input === 'object' && input !== null && Array.isArray((input as { cuts?: unknown }).cuts) ? ok({ cuts: [], payload: { cuts: [] } }) : refuse('a wash holds its cuts as a list')) },
   };
   const surfaced: Instance = { ...testInstance, cards: [...testInstance.cards, slab as unknown as CardRules], settings: { ...testInstance.settings, cardSettings: { ...testInstance.settings.cardSettings, 'slab.limit': 40 } } };
   const near = new Set<Id>();

@@ -14,6 +14,8 @@ declare
                            'card_ledger', 'my_cards', 'effect_state',
                            -- A surface's derived row (0317): the covered cells, the owners and the live list, all of them public facts of public Acts.
                            'surfaces',
+                           -- Where each group of a draw is attached, for each version of the post (0456): public facts of public Acts, written by the draw and the edit alone.
+                           'surface_places',
                            -- Gear (0205): the kinds and what each mask wears are public, the ledger is cut to the caller's own rows by its policy, and the wardrobe and an admin's grant check the caller inside.
                            'gear_kinds', 'gear_ledger', 'gear_worn',
                            -- Random Events (0207): a player reads their own account's events by policy; the roll clock and the lines are no one's to read.
@@ -43,7 +45,7 @@ declare
                            -- My log's moved threads (0423): the moves of threads the caller's own characters started, read by the log alone.
                            'my_threads_moved'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[],jsonb)', 'post(uuid,uuid,text,uuid,uuid[],jsonb)',
-                           'edit_post(uuid,uuid,text,jsonb)',
+                           'edit_post(uuid,uuid,text,jsonb,jsonb)',
                            -- A ballot and a poll's two closes (0395): the player's doors, which verify the caller plays the character; an admin's close checks the caller inside. The poll's draft is written inside post, start_thread and edit_post.
                            'cast_ballot(uuid,uuid,integer[])', 'close_poll(uuid,uuid)', 'close_poll_as_admin(uuid)',
                            -- A public poll's ballots, every one and 50 at a time (0396): an invoker over acts_public, the same for every caller; a secret poll is refused whatever the caller.
@@ -96,6 +98,10 @@ declare
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
                            -- A surface's live Acts and each draw's share, for the Lens (0317): a security invoker read of public Acts and the row's counts.
                            'surface_acts(uuid)',
+                           -- Each live draw's painted cells (0456): the one fact of the grids the Lens shows, a count of a public Act.
+                           'surface_shares(uuid)',
+                           -- A post's current version and a draw's places at it (0456): thin definers over post_version, which a player cannot call; each reads public edits and a public draw's own rows, never an owner, a class or a reaction.
+                           'post_current_version(uuid)', 'surface_places_now(uuid,uuid)',
                            'card_target_reach(text,uuid,uuid)', 'effects_above(uuid[],uuid,uuid)', 'pinned_threads(uuid)',
                            -- Updates (0062): an admin's post_update, and the page's read.
                            'post_update(text,text,jsonb)', 'updates(timestampwithtimezone,integer)',
@@ -139,6 +145,8 @@ declare
                            'card_relief(uuid)', 'ban_ends(uuid)', 'fall_spent(uuid)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
+                           -- A surface Act's payload check (0456), called by acts_surface_payload: pure, reading no table.
+                           'surface_coat_string_ok(text)', 'surface_takes_ok(jsonb)',
                            -- The search index's words (0117): the folded text an index of names and titles is written with, the stemming language and the words of a text, each reading nothing but a
                            -- setting and its arguments; the search reads (security invoker) call them. act_forged (0393) reads an Act's verdict (its payload's `forged`) out of the payload it is given, which the readers pass to bbcode_plain and search_words.
                            'fold_text(text)', 'bbcode_plain(text,uuid[])', 'act_forged(jsonb)', 'quote_check(text)', 'bbcode_plain_u16len(text)', 'bbcode_plain_url_ok(text,text[],boolean)',
@@ -206,7 +214,9 @@ declare
                            -- Each kayfabb- job's schedule, whether it is active, its first and last good run and the grace (0450): jobs, the same for every caller, so a visitor's page can say a job is late.
                            'job_status()',
                            -- The same three CHECK predicates, which PUBLIC (so anon too) may execute by 0080; pure, reading no table.
-                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)', 'pack_pulls_problem(jsonb)'];
+                           'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)', 'pack_pulls_problem(jsonb)',
+                           -- A surface Act's payload check (0456): a coat string is 10,000 characters of the coat alphabet, and a wash's takes are a list of such; pure, reading no table.
+                           'surface_coat_string_ok(text)', 'surface_takes_ok(jsonb)'];
 begin
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind = 'S'

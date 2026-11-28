@@ -6,6 +6,7 @@ import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import type { CardUi } from '../cards/types.ts';
 import type { FrontDoorUi, InstanceUi, OnboardingUi } from '../types.ts';
 import { localKey } from '../../rules/emoji.ts';
+import { coatsOf, paintedCount, type SurfaceStroke } from '../../rules/surface.ts';
 
 const tips = () => Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `T ${k}`, line: `L ${k}`, ...((ACTION_TIPS as readonly string[]).includes(k) ? { action: `A ${k}` } : {}) }])) as unknown as Record<string, { title: string; line: string }>;
 /** The rules the front door is held to: two reactions, three ranks and two classes. */
@@ -322,27 +323,27 @@ describe('instanceUiProblems', () => {
   describe('the front door\'s plays held to their cards\' rules', () => {
     const ok = (value: unknown) => ({ ok: true as const, value });
     const no = (why: string) => ({ ok: false as const, why });
-    const strokes = (x: number) => [{ width: 0.1, aspect: 1, points: [[x, 0.5]] }];
+    const strokes = (x: number, width = 0.1) => [{ width, aspect: 1, points: [[x, 0.5]] }];
     const inkRules = {
       key: 'ink', name: 'Ink', stack: 1,
       validateConfig: (c: unknown) => (typeof (c as { seed?: unknown })?.seed === 'number' ? ok(c) : no('needs a seed')),
       validateState: (s: unknown) => (typeof (s as { wet?: unknown })?.wet === 'boolean' ? ok(s) : no('wet is yes or no')),
       surface: {
-        limitKey: 'wallLimit', mostLive: 2,
+        limitKey: 'wallLimit', mostLive: 2, coats: { line: 20, most: 40 },
         validateDraw: (d: unknown) => (Array.isArray((d as { strokes?: unknown })?.strokes) ? ok({ strokes: (d as { strokes: unknown[] }).strokes, payload: {} }) : no('a draw has strokes')),
         validateWash: () => no('x'),
       },
     };
     const plainRules = { key: 'plain', name: 'Plain', stack: 1, validateConfig: () => ok({}) };
     const reactRules = { key: 'react', name: 'React', stack: 1, reaction: true, validateConfig: () => ok({}) };
-    const withRules = { ...(rules as object), cards: [inkRules, plainRules, reactRules], settings: { cardSettings: { wallLimit: 1 } } } as never;
+    const withRules = { ...(rules as object), cards: [inkRules, plainRules, reactRules], settings: { cardSettings: { wallLimit: 2 } } } as never;
     type Play = NonNullable<FrontDoorUi['posts'][number]['plays']>[number];
     const withPlay = (play: Partial<Play> & { state?: unknown; draws?: unknown }, reactions?: Record<string, number>, card = 'ink') => {
       const d = goodDoor() as { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] };
       d.posts = [d.posts[0]!, { ...d.posts[1]!, ...(reactions ? { reactions } : {}), plays: [{ card, by: 'a', config: { seed: 1 }, ...play } as Play] }];
       return instanceUiProblems({ ...ui(good, d), cards: [{ key: 'ink', status: 's' }, { key: 'plain', status: 's' }, { key: 'react', status: 's' }] as unknown as readonly CardUi[] }, withRules);
     };
-    const draw = (by: string, x: number) => ({ by, draw: { strokes: strokes(x) } });
+    const draw = (by: string, x: number, width = 0.1) => ({ by, draw: { strokes: strokes(x, width) } });
     test('a valid play with a state, draws and a local reaction count has no problem', () => {
       assert.deepEqual(withPlay({ state: { wet: true }, draws: [draw('a', 0.2), draw('b', 0.2)] }), []);
       assert.deepEqual(withPlay({ config: { emoji: '💀', quadrant: 'excitedNegative' } }, { tea: 2, [localKey('💀')]: 3 }, 'react'), []);
@@ -353,11 +354,36 @@ describe('instanceUiProblems', () => {
     test('names draws on a card with no surface', () => assert.deepEqual(withPlay({ draws: [draw('a', 0.2)] }, undefined, 'plain'), ['front door post 1 play 0 ("plain") has draws, and the card has no surface']));
     test('names a draw by someone outside the cast', () => assert.deepEqual(withPlay({ draws: [draw('ghost', 0.2)] }), ['front door post 1 play 0 draw 0 is by "ghost", who is not in the cast']));
     test('names a draw the card refuses', () => assert.deepEqual(withPlay({ draws: [{ by: 'a', draw: {} }] }), ['front door post 1 play 0 draw 0 is one the card refuses: a draw has strokes']));
-    test('names one draw more than the card holds live', () => assert.deepEqual(withPlay({ draws: [draw('a', 0.2), draw('a', 0.2), draw('a', 0.2)] }), ['front door post 1 play 0 has 3 draws, over the 2 the card holds live']));
-    test('names draws that cover more than the surface\'s limit', () => {
-      const problems = withPlay({ draws: [draw('a', 0.2), draw('b', 0.7)] });
+    test('names one draw more than the card holds live', () => assert.deepEqual(withPlay({ draws: [draw('a', 0.2, 0.05), draw('a', 0.2, 0.05), draw('a', 0.2, 0.05)] }), ['front door post 1 play 0 has 3 draws, over the 2 the card holds live']));
+    test('names draws that cover more than the surface\'s limit, each draw paid for whatever it overlaps', () => {
+      const problems = withPlay({ draws: [draw('a', 0.2, 0.2), draw('b', 0.2, 0.2)] });
       assert.equal(problems.length, 1);
-      assert.equal(problems[0], 'front door post 1 play 0 draws cover 160 cells, over the 100 its surface holds');
+      assert.equal(problems[0], `front door post 1 play 0 draws cover ${2 * paintedCount(coatsOf(strokes(0.2, 0.2) as unknown as SurfaceStroke[], { line: 20, most: 40 }))} cells, over the 200 its surface holds`);
+      assert.deepEqual(withPlay({ draws: [draw('a', 0.2), draw('b', 0.2)] }), [], 'two overlapping dabs of 80 cells each fit in 200');
+    });
+    describe('a staged draw\'s marks held to their post (the graffiti-everywhere plan, Task 9)', () => {
+      /* Post 1's body has one picture (a bundled file's root-relative address, which the page makes absolute) and ten characters of visible text. */
+      const body = 'Yo [img]/x/a.png[/img] there';
+      const groups = (...anchors: unknown[]) => ({ by: 'a', draw: { strokes: strokes(0.2), groups: anchors.map((anchor) => ({ anchor })) } });
+      const image = (over: Record<string, unknown> = {}) => ({ kind: 'image', version: 'front-door:1', n: 0, src: '/x/a.png', nth: 0, x: 0.5, y: 0.5, ...over });
+      const text = (over: Record<string, unknown> = {}) => ({ kind: 'text', version: 'front-door:1', at: 0, len: 2, dx: 1, dy: 0, ...over });
+      const rulesOf = (card: typeof inkRules) => ({ ...(rules as object), cards: [card, plainRules, reactRules], settings: { cardSettings: { wallLimit: 2 } } }) as never;
+      /* The fake card keeps a draw's groups in its payload, as Graffiti's keeps its own. */
+      const keeping = { ...inkRules, surface: { ...inkRules.surface, validateDraw: (d: unknown) => ok({ strokes: (d as { strokes: unknown[] }).strokes, payload: { groups: (d as { groups?: unknown[] }).groups ?? [] } }) } };
+      const run = (...anchors: unknown[]) => {
+        const d = goodDoor() as { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] };
+        d.posts = [d.posts[0]!, { ...d.posts[1]!, body, plays: [{ card: 'ink', by: 'a', config: { seed: 1 }, draws: [groups(...anchors)] } as Play] }];
+        return instanceUiProblems({ ...ui(good, d), cards: [{ key: 'ink', status: 's' }, { key: 'plain', status: 's' }, { key: 'react', status: 's' }] as unknown as readonly CardUi[] }, rulesOf(keeping as never));
+      };
+      test('a draw whose marks are on its post\'s image, words and box has no problem', () => assert.deepEqual(run(image(), text(), { kind: 'box' }), []));
+      test('names an image attachment on an image the post does not have', () => assert.deepEqual(run(image({ n: 3 })), ['front door post 1 play 0 draw 0 group 0 is on image 3, and the post has 1 image']));
+      test('names an image attachment with another address than the post\'s image', () => assert.deepEqual(run(image({ src: '/x/b.png' })), ['front door post 1 play 0 draw 0 group 0 is on image 0 as "/x/b.png", and the post\'s image 0 is "/x/a.png"']));
+      test('names an image attachment on another copy of the picture than the post\'s', () => assert.deepEqual(run(image({ nth: 1 })), ['front door post 1 play 0 draw 0 group 0 is on image 0 as copy 1 of "/x/a.png", and the post\'s image 0 is copy 0']));
+      test('names a text attachment past the end of the post\'s visible text', () => assert.deepEqual(run(text({ at: 20, len: 5 })), ['front door post 1 play 0 draw 0 group 0 is on the words 20 to 25, past the post\'s 10 characters of visible text']));
+      test('names an attachment of another version than the post\'s', () => assert.deepEqual(run(image({ version: 'front-door:0' }), text({ version: 'elsewhere' })), [
+        'front door post 1 play 0 draw 0 group 0 is on the version "front-door:0", and the post\'s is "front-door:1"',
+        'front door post 1 play 0 draw 0 group 1 is on the version "elsewhere", and the post\'s is "front-door:1"',
+      ]));
     });
     test('names a surface limit the settings do not hold, and does not throw', () => {
       const d = goodDoor() as { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] };

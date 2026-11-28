@@ -4,7 +4,7 @@
  * them reads the layers above it, so a card that works on words (an instance's phrase matcher) lays its runs where its rules
  * found them, and the server and the screens agree on where a word is because both read the same walk.
  *
- * Two kinds of run:
+ * Three kinds of run:
  * - **replace**: the run's words are drawn by `render` once, at the run's start, and the renderer draws none of them itself,
  *   even across formatting (half bold, half not). `render` is given the run's plain text.
  * - **wrap**: each piece of the run that lies in one text node is drawn by `render` in place, inside its own formatting, and given
@@ -16,6 +16,13 @@
  * then its trail is drawn at its end (clamped to the text) whatever run is drawn there, cutting a higher wrap run's piece in two or
  * following what a higher replace run draws. Standing trails at one offset go by `z` ascending, then list order; the run on top's own
  * ordinary trail at that offset comes first, and a run that stands draws its trail once, by this rule.
+ *
+ * - **mark**: no words at all. It is zero-width at `start` (`end` equals `start`), and its `render` draws an empty inline element at that offset,
+ *   inside the piece of text that holds it (so a bold word is split around it, inside the bold), whatever run covers the offset: a replace run's
+ *   words and a wrap run's pieces are drawn as they were and by the same run. At an offset where a run draws a standing trail, the mark comes after
+ *   it. Marks at one offset go by `z` ascending, then list order. An instance's placed marks (graffiti) use it to find where a word is on this
+ *   screen. `stretchesOf` ignores marks, since they draw none of the words. A mark's `render` must return an empty element that is `aria-hidden` (an empty `span`
+ *   with `aria-hidden="true"`): it sits inside the post's words, which a screen reader reads as they are, so it must add no text, name or role to them.
  *
  * Where runs overlap, a replace run wins over a wrap run, and of two of a kind the one with the higher `z` wins; the lower one is
  * drawn only where it is not covered, each uncovered stretch of it once. A run never reaches into a quote, code, a link or an
@@ -32,8 +39,8 @@ export interface TextRun {
   readonly key: string;
   /** Its place in the stack: higher is on top. */
   readonly z: number;
-  readonly mode: 'replace' | 'wrap';
-  /** What stands for the run (replace), or for one piece of it (wrap), given the words it covers. */
+  readonly mode: 'replace' | 'wrap' | 'mark';
+  /** What stands for the run (replace), or for one piece of it (wrap), given the words it covers; for a mark, the empty element at its offset (`text` is ''). */
   readonly render: (covered: { readonly text: string; readonly key: string }) => ReactNode;
   /** A wrap run's trail: drawn once after the run's last drawn piece, given React's key for it. Never drawn for a replace run. */
   readonly trail?: (key: string) => ReactNode;
@@ -74,7 +81,7 @@ const over = (a: { run: TextRun; i: number }, b: { run: TextRun; i: number }): b
  * however many words a post holds.
  */
 export function stretchesOf(length: number, runs: readonly TextRun[]): Stretch[] {
-  const kept = runs.map((run, i) => ({ run, i, start: Math.max(0, run.start), end: Math.min(length, run.end) })).filter((r) => r.end > r.start);
+  const kept = runs.map((run, i) => ({ run, i, start: Math.max(0, run.start), end: Math.min(length, run.end) })).filter((r) => r.run.mode !== 'mark' && r.end > r.start);
   const starts = [...kept].sort((a, b) => a.start - b.start);
   const cuts = [...new Set([0, length, ...kept.flatMap((r) => [r.start, r.end])])].sort((a, b) => a - b);
   const out: Stretch[] = [];

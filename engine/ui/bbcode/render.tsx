@@ -52,6 +52,9 @@ function defaultHead(q: QuoteOf): ReactNode {
 
 const REL = 'noopener noreferrer nofollow ugc';
 
+/** The count of pictures drawn so far in one render, in tree order and quotes included: `data-kb-img` on an image is its place in it, the same numbering `contentOf` (engine/rules/anchor.ts) gives, so a mark attached to an image finds it. An `http:` image is drawn as a link and takes no number. */
+interface ImageCount { n: number }
+
 /** Alt text for a picture a player linked: where it comes from, since nothing says what it shows. */
 function altFor(src: string): string {
   try { return `Image from ${new URL(src).hostname}`; } catch { return 'Image from another site'; }
@@ -71,6 +74,17 @@ interface Layered {
   readonly standingAt: readonly number[];
   /** The standing offsets no text piece ends at (they fall in a gap of the walk): drawn once, before the words of the text node that starts there, so inside whatever wraps that node (`standingTrails` says what follows from that). */
   readonly leading: ReadonlySet<number>;
+  /** The mark runs (layers.tsx, `mark`) by the offset they are drawn at, each offset's runs by `z` then list order, and the offsets ascending; `markLeading` is the offsets no text piece ends at, drawn before the words of the text node that starts there. */
+  readonly marks: ReadonlyMap<number, readonly TextRun[]>;
+  readonly markAt: readonly number[];
+  readonly markLeading: ReadonlySet<number>;
+}
+
+/** The index of the first span that ends at or after `o`, in spans that are ascending and do not overlap (the walk's own order), or their count when none does. */
+function firstEndingBy(spans: readonly (readonly [number, number])[], o: number): number {
+  let [lo, hi] = [0, spans.length];
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (spans[mid]![1] < o) lo = mid + 1; else hi = mid; }
+  return lo;
 }
 
 /**
@@ -87,12 +101,12 @@ interface Layered {
 function standingTrails(length: number, runs: readonly TextRun[], spans: readonly (readonly [number, number])[]): Pick<Layered, 'standing' | 'standingAt' | 'leading'> {
   const standing = new Map<number, TextRun[]>();
   const leading = new Set<number>();
-  const ends = new Set(spans.map(([, e]) => e));
   const placed = (e: number): number => {
-    if (ends.has(e) || spans.some(([s, f]) => s < e && e < f)) return e;
-    const next = spans.find(([s]) => s >= e);
-    if (next) { leading.add(next[0]); return next[0]; }
-    return spans.length ? spans[spans.length - 1]![1] : e;
+    const at = spans[firstEndingBy(spans, e)];
+    if (at === undefined) return spans.length ? spans[spans.length - 1]![1] : e;
+    if (at[1] === e || at[0] < e) return e;
+    leading.add(at[0]);
+    return at[0];
   };
   runs.map((run, i) => ({ run, i }))
     .filter(({ run }) => stands(run) && Math.min(run.end, length) > Math.max(0, run.start))
@@ -105,21 +119,55 @@ function standingTrails(length: number, runs: readonly TextRun[], spans: readonl
   return { standing, standingAt: [...standing.keys()].sort((a, b) => a - b), leading };
 }
 
+/**
+ * Where a mark is drawn, by the same placing as a standing trail's: its offset clamped to the text; at the end of a text piece that ends there, or inside the piece
+ * that holds it; where it falls in a gap, at the start of the next piece (leading); past the last, at the last piece's end. A text with no text piece draws none.
+ */
+function markPlaces(length: number, runs: readonly TextRun[], spans: readonly (readonly [number, number])[]): Pick<Layered, 'marks' | 'markAt' | 'markLeading'> {
+  const marks = new Map<number, TextRun[]>();
+  const markLeading = new Set<number>();
+  const placed = (o: number): number => {
+    const at = spans[firstEndingBy(spans, o)];
+    if (at === undefined) return spans[spans.length - 1]![1];
+    if (at[1] === o || at[0] < o) return o;
+    markLeading.add(at[0]);
+    return at[0];
+  };
+  if (spans.length) {
+    runs.map((run, i) => ({ run, i })).filter(({ run }) => run.mode === 'mark')
+      .sort((a, b) => a.run.z - b.run.z || a.i - b.i)
+      .forEach(({ run }) => {
+        const o = placed(Math.max(0, Math.min(run.start, length)));
+        marks.set(o, [...(marks.get(o) ?? []), run]);
+      });
+  }
+  return { marks, markAt: [...marks.keys()].sort((a, b) => a - b), markLeading };
+}
+
+/** What a post has when no run is a mark. */
+const NO_MARKS: Pick<Layered, 'marks' | 'markAt' | 'markLeading'> = { marks: new Map(), markAt: [], markLeading: new Set() };
+
+/** The mark elements drawn at `o`, if any. */
+const marksAt = (layered: Layered, o: number): ReactNode[] => (layered.marks.get(o) ?? []).map((r) => r.render({ text: '', key: `${r.key}~mark` }));
+
+/** The offsets `o` with `lo < o < hi` that a standing trail or a mark is drawn at, ascending. */
+function cutsBetween(layered: Layered, lo: number, hi: number): number[] {
+  const inside = (list: readonly number[]): number[] => {
+    let [a, b] = [0, list.length];
+    while (a < b) { const mid = (a + b) >> 1; if (list[mid]! <= lo) a = mid + 1; else b = mid; }
+    const found: number[] = [];
+    for (; a < list.length && list[a]! < hi; a++) found.push(list[a]!);
+    return found;
+  };
+  const [x, y] = [inside(layered.standingAt), inside(layered.markAt)];
+  return y.length === 0 ? x : [...new Set([...x, ...y])].sort((p, q) => p - q);
+}
+
 /** Whether a run draws a standing trail. */
 const stands = (run: TextRun): boolean => run.mode === 'wrap' && run.stands === true && run.trail !== undefined;
 
 /** What a post has when no run stands: one table for all of them, so such a post allocates nothing for it. */
 const NO_STANDING: Pick<Layered, 'standing' | 'standingAt' | 'leading'> = { standing: new Map(), standingAt: [], leading: new Set() };
-
-/** The standing offsets `e` with `lo < e < hi`. */
-function standingBetween(layered: Layered, lo: number, hi: number): number[] {
-  const at = layered.standingAt;
-  let [a, b] = [0, at.length];
-  while (a < b) { const mid = (a + b) >> 1; if (at[mid]! <= lo) a = mid + 1; else b = mid; }
-  const found: number[] = [];
-  for (; a < at.length && at[a]! < hi; a++) found.push(at[a]!);
-  return found;
-}
 
 /** The standing trails drawn at `e`, if any. */
 const trailsAt = (layered: Layered, e: number): ReactNode[] => (layered.standing.get(e) ?? []).map((r) => r.trail!(`${r.key}~trail`));
@@ -137,21 +185,22 @@ function layeredText(n: Extract<BbNode, { type: 'text' | 'noparse' | 'autolink' 
   if (at === undefined || !n.text) return n.text;
   const end = at + n.text.length;
   const out: ReactNode[] = [];
-  const trails = layered.standingAt.length > 0;
-  if (trails && layered.leading.has(at)) out.push(...trailsAt(layered, at));
+  const cuts = layered.standingAt.length > 0 || layered.markAt.length > 0;
+  if (cuts && layered.leading.has(at)) out.push(...trailsAt(layered, at));
+  if (cuts && layered.markLeading.has(at)) out.push(...marksAt(layered, at));
   for (let i = firstAfter(layered.stretches, at); i < layered.stretches.length && layered.stretches[i]!.start < end; i++) {
     const st = layered.stretches[i]!;
     const [from, to] = [Math.max(st.start, at), Math.min(st.end, end)];
     if (!st.run || st.run.mode === 'wrap') {
       // Plain words and a wrap piece are cut at every standing offset inside them, each part drawn as the piece was.
       let part = from;
-      for (const e of trails ? [...standingBetween(layered, from, to), to] : [to]) {
+      for (const e of cuts ? [...cutsBetween(layered, from, to), to] : [to]) {
         const words = n.text.slice(part - at, e - at);
         out.push(st.run ? st.run.render({ text: words, key: `${st.run.key}@${part}` }) : words);
         // The trail follows the piece that ends the run's drawn words: the stretch ends here, and at the run's own end (not under a higher run).
         // A run that stands draws its trail by the standing rule, once.
         if (e === to && st.run?.trail && !st.run.stands && st.end === to && st.end === Math.min(st.run.end, layered.text.length)) out.push(st.run.trail(`${st.run.key}~trail`));
-        if (trails) out.push(...trailsAt(layered, e));
+        if (cuts) out.push(...trailsAt(layered, e), ...marksAt(layered, e));
         part = e;
       }
     }
@@ -159,7 +208,12 @@ function layeredText(n: Extract<BbNode, { type: 'text' | 'noparse' | 'autolink' 
       layered.drawn.add(st);
       out.push(st.run.render({ text: layered.text.slice(st.start, st.end), key: `${st.run.key}@${st.start}` }));
       // A leading trail is drawn at its own node's start, so the replace stretch passing over it does not draw it too.
-      if (trails) for (const e of standingBetween(layered, st.start, st.end + 1)) if (!layered.leading.has(e)) out.push(...trailsAt(layered, e));
+      if (cuts) {
+        for (const e of cutsBetween(layered, st.start, st.end + 1)) {
+          if (!layered.leading.has(e)) out.push(...trailsAt(layered, e));
+          if (!layered.markLeading.has(e)) out.push(...marksAt(layered, e));
+        }
+      }
     }
   }
   return <Fragment key={key}>{out}</Fragment>;
@@ -222,23 +276,23 @@ function EmptyQuote({ act }: { readonly act: string }) {
   return hidden ? <HiddenNote /> : null;
 }
 
-function nodes(list: readonly BbNode[], quoteHead: BbCodeProps['quoteHead'], layered?: Layered): ReactNode[] {
-  return list.map((n, i) => node(n, i, quoteHead, layered));
+function nodes(list: readonly BbNode[], quoteHead: BbCodeProps['quoteHead'], layered: Layered | undefined, imgs: ImageCount): ReactNode[] {
+  return list.map((n, i) => node(n, i, quoteHead, layered, imgs));
 }
 
-function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layered?: Layered): ReactNode {
+function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layered: Layered | undefined, imgs: ImageCount): ReactNode {
   switch (n.type) {
     case 'text': case 'noparse': return layered ? layeredText(n, key, layered) : n.text;
     case 'autolink':
       return <a key={key} href={n.href} rel={REL} referrerPolicy="no-referrer">{layered ? layeredText(n, 0, layered) : n.text}</a>;
-    case 'bold': return <strong key={key}>{nodes(n.children, quoteHead, layered)}</strong>;
-    case 'italic': return <em key={key}>{nodes(n.children, quoteHead, layered)}</em>;
-    case 'underline': return <u key={key}>{nodes(n.children, quoteHead, layered)}</u>;
-    case 'strike': return <s key={key}>{nodes(n.children, quoteHead, layered)}</s>;
-    case 'color': return <span key={key} style={{ color: n.color }}>{nodes(n.children, quoteHead, layered)}</span>;
-    case 'size': return <span key={key} className={`kb-bb-size-${n.size}`}>{nodes(n.children, quoteHead, layered)}</span>;
+    case 'bold': return <strong key={key}>{nodes(n.children, quoteHead, layered, imgs)}</strong>;
+    case 'italic': return <em key={key}>{nodes(n.children, quoteHead, layered, imgs)}</em>;
+    case 'underline': return <u key={key}>{nodes(n.children, quoteHead, layered, imgs)}</u>;
+    case 'strike': return <s key={key}>{nodes(n.children, quoteHead, layered, imgs)}</s>;
+    case 'color': return <span key={key} style={{ color: n.color }}>{nodes(n.children, quoteHead, layered, imgs)}</span>;
+    case 'size': return <span key={key} className={`kb-bb-size-${n.size}`}>{nodes(n.children, quoteHead, layered, imgs)}</span>;
     case 'url': {
-      const inside = nodes(n.children, quoteHead, layered);
+      const inside = nodes(n.children, quoteHead, layered, imgs);
       /* A path on this site moves within the app; every other address leaves it. */
       return n.href.startsWith('/')
         ? <Link key={key} to={n.href} rel={REL} referrerPolicy="no-referrer">{inside}</Link>
@@ -247,13 +301,13 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
     case 'img':
       /* The parser keeps what the player wrote, http: included; the page's img-src is https only (web/headers.ts), so an http: image would be a broken picture. A link to it is what can be shown; its "image: " words are the page's, and an image has no words in a post's text, so a highlight leaves them out (a quote holds only the post's own words, forged-quotes design, section 4). */
       if (/^http:/i.test(n.src)) return <a key={key} href={n.src} rel={REL} referrerPolicy="no-referrer" data-kb-quotable="hidden">image: {n.src}</a>;
-      return <img key={key} className="kb-bb-img" src={n.src} alt={altFor(n.src)} loading="lazy" referrerPolicy="no-referrer" />;
+      return <img key={key} className="kb-bb-img" src={n.src} alt={altFor(n.src)} loading="lazy" referrerPolicy="no-referrer" data-kb-img={imgs.n++} />;
     case 'video': return <Video key={key} video={n.video} />;
     case 'quote':
       return (
         <blockquote key={key} className="kb-quote">
           <cite className="kb-quote-from">{(quoteHead ?? defaultHead)({ kind: 'real', act: n.act })}</cite>
-          <div className="kb-quote-body">{concealed(n.children) ? <EmptyQuote act={n.act} /> : nodes(n.children, quoteHead)}</div>
+          <div className="kb-quote-body">{concealed(n.children) ? <EmptyQuote act={n.act} /> : nodes(n.children, quoteHead, undefined, imgs)}</div>
         </blockquote>
       );
     case 'cut':
@@ -268,36 +322,36 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
       return (
         <blockquote key={key} className="kb-quote" data-kb-counterfeit="">
           <cite className="kb-quote-from">{(quoteHead ?? defaultHead)({ kind: 'counterfeit', user: n.user, name: n.name, act: n.act })}</cite>
-          <div className="kb-quote-body">{nodes(n.children, quoteHead, layered)}</div>
+          <div className="kb-quote-body">{nodes(n.children, quoteHead, layered, imgs)}</div>
         </blockquote>
       );
     case 'spoiler':
       return (
         <details key={key} className="kb-bb-spoiler">
           <summary>{n.title}</summary>
-          <div>{nodes(n.children, quoteHead, layered)}</div>
+          <div>{nodes(n.children, quoteHead, layered, imgs)}</div>
         </details>
       );
-    case 'ispoiler': return <ISpoiler key={key}>{nodes(n.children, quoteHead, layered)}</ISpoiler>;
+    case 'ispoiler': return <ISpoiler key={key}>{nodes(n.children, quoteHead, layered, imgs)}</ISpoiler>;
     case 'code': return <pre key={key} className="kb-bb-code"><code>{n.text}</code></pre>;
-    case 'align': return <div key={key} className={`kb-bb-align-${n.align}`}>{nodes(n.children, quoteHead, layered)}</div>;
+    case 'align': return <div key={key} className={`kb-bb-align-${n.align}`}>{nodes(n.children, quoteHead, layered, imgs)}</div>;
     case 'hr': return <hr key={key} className="kb-bb-hr" />;
-    case 'sub': return <sub key={key}>{nodes(n.children, quoteHead, layered)}</sub>;
-    case 'sup': return <sup key={key}>{nodes(n.children, quoteHead, layered)}</sup>;
-    case 'font': return <span key={key} style={{ fontFamily: FONTS[n.font] }}>{nodes(n.children, quoteHead, layered)}</span>;
+    case 'sub': return <sub key={key}>{nodes(n.children, quoteHead, layered, imgs)}</sub>;
+    case 'sup': return <sup key={key}>{nodes(n.children, quoteHead, layered, imgs)}</sup>;
+    case 'font': return <span key={key} style={{ fontFamily: FONTS[n.font] }}>{nodes(n.children, quoteHead, layered, imgs)}</span>;
     case 'marquee':
-      return <Marquee key={key}>{nodes(n.children, quoteHead, layered)}</Marquee>;
+      return <Marquee key={key}>{nodes(n.children, quoteHead, layered, imgs)}</Marquee>;
     case 'glow': {
       const c = n.color ?? 'var(--kb-fg)';
-      return <span key={key} className="kb-bb-glow" style={{ textShadow: `0 0 0.2em ${c}, 0 0 0.45em ${c}` }}>{nodes(n.children, quoteHead, layered)}</span>;
+      return <span key={key} className="kb-bb-glow" style={{ textShadow: `0 0 0.2em ${c}, 0 0 0.45em ${c}` }}>{nodes(n.children, quoteHead, layered, imgs)}</span>;
     }
     case 'shadow':
-      return <span key={key} className="kb-bb-shadow" style={{ textShadow: `0.08em 0.08em 0.1em ${n.color ?? 'var(--kb-fg)'}` }}>{nodes(n.children, quoteHead, layered)}</span>;
-    case 'rainbow': return <span key={key} className="kb-bb-rainbow">{nodes(n.children, quoteHead, layered)}</span>;
+      return <span key={key} className="kb-bb-shadow" style={{ textShadow: `0.08em 0.08em 0.1em ${n.color ?? 'var(--kb-fg)'}` }}>{nodes(n.children, quoteHead, layered, imgs)}</span>;
+    case 'rainbow': return <span key={key} className="kb-bb-rainbow">{nodes(n.children, quoteHead, layered, imgs)}</span>;
     case 'highlight':
-      return <mark key={key} className="kb-bb-highlight" style={{ backgroundColor: n.color, color: inkOn(n.color) }}>{nodes(n.children, quoteHead, layered)}</mark>;
+      return <mark key={key} className="kb-bb-highlight" style={{ backgroundColor: n.color, color: inkOn(n.color) }}>{nodes(n.children, quoteHead, layered, imgs)}</mark>;
     case 'list': {
-      const items = n.items.map((item, i) => <li key={i}>{nodes(item, quoteHead, layered)}</li>);
+      const items = n.items.map((item, i) => <li key={i}>{nodes(item, quoteHead, layered, imgs)}</li>);
       return n.ordered ? <ol key={key}>{items}</ol> : <ul key={key}>{items}</ul>;
     }
   }
@@ -317,13 +371,15 @@ export const BbCode = memo(function BbCode({ text, quoteHead, forged }: BbCodePr
   // The text pieces' spans, in the walk's order, which is ascending: `visibleWalk` fills `offsets` as it reads the tree in order, each text node
   // at the text's length so far, and a Map keeps insertion order, so no sort is needed. Built only where some run stands.
   const anyStands = runs.some(stands);
+  const anyMarks = runs.some((r) => r.mode === 'mark');
   const spans = useMemo(() => {
-    if (!walk || !anyStands) return null;
+    if (!walk || !(anyStands || anyMarks)) return null;
     const out: [number, number][] = [];
     for (const [n, o] of walk.offsets) if ((n.type === 'text' || n.type === 'noparse' || n.type === 'autolink') && n.text) out.push([o, o + n.text.length]);
     return out;
-  }, [walk, anyStands]);
-  const standing = useMemo(() => (!walk ? null : spans ? standingTrails(walk.text.length, runs, spans) : NO_STANDING), [walk, spans, runs]);
-  const layered = walk && standing ? { text: walk.text, offsets: walk.offsets, stretches, drawn: new Set<Stretch>(), ...standing } : undefined;
-  return <div className="kb-bb">{nodes(tree, quoteHead, layered)}</div>;
+  }, [walk, anyStands, anyMarks]);
+  const standing = useMemo(() => (!walk ? null : spans && anyStands ? standingTrails(walk.text.length, runs, spans) : NO_STANDING), [walk, spans, anyStands, runs]);
+  const marked = useMemo(() => (!walk ? null : spans && anyMarks ? markPlaces(walk.text.length, runs, spans) : NO_MARKS), [walk, spans, anyMarks, runs]);
+  const layered = walk && standing && marked ? { text: walk.text, offsets: walk.offsets, stretches, drawn: new Set<Stretch>(), ...standing, ...marked } : undefined;
+  return <div className="kb-bb">{nodes(tree, quoteHead, layered, { n: 0 })}</div>;
 });

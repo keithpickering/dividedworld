@@ -156,9 +156,9 @@ export function surfaceShare(cells: number, surface: string): string {
   return `${cells > 0 && whole === 0 ? 'under 1' : String(whole)}% of ${surface}`;
 }
 
-/** The Lens's one line for the draws that are no longer live: "and 14 older tags, washed or painted over". */
+/** The Lens's one line for the draws that are no longer live: "and 14 older tags, washed off". */
 export function olderWords(count: number, words: SurfaceWords): string {
-  return `and ${count} older ${count === 1 ? words.noun : words.nouns}, washed or painted over`;
+  return `and ${count} older ${count === 1 ? words.noun : words.nouns}, washed off`;
 }
 
 /** The Lens's line under a Move that got past a ward with a pierce (a Cheap Shot): the card it was played on, and the Ward it got past where there was one. Both are card names. */

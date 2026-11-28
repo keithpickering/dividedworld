@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, coalesced, forgetHintSettings, handleAction, runAction } from './core.ts';
+import { NOT_THOSE_WORDS, REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, coalesced, forgetHintSettings, handleAction, runAction } from './core.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 import { landsOn } from '../../../engine/rules/cards.ts';
+import { contentOf, mapPlaces } from '../../../engine/rules/anchor.ts';
 import { NOT_RUN } from '../../../engine/ui/data/api.ts';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -228,7 +229,8 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'unmask', character: id, thread }, { unmask: { id: 'u', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'u', thread } }]],
   ];
   for (const [request, answers, broadcasts] of cases) {
-    const { dbs } = pair(answers);
+    // An edit asks whose account it is before it reads its post's walls (as a card's play does).
+    const { dbs } = pair({ whoami: id, ...answers });
     const out = await runAction(dbs, instance, request);
     assert.equal(out.status, 200, JSON.stringify(request));
     assert.deepEqual(out.broadcasts ?? [], broadcasts, JSON.stringify(request));
@@ -1097,12 +1099,22 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
 {
   const dab = { strokes: [{ width: 0.012, aspect: 1, points: [[0.505, 0.505]] }] };
   const strokes = (i: unknown) => (typeof i === 'object' && i !== null && Array.isArray((i as { strokes?: unknown }).strokes)
-    ? { ok: true as const, value: { strokes: (i as { strokes: never[] }).strokes, payload: { strokes: (i as { strokes: unknown[] }).strokes } } } : { ok: false as const, why: 'draw some strokes' });
+    ? { ok: true as const, value: { strokes: (i as { strokes: never[] }).strokes, payload: { strokes: (i as { strokes: unknown[] }).strokes, ...((i as { groups?: unknown }).groups === undefined ? {} : { groups: (i as { groups: unknown }).groups }) } } } : { ok: false as const, why: 'draw some strokes' });
+  // A wash names the live draws it cuts, as the card's own validateWash does with the draws it is given.
+  const cuts = (i: unknown, draws: ReadonlyMap<string, unknown>) => {
+    const list = (typeof i === 'object' && i !== null ? (i as { cuts?: unknown }).cuts : undefined) as { draw: string }[] | undefined;
+    if (!Array.isArray(list)) return { ok: false as const, why: 'send the cuts' };
+    const gone = list.find((c) => !draws.has(c.draw));
+    if (gone) return { ok: false as const, why: `draw ${gone.draw} is not one of the draws given` };
+    return { ok: true as const, value: { cuts: list.map((c) => ({ draw: c.draw, presses: [[0.5, 0.5]] as [number, number][], radius: 0.01, aspect: 1 })), payload: { cuts: list } } };
+  };
   const base = instance.cards.find((c) => c.key === 'whoops')!;
-  const wall = { ...base, key: 'wall', name: 'Wall', stack: 1, screenReads: [{ key: 'wall.limit', whole: true, min: 1, max: 100 }], surface: { limitKey: 'wall.limit', mostLive: 7, validateDraw: strokes, validateWash: strokes } };
+  const wall = { ...base, key: 'wall', name: 'Wall', stack: 1, screenReads: [{ key: 'wall.limit', whole: true, min: 1, max: 100 }], surface: { limitKey: 'wall.limit', mostLive: 7, coats: { line: 20, most: 40 }, validateDraw: strokes, validateWash: cuts } };
   const walled = { ...instance, cards: [...instance.cards, wall], settings: { ...instance.settings, cardSettings: { ...instance.settings.cardSettings, 'wall.limit': 40 } } };
   const rows = (limit: number) => ({ economy: instance.settings.economy, cardSettings: { ...instance.settings.cardSettings, 'wall.limit': limit } });
   const thread = '44444444-4444-4444-8444-444444444444';
+  const wallActs = { covered: 3, acts: [{ id: 'd', kind: 'draw', payload: { strokes: dab.strokes } }, { id: 'w', kind: 'wash', payload: { cuts: [] } }], older: 0 };
+  const wipe = { cuts: [{ draw: 'd', group: 0, presses: [[0, 0]] }] };
 
   test('a draw reads its wall\'s card, decides the drawing by that card, and takes the limit from the settings rows, not from the deployed code', async () => {
     for (const [limit, most] of [[10, 1000], [25, 2500]] as const) {
@@ -1113,9 +1125,10 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
       const args = JSON.parse(sent.slice('service:draw_on_surface:'.length));
       assert.equal(args.most, most, `the rows say ${limit}%, the code 40%`);
       assert.deepEqual({ who: args.who, through: args.through, play: args.play, payload: args.payload }, { who: whoami, through: id, play: target, payload: { strokes: dab.strokes } });
-      assert.equal(args.cells.length, 10000);
-      assert.equal(args.cells.split('1').length - 1, 1);
-      assert.equal('input' in args, false);
+      assert.equal(args.coats.length, 10000);
+      assert.equal(args.coats.replace(/0/g, '').length, 1);
+      assert.deepEqual(args.places, []);
+      assert.equal('cells' in args || 'input' in args, false);
     }
   });
 
@@ -1148,7 +1161,8 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     assert.equal(out.status, 200);
     const sent = JSON.parse(calls.find((c) => c.startsWith('service:play_surface_card:'))!.slice('service:play_surface_card:'.length));
     assert.deepEqual({ card: sent.card, first: sent.first, most: sent.most, most_live: sent.most_live, who: sent.who }, { card: 'wall', first: { strokes: dab.strokes }, most: 3000, most_live: 7, who: whoami });
-    assert.equal(sent.first_cells.length, 10000);
+    assert.equal(sent.first_coats.length, 10000);
+    assert.deepEqual(sent.first_places, []);
     // play_surface_card has no default for `tokens` (a defaulted argument cannot sit before the ones after it), so a card that writes nothing
     // still sends it, null: left off, PostgREST finds no function of that signature and the play is a 500.
     assert.equal('tokens' in sent, true);
@@ -1180,8 +1194,8 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
   test('a draw\'s and a wash\'s broadcast is the wall\'s count on its thread, and holds no strokes', async () => {
     for (const [action, rpc] of [['draw', 'draw_on_surface'], ['wash', 'wash_surface']] as const) {
       const answer = { id: 'd', thread, kind: action, payload: { strokes: dab.strokes }, covered: 12, live: ['d'] };
-      const { dbs } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', [rpc]: answer });
-      const out = await runAction(dbs, walled, { action, character: id, play: target, input: dab });
+      const { dbs } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_acts: wallActs, [rpc]: answer });
+      const out = await runAction(dbs, walled, { action, character: id, play: target, input: action === 'wash' ? wipe : dab });
       assert.deepEqual(out.broadcasts, [{ topic: `thread:${thread}`, event: 'surface', payload: { play: target, covered: 12 } }], action);
       assert.ok(!JSON.stringify(out.broadcasts).includes('strokes'));
     }
@@ -1191,11 +1205,268 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     assert.equal(SAFE_TO_REPEAT('draw_on_surface'), false);
     assert.equal(SAFE_TO_REPEAT('wash_surface'), false);
     for (const action of ['draw', 'wash']) {
-      const db: Db = { rpc: async <T>(fn: string) => { if (fn === 'draw_on_surface' || fn === 'wash_surface') throw new TransportError('gone'); return (fn === 'instance_settings' ? rows(30) : fn === 'card_of_play' ? 'wall' : whoami) as T; } };
-      const out = await runAction({ player: db, service: db }, walled, { action, character: id, play: target, input: dab });
+      const db: Db = { rpc: async <T>(fn: string) => { if (fn === 'draw_on_surface' || fn === 'wash_surface') throw new TransportError('gone'); return (fn === 'instance_settings' ? rows(30) : fn === 'card_of_play' ? 'wall' : fn === 'surface_acts' ? wallActs : whoami) as T; } };
+      const out = await runAction({ player: db, service: db }, walled, { action, character: id, play: target, input: action === 'wash' ? wipe : dab });
       assert.equal(out.status, 503, action);
       assert.match(JSON.stringify(out.body), /may have gone through/);
     }
+  });
+
+  // A group drawn over words or an image is placed for the post's current version (docs/plans/2026-11-27-graffiti-everywhere-plan.md, Task 5).
+  const v1 = '66666666-6666-4666-8666-666666666666', v2 = '77777777-7777-4777-8777-777777777777', post = '88888888-8888-4888-8888-888888888888', d1 = '99999999-9999-4999-8999-999999999999';
+  const textAt = (version: string, at: number, len: number) => ({ kind: 'text' as const, version, at, len, dx: 0, dy: 0 });
+  const WORDS1 = 'Hello world, this is the first version of the words';
+  const WORDS2 = 'Oh. Hello world, this is the second version of the words';
+  const drawOn = (...anchors: unknown[]) => ({ strokes: dab.strokes, groups: anchors.map((anchor) => ({ anchor })) });
+  const argsOf = (calls: string[], rpc: string) => JSON.parse(calls.find((c) => c.startsWith(`service:${rpc}:`))!.slice(`service:${rpc}:`.length));
+  const sentTo = (calls: string[], rpc: string) => JSON.parse(calls.find((c) => c.startsWith(`service:${rpc}:`))!.slice(`service:${rpc}:`.length));
+
+  test('a draw on the current version sends each attached group\'s own attachment as its place', async () => {
+    const here = textAt(v2, 4, 5);
+    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_post_of: post,
+      surface_version_pair: { current: { version: v2, body: WORDS2, forged: [] }, drawn: { version: v2, body: WORDS2, forged: [] } }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    const out = await runAction(dbs, walled, { action: 'draw', character: id, play: target, input: drawOn(here, { kind: 'box' }) });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.deepEqual(sentTo(calls, 'draw_on_surface').places, [{ grp: 0, version: v2, place: here }]);
+    assert.deepEqual(argsOf(calls, 'surface_post_of'), { p_play: target });
+    assert.deepEqual(argsOf(calls, 'surface_version_pair'), { p_post: post, p_version: v2 });
+  });
+
+  test('a draw on an older version sends mapped places, and null for a group whose words were touched', async () => {
+    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_post_of: post,
+      surface_version_pair: { current: { version: v2, body: WORDS2, forged: [] }, drawn: { version: v1, body: WORDS1, forged: [] } }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    // `Hello` kept its words around it and moved four characters; `first` was replaced by `second`, and `the` further on moved with the longer words.
+    const out = await runAction(dbs, walled, { action: 'draw', character: id, play: target, input: drawOn(textAt(v1, 0, 5), textAt(v1, 25, 5), { kind: 'box' }, textAt(v1, 42, 3)) });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.deepEqual(sentTo(calls, 'draw_on_surface').places, [
+      { grp: 0, version: v2, place: textAt(v1, 4, 5) },
+      { grp: 1, version: v2, place: null },
+      { grp: 3, version: v2, place: textAt(v1, 47, 3) },
+    ]);
+  });
+
+  test('a draw naming a version the post never had is refused in words that say to reload, and nothing is written', async () => {
+    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_post_of: post,
+      surface_version_pair: { current: { version: v2, body: WORDS2, forged: [] }, drawn: null }, draw_on_surface: { id: 'd' } });
+    const out = await runAction(dbs, walled, { action: 'draw', character: id, play: target, input: drawOn(textAt(v1, 0, 5)) });
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: "That post's words aren't the ones you drew on. Reload it and tag again." } });
+    assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
+  });
+
+  test('a draw is refused in the same words when the post\'s current version is hidden (no current), or the pair is missing, never as a failure', async () => {
+    for (const pairRead of [{ current: null, drawn: { version: v1, body: WORDS1, forged: [] } }, null, {}]) {
+      const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_post_of: post, surface_version_pair: pairRead, draw_on_surface: { id: 'd' } });
+      const out = await runAction(dbs, walled, { action: 'draw', character: id, play: target, input: drawOn(textAt(v1, 0, 5)) });
+      assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: NOT_THOSE_WORDS } }, JSON.stringify(pairRead));
+      assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
+    }
+  });
+
+  test('a group whose version is not a uuid is refused before any read of the wall\'s post', async () => {
+    for (const version of ['not-a-uuid', '', 7, null]) {
+      const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_post_of: post, draw_on_surface: { id: 'd' } });
+      const out = await runAction(dbs, walled, { action: 'draw', character: id, play: target, input: drawOn({ ...textAt(v1, 0, 5), version }) });
+      assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: NOT_THOSE_WORDS } }, String(version));
+      assert.ok(!calls.some((c) => c.includes('surface_post_of') || c.includes('surface_version_pair') || c.includes('draw_on_surface:')), calls.join('\n'));
+    }
+  });
+
+  test('a draw on an older version maps an image to where its address now stands, and to null where it is gone', async () => {
+    const img = (version: string, n: number) => ({ kind: 'image' as const, version, n, src: 'https://i.example/a.png', nth: 0, x: 0.5, y: 0.5 });
+    const b1 = 'Look [img]https://i.example/a.png[/img] here', b2 = '[img]https://i.example/b.png[/img] Look [img]https://i.example/a.png[/img] here';
+    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_post_of: post,
+      surface_version_pair: { current: { version: v2, body: b2, forged: [] }, drawn: { version: v1, body: b1, forged: [] } }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    const out = await runAction(dbs, walled, { action: 'draw', character: id, play: target, input: drawOn(img(v1, 0)) });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.deepEqual(sentTo(calls, 'draw_on_surface').places, [{ grp: 0, version: v2, place: img(v1, 1) }]);
+    const gone = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_post_of: post,
+      surface_version_pair: { current: { version: v2, body: 'Look here', forged: [] }, drawn: { version: v1, body: b1, forged: [] } }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    await runAction(gone.dbs, walled, { action: 'draw', character: id, play: target, input: drawOn(img(v1, 0)) });
+    assert.deepEqual(sentTo(gone.calls, 'draw_on_surface').places, [{ grp: 0, version: v2, place: null }]);
+  });
+
+  // The two reads are retried on a transport failure (SAFE_TO_REPEAT): one failure on each, and the action still goes through.
+  const flaky = (answers: Record<string, unknown>, failing: string) => {
+    const calls: string[] = []; let failed = false;
+    const make = (who: string): Db => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => {
+      calls.push(`${who}:${fn}:${JSON.stringify(args)}`);
+      if (fn === failing && !failed) { failed = true; throw new TransportError('gone'); }
+      return (fn === 'instance_settings' && !(fn in answers) ? { economy: instance.settings.economy } : answers[fn]) as T;
+    } });
+    // The reads are retried by `postgrest`; this fake stands in for it, so it retries a safe call itself, once.
+    const retrying = (db: Db): Db => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => { try { return await db.rpc<T>(fn, args); } catch (e) { if (e instanceof TransportError && SAFE_TO_REPEAT(fn)) return db.rpc<T>(fn, args); throw e; } } });
+    return { dbs: { player: retrying(make('player')), service: retrying(make('service')) }, calls };
+  };
+
+  test('one transport failure on surface_version_pair, and one on surface_groups_on, are read again and the action goes through', async () => {
+    const draw = flaky({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_post_of: post,
+      surface_version_pair: { current: { version: v2, body: WORDS2, forged: [] }, drawn: { version: v1, body: WORDS1, forged: [] } }, draw_on_surface: { id: 'd', thread, covered: 1 } }, 'surface_version_pair');
+    const drawn = await runAction(draw.dbs, walled, { action: 'draw', character: id, play: target, input: drawOn(textAt(v1, 0, 5)) });
+    assert.equal(drawn.status, 200, JSON.stringify(drawn.body));
+    assert.equal(draw.calls.filter((c) => c.includes('surface_version_pair')).length, 2);
+    assert.deepEqual(sentTo(draw.calls, 'draw_on_surface').places, [{ grp: 0, version: v2, place: textAt(v1, 4, 5) }]);
+    const edit = flaky({ whoami, surface_groups_on: { version: v1, body: WORDS1, forged: [], groups: [{ draw: d1, grp: 0, place: textAt(v1, 0, 5) }] }, edit_post: { id: post, kind: 'edit' } }, 'surface_groups_on');
+    const edited = await runAction(edit.dbs, walled, { action: 'edit', post, character: id, body: WORDS2 });
+    assert.equal(edited.status, 200, JSON.stringify(edited.body));
+    assert.equal(edit.calls.filter((c) => c.includes('surface_groups_on')).length, 2);
+    assert.deepEqual(sentTo(edit.calls.map((c) => c.replace(/^player:/, 'service:')), 'edit_post').surface_places, [{ draw: d1, grp: 0, place: textAt(v1, 4, 5) }]);
+  });
+
+  test('an edit sends where each live group of the post\'s walls sits in the new words, and a fallen group is not sent', async () => {
+    const { dbs, calls } = pair({ whoami, surface_groups_on: { version: v1, body: WORDS1, forged: [], groups: [
+      { draw: d1, grp: 0, place: textAt(v1, 0, 5) }, { draw: d1, grp: 1, place: null }, { draw: d1, grp: 2, place: textAt(v1, 13, 4) }, { draw: d1, grp: 3, place: textAt(v1, 25, 5) }] }, edit_post: { id: post, kind: 'edit' } });
+    const out = await runAction(dbs, walled, { action: 'edit', post, character: id, body: WORDS2 });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    // A group with no row for the edit's version is at its box spot (0456), the same as a null place: the fallen one is not sent.
+    assert.deepEqual(sentTo(calls.map((c) => c.replace(/^player:/, 'service:')), 'edit_post').surface_places, [
+      { draw: d1, grp: 0, place: textAt(v1, 4, 5) }, { draw: d1, grp: 2, place: textAt(v1, 17, 4) }, { draw: d1, grp: 3, place: null }]);
+    assert.ok(calls.some((c) => c.startsWith('service:surface_groups_on:')), calls.join('\n'));
+  });
+
+  test('an edit maps its places against the words the renderer will draw: the database\'s verdict on the new body, read for it, decides what a quote in it shows', async () => {
+    const act = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const OLD = 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen';
+    const NEW = `[quote=${act}]ten words said before[/quote] one two three four five six seven eight nine ten eleven twelve thirteen fourteen`;
+    const group = textAt(v1, 40, 10);
+    const sent = async (verdict: string[]) => {
+      const { dbs, calls } = pair({ whoami, surface_groups_on: { version: v1, body: OLD, forged: [], groups: [{ draw: d1, grp: 0, place: group }] }, quote_forged: verdict, edit_post: { id: post, kind: 'edit' } });
+      const out = await runAction(dbs, walled, { action: 'edit', post, character: id, body: NEW });
+      assert.equal(out.status, 200, JSON.stringify(out.body));
+      assert.ok(calls.some((c) => c.startsWith('service:quote_forged:')), 'the verdict is read for the new body');
+      assert.deepEqual(Object.keys(argsOf(calls, 'quote_forged')).sort(), ['at', 'body']);
+      return (sentTo(calls.map((c) => c.replace(/^player:/, 'service:')), 'edit_post').surface_places as { place: { at: number } | null }[])[0]!.place;
+    };
+    const expected = (forged?: Set<string>) => mapPlaces(contentOf(OLD), contentOf(NEW, forged), [group])[0] as { at: number } | null;
+    assert.notDeepEqual(expected(new Set([act])), expected(), 'the fixture: the verdict changes where the group sits');
+    assert.deepEqual(await sent([act]), expected(new Set([act])));
+    assert.deepEqual(await sent([]), expected());
+  });
+
+  test('an edit on a post with no walls sends no places, and the reads of a wall are safe to repeat', async () => {
+    const { dbs, calls } = pair({ whoami, surface_groups_on: null, edit_post: { id: post, kind: 'edit' } });
+    await runAction(dbs, walled, { action: 'edit', post, character: id, body: WORDS2 });
+    assert.ok(!calls.find((c) => c.startsWith('player:edit_post:'))!.includes('surface_places'));
+    assert.ok(!calls.some((c) => c.includes('quote_forged')), 'no walls, no verdict read');
+    for (const fn of ['surface_acts', 'surface_post_of', 'surface_version_pair', 'surface_groups_on', 'quote_forged']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
+  });
+
+  test('a wash sends one takes entry for each draw it cuts, with the draws\' payloads read as the service', async () => {
+    const two = { covered: 3, acts: [{ id: 'd', kind: 'draw', payload: {} }, { id: 'e', kind: 'draw', payload: {} }, { id: 'w', kind: 'wash', payload: { cuts: [] } }], older: 0 };
+    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_acts: two, wash_surface: { id: 'w2', thread, covered: 2 } });
+    const input = { cuts: [{ draw: 'd', group: 0, presses: [[0, 0]] }, { draw: 'e', group: 0, presses: [[0, 0]] }, { draw: 'd', group: 1, presses: [[0, 0]] }] };
+    const out = await runAction(dbs, walled, { action: 'wash', character: id, play: target, input });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    const sent = sentTo(calls, 'wash_surface');
+    assert.deepEqual(sent.takes.map((t: { draw: string }) => t.draw), ['d', 'e']);
+    assert.ok(sent.takes.every((t: { takes: string }) => t.takes.length === 10000));
+    assert.deepEqual(sent.payload, { cuts: input.cuts });
+    assert.deepEqual({ who: sent.who, through: sent.through, play: sent.play }, { who: whoami, through: id, play: target });
+    assert.ok(calls.some((c) => c === `service:surface_acts:${JSON.stringify({ play: target })}`), calls.join('\n'));
+  });
+
+  test('a wash cutting a draw that is not live is refused before the RPC', async () => {
+    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', surface_acts: wallActs, wash_surface: { id: 'w2' } });
+    const out = await runAction(dbs, walled, { action: 'wash', character: id, play: target, input: { cuts: [{ draw: d1, group: 0, presses: [[0, 0]] }] } });
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: `draw ${d1} is not one of the draws given` } });
+    assert.ok(!calls.some((c) => c.includes('wash_surface:')), calls.join('\n'));
+  });
+
+  // A draw's declared frame is held to its post (issue #1259; engine/rules/frame.ts): a card whose drawer declares the box names it (`frameOf`), and the fixture keeps the box and groups it is sent.
+  const keepsFrame = (i: unknown) => (typeof i === 'object' && i !== null && Array.isArray((i as { strokes?: unknown }).strokes)
+    ? { ok: true as const, value: { strokes: (i as { strokes: never[] }).strokes, payload: { ...(i as Record<string, unknown>) } } } : { ok: false as const, why: 'draw some strokes' });
+  const frameOf = (p: Record<string, unknown>) => {
+    if (p.stencil !== undefined) return null;
+    const box = p.box as { w: number; h: number };
+    return { box, imageEms: ((p.groups ?? []) as { unit?: string; em?: number }[]).flatMap((g) => (g.unit === 'image' ? [g.em!] : [])) };
+  };
+  const framing = { ...wall, key: 'frame-wall', surface: { ...wall.surface, validateDraw: keepsFrame, frameOf } };
+  const framedOn = { ...walled, cards: [...walled.cards, framing] };
+  const frameRows = (limit: number) => ({ economy: instance.settings.economy, cardSettings: { ...rows(limit).cardSettings, 'wall.limit': limit } });
+  // A whole desktop post of words (the long text the frame tests measured: 65.8 by 59.4 ems at 1600px).
+  const LONG = Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1}. ` + 'The quick brown fox jumps over the lazy dog while everyone on the board argues about whether the sprite sheet is any good at all. '.repeat(3)).join('\n\n');
+  const frameRead = { kind: 'post', versions: [{ body: LONG, forged: [] }], signature: '', poll: null };
+  const boxOnly = (box: { w: number; h: number }, groups: unknown[] = [{ anchor: { kind: 'box' }, unit: 'em' }]) => ({ strokes: dab.strokes, box, groups });
+  /** What a player reads when a draw's frame is bigger than the post it is on (the owner's words on #1237). */
+  const TOO_BIG = 'That tag is drawn bigger than this post. Reload it and tag again.';
+  const POISON = boxOnly({ w: 200, h: 2000 });
+  const HONEST = boxOnly({ w: 65.8, h: 59.4 });
+
+  test('a draw whose box is far taller than its post could lay out is refused before the RPC, in the words that say it is bigger than the post', async () => {
+    const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: frameRead, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input: POISON });
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: TOO_BIG } });
+    assert.deepEqual(argsOf(calls, 'surface_frame_of'), { p_post: post });
+    assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
+  });
+
+  test('a box wider than any content area is refused on a short post, in the same words, and the widest honest box lands', async () => {
+    const short = { kind: 'post', versions: [{ body: 'hi', forged: [] }], signature: '', poll: null };
+    for (const [box, status] of [[{ w: 200, h: 23.5 }, 400], [{ w: 65.8, h: 23.53 }, 200]] as const) {
+      const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: short, draw_on_surface: { id: 'd', thread, covered: 1 } });
+      const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input: boxOnly(box) });
+      assert.equal(out.status, status, JSON.stringify(out.body));
+      if (status === 400) {
+        assert.deepEqual(out.body, { field: 'input', error: TOO_BIG });
+        assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
+      }
+    }
+  });
+
+  test('an honest draw on the same post lands, its box-only frame read and held, and the wall\'s post is read once for its places and its frame', async () => {
+    for (const input of [HONEST, boxOnly({ w: 65.8, h: 59.4 }, [{ anchor: textAt(v2, 4, 5), unit: 'em' }, { anchor: { kind: 'box' }, unit: 'em' }])]) {
+      const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: frameRead,
+        surface_version_pair: { current: { version: v2, body: LONG, forged: [] }, drawn: { version: v2, body: LONG, forged: [] } }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+      const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input });
+      assert.equal(out.status, 200, JSON.stringify(out.body));
+      assert.deepEqual(sentTo(calls, 'draw_on_surface').payload, input);
+      assert.equal(calls.filter((c) => c.includes(':surface_post_of:')).length, 1, calls.join('\n'));
+      assert.equal(calls.filter((c) => c.includes(':surface_frame_of:')).length, 1, calls.join('\n'));
+    }
+  });
+
+  test('an image group wider than its box is refused in the same words; one as wide as its box lands', async () => {
+    const image = { kind: 'image', version: v2, n: 0, src: 'https://i.example/a.png', nth: 0, x: 0.5, y: 0.5 };
+    const read = { ...frameRead, versions: [{ body: `Look [img]${image.src}[/img]`, forged: [] }] };
+    for (const [em, status] of [[80, 400], [65.8, 200]] as const) {
+      const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: read,
+        surface_version_pair: { current: { version: v2, body: read.versions[0]!.body, forged: [] }, drawn: { version: v2, body: read.versions[0]!.body, forged: [] } }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+      const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input: boxOnly({ w: 65.8, h: 40 }, [{ anchor: image, unit: 'image', em }]) });
+      assert.equal(out.status, status, `em ${em}: ${JSON.stringify(out.body)}`);
+      if (status === 400) {
+        assert.deepEqual(out.body, { field: 'input', error: TOO_BIG });
+        assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
+      }
+    }
+  });
+
+  test('a play\'s first draw is held to the post it is played on: the poison is refused on `first` before play_surface_card, and an honest first draw lands', async () => {
+    for (const [first, status] of [[POISON, 400], [HONEST, 200]] as const) {
+      const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: LONG.length, body: LONG, effects: [] }, surface_frame_of: frameRead,
+        play_surface_card: { id: 'k', kind: 'card', thread, draw: { id: 'd', thread, covered: 1, live: ['d'] } } });
+      const out = await runAction(dbs, framedOn, { action: 'playCard', card: 'frame-wall', character: id, target, config: { color: 'red' }, message: '', first });
+      assert.equal(out.status, status, JSON.stringify(out.body));
+      assert.deepEqual(argsOf(calls, 'surface_frame_of'), { p_post: target });
+      if (status === 400) {
+        assert.deepEqual(out.body, { field: 'first', error: TOO_BIG });
+        assert.ok(!calls.some((c) => c.includes('play_surface_card:')), calls.join('\n'));
+      } else assert.deepEqual(sentTo(calls, 'play_surface_card').first, HONEST);
+    }
+  });
+
+  test('a draw whose frame the card sets (a stencil) reads no frame and lands; a spun thread\'s opening Act is not held; a post the read cannot find is refused', async () => {
+    const stencil = { strokes: dab.strokes, stencil: 'x', box: { w: 65.9, h: 46.7 }, groups: [{ anchor: { kind: 'box' }, unit: 'em' }] };
+    const one = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    assert.equal((await runAction(one.dbs, framedOn, { action: 'draw', character: id, play: target, input: stencil })).status, 200);
+    assert.ok(!one.calls.some((c) => c.includes('surface_frame_of') || c.includes('surface_post_of')), one.calls.join('\n'));
+    const spin = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: { ...frameRead, kind: 'spin' }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    assert.equal((await runAction(spin.dbs, framedOn, { action: 'draw', character: id, play: target, input: POISON })).status, 200);
+    for (const read of [null, {}]) {
+      const none = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: read, draw_on_surface: { id: 'd', thread, covered: 1 } });
+      const out = await runAction(none.dbs, framedOn, { action: 'draw', character: id, play: target, input: HONEST });
+      assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: NOT_THOSE_WORDS } }, JSON.stringify(read));
+      assert.ok(!none.calls.some((c) => c.includes('draw_on_surface:')));
+    }
+    assert.equal(SAFE_TO_REPEAT('surface_frame_of'), true);
   });
 }
 

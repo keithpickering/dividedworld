@@ -144,8 +144,8 @@ Model: sonnet
 - **Words.**
   - `ui.ts`'s `describe` reads: `A Pepperoni card, ${rarity}. It turns a post into a wall. Any character can tag it with
     spray cans, drawing freehand or placing a stencil, and the wall holds up to ${limit}% of the post, counting each tag's
-    own paint, even where it covers another tag. A reader can scrub the paint off on their own screen, which lasts until they
-    leave the page. The post's author can wash it off for everyone, a coat at a pass, and anyone can tag it again. A Whoops!
+    own paint. A reader can scrub the paint off on their own screen, which lasts until they
+    leave the page. The post's author can wash it off for everyone, and anyone can tag it again. A Whoops!
     splat on the same post always covers the wall. It costs nothing more to play.`
   - `lens-words.ts`'s line for drawings no longer live reads "and 14 older tags, washed off", and its comment, the
     `types.ts` comment that quotes it (`CardUi.logDraw`) and `words.ts`'s comment say the same.

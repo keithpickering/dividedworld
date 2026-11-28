@@ -78,7 +78,8 @@ select 'relation', n, m, w from (values
   ('my_draws', 'swept', 'the caller''s own drawings and the washes that cut them: the washer of a drawing on a veiled post is its author, so the row shows the stand-in for it (shown_author)'),
   ('reviews_due', 'no author', 'an admin''s list of edits awaiting a second look (0340_conduct): a decision, a post, a version, a time and a thread by id, and no character, name or account; empty for a player'),
   ('my_walls_drawn_on', 'no author', 'the walls on the caller''s own posts, read by their author: the post''s character is the caller''s own, and the rows name who drew or washed, public Acts'),
-  ('surfaces', 'no author', 'a wall''s cover, the ids of its live Acts and its limit: no character'),
+  ('surfaces', 'no author', 'a wall''s covered count, the ids of its live Acts and the draws each wash changed, and its limit: no character'),
+  ('surface_places', 'no author', 'where each group of a draw is attached for each version of a post: ids, a number and an attachment (an offset, an image index or none): no character'),
   ('character_post_counts', 'swept', 'a view over the stored counts (character_post_counts_base, granted to no one) that counts a veiled post, and the cards its author made on it (never a post or a spin of the author''s own that targets it, which acts_public leaves with them), for the stand-in and not for its author while the veil is live: A''s count equals what the profile can list, the stand-in''s includes P, and A''s is whole again at the end'),
   ('character_profiles', 'no author', 'a character''s public profile'),
   ('characters', 'no author', 'the caller''s own characters (row security)'),
@@ -363,8 +364,13 @@ select 'function', n, m, w from (values
   ('start_thread', 'no author', 'a write: answers the Act it wrote through the projection, to its author'),
   ('suggest_characters', 'no author', 'characters by name prefix: all characters_public shows, the stand-in included'),
   ('surface_acts', 'swept', 'a wall''s live draws and washes, through acts_public: a wash is the post''s own character''s, so on a veiled post it is the stand-in''s'),
+  ('post_current_version', 'no author', 'the id of a post''s latest edit Act (or the post itself): both public, the same version acts_public already shows as `version`; no owner, class or reaction'),
+  ('surface_places_now', 'no author', 'a draw''s places (group and spot) for a post''s current version: public Act data a viewer already sees drawn, with no character, owner, class or reaction'),
+  ('surface_shares', 'no author', 'each live draw''s painted cells, by the draw''s id: a count, no character'),
   ('thread_page', 'swept', 'a thread''s page'),
   ('tip_keys_ok', 'no author', 'a pure function of its argument'),
+  ('surface_coat_string_ok', 'no author', 'a pure function of its argument'),
+  ('surface_takes_ok', 'no author', 'a pure function of its argument'),
   ('turn', 'no author', 'a write: the caller''s own character'),
   ('announce_turn', 'no author', 'a write: the caller''s own character; answers the Act it wrote through the projection, to its author'),
   ('unmask', 'no author', 'a write: answers the Act it wrote through the projection, to its author'),
@@ -693,8 +699,8 @@ begin
   -- answers for a rewind whether or not it is still up, so the probe reads it all the same.
   insert into acts (character, kind, thread, target_act_id, payload) values (r, 'card', t, p, jsonb_build_object('card', 'swrewind', 'message', '', 'config', '{}'::jsonb, 'reach', 'post', 'ends', now() - interval '1 second', 'rewind_at', now())) returning id into rwd;
   perform tests.become_service();
-  perform draw_on_surface(ray, r, wall, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}', (repeat('1', 300) || repeat('0', 9700))::bit(10000), 4000);
-  wash := (wash_surface(ann, a, wall, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000)) ->> 'id')::uuid;
+  perform draw_on_surface(ray, r, wall, '{"groups": []}', repeat('k', 300) || repeat('0', 9700), '[]', 4000);
+  wash := (wash_surface(ann, a, wall, '{"cuts": []}', (select jsonb_agg(jsonb_build_object('draw', c.draw, 'takes', repeat('E', 100) || repeat('0', 9900))) from surface_coats c where c.play = wall)) ->> 'id')::uuid;
   perform tests.unbecome();
 
   -- A's own backs (a card set face down, which only the post's own author may do): one on P, still face down at the cast, and one on a second post (P5) that springs now, on Bob's quote, before any cast: its card is A's
