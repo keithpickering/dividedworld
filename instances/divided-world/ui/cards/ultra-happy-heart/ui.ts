@@ -12,5 +12,5 @@ export const ui: CardUi = {
   status: 'Ended a ban',
   hint: "An Ultra Happy Heart ended a character's ban.",
   describe: () =>
-    `A Sweet card, ${ultraHappyHeart.rarity}, cast from any post by a banned character. It ends that character's ban at once: the character can post, react and play cards again from that moment. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. A banned character cannot play cards, so another character plays it: anyone's, one of your own included. It is always cast face up. It costs nothing more to play.`,
+    `A Sweet card, ${ultraHappyHeart.rarity}, cast from any post by a banned character. It ends that character's ban at once. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. Any character but the banned one can play it, one of your own included. It is always cast face up. It costs nothing more to play.`,
 };

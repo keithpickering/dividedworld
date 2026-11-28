@@ -16,6 +16,6 @@ export const ui: CardUi = {
   status: 'A reply cut in under it',
   hint: 'A Line Cutter: the reply under this post was written later and cut in line.',
   describe: () =>
-    `A Pepperoni card, ${lineCutter.rarity}. You write a reply with it, and the reply is drawn right under the post you play it on, on that post's page, however many replies come after. It is a post like any other: it keeps its own number, and it can be quoted, reacted to and played on. One fits under a post, and a reply that cut in takes none under it. It is only ever cast face up. If an admin ends the card, the reply drops back to its own place in the thread. It costs nothing more to play.`,
+    `A Pepperoni card, ${lineCutter.rarity}. You write a reply with it, and the reply is drawn right under the post you play it on, on that post's page, however many replies come after. It is a post like any other: it can be quoted, reacted to and played on. One fits under a post. It is only ever cast face up. If an admin ends the card, the reply drops back to its own place in the thread. It costs nothing more to play.`,
   logPlay: () => 'It put a reply right under the post.',
 };

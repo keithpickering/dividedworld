@@ -27,7 +27,7 @@ export const ui: CardUi = {
   Effect: ThisEffect,
   ConfigForm: ThisConfigForm,
   describe: () =>
-    `A Pepperoni card, ${thisCard.rarity}. You choose words in a post, and the post gets a note under them: THIS, an arrow, and up to ${THIS_WORDS.most} characters of your own after it, or none. The note names nobody; the Lens says who played it. Up to ${thisCard.stack} fit on a post, and they stay. If the author edits the words out, the note moves to the foot of the post and quotes them. ${setMoveWords('the quoting post')} A set one lands only when the quote's own words hold its phrase. It costs nothing more to play than its price at the machine.`,
+    `A Pepperoni card, ${thisCard.rarity}. You choose words in a post, and the post gets a note under them: THIS, an arrow, and up to ${THIS_WORDS.most} characters of your own after it, or none. The note names nobody; the Lens says who played it. Up to ${thisCard.stack} fit on a post, and they stay. If the author edits the words out, the note moves to the foot of the post and quotes them. ${setMoveWords('the quoting post')} A set one lands only when the quote's own words hold its phrase. It costs nothing more to play.`,
   logPlay: (config) => {
     const { phrase, words } = config as Partial<ThisConfig>;
     return `It pointed at “${phrase ?? ''}” and wrote “THIS${words ? ` ${words}` : ''}”.`;

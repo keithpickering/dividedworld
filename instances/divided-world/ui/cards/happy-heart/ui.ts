@@ -19,6 +19,6 @@ export const ui: CardUi = {
   hint: "A Happy Heart took warn points off a character's bar.",
   describe: (settings: Settings) => {
     const lightest = Math.min(...Object.values(settings.warnBar.bands));
-    return `A Sweet card, ${happyHeart.rarity}, cast from any post by the character it lands on. It takes the oldest ${lightest} warn point${lightest === 1 ? '' : 's'} off that character's warn bar at once, as many as the lightest breach lands, or as many as are left. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`;
+    return `A Sweet card, ${happyHeart.rarity}, cast from any post by the character it lands on. It takes the oldest ${lightest} warn point${lightest === 1 ? '' : 's'} off that character's warn bar at once, as many as the lightest breach lands, or as many as are left. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`;
   },
 };

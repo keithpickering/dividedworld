@@ -12,7 +12,7 @@ export const ui: CardUi = {
   art: { color: '#ff3d7f', ink: '#14030a', canvas: lastWordCanvas, mark: lastWordMark, credit: lastWordArt.credit, tagline: 'Stop quotes of your post.' },
   summary: `Used on your post. Nobody can quote it for ${spanWords(lastWord.lasts!)}.`,
   status: 'Stopping quotes of this post',
-  describe: (settings: Settings) =>
-    `A Salty card, ${lastWord.rarity}, used on one of your own posts. For ${spanWords(lastWord.lasts!)}, a post that quotes it is refused before it is written, for everyone alike, you included; a reply without the quote always goes through. Quotes made before it was played stay as they are. It cannot share a post with a card set face down: take that card back first, and no card can be set face down there until it ends. It costs nothing more to use.`,
+  describe: (_settings: Settings) =>
+    `A Salty card, ${lastWord.rarity}, used on one of your own posts. For ${spanWords(lastWord.lasts!)}, a post that quotes it is refused before it is written, for everyone alike, you included; a reply without the quote always goes through. It cannot share a post with a card set face down: take that card back first, and no card can be set face down there until it ends. It costs nothing more to use.`,
   logPlay: () => 'Nobody can quote that post until it ends.',
 };
