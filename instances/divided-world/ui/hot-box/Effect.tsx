@@ -955,12 +955,18 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
   const [airedWords, setAiredWords] = useState('');
   const airedBand = airedTop(saved, frame.h);
   useLayoutEffect(() => {
-    const words = wordsRef.current;
-    if (waved || airedBand <= 0 || !words || frame.wh <= 0) { setAiredWords(''); return; }
+    const words = wordsRef.current, here = hostRef.current, grid = here ? rowOf(here) : null;
+    if (waved || airedBand <= 0) { setAiredWords(''); return; }
+    /* In a row the postbit's lines inside the band are read out with the words': the row's own lines. */
+    if (grid && here) {
+      setAiredWords(rowLines(here, grid).filter((l) => l.bottom <= airedBand + BAND_SLOP_PX).map((l) => l.text).join(' '));
+      return;
+    }
+    if (!words || frame.wh <= 0) { setAiredWords(''); return; }
     const read = readLines(words, { w: frame.ww, h: frame.wh });
     const lines = read.filter((l) => px(l.bottom * frame.wh + frame.wy) <= airedBand + BAND_SLOP_PX);
     setAiredWords(lines.map((l) => l.text).join(' '));
-  }, [waved, airedBand, frame.ww, frame.wh, frame.wy, children]);
+  }, [waved, airedBand, frame.w, frame.ww, frame.wh, frame.wy, children]);
 
   /* ---- what the reader is shown, and what the Lens is told ---- */
   const m = model.current;
@@ -970,7 +976,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
   const part = airedTop(saved, 1) > 0;
   const state = waved ? STATE_WAVED : held ? (m.sweep?.air ? STATE_AIRING : STATE_WAVING) : part ? STATE_PART : STATE_SMOKE;
   const endNote = play.ends === undefined ? '' : ` ${endsWords(play.ends, fixedAt ?? at)}.`;
-  const endsText = `${!author ? ENDS_READER : holding ? `You can air it out for good in ${holdLeft(until! - clock)}. Until then, point at the words, or hold ${WAVE_LABEL}, to read.` : ENDS_AUTHOR}${endNote}`;
+  const endsText = `${!author ? ENDS_READER : holding ? `You can air it out for good in ${holdLeft(until! - clock)}. Until then, point at the smoke, or hold ${WAVE_LABEL}, to read.` : ENDS_AUTHOR}${endNote}`;
   const progress = Math.round((1 - s) * 100) / 100;
   /* The control the Lens is given, which the in-body line names. */
   const control = airing ? AIR_LABEL : WAVE_LABEL;
@@ -997,24 +1003,27 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
    * In a row the words are the engine's, outside this effect's tree, so what it does to them it does on the element: inert while the smoke stands, and under forced colors the mask. It is single-owner, as `markBrightInk` is,
    * and given up when the effect goes or finds the words elsewhere. Nothing else of the post is touched: the postbit stays pressable under the smoke.
    */
-  const lent = useRef<HTMLElement | null>(null);
+  /* What was lent, and so what is taken back: the element, whether Hot Box set its `inert` (words already inert are not its to free) and whether it laid a mask. */
+  const lent = useRef<{ el: HTMLElement; inerted: boolean; masked: boolean } | null>(null);
   const giveUp = useCallback(() => {
-    const el = lent.current;
+    const was = lent.current;
     lent.current = null;
-    if (!el) return;
-    el.removeAttribute('inert');
-    maskWords(el, undefined);
+    if (!was) return;
+    if (was.inerted) was.el.removeAttribute('inert');
+    if (was.masked) maskWords(was.el, undefined);
   }, []);
+  /* Run after every render, because the engine may replace the words box between renders; it writes only what changed. */
   useLayoutEffect(() => {
     const here = hostRef.current, grid = here ? rowOf(here) : null;
     if (ownWords || !grid) return;
     const el = rowWordsOf(grid);
-    if (lent.current && lent.current !== el) giveUp();
+    if (lent.current && lent.current.el !== el) giveUp();
     wordsRef.current = el;
     if (!el) return;
-    lent.current = el;
-    el.toggleAttribute('inert', !waved);
-    maskWords(el, mask);
+    const mine = lent.current ?? (lent.current = { el, inerted: false, masked: false });
+    if (!waved && !el.hasAttribute('inert')) { el.setAttribute('inert', ''); mine.inerted = true; }
+    else if (waved && mine.inerted) { el.removeAttribute('inert'); mine.inerted = false; }
+    if (mask || mine.masked) { maskWords(el, mask); mine.masked = mask !== undefined; }
   });
   useLayoutEffect(() => giveUp, [giveUp]);
 

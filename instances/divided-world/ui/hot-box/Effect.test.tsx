@@ -103,6 +103,8 @@ let AREA = BOX;
 let OUTER: typeof BOX | null = null;
 /** The economy's `hotBox.holdHours` on the screens: the hours the author's saves are held. */
 let HOLD_HOURS = 24;
+/** Whether the row harness's words box starts out inert (what Hot Box lends is then not its own). */
+let PRE_INERT = false;
 
 const recs = new WeakMap<HTMLCanvasElement, Rec>();
 const ctxs = new WeakMap<HTMLCanvasElement, unknown>();
@@ -214,7 +216,7 @@ function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, ne
       <div className="kb-act-grid">
         <div className="kb-row-layer">{effect}</div>
         <aside className="kb-postbit"><a className="postbit-link" href="https://example.com/spritey">Spritey</a></aside>
-        <div className="kb-act-main" data-kb-content-area><div className="kb-row-words" data-kb-words-box>{props.children}</div></div>
+        <div className="kb-act-main" data-kb-content-area><div className="kb-row-words" data-kb-words-box {...(PRE_INERT ? { inert: true } : {})}>{props.children}</div></div>
       </div>
     </article>
   );
@@ -2265,9 +2267,9 @@ describe('the author airs it out', () => {
   test('the author sees Wave the smoke during the hold, with the countdown, then Air it out once the clock passes it, with no reload', () => {
     const s = setup({ reader: AUTHOR, plays: [{ ...endless(0), playedAt: iso(NOW - (24 * 60 - 312) * 60_000) }] });
     expect(label(s)).toBe('Wave the smoke');
-    expect(last(s).ends).toBe('You can air it out for good in 5h 12m. Until then, point at the words, or hold Wave the smoke, to read.');
+    expect(last(s).ends).toBe('You can air it out for good in 5h 12m. Until then, point at the smoke, or hold Wave the smoke, to read.');
     pass(HOUR, 60_000);
-    expect(last(s).ends).toBe('You can air it out for good in 4h 12m. Until then, point at the words, or hold Wave the smoke, to read.');
+    expect(last(s).ends).toBe('You can air it out for good in 4h 12m. Until then, point at the smoke, or hold Wave the smoke, to read.');
     pass(4 * HOUR + 11 * 60_000, 60_000);
     expect(label(s)).toBe('Wave the smoke');
     pass(2 * 60_000, 60_000);
@@ -2655,8 +2657,79 @@ describe('over the row', () => {
     expect(rowWords(s).hasAttribute('inert')).toBe(true);
     expect(s.container.querySelector('.kb-postbit')!.hasAttribute('inert')).toBe(false);
     expect(s.container.querySelector('.dw-hotbox-words'), 'the effect draws no words of its own in the row').toBeNull();
+    /* The words are the engine's and outlive the effect: what was lent is given back on them. */
+    const el = rowWords(s);
     s.unmount();
-    expect(rowWords(s) ?? null).toBeNull();
+    expect(el.hasAttribute('inert')).toBe(false);
+    expect(el.style.maskImage).toBe('');
+  });
+
+  test('inert is given back when the play ends, with the words still in the post', () => {
+    const s = rowSetup({ plays: [play({ ends: iso(NOW + 1000) })] });
+    const el = rowWords(s);
+    expect(el.hasAttribute('inert')).toBe(true);
+    pass(2000);
+    expect(el.hasAttribute('inert'), 'the smoke is over').toBe(false);
+  });
+
+  test('a words box the engine replaces mid-play is the one made inert, and the old one is given back', () => {
+    const s = rowSetup();
+    const old = rowWords(s);
+    const next = document.createElement('div');
+    next.className = 'kb-row-words';
+    next.setAttribute('data-kb-words-box', '');
+    old.replaceWith(next);
+    sizes = { ...BOX, height: 500 };
+    act(() => { for (const f of sizeWatchers) f(); });
+    expect(next.hasAttribute('inert')).toBe(true);
+    expect(old.hasAttribute('inert')).toBe(false);
+  });
+
+  test('only what Hot Box lent is taken back: words that were inert before it stay so', () => {
+    PRE_INERT = true;
+    const s = rowSetup();
+    const el = rowWords(s);
+    s.unmount();
+    PRE_INERT = false;
+    expect(el.hasAttribute('inert')).toBe(true);
+  });
+
+  test('a shut cover over the row: the smoke inside is covered and does nothing until it opens', () => {
+    stubObserver();
+    const s = rowSetup({ covered: true });
+    act(() => { watch!([{ target: grid(s), isIntersecting: true, intersectionRatio: 1 }]); });
+    expect(s.met, 'a covered post is out of view').not.toHaveBeenCalled();
+    act(() => { cover(false); });
+    expect(s.met).toHaveBeenCalledTimes(1);
+  });
+
+  test('a postbit line and a words line that end together are one row of the sweep, with both their words', async () => {
+    /* 221 of 700 is within ROW_MERGE_PX of the words' first line's 220. */
+    read.postbit = [{ top: 0.1, bottom: 221 / 700, text: 'Spritey' }];
+    const save = accepted();
+    const s = rowSetup({ reader: AUTHOR, plays: [endless(30)], save });
+    press(s);
+    pass(2100);
+    expect(readout(s)).toBe('First line of the post. Spritey');
+    pass(2000);
+    await settled();
+    expect(save.mock.calls[0], 'one row to 220, not two').toEqual(['h1', { aired: 0.3143 }]);
+  });
+
+  test('the screen reader is told the postbit\'s lines inside the aired band with the words\'', () => {
+    read.postbit = [{ top: 0.1, bottom: 0.2, text: 'Spritey' }];
+    const s = rowSetup({ states: { h1: { state: { aired: 0.5 }, savedAt: iso(NOW) } }, plays: [endless(30)] });
+    expect(way(s)!.textContent).toBe(`Spritey First line of the post. ${smokedRestWay('Wave the smoke')}`);
+  });
+
+  test('under forced colors the mask is laid on the words and taken off them with the effect', () => {
+    forced = true;
+    const s = rowSetup();
+    const el = rowWords(s);
+    expect(el.style.maskImage, 'the flat layer of smoke over the words').toContain('linear-gradient');
+    s.unmount();
+    expect(el.style.maskImage).toBe('');
+    expect(el.style.maskSize).toBe('');
   });
 
   test('a reader\'s pointer over the postbit parts the smoke there, and leaving the row closes the clearing', () => {
