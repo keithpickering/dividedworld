@@ -189,7 +189,7 @@ describe('My log', () => {
     expect(first).toHaveAttribute('data-kb-estimate');
     const [when, what, details, aura, wallet] = cells(first!);
     expect([when, what, aura, wallet]).toEqual(['Oct 29 · 11:05', 'Estimate', 'up to +0.10', '—']);
-    expect(details).toBe('A Hype reaction on your post #3. It counts at the next settlement, before the shared vote and halving. Who reacted is never shown.');
+    expect(details).toBe('A Hype reaction on your post #3. It counts at the next settlement, before the settlement\'s own adjustments. Who reacted is never shown.');
     expect(within(first!).getByRole('link', { name: 'your post #3' })).toHaveAttribute('href', expect.stringMatching(/#post-3$/u));
   });
 
@@ -632,12 +632,12 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     void hoo;
   });
 
-  test('a card played: as which character, on whose post, and what the post added past the card, paid for at the machine', async () => {
+  test('a card played: as which character, on whose post, and what the post added past the card', async () => {
     const { fake, me, pipe, g1 } = cardWorld();
     fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 25 });
     await show(fake, me, pipe);
     const [row] = await rowsOf();
-    expect(row).toEqual(['Oct 28 · 13:00', 'You played Whoops!', 'As Pipewrench, on Gloomba\'s post #1. The card was paid for at the machine; this post added 0.25.', '−0.25', '2.75']);
+    expect(row).toEqual(['Oct 28 · 13:00', 'You played Whoops!', 'As Pipewrench, on Gloomba\'s post #1. This play cost 0.25 more.', '−0.25', '2.75']);
     expect(within(bodyRows()[0]!).getByRole('link', { name: 'Gloomba\'s post #1' })).toHaveAttribute('href', expect.stringMatching(/#post-1$/u));
   });
 
@@ -645,14 +645,14 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     const { fake, me, pipe, g1 } = cardWorld();
     fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 0 });
     await show(fake, me, pipe);
-    expect((await rowsOf())[0]!.slice(2)).toEqual(['As Pipewrench, on Gloomba\'s post #1. The card was paid for at the machine; this play cost nothing more.', '0.00', '—']);
+    expect((await rowsOf())[0]!.slice(2)).toEqual(['As Pipewrench, on Gloomba\'s post #1. This play cost nothing more.', '0.00', '—']);
   });
 
-  test('a play on one of the player\'s own characters\' posts says so, and is in both characters\' tabs', async () => {
+  test('a play on one of the player\'s own characters\' posts is in both characters\' tabs', async () => {
     const { fake, me, pipe, hoo, h3 } = cardWorld();
     fake.seed.card(pipe, h3, 'whoops', { at: at(28, 13), paid: 0 });
     await show(fake, me, pipe);
-    expect((await rowsOf())[0]![2]).toBe('As Pipewrench, on Mrs. Hooligan\'s post #3, a post of one of your own characters. The card was paid for at the machine; this play cost nothing more.');
+    expect((await rowsOf())[0]![2]).toBe('As Pipewrench, on Mrs. Hooligan\'s post #3. This play cost nothing more.');
     fireEvent.click(tab('Mrs. Hooligan'));
     expect(bodyRows().map(cells)[0]![1]).toBe('You played Whoops!');
     void hoo;
@@ -710,7 +710,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     const text = rows.map((r) => r.join(' ')).join(' ');
     expect(text).not.toMatch(/undefined|retired-card|null/u);
     expect(rows.find((r) => r[1] === 'A card on your post')![2]).toBe('Gloomba played a card on your post #2.');
-    expect(rows.find((r) => r[1] === 'You played Whoops!')![2]).toBe('As one of your characters, on a post. The card was paid for at the machine; this play cost nothing more.');
+    expect(rows.find((r) => r[1] === 'You played Whoops!')![2]).toBe('As one of your characters, on a post. This play cost nothing more.');
   });
 
   test('a release from Stick Around is reading, and the log does not track it', async () => {

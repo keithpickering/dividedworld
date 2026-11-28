@@ -61,7 +61,7 @@ That map is the whole game. Most classes are paid by some corners of it and hurt
 - You can leave up to {{setting:reactionCap}} reactions on a post, counted across all of your characters, not per mask.
 - Your reactions on a post share one vote. Leave one and it carries the whole vote; leave more and they split it.
 - Your characters can't react to each other's posts. Yes, we thought of that.
-- A reaction waits a few seconds before it's sent, and the tile shows the wait. Press it again in that time and it's undone, with nothing sent. After that it's in, so pick like you mean it.
+- A reaction waits a few seconds before it's sent. Press it again in that time and it's undone, with nothing sent. After that it's in, so pick like you mean it.
 - The tallies are public. Who left them isn't shown to any player, and that includes the one who wrote the post.
 
 ## Aura
@@ -75,9 +75,9 @@ Aura is the score and also the money, which I'm told is how the real economy wor
 
 ### The settlement
 
-Aura doesn't land the moment somebody reacts. It lands at the **settlement**, and settlements are {{setting:settlementLength}} apart. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of the ghost as a forecast and the settlement as the weather. The first time you load the board after a settlement that scored you, a summary opens by itself.
+Aura doesn't land the moment somebody reacts. It lands at the **settlement**, and settlements are {{setting:settlementLength}} apart. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of the ghost as a forecast and the settlement as the weather.
 
-The forecast always says **up to**, because it can count reactions the settlement won't. It counts every reaction as if anybody could have left it, while the settlement never pays a player for reacting to their own cards and characters. It also skips the shared vote and the halving. The settlement is exact. The forecast is me squinting.
+The forecast always says **up to**, because it can count reactions the settlement won't. It counts every reaction as if anybody could have left it, while the settlement never pays a player for reacting to their own cards and characters. It also skips a few adjustments the settlement makes. The settlement is exact. The forecast is me squinting.
 
 A few cards pay their player a share of a vote at the settlement, whatever anybody's class, and never out of another player's Aura.
 
@@ -135,7 +135,7 @@ Everything you buy or open goes into your **hand**, which all of your characters
 
 ### Playing them
 
-Open your hand, arm a card, and pick where it lands: every place it can land lights up. Add a message if you like, and play it as your current character.
+Open your hand, arm a card, and pick where it lands. Add a message if you like, and play it as your current character.
 
 A played card is an Act of its own. It shows on the post as a **mark**. Press the mark to open the **Lens**, where anyone can read what the card is doing and how it ends, react to it, and spin a thread from it.
 
@@ -152,7 +152,7 @@ A few cards in that table talk about warn bars and Mod Bot visits. The staff are
 Three things printed on every card are worth knowing:
 
 - **Sweet, Salty, Pepperoni.** A card's flavor says which side of the line the play is on. Sweet is babyface work, Salty is heel work: a Sweet Move helps, a Salty one gets in the way; a Sweet Reversal is a clean save, a Salty one a dirty counter; a Sweet Gimmick rewards clean play, a Salty one underhanded play. Pepperoni could go either way, and at the settlement the room decides which, by how it reacted. If the room can't decide, it stays Pepperoni. The room is everybody except whoever cast the card and, for a card on a post, whoever wrote that post.
-- **Move, Reversal, Gimmick.** There are three kinds of card, and the frame shows which: a Move's is solid, a Reversal's is doubled with a folded corner, and a Gimmick's is dashed like a ticket.
+- **Move, Reversal, Gimmick.** There are three kinds of card, and the frame shows which.
   A **Move** is cast on a target. Many Moves can also be set face down on your own post, to spring on whoever quotes it; the card says if it can.
   A **Reversal** is only ever set face down on your own post, and springs once on something aimed at that post: a cast it names, or matches by flavor or rarity, or a Mod Bot's visit. Some Reversals catch the cast they spring on. Others let it land and do something else: pay their setter for the reactions it draws, hand the card back to whoever played it, or lock that player out of the thread for a while.
   A **Gimmick** is played face up on your own post, your own character, or a thread your own character started, and lasts a stated time.
@@ -166,9 +166,9 @@ A Move set with no conditions springs on the first quote of your post, from anyo
 
 - **Says.** The quoting post's own words contain a phrase you type.
 - **Quotes.** What the quote holds of your post contains a passage you pick from it. Highlight it in your post's text when you set the card, or type it.
-- **Who.** **Anyone**, **Only these** or **Anyone but these**. The last two take a short list of characters. You can name any character you can search for, your own other masks included. A retired character can be named too, but it can't match while it's retired.
+- **Who.** **Anyone**, **Only these** or **Anyone but these**. The last two take a short list of characters. You can name any character you can search for, your own other masks included.
 
-A phrase or passage is short, and the form tells you how short. A Reversal takes no conditions. A few cards, Autocorrect, THIS and Laugh Track among them, wait for the phrase you gave the card itself, so Says is filled in from it and can't be changed.
+A Reversal takes no conditions. A few cards, Autocorrect, THIS and Laugh Track among them, wait for the phrase you gave the card itself, so Says is filled in from it and can't be changed.
 
 **How a phrase matches.** Says, the passage and the cards with a phrase of their own all use the same looser matching, so you only learn it once:
 
@@ -176,12 +176,11 @@ A phrase or passage is short, and the form tells you how short. A Reversal takes
 - Punctuation inside a word is ignored, so "dont" matches "don't".
 - Between words, any spaces and punctuation are alike, so "nice try" matches "Nice... try!".
 - Whole words only. "don" doesn't match inside "don't", and "nice try" doesn't match "nice-try".
-- Punctuation at the very ends of your phrase is ignored, so "wow!" matches "wow".
-- A phrase never matches across a line break, or across the edge of a quote, or through code, a link or an image.
+- A phrase never matches across a line break, or across the edge of a quote.
 
 **Highlight to quote.** Select words inside one post and press **Quote** beside the selection, and only those words are quoted. That's how you quote a passage on purpose. The old way still works, and it's the keyboard route: quote the whole post, then trim the quote in the reply box.
 
-**What everyone sees.** Your conditions are yours, and no other player can read them while the card is set. When the card springs, the Lens shows what matched: the phrase, the passage, and who quoted if you used Only these. It never shows an Anyone but list, so no other player learns who you spared. A card nothing meets ends by itself when its time is up (the card's own words say when), so a trap that can no longer be sprung isn't a trap you're stuck in.
+**What everyone sees.** Your conditions are yours, and no other player can read them while the card is set. When the card springs, the Lens shows what matched: the phrase, the passage, and who quoted. It never shows an Anyone but list, so no other player learns who you spared. A card nothing meets ends by itself when its time is up (the card's own words say when), so a trap that can no longer be sprung isn't a trap you're stuck in.
 
 ## The masks
 

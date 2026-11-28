@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, test } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { Guide } from '../../../engine/ui/guide/Guide.tsx';
+import { renderInWorld, testInstance } from '../../../engine/ui/test-world.tsx';
 import { ratio } from '../../../engine/ui/contrast.ts';
 import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
@@ -267,7 +270,8 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(lineCutter.replies).toBe(true);
     expect(lineCutter.lasts).toBeUndefined();
     expect(t.describe).toContain('It is only ever cast face up.');
-    expect(t.describe).toContain('One fits under a post, and a reply that cut in takes none under it.');
+    expect(t.describe).toContain('One fits under a post.');
+    expect(t.describe).not.toContain('takes none under it');
   });
   test("Feelin' Glam's words say its rarity, its span and Feelin' Fab's three, from the rules, and it draws through Feelin' Fab", () => {
     const t = face('feelin-glam');
@@ -281,7 +285,8 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(feelinGlam.keeps).toBe(true);
     expect(feelinFab.stack).toBe(3);
     expect(t.summary).toBe("Cast on a thread. Every post there gets one more level of Feelin' Fab's rainbow for a week, and posts written in that time keep it.");
-    expect(t.describe).toMatch(/^A Sweet card, rare, cast on a thread from its title\. For a week, every post in the thread is drawn with one more level of Feelin' Fab's rainbow, up to Feelin' Fab's three: /u);
+    expect(t.describe).toMatch(/^A Sweet card, rare, cast on a thread from its title\. For a week, every post in the thread is drawn with one more level of Feelin' Fab's rainbow, up to Feelin' Fab's three\. It takes none/u);
+    expect(t.describe).not.toContain('make the full prism');
     expect(t.describe).toContain("It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level after it; every other post loses it when the time is up. If an admin ends the card, every post loses the level. One fits on a thread at a time.");
     expect(ui.hint).toBe("A Feelin' Glam: every post in this thread glows one level more.");
     expect(typeof ui.status === 'function' && [ui.status([{} as never]), ui.status([])]).toEqual(['One more rainbow level here', 'Kept by posts from its week']);
@@ -353,7 +358,7 @@ describe('Required Reading\'s face and sheet', () => {
     expect(entry!.summary).toBe('Used on your post. For a week, each calm positive vote on it pays a vote more.');
     expect(entry!.status).toBe('Paid more for calm positive votes');
     expect(entry!.describe(instance.settings)).toBe(
-      'A Sweet card, common, used on one of your own posts. For a week, each calm positive vote on that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts votes from players who first react to a post while it is up. A post carries one at a time. Where two cards pay on the same vote, only the larger pays. It costs nothing more to use.',
+      'A Sweet card, common, used on one of your own posts. For a week, each calm positive vote on that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts votes from players who first react to a post while it is up. A post carries one at a time. It costs nothing more to use.',
     );
     expect(entry!.logPlay!({}, {})).toBe('Each calm positive vote on that post pays up to a vote more until it ends.');
     expect('Effect' in entry!, 'no Effect').toBe(false);
@@ -619,7 +624,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(surcharge({ ...instance.settings, economy: { ...instance.settings.economy, 'laughTrack.perPlace': 10 } })).toBe('Many places, +0.10 per place past 5');
     expect(surcharge({ ...instance.settings, economy: { ...instance.settings.economy, 'laughTrack.freePlaces': undefined as never } })).toBe('Many places, +0.05 per place past 0');
     const said = ui.describe(instance.settings);
-    expect(said).toBe(`A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience stirs as a reader gets close and the phrase's underline fades in. Pointing at the phrase, tapping it, or pressing Enter on it plays the reaction. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`);
+    expect(said).toBe(`A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, a reader can set the audience off. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`);
     // True to the rules, each claim in the words tied to the rule that makes it so.
     const post = (text: string) => ({ reach: 'post', act: 'p1', kind: 'post', length: text.length, text, links: [] } as never);
     const cueOf = (phrase: string, sound: string) => ({ phrase, sound });
@@ -664,7 +669,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ui.logPlay!({ phrase: 'the same old', words: 'again' }, {} as never)).toBe('It pointed at “the same old” and wrote “THIS again”.');
     expect(ui.logPlay!({ phrase: 'the same old', words: '' }, {} as never)).toBe('It pointed at “the same old” and wrote “THIS”.');
     const said = ui.describe(instance.settings);
-    expect(said).toBe(`A Pepperoni card, ${thisCard.rarity}. You choose words in a post, and the post gets a note under them: THIS, an arrow, and up to ${THIS_WORDS.most} characters of your own after it, or none. The note names nobody; the Lens says who played it. Up to ${thisCard.stack} fit on a post, and they stay. If the author edits the words out, the note moves to the foot of the post and quotes them. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. A set one lands only when the quote's own words hold its phrase. It costs nothing more to play than its price at the machine.`);
+    expect(said).toBe(`A Pepperoni card, ${thisCard.rarity}. You choose words in a post, and the post gets a note under them: THIS, an arrow, and up to ${THIS_WORDS.most} characters of your own after it, or none. The note names nobody; the Lens says who played it. Up to ${thisCard.stack} fit on a post, and they stay. If the author edits the words out, the note moves to the foot of the post and quotes them. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. A set one lands only when the quote's own words hold its phrase. It costs nothing more to play.`);
     expect(THIS_WORDS.most).toBe(60);
     expect(thisCard.stack).toBe(3);
   });
@@ -679,7 +684,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ui.hint).toBe('Point at the words to part the smoke.');
     expect(ui.Effect).toBeDefined();
     expect(ui.ConfigForm).toBeDefined();
-    const body = (thins: string, air: string) => `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. Over ${thins} it thins to a haze, and the haze stays. ${air} One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`;
+    const body = (thins: string, air: string) => `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read until a reader waves it away, and the smoke rolls back in. It is the same for every reader, the post's author and you included. Over ${thins} it thins to a haze, and the haze stays. ${air} One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`;
     expect(instance.settings.economy['hotBox.holdHours']).toBe(24);
     expect(ui.describe(instance.settings)).toBe(body(spanWords(HOT_BOX_THINS), "24 hours after it lands, the post's author can hold Air it out to clear it line by line for good, and once it is all aired out the post can be smoked again."));
     expect(ui.describe(instance.settings)).toContain('Over 3 days it thins to a haze, and the haze stays.');
@@ -756,7 +761,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.hint).toBe('Lift a strip by one end to read what is under it.');
     const said = ac.describe(instance.settings);
     expect(said).toContain('A Pepperoni card');
-    expect(said).toContain("Any reader can lift a strip by one end to read under it, and it lays back down. Only the post's author can peel strips off, slowly, for everyone and press a started peel back down, and the author's words are always under the tape and in the post's History. The author can't peel any of a play's tape for the first 24 hours after it lands.");
+    expect(said).toContain("Any reader can lift a strip to read under it. Only the post's author can peel strips off for everyone, and the author's words are always under the tape and in the post's History. The author can't peel any of a play's tape for the first 24 hours after it lands.");
     expect(said).toContain('0.25 more for every 50 characters it covers');
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.holdHours': 0 } })).not.toContain("can't peel any");
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.volumeStep': 40 } })).toContain('every 40 characters');
@@ -764,7 +769,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.logPlay!({ phrase: 'Mario', replacement: 'Luigi' }, {})).toBe('It covers “Mario” with “Luigi”.');
     expect(ac.logPlay!({}, {})).toBeUndefined();
     expect(ac.logSave!({ peeled: [0, 2] })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
-    expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip it had then. An edit that brings the phrase back brings a strip with it.' });
+    expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip it had then.' });
     expect(ac.logSave!({ peeled: [] })).toBeUndefined();
     const one = [[0, 0.5, 0]];
     expect(ac.logSave!({ peeled: [0, 2], stuck: { '1': one, '3': one } })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips, and started on 2 more.' });
@@ -811,7 +816,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const saved = rows.find((r) => r.kind === 'saved')!;
     const said = saved.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
     expect(said).not.toMatch(/nothing now/u);
-    expect(said).toContain('An edit that brings the phrase back brings a strip with it.');
+    expect(said).toContain('You peeled every strip it had then.');
+    expect(said).not.toContain('An edit that brings the phrase back');
   });
   test('the Lurker counts its posts per settlement window and says the span in force (#179)', () => {
     const lurker = instanceUi.classLooks.lurker!;
@@ -1210,17 +1216,18 @@ describe('the Happy Hearts, Take the Fall and Tattle-Tale in plain words (card n
 
   test('each rules\' words are the plan\'s, true at Divided World\'s settings, and read their numbers from the rules and the settings', () => {
     const say = (k: string, s = instance.settings) => ui(k)!.describe(s);
-    expect(say('happy-heart')).toBe(`A Sweet card, ${rules('happy-heart').rarity}, cast from any post by the character it lands on. It takes the oldest 2 warn points off that character's warn bar at once, as many as the lightest breach lands, or as many as are left. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`);
-    expect(say('super-happy-heart')).toBe(`A Sweet card, ${rules('super-happy-heart').rarity}, cast from any post by the character it lands on. It takes every point off that character's warn bar at once. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`);
-    expect(say('ultra-happy-heart')).toBe(`A Sweet card, ${rules('ultra-happy-heart').rarity}, cast from any post by a banned character. It ends that character's ban at once: the character can post, react and play cards again from that moment. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. A banned character cannot play cards, so another character plays it: anyone's, one of your own included. It is always cast face up. It costs nothing more to play.`);
+    expect(say('happy-heart')).toBe(`A Sweet card, ${rules('happy-heart').rarity}, cast from any post by the character it lands on. It takes the oldest 2 warn points off that character's warn bar at once, as many as the lightest breach lands, or as many as are left. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`);
+    expect(say('super-happy-heart')).toBe(`A Sweet card, ${rules('super-happy-heart').rarity}, cast from any post by the character it lands on. It takes every point off that character's warn bar at once. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`);
+    expect(say('ultra-happy-heart')).toBe(`A Sweet card, ${rules('ultra-happy-heart').rarity}, cast from any post by a banned character. It ends that character's ban at once. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. Any character that isn't banned can play it, one of your own included. It is always cast face up. It costs nothing more to play.`);
     expect(say('take-the-fall')).toBe(`A Sweet card, ${rules('take-the-fall').rarity}, cast face up on a post by another character. The next time a Mod Bot's visit to that post files, its warn points land on the character that played this card instead of the post's author, and a ban they bring is that character's too. Only the points and the ban move: the post keeps its notice. One fits on a post. It waits until a visit files, the first filing uses it up, and it can be played while a visit is open. The character that took the fall can appeal the filing. It costs nothing more to play.`);
-    expect(say('tattle-tale')).toBe(`A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For a week, when a Mod Bot's patrol picks which recent posts to look at, that character's posts count double in the draw, so they are more likely to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and a patrol still drops a finding against a character staff has already punished 3 times in the last 7 days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`);
+    expect(say('tattle-tale')).toBe(`A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For a week, when a Mod Bot's patrol picks which recent posts to look at, that character's posts count double in the draw, so they are more likely to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`);
     // The lightest band is the least of the three, in whatever order the settings hold them; one point is "1 warn point".
     expect(say('happy-heart', bands(5, 3, 9))).toContain('the oldest 3 warn points off');
     expect(say('happy-heart', bands(1, 3, 9))).toContain('the oldest 1 warn point off');
     expect(say('super-happy-heart', bands(5, 3, 9))).not.toMatch(/\d warn point/u);
-    // The targeting cap is the settings'.
-    expect(say('tattle-tale', cap(2, 14))).toContain('already punished 2 times in the last 14 days');
+    // The targeting cap is the settings' but is not said: the card says only what a patrol weighs.
+    expect(say('tattle-tale', cap(2, 14))).not.toMatch(/punished|14 days/u);
+    expect(say('tattle-tale', cap(2, 14))).toContain('the Mod Bot still judges each post against the rules.');
     retuned(tattleTale, 'lasts', { unit: 'day', count: 3 }, () => expect(say('tattle-tale')).toContain('For 3 days, when a Mod Bot'));
     for (const k of KEYS) {
       expect(say(k), k).not.toMatch(/set it face down|You can also set/u);
@@ -1462,7 +1469,7 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(status([open, before])).toBe('Scoring as a Heel now');
     expect(status([play({ class: 'face' }, { starts: soon, ends: later })])).toBe('Scores as a Face next window');
     expect(ui('off-day').hint).toBe('An Off Day makes a character score as another class for one settlement window.');
-    expect(ui('off-day').describe(instance.settings)).toBe('A Salty card, legendary, cast from any post by the character it lands on. You name a class, and everyone can see which. From the next settlement until the one after it, that character is scored as that class, whatever its own. Its own class does not change, no Turn is used and its Turn cooldown is untouched. You are never told whether it made a difference; the character\'s player is told exactly what happened. A character takes one Off Day for each window. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post\'s character at no further cost, using up the card. It costs nothing more to play.');
+    expect(ui('off-day').describe(instance.settings)).toBe('A Salty card, legendary, cast from any post by the character it lands on. You name a class, and everyone can see which. From the next settlement until the one after it, that character is scored as that class, whatever its own. Its own class does not change and no Turn is used. You are never told whether it made a difference; the character\'s player is told exactly what happened. A character takes one Off Day for each window. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post\'s character at no further cost, using up the card. It costs nothing more to play.');
     expect(ui('off-day').logPlay!({ class: 'tweener' }, { starts: '2026-11-12T08:17:00.000Z', ends: '2026-11-13T08:17:00.000Z' }))
       .toBe('From the settlement of Nov 12 \u00b7 08:17 UTC to the settlement of Nov 13 \u00b7 08:17 UTC, that character scores as a Tweener. Its own class does not change, no Turn is used, and its Turn cooldown is untouched.');
     expect(ui('off-day').logPlay!({ class: 'tweener' }, {})).toBeUndefined();
@@ -1668,7 +1675,7 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
   });
 
   test('its words read the stack from its rules', () => {
-    expect(chair.describe(instance.settings)).toBe('A Salty card, common. Something is thrown at a post and dents it, usually a folding chair, sometimes a trash can, a step ladder or a fire extinguisher: the words bend into the dent, and the thing drops to the floor under them. A trash can\'s lid flies off, and a fire extinguisher fills the post with spray that clears by itself in a few seconds. Once it lands it covers none of the words, and it holds nobody. It plays again each time the post scrolls into view, somewhere else each time, and with Game sounds on it clangs each time, unless motion is reduced. Up to 3 can stack on one post, each with its own dent, and they stay. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
+    expect(chair.describe(instance.settings)).toBe('A Salty card, common. Something is thrown at a post and dents it, and the words bend into the dent. Once it lands it covers none of the words, and it holds nobody. Up to 3 can stack on one post, each with its own dent, and they stay. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
   });
 
   test('it has an effect and no form', () => {
@@ -1679,7 +1686,7 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
 
 describe('the flat earn cards say their sizes in votes, from their rules', () => {
   const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
-  const tail = (key: string) => `whatever its class makes of that ${key === 'class-clown' ? 'reaction' : 'vote'}, and then it stops by itself. It counts votes from players who first react to a post while it is up.${key === 'class-clown' ? " A 😂 counts where it is the first excited, positive reaction its player leaves on that post, and a 🙄 where it is the first bored, negative one. If another excited, positive reaction came first, a later 😂 pays nothing, and the same goes for a 🙄 after another bored, negative one." : ''} Where two cards pay on the same vote, only the larger pays. It costs nothing more to use.`;
+  const tail = (key: string) => `whatever its class makes of that ${key === 'class-clown' ? 'reaction' : 'vote'}, and then it stops by itself. It counts votes from players who first react to a post while it is up.${key === 'class-clown' ? " A 😂 counts where it is the first excited, positive reaction its player leaves on that post, and a 🙄 where it is the first bored, negative one. If another excited, positive reaction came first, a later 😂 pays nothing, and the same goes for a 🙄 after another bored, negative one." : ''} It costs nothing more to use.`;
   test('Heat Magnet, Publicity Tour and Class Clown', () => {
     const cases: ReadonlyArray<readonly [string, string, string, string, string, string, string]> = [
       ['heat-magnet', 'each negative vote on its posts pays three quarters of a vote more', 'Each negative vote on that character\'s posts pays up to three quarters of a vote more until it ends.', 'A Salty card, uncommon', 'each negative vote (excited or bored) on its posts pays three quarters of a vote more', 'Earn more from negative votes.', 'Earns more from negative votes'],
@@ -1730,7 +1737,7 @@ describe('the flat earn cards say their sizes in votes, from their rules', () =>
     for (const c of instance.classes) expect(words, c.name).not.toContain(c.name.toLowerCase());
   });
   test('Hype-Up', () => {
-    expect(ui('hype-up').describe!(instance.settings)).toBe(`A Sweet card, common, cast on any post, yours or another's. For 3 days, each positive vote (excited or calm) on that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts votes from players who first react to a post while it is up. A post carries one at a time. It takes nothing from you. Where two cards pay on the same vote, only the larger pays. A Mod Bot earns nothing, so its posts gain nothing from one. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.`);
+    expect(ui('hype-up').describe!(instance.settings)).toBe(`A Sweet card, common, cast on any post, yours or another's. For 3 days, each positive vote (excited or calm) on that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts votes from players who first react to a post while it is up. A post carries one at a time. It takes nothing from you. A Mod Bot earns nothing, so its posts gain nothing from one. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.`);
   });
 });
 
@@ -1754,7 +1761,7 @@ describe('Sweet Heat, the fifth flat earn card, says its size in votes from its 
     expect(sweet.art.tagline).toBe('Earn more from excited votes.');
     expect(sweet.summary).toBe('Used on your own character. For 3 days, each excited vote on its posts, positive or negative, pays half a vote more.');
     expect(sweet.status).toBe('Paid more for excited votes');
-    expect(sweet.describe!(instance.settings)).toBe('A Pepperoni card, uncommon, used on your own character, the one playing it. For 3 days, each excited vote on its posts, positive or negative, pays half a vote more, whatever its class makes of that vote, and then it stops by itself. It counts votes from players who first react to a post while it is up. Where two cards pay on the same vote, only the larger pays. It costs nothing more to use.');
+    expect(sweet.describe!(instance.settings)).toBe('A Pepperoni card, uncommon, used on your own character, the one playing it. For 3 days, each excited vote on its posts, positive or negative, pays half a vote more, whatever its class makes of that vote, and then it stops by itself. It counts votes from players who first react to a post while it is up. It costs nothing more to use.');
     expect(sweet.logPlay!({}, {})).toBe("Each excited vote on that character's posts, positive or negative, pays up to half a vote more until it ends.");
     expect(sweet.Effect).toBeUndefined();
     expect(sweet.ConfigForm).toBeUndefined();
@@ -1797,7 +1804,7 @@ describe('Thick Skin in plain words (the Thick Skin plan, Task 3)', () => {
   });
 
   test('its words are the ones the rules give', () => {
-    expect(skin!.describe(instance.settings)).toBe('A Sweet card, uncommon, used on your own character, the one playing it. For 3 days, whenever a reaction to something that character did costs it Aura, half of that loss is given back, and then it stops by itself. A loss counted from a whole settlement window\'s reactions, and not from one reaction, is halved where this card is still up when that window ends. It changes nothing the character earns, and nothing it loses for any other reason. A card that pays more for the same reaction still pays. It costs nothing more to use.');
+    expect(skin!.describe(instance.settings)).toBe('A Sweet card, uncommon, used on your own character, the one playing it. For 3 days, whenever a reaction to something that character did costs it Aura, half of that loss is given back, and then it stops by itself. A loss counted from a whole settlement window\'s reactions, and not from one reaction, is halved where this card is still up when that window ends. It changes nothing the character earns, and nothing it loses for any other reason. It costs nothing more to use.');
     expect(skin!.logPlay!({}, {})).toBe('What that character loses from reactions is halved until it ends.');
   });
 
@@ -1846,7 +1853,7 @@ describe('Cheap Shot in plain words (the Cheap Shot plan, Task 7)', () => {
   });
 
   test('its words are the ones the rules give', () => {
-    expect(shot!.describe(instance.settings)).toBe("A Salty card, uncommon, used on your own character. Its next Move within 3 days gets past any card that would turn it away or catch it, up to uncommon. A card set face down that it gets past stays face down, and only you are told. A card that lets a Move land and pays or gives it back still springs. It does nothing for a Move that lands from a quote. That Move uses it up, whatever was in the way. It costs nothing more to use.");
+    expect(shot!.describe(instance.settings)).toBe("A Salty card, uncommon, used on your own character. Its next Move within 3 days gets past any card that would turn it away or catch it, up to uncommon. A card set face down that it gets past stays face down, and only you are told. It does nothing for a Move that lands from a quote. That Move uses it up, whatever was in the way. It costs nothing more to use.");
     expect(shot!.logPlay!({}, {})).toBe("That character's next Move can't be turned away or caught by a card up to uncommon.");
   });
 
@@ -1871,5 +1878,113 @@ describe('Cheap Shot in plain words (the Cheap Shot plan, Task 7)', () => {
     const keys = cardsUi.map((c) => c.key);
     expect(keys).toContain('cheap-shot');
     expect(keys).toEqual([...keys].sort());
+  });
+});
+
+describe('the copy pass: the card descriptions say what their rules say, and no cut words', () => {
+  const card = (key: string) => {
+    const c = instanceUi.cards.find((x) => x.key === key);
+    if (!c) throw new Error(`no card ${key}`);
+    return c;
+  };
+  const CASES: readonly (readonly [string, readonly string[], readonly string[]])[] = [
+    ['autocorrect', ['lift a strip by one end', 'press a started peel back down'], ['Any reader can lift a strip to read under it.']],
+    ['blind-study', ['and sees their own reactions'], ['Everyone can still react.']],
+    ['buzzkill', ['If an admin ends it'], []],
+    ['cheap-shot', ['A card that lets a Move land'], ['It does nothing for a Move that lands from a quote.']],
+    ['class-clown', ['only the larger pays'], []],
+    ['heat-magnet', ['only the larger pays'], []],
+    ['hype-up', ['only the larger pays'], ['A Mod Bot earns nothing, so its posts gain nothing from one.']],
+    ['publicity-tour', ['only the larger pays'], []],
+    ['required-reading', ['only the larger pays'], []],
+    ['sweet-heat', ['only the larger pays'], []],
+    ['feelin-fab', ['drift slowly', 'A few twinkles'], ['and each one more on the post makes it grander. Up to three']],
+    ['feelin-glam', ['make the full prism'], ["up to Feelin' Fab's three.", 'If an admin ends the card, every post loses the level.']],
+    ['happy-heart', ['The filings stay on the record'], []],
+    ['super-happy-heart', ['The filings stay on the record'], []],
+    ['hot-box', ['points at them to clear a patch'], ['until a reader waves it away, and the smoke rolls back in.']],
+    ['its-curtains', ['A drumroll plays while a reader points at it', 'ta-da'], ['Each reader opens it for themselves with one press']],
+    ['jimmy-wails', ['rounded up', 'a gift on a post by staff is all overhead'], ['loses what does not fit.']],
+    ['last-word', ['Quotes made before it was played'], []],
+    ['laugh-track', ["the phrase's underline fades in", 'Pointing at the phrase'], ['a reader can set the audience off.']],
+    ['line-cutter', ['keeps its own number', 'takes none under it'], ['If an admin ends the card, the reply drops back to its own place in the thread.']],
+    ['main-event', ["takes no other thread's place"], []],
+    ['off-day', ['Turn cooldown is untouched'], ['Its own class does not change and no Turn is used.']],
+    ['steel-chair', ['clangs each time', 'unless motion is reduced'], ['and the words bend into the dent. Once it lands']],
+    ['tattle-tale', ['still drops a finding'], ['the Mod Bot still judges each post against the rules.']],
+    ['thick-skin', ['pays more for the same reaction'], ['where this card is still up when that window ends']],
+    ['this', ['its price at the machine'], ['It costs nothing more to play.']],
+    ['ultra-happy-heart', ['the character can post, react and play cards again from that moment', 'A banned character cannot play cards'], ["Any character that isn't banned can play it, one of your own included."]],
+    ['you-were-saying', ['an edit to the post gets a fresh take'], ['The author can erase it, but all at once.']],
+  ];
+  test.each(CASES)('%s: the cut words are gone and the new ones are said', (key, gone, says) => {
+    const said = card(key).describe(instance.settings);
+    for (const g of gone) expect(said, `${key} still says "${g}"`).not.toContain(g);
+    for (const s of says) expect(said, `${key} does not say "${s}"`).toContain(s);
+  });
+  test('Time Machine\'s summary follows its lasts and its rarity cap when they are retuned, as its describe does', async () => {
+    /* The summary is written when the card loads, so the card is loaded again with its lasts changed. */
+    vi.resetModules();
+    vi.doMock('../cards/time-machine.ts', async (importOriginal) => {
+      const real = await importOriginal<typeof import('../cards/time-machine.ts')>();
+      return { ...real, timeMachine: { ...real.timeMachine, lasts: { unit: 'day', count: 5 }, rewind: { ...real.timeMachine.rewind, upTo: 'uncommon' } } };
+    });
+    try {
+      const { ui: retunedUi } = await import('./cards/time-machine/ui.ts');
+      expect(retunedUi.describe(instance.settings)).toContain('For 5 days');
+      expect(retunedUi.summary).toContain('For 5 days');
+      expect(retunedUi.describe(instance.settings)).toContain('no card up to uncommon');
+      expect(retunedUi.summary).toContain('no card up to uncommon');
+    } finally {
+      vi.doUnmock('../cards/time-machine.ts');
+      vi.resetModules();
+    }
+  });
+});
+
+afterEach(() => { cleanup(); });
+
+describe('the Strategy Guide as Divided World writes it: the cut words are gone', () => {
+  const rendered = () => document.body.textContent ?? '';
+  beforeEach(() => {
+    renderInWorld(<Guide />, { path: '/guide', instance: testInstance, guide: { markdown: instanceUi.guide!.markdown, hints: instanceUi.guide!.hints } });
+  });
+  test('the real guide is drawn, so the absences below mean something', () => {
+    expect(rendered()).toContain('Pepperoni could go either way');
+  });
+  test('the cuts keep their paragraphs apart', () => {
+    const paragraphs = [...document.querySelectorAll('p')].map((p) => p.textContent ?? '');
+    expect(paragraphs.some((t) => t.startsWith('The forecast always says up to'))).toBe(true);
+    expect(paragraphs.some((t) => t.startsWith('A Reversal takes no conditions.'))).toBe(true);
+  });
+  test('the reaction wait no longer says the tile shows it', () => {
+    expect(rendered()).not.toContain('and the tile shows the wait');
+  });
+  test('the first summary after a settlement is not promised', () => {
+    expect(rendered()).not.toContain('a summary opens by itself');
+  });
+  test('the forecast no longer names the shared vote and the halving', () => {
+    expect(rendered()).not.toContain('the shared vote and the halving');
+  });
+  test('the play no longer says every landing place lights up', () => {
+    expect(rendered()).not.toContain('every place it can land lights up');
+  });
+  test('the card frames are no longer described in the Move, Reversal, Gimmick line', () => {
+    expect(rendered()).not.toContain('a Move\'s is solid');
+  });
+  test('a retired character is no longer said to be unable to match', () => {
+    expect(rendered()).not.toContain('can\'t match while it\'s retired');
+  });
+  test('the phrase-length sentence is gone', () => {
+    expect(rendered()).not.toContain('the form tells you how short');
+  });
+  test('the trailing-punctuation rule is gone', () => {
+    expect(rendered()).not.toContain('Punctuation at the very ends of your phrase');
+  });
+  test('the phrase never-match list no longer names code, links or images', () => {
+    expect(rendered()).not.toContain('through code, a link or an image');
+  });
+  test('the Lens line no longer says who quoted only if Only these was used', () => {
+    expect(rendered()).not.toContain('if you used Only these');
   });
 });

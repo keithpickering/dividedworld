@@ -144,7 +144,7 @@ function TipsRow({ on, change }: { readonly on: boolean; readonly change: (how: 
         </label>
         <p id={`${id}-says`} className="kb-acct-row-sentence">
           Tips are the small notes that explain the board as you meet it: the HUD tour, the reaction grid, the ghost on your orbs and each card's marks. Off hides every tip and card note. On shows the ones you have not read yet.
-          Show tips again also brings back the ones you have read, and turns tips on. Replay the HUD tour shows the three steps of the tour again and turns tips on.
+          Show tips again also brings back the ones you have read, and turns tips on. Replay the HUD tour shows the tour again and turns tips on.
         </p>
         <ButtonRow>
           <GlassButton onClick={() => change('restore')}>Show tips again</GlassButton>
@@ -305,9 +305,9 @@ export function SettingsScreen({ doc }: { readonly doc?: ScreenDoc<AccountDoc> }
         <p className="kb-acct-lead">These change how the board and the glass look, read and move. They never change how hard a card is to get through.</p>
         <MotionRow value={prefs.motion} onChange={(v) => change({ motion: v })} />
         <Choice legend="Smoke" options={SMOKE} value={prefs.smoke} onChange={(v) => change({ smoke: v })}
-          sentence="How much cloud sits behind the glass. Off leaves plain black. Text is readable at every setting." />
+          sentence="How much cloud sits behind the glass. Text is readable at every setting." />
         <Choice legend="Contrast" options={CONTRAST} value={prefs.contrast} onChange={(v) => change({ contrast: v })}
-          sentence="High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen." />
+          sentence="High puts solid black behind every line of text on the glass and lifts it all to at least 7:1." />
         <TextSizeRow value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
         <EffectsRow value={prefs.effects} onChange={(v) => change({ effects: v })} />
         <TiltRow value={prefs.tilt} onChange={(v) => change({ tilt: v })} />

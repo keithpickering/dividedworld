@@ -23,8 +23,8 @@ export const ui: CardUi = {
   },
   hint: 'An Off Day makes a character score as another class for one settlement window.',
   ConfigForm: OffDayConfigForm,
-  describe: (settings: Settings) =>
-    `A Salty card, ${offDay.rarity}, cast from any post by the character it lands on. You name a class, and everyone can see which. From the next settlement until the one after it, that character is scored as that class, whatever its own. Its own class does not change, no Turn is used and its Turn cooldown is untouched. You are never told whether it made a difference; the character's player is told exactly what happened. A character takes one Off Day for each window. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
+  describe: (_settings: Settings) =>
+    `A Salty card, ${offDay.rarity}, cast from any post by the character it lands on. You name a class, and everyone can see which. From the next settlement until the one after it, that character is scored as that class, whatever its own. Its own class does not change and no Turn is used. You are never told whether it made a difference; the character's player is told exactly what happened. A character takes one Off Day for each window. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
   /* The window is the one the server recorded with the play, in UTC, as the log says its times. */
   logPlay: (config, { starts, ends }) => {
     const as = classWords(config);

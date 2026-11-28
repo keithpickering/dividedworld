@@ -21,6 +21,6 @@ export const ui: CardUi = {
   status: "Hiding this post's reaction totals",
   hint: 'You can still react. The totals show when the card ends.',
   describe: () =>
-    `A Pepperoni card, ${blindStudy.rarity}. For ${spanWords(blindStudy.lasts!)} the post's reaction totals are shown to nobody but the post's author and whoever played the card. Everyone can still react, and sees their own reactions. Settlement counts every reaction as it always does. When the card ends the totals show. One fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    `A Pepperoni card, ${blindStudy.rarity}. For ${spanWords(blindStudy.lasts!)} the post's reaction totals are shown to nobody but the post's author and whoever played the card. Everyone can still react. Settlement counts every reaction as it always does. When the card ends the totals show. One fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
   logPlay: () => `It hides the post's reaction totals for ${spanWords(blindStudy.lasts!)}.`,
 };

@@ -26,6 +26,6 @@ export const ui: CardUi = {
   status: (plays) => `${Math.min(plays.length, feelinFab.stack!)} of ${feelinFab.stack} stacked`,
   hint: "A Feelin' Fab: the more of them on a post, the more it glows.",
   summary: 'Gives a post a rainbow behind its words. Up to three can stack, and each makes it grander.',
-  describe: (settings: Settings) =>
-    `A Sweet card, common. It gives a post a rainbow behind its words, which stay as readable as ever. One makes the whole post's background drift slowly through the rainbow; two make it an animated rainbow band; three make it an animated radial rainbow, with the colors spreading out from the middle. A few twinkles come with it. Up to three can be on one post, and it stays as long as the post does. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+  describe: (_settings: Settings) =>
+    `A Sweet card, common. It gives a post a rainbow behind its words, which stay as readable as ever, and each one more on the post makes it grander. Up to three can be on one post, and it stays as long as the post does. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
 };

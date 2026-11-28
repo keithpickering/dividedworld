@@ -18,7 +18,7 @@ export const ui: CardUi = {
   art: { color: '#ff3d7f', ink: '#14030a', canvas: cheapShotCanvas, mark: cheapShotMark, credit: cheapShotArt.credit, tagline: 'Your next Move slips past defenses.' },
   summary: `Used on your own character. Its next Move within ${spanWords(cheapShot.lasts!)} can't be turned away or caught by a card up to ${upTo}.`,
   status: 'Lining up a cheap shot',
-  describe: (settings: Settings) =>
-    `A Salty card, ${cheapShot.rarity}, used on your own character. Its next Move within ${spanWords(cheapShot.lasts!)} gets past any card that would turn it away or catch it, up to ${upTo}. A card set face down that it gets past stays face down, and only you are told. A card that lets a Move land and pays or gives it back still springs. It does nothing for a Move that lands from a quote. That Move uses it up, whatever was in the way. It costs nothing more to use.`,
+  describe: (_settings: Settings) =>
+    `A Salty card, ${cheapShot.rarity}, used on your own character. Its next Move within ${spanWords(cheapShot.lasts!)} gets past any card that would turn it away or catch it, up to ${upTo}. A card set face down that it gets past stays face down, and only you are told. It does nothing for a Move that lands from a quote. That Move uses it up, whatever was in the way. It costs nothing more to use.`,
   logPlay: () => `That character's next Move can't be turned away or caught by a card up to ${upTo}.`,
 };

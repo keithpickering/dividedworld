@@ -91,6 +91,7 @@ A section that needs none has none.
 - **Claim more privacy than the game gives.** "No other player can see", never "nobody can see": an admin can.
 - **Reveal what players are meant to find:** arithmetic, counter-play, tells, a Core's weak spot, how a season's story
   goes.
+  Exact numbers for the curious are #1257's question, not yet an answer.
 - **Type a number** in the Strategy Guide. Every number there is a `{{setting:<path>}}` marker.
 - **Be mean, or wacky.** No random humor, no pop-culture pile-ups, no emoji, no winking at the reader about being a
   parody.
@@ -141,6 +142,7 @@ draft one for an admin to paste; the admin posts it.
 5. Does it name a real person the owner has not already named?
 6. Does it say "The System", "nobody can see", or a typed number?
 7. Read it aloud in a flat voice. If it needs the exclamation mark, cut it.
+8. Does any clause only tell what doing the thing shows, or what no player would notice (`specs/player-copy.md`)?
 
 ## 10. The reference sample
 

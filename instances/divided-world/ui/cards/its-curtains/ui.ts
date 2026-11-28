@@ -38,7 +38,7 @@ export const ui: CardUi = {
     return isFabric(fabric) ? FABRICS[fabric].mid : undefined;
   },
   describe: (settings) =>
-    `A Pepperoni card, ${itsCurtains.rarity}. It hangs a curtain in the fabric you choose over a post, author and all. A drumroll plays while a reader points at it, and one press opens it, with a ta-da and confetti. Each reader opens it for themselves, and the post's effects start only then. Up to ${itsCurtains.stack} curtains stack, each opened in turn; the second costs ${orbs(settings.economy['itsCurtains.secondAdd'] ?? 0)} more to play and the third ${orbs(settings.economy['itsCurtains.thirdAdd'] ?? 0)} more. ${setMoveWords('the quoting post')}`,
+    `A Pepperoni card, ${itsCurtains.rarity}. It hangs a curtain in the fabric you choose over a post, author and all. Each reader opens it for themselves with one press, and the post's effects start only then. Up to ${itsCurtains.stack} curtains stack, each opened in turn; the second costs ${orbs(settings.economy['itsCurtains.secondAdd'] ?? 0)} more to play and the third ${orbs(settings.economy['itsCurtains.thirdAdd'] ?? 0)} more. ${setMoveWords('the quoting post')}`,
   logPlay: (config) => {
     const fabric = (config as { fabric?: unknown }).fabric;
     return isFabric(fabric) ? `It hung a ${FABRICS[fabric].name} curtain over the post.` : undefined;

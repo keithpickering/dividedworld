@@ -1042,8 +1042,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     rows.push({
       key: `played:${e.act ?? i}`, kind: 'played', at: e.at, what: `You played ${cardName(e.card)}${place ? ` on ${place}` : ''}`,
       details: [
-        `As ${nameOf(caster, 'one of your characters')}, on `, link ?? 'a post', `${ownOther ? ', a post of one of your own characters' : ''}. `,
-        `The card was paid for at the machine; ${e.price > 0 ? `this ${place ? 'play' : 'post'} added ${plain(e.price)}.` : 'this play cost nothing more.'}`,
+        `As ${nameOf(caster, 'one of your characters')}, on `, link ?? 'a post', '. ',
+        e.price > 0 ? `This play cost ${plain(e.price)} more.` : 'This play cost nothing more.',
         ...said(e.card, play), ...pierceSaid(play), ...cutSaid(play),
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
@@ -1392,7 +1392,7 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
   return rows;
 }
 
-/** The open window's estimate, a row per line: each reaction's own amount at its own time, before the shared vote and halving. */
+/** The open window's estimate, a row per line: each reaction's own amount at its own time, before the settlement's own adjustments. */
 function estimateRows(data: LogData, words: Words, tab: Id | null): LogRow[] {
   const lines = (data.estimate?.lines ?? []).filter((l) => tab === null || l.character === tab);
   const asOf = data.estimate?.asOf ?? new Date(0).toISOString();
@@ -1473,7 +1473,7 @@ function scoredNow(character: Id, data: LogData, words: Words): string {
 
 function estimateWords(l: EstimateLine, data: LogData, words: Words, tab: Id | null): Segment[] {
   const who = tab === null ? `${data.mine.find((c) => c.id === l.character)?.name ?? ''}: ` : '';
-  const after = ' It counts at the next settlement, before the shared vote and halving. Who reacted is never shown.';
+  const after = " It counts at the next settlement, before the settlement's own adjustments. Who reacted is never shown.";
   const link = l.act ? actLink(data.acts.get(l.act), data, words, l.character) : null;
   if (link && l.quadrant) {
     const label = words.ui.quadrantLabels[l.quadrant];

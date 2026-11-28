@@ -37,6 +37,6 @@ export const ui: CardUi = {
   ],
   surcharge: (s: Settings) => `Many places, +${orbs(s.economy['laughTrack.perPlace'] ?? 0)} per place past ${s.economy['laughTrack.freePlaces'] ?? 0}`,
   describe: () =>
-    `A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience stirs as a reader gets close and the phrase's underline fades in. Pointing at the phrase, tapping it, or pressing Enter on it plays the reaction. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. ${setMoveWords('the quoting post')} Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`,
+    `A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, a reader can set the audience off. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. ${setMoveWords('the quoting post')} Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`,
   logPlay: () => 'It gave the post a studio audience.',
 };

@@ -74,7 +74,7 @@ export function MotionRow({ value, onChange, level }: { readonly value: Preferen
 export function TextSizeRow({ value, onChange, level }: { readonly value: Preferences['textSize']; readonly onChange: (v: Preferences['textSize']) => void } & Level) {
   return (
     <Choice legend="Text size" options={TEXT_SIZE} value={value} onChange={onChange} level={level}
-      sentence="Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off." />
+      sentence="Applies to the board and the glass together, and nothing is cut off at any size." />
   );
 }
 
@@ -89,7 +89,7 @@ export function EffectsRow({ value, onChange, level }: { readonly value: Prefere
 const SAVE_QUIET_MS = 250;
 
 const SOUND_ROW: Readonly<Record<SoundBus, { readonly legend: string; readonly volume: string; readonly says: string }>> = {
-  game: { legend: 'Game sounds', volume: 'Game volume', says: 'Sounds that cards and other game effects make on the board. Every one is also shown as a caption at the bottom of the screen. An iPhone set to silent keeps them silent.' },
+  game: { legend: 'Game sounds', volume: 'Game volume', says: 'Sounds that cards and other game effects make on the board. Every one is also shown as a caption. An iPhone set to silent keeps them silent.' },
   interface: { legend: 'Interface sounds', volume: 'Interface volume', says: 'Sounds the board itself makes, apart from the game.' },
 };
 
@@ -162,11 +162,11 @@ export function SoundRow({ bus, value, volume, onChange, onVolume, level }: {
 /** What the Tilt row says in each state: the glass's own plain voice, out of character and true. */
 const TILT_SAYS: Readonly<Record<TiltState, string>> = {
   on: 'On. Tilting your phone moves the light across shiny cards.',
-  off: 'Off. Shiny cards follow your scrolling and your pointer.',
+  off: 'Off.',
   'needs-allow': 'On for your account, but this phone has not allowed it yet. Your browser asks first.',
-  denied: 'Your browser said no, so shiny cards follow your scrolling instead. To change that, allow motion and orientation access for this site in your browser\'s settings, then turn this on again.',
-  unsupported: 'This device doesn\'t report tilt, so shiny cards follow your scrolling and your pointer instead.',
-  held: 'Off while motion is reduced. Shiny cards hold their light still.',
+  denied: 'Your browser said no. To change that, allow motion and orientation access for this site in your browser\'s settings, then turn this on again.',
+  unsupported: 'This device doesn\'t report tilt.',
+  held: 'Off while motion is reduced.',
 };
 
 /* DRAFT for owner review, like the sentences above: shown on a phone that still needs the grant after a tap whose request to the browser threw. */
