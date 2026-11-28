@@ -1423,7 +1423,7 @@ export interface MyReaction {
   readonly character: Id;
 }
 
-/** The live estimate (the estimate function): each reaction's own amount, before the shared vote and halving. */
+/** The live estimate (the estimate function): each reaction's own amount, before the settlement's own adjustments. */
 export interface Estimate {
   readonly entries: readonly { readonly character: Id; readonly reason: string; readonly amount: number }[];
   readonly lines: readonly EstimateLine[];
