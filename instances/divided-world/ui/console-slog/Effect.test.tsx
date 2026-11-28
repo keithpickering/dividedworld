@@ -263,11 +263,9 @@ describe('Console Slog', () => {
     expect(box()).toHaveAttribute('data-kb-bands-out', '4');
   });
 
-  test('in History (still) the terminal is drawn whole, with no input and no blinking cursor', () => {
-    mount({ still: true, body: 'abc def' });
-    expect(screen.queryByRole('button', { name: NAME })).toBeNull();
-    expect(document.querySelector('[data-kb-slog-shown]')?.textContent).toBe('abc def');
-    expect(document.querySelector('[data-kb-cursor]')).toHaveAttribute('data-kb-still');
+  test('only a writing card reads `still`: Console Slog draws the same markup with it true or false, and blinks its cursor off by CSS alone', () => {
+    const html = (still: boolean) => { const { container, unmount } = mount({ still, body: 'abc def' }); const h = container.innerHTML; unmount(); return h; };
+    expect(html(true)).toBe(html(false));
   });
 
   test('the Lens is told how far it has gone, in words that are true', () => {

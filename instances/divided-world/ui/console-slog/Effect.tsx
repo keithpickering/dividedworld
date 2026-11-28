@@ -21,8 +21,8 @@
  *
  * Screen readers. The prompt line is the button, named "Console Slog: press any key or tap to type out this post", and the typed text is plain text in the
  * page after it, so what has been typed can be read; a press is announced by nothing, since a character a press would be too much to say. A link is a link
- * once all of its text and address are out, and its dead form is plain text. In a version of the post (`still`) the terminal is drawn whole, with no input and
- * a cursor that does not blink. In a play's moment the reader is nobody: the count is the screen's own, kept in no memory, and nothing is released.
+ * once all of its text and address are out, and its dead form is plain text. Only a writing card reads `still` (types.ts), so this one never does: History draws no
+ * terminal. In a play's moment the reader is nobody: the count is the screen's own, kept in no memory, and nothing is released.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
@@ -112,7 +112,7 @@ function drawRest(units: readonly Unit[], from: number): ReactNode[] {
   return out;
 }
 
-export function ConsoleSlogEffect({ post, plays, released, reader, still, moment, show, met, release, children }: EffectProps) {
+export function ConsoleSlogEffect({ post, plays, released, reader, moment, show, met, release, children }: EffectProps) {
   const { settings } = useKayfa();
   const slog: SlogSettings = {
     rhythmMs: settings.cardSettings['consoleSlog.rhythmMs'] ?? DEFAULTS.rhythmMs,
@@ -125,17 +125,17 @@ export function ConsoleSlogEffect({ post, plays, released, reader, still, moment
   const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
   const units = useMemo(() => unitsOf(parse(body), slog.bands), [body, slog.bands]);
   const total = units.length;
-  const live = !still && moment === null;
+  const live = moment === null;
   /* The reader's own place: in the browser's memory on a live post, and the screen's alone in a moment. */
   const memory = useMemo(() => (live && playId !== '' ? readerMemory(playId, kept) : null), [live, playId]);
 
-  const [out, setOut] = useState(() => (still ? total : Math.min(total, memory?.get()?.shown ?? 0)));
+  const [out, setOut] = useState(() => Math.min(total, memory?.get()?.shown ?? 0));
   const outRef = useRef(out);
   outRef.current = out;
   const streak = useRef(0);
   const last = useRef<number | null>(null);
   const releasing = useRef(false);
-  const shown = still ? total : Math.min(out, total);
+  const shown = Math.min(out, total);
   const done = total > 0 && shown >= total;
   const free = released.has(playId);
 
@@ -152,7 +152,6 @@ export function ConsoleSlogEffect({ post, plays, released, reader, still, moment
   useEffect(() => { if (done) letGo(); }, [done, letGo]);
 
   const press = useCallback((): void => {
-    if (!live && moment === null) return;
     const now = Date.now();
     streak.current = nextStreak(streak.current, last.current === null ? Infinity : now - last.current, slog);
     last.current = now;
@@ -161,7 +160,7 @@ export function ConsoleSlogEffect({ post, plays, released, reader, still, moment
     const next = Math.min(total, was + pressWorth(streak.current, slog));
     outRef.current = next;
     setOut(next);
-  }, [live, moment, total, slog.rhythmMs, slog.perStep, slog.mostPerPress, slog.drain, letGo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [total, slog.rhythmMs, slog.perStep, slog.mostPerPress, slog.drain, letGo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* The Lens: how far the reader has got, and the one way out. */
   useEffect(() => {
@@ -206,7 +205,7 @@ export function ConsoleSlogEffect({ post, plays, released, reader, still, moment
   if (free || total === 0) return <>{children}</>;
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
-    if (still || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.nativeEvent.isComposing || e.key === 'Process') return;
+    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.nativeEvent.isComposing || e.key === 'Process') return;
     /* Only typing keys press: a character (Space among them), Enter and Backspace. Function keys, arrows, paging, Escape and Tab keep doing what they do. */
     if (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace') return;
     /* A live link is a link: Enter follows it. */
@@ -215,14 +214,14 @@ export function ConsoleSlogEffect({ post, plays, released, reader, still, moment
     press();
   };
   const onPointerDown = (e: PointerEvent<HTMLDivElement>): void => {
-    if (still || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (e.target instanceof Element && e.target.closest('a') !== null) return;
     bar.current?.focus({ preventScroll: true });
     press();
   };
   /* An assistive technology's activation arrives as a click with no pointer before it (detail 0); a real click's press was its pointer's. */
   const onClick = (e: MouseEvent<HTMLDivElement>): void => {
-    if (still || e.detail !== 0) return;
+    if (e.detail !== 0) return;
     if (e.target instanceof Element && e.target.closest('a') !== null) return;
     press();
   };
@@ -231,14 +230,10 @@ export function ConsoleSlogEffect({ post, plays, released, reader, still, moment
     <div ref={host} className="dw-slog" data-kb-slog="">
       <div ref={ground} className="dw-slog-ground" aria-hidden="true" />
       <div className="dw-slog-term" data-kb-slog-term="" onKeyDown={onKeyDown} onPointerDown={onPointerDown} onClick={onClick}>
-        {still ? (
-          <div className="dw-slog-bar">{`C:\\DW\\POSTS> type ${post.seq ?? 'post'}.txt`}</div>
-        ) : (
-          <div ref={bar} className="dw-slog-bar" role="button" tabIndex={0} aria-label={NAME}>{`C:\\DW\\POSTS> type ${post.seq ?? 'post'}.txt`}</div>
-        )}
+        <div ref={bar} className="dw-slog-bar" role="button" tabIndex={0} aria-label={NAME}>{`C:\\DW\\POSTS> type ${post.seq ?? 'post'}.txt`}</div>
         <pre className="dw-slog-out" data-kb-slog-out="">
           <span data-kb-slog-shown="">{draw(units, shown)}</span>
-          <span className="dw-slog-cursor" data-kb-cursor="" aria-hidden="true" {...(still || done ? { 'data-kb-still': '' } : {})} />
+          <span className="dw-slog-cursor" data-kb-cursor="" aria-hidden="true" {...(done ? { 'data-kb-still': '' } : {})} />
           <span className="dw-slog-rest" data-kb-slog-rest="" aria-hidden="true">{drawRest(units, shown)}</span>
         </pre>
       </div>

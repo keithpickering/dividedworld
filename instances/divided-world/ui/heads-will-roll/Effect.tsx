@@ -56,7 +56,7 @@ function headLabel(emoji: string, count: number, o: { readonly local: boolean; r
 
 interface Reeling { readonly id: string; readonly seconds: number }
 
-export function HeadsWillRollEffect({ post, reactions: deck, still, covered, show, met, children }: EffectProps) {
+export function HeadsWillRollEffect({ post, reactions: deck, still, moment, covered, show, met, children }: EffectProps) {
   const { settings } = useKayfa();
   const reduced = useMotionReduced();
   const calm = still || reduced;
@@ -159,7 +159,8 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
     return el ? watchInView(el, setInView) : undefined;
   }, []);
   const metOnce = useRef(false);
-  useEffect(() => { if (inView && !metOnce.current) { metOnce.current = true; met(); } }, [inView, met]);
+  /* A moment meets nothing: what a reader does in one is saved and said to no one. */
+  useEffect(() => { if (moment === null && inView && !metOnce.current) { metOnce.current = true; met(); } }, [inView, met, moment]);
 
   /* The frames: only while the post is on screen, uncovered and moving. */
   useEffect(() => {

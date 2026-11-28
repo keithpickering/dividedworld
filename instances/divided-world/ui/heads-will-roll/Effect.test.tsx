@@ -233,6 +233,17 @@ describe('Heads Will Roll: the heads', () => {
     expect(heads()).toHaveLength(0);
   });
 
+  test('met is said once the post is in view on a live post, and never in a moment', () => {
+    for (const [moment, said] of [[null, 1], [{ at: 1 }, 0]] as const) {
+      const met = vi.fn();
+      const props = { ...propsOf(deckOf().deck, []), met, moment } as EffectProps;
+      const { unmount } = renderInWorld(<HeadsWillRollEffect {...props} />);
+      see(true);
+      expect(met).toHaveBeenCalledTimes(said);
+      unmount();
+    }
+  });
+
   test('its Lens view is a short status that says how the reel-in works by key', () => {
     const m = mount(deckOf().deck);
     const view = lastView(m);
