@@ -1894,7 +1894,7 @@ describe('the copy pass: the card descriptions say what their rules say, and no 
     ['off-day', ['Turn cooldown is untouched'], ['Its own class does not change and no Turn is used.']],
     ['steel-chair', ['clangs each time', 'unless motion is reduced'], ['and the words bend into the dent. Once it lands']],
     ['tattle-tale', ['still drops a finding'], ['the Mod Bot still judges each post against the rules.']],
-    ['thick-skin', ['A loss counted from a whole', 'pays more for the same reaction'], []],
+    ['thick-skin', ['pays more for the same reaction'], ['where this card is still up when that window ends']],
     ['this', ['its price at the machine'], ['It costs nothing more to play.']],
     ['ultra-happy-heart', ['the character can post, react and play cards again from that moment', 'A banned character cannot play cards'], ['Any character but the banned one can play it, one of your own included.']],
     ['you-were-saying', ['an edit to the post gets a fresh take'], ['The author can erase it, but all at once.']],

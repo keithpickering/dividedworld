@@ -25,6 +25,6 @@ export const ui: CardUi = {
   summary: `Used on your own character. For ${spanWords(thickSkin.lasts!)}, what it loses from reactions is ${halved}.`,
   status: 'Loses half as much from reactions',
   describe: (_settings: Settings) =>
-    `A Sweet card, ${thickSkin.rarity}, used on your own character, the one playing it. For ${spanWords(thickSkin.lasts!)}, whenever a reaction to something that character did costs it Aura, ${half} of that loss is given back, and then it stops by itself. It changes nothing the character earns, and nothing it loses for any other reason. It costs nothing more to use.`,
+    `A Sweet card, ${thickSkin.rarity}, used on your own character, the one playing it. For ${spanWords(thickSkin.lasts!)}, whenever a reaction to something that character did costs it Aura, ${half} of that loss is given back, and then it stops by itself. A loss counted from a whole settlement window's reactions, and not from one reaction, is ${halved} where this card is still up when that window ends. It changes nothing the character earns, and nothing it loses for any other reason. It costs nothing more to use.`,
   logPlay: () => `What that character loses from reactions is ${halved} until it ends.`,
 };
