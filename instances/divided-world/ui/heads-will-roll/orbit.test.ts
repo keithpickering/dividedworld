@@ -179,3 +179,22 @@ test('the reel-in takes the base plus the per-speed share of speed over size, an
   run(o, 5, () => {});
   assert.ok(o.project().some((h) => h.speed > 0));
 });
+
+test('a count that changes who is a sun moves nobody more than 4 px on the next step, and each satellite settles onto its ring within 2 s', () => {
+  const o = createOrbit({ width: 600, height: 400 }, { seed: 8 });
+  const heads = (c: number): HeadSpec[] => [{ id: 'a', count: 20 }, { id: 'b', count: 10 }, { id: 'c', count: c }, { id: 'd', count: 2 }, { id: 'react', count: 0, react: true }];
+  o.setHeads(heads(3));
+  run(o, 5, () => {});
+  const sunsBefore = o.bodies().filter((b) => b.sun === null).map((b) => b.id).sort();
+  let was = new Map(o.project().map((h) => [h.id, h]));
+  o.setHeads(heads(12));
+  const sunsAfter = o.bodies().filter((b) => b.sun === null).map((b) => b.id).sort();
+  assert.notDeepEqual(sunsAfter, sunsBefore, 'the count swapped a sun');
+  let worst = 0;
+  const note = () => { for (const h of o.project()) { const w = was.get(h.id)!; worst = Math.max(worst, Math.hypot(h.x - w.x, h.y - w.y)); } was = new Map(o.project().map((h) => [h.id, h])); };
+  note();
+  run(o, 2, note);
+  assert.ok(worst <= 4, `a head moved ${worst.toFixed(1)} px in one step across the change`);
+  const off = Math.max(...o.bodies().filter((b) => b.sun !== null).map((s) => { const sun = o.bodies().find((x) => x.id === s.sun)!; return Math.abs(Math.hypot(s.X - sun.X, s.Y - sun.Y, s.Z - sun.Z) / s.ring - 1); }));
+  assert.ok(off <= ORBIT.ringTolerance, `a satellite is still ${(off * 100).toFixed(1)}% off its ring after 2 s`);
+});

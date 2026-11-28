@@ -142,12 +142,14 @@ function mulberry32(seed: number): () => number {
 }
 
 interface Ring { r: number; phase: number; tiltA: number; tiltB: number }
+/** How fast a satellite that has just joined a ring eases onto it, px a second in the space (radius and height together), so a change of role is never a jump. */
+const EASE = 160;
 interface Sim {
   id: string; react: boolean; local: boolean; count: number; mass: number; size: number;
   X: number; Y: number; Z: number; vx: number; vy: number; vz: number;
-  sun: Sim | null; ring: Ring; fitR: number; reach: number; reachY: number;
+  sun: Sim | null; ring: Ring; fitR: number; dr: number; dy: number; fresh: boolean; reach: number; reachY: number;
   sx: number; sy: number; scale: number; depth: number; rank: number;
-  angle: number; omega: number; psx: number | null; psy: number | null; speed: number;
+  angle: number; omega: number; speed: number;
 }
 
 const TILT = ORBIT.tiltDegrees * Math.PI / 180;
@@ -198,8 +200,8 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
       id: h.id, react: h.react === true, local: h.local === true, count: h.count, mass, size,
       X: (rand() - 0.5) * Math.max(0, B.w - size) * 0.8, Y: (rand() - 0.5) * Math.max(0, B.h - size) * 0.5, Z: (rand() - 0.5) * Math.max(0, B.d - size) * 0.8,
       vx: dir.x / len, vy: dir.y / len, vz: dir.z / len,
-      sun: null, ring: { r: 0, phase: rand() * Math.PI * 2, tiltA: (rand() - 0.5) * 2, tiltB: rand() * Math.PI * 2 }, fitR: 0, reach: size / 2, reachY: size / 2,
-      sx: 0, sy: 0, scale: 1, depth: 0, rank: 0, angle: 0, omega: 0, psx: null, psy: null, speed: 0,
+      sun: null, ring: { r: 0, phase: rand() * Math.PI * 2, tiltA: (rand() - 0.5) * 2, tiltB: rand() * Math.PI * 2 }, fitR: 0, dr: 0, dy: 0, fresh: true, reach: size / 2, reachY: size / 2,
+      sx: 0, sy: 0, scale: 1, depth: 0, rank: 0, angle: 0, omega: 0, speed: 0,
     };
   }
 
@@ -215,7 +217,8 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     const loads = new Map<Sim, Sim[]>(suns.map((s) => [s, []]));
     for (const s of sims) {
       if (suns.includes(s)) { s.sun = null; continue; }
-      // The nearest sun, each already-taken ring a little farther away, so a sun does not collect every head.
+      // The nearest sun, each already-taken ring a little farther away (a load worth one sun's area), so that on a post with a dominant sun the lighter heads
+      // still spread over the suns rather than all crowding the nearest.
       let best = suns[0]!, bd = Infinity;
       for (const u of suns) {
         const d = (u.X - s.X) ** 2 + (u.Y - s.Y) ** 2 + (u.Z - s.Z) ** 2 + loads.get(u)!.length * u.size * u.size;
@@ -246,6 +249,19 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     }
     for (const s of suns) { s.sun = null; s.fitR = 0; }
     walls(suns);
+    // A head that was somewhere stays there: a satellite joins its ring at the phase it has about its sun and eases its radius and height onto the ring over
+    // the next steps (`dr`, `dy`), so a change of role or of ring order is never a jump. A head new to the post starts on its ring.
+    for (const s of sims) {
+      const u = s.sun;
+      if (!u) { s.dr = 0; s.dy = 0; s.fresh = false; continue; }
+      if (!s.fresh) {
+        const ox = s.X - u.X, oz = s.Z - u.Z, rr = Math.hypot(ox, oz);
+        if (rr > 1e-6) s.ring.phase = Math.atan2(oz, ox);
+        s.dr = rr - s.fitR;
+        s.dy = s.Y - (u.Y + Math.sin(s.ring.phase + s.ring.tiltB) * WOBBLE * s.ring.tiltA * rr);
+      } else { s.dr = 0; s.dy = 0; }
+      s.fresh = false;
+    }
     fitView();
     place();
     refresh();
@@ -271,12 +287,12 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     for (const s of sims) {
       const u = s.sun;
       if (!u) continue;
-      const R = s.fitR;
+      const R = Math.max(0, s.fitR + s.dr);
       const wob = WOBBLE * s.ring.tiltA;
       const yRoom = Math.max(0, B.h / 2 - s.size / 2);
       s.X = u.X + Math.cos(s.ring.phase) * R;
       s.Z = u.Z + Math.sin(s.ring.phase) * R;
-      s.Y = Math.max(-yRoom, Math.min(yRoom, u.Y + Math.sin(s.ring.phase + s.ring.tiltB) * wob * R));
+      s.Y = Math.max(-yRoom, Math.min(yRoom, u.Y + Math.sin(s.ring.phase + s.ring.tiltB) * wob * R + s.dy));
     }
   }
 
@@ -330,6 +346,8 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
       if (!u || s.fitR <= 0) continue;
       const w = ORBIT.pace * Math.sqrt(Math.max(1, u.mass) * 4e4 / Math.pow(s.ring.r, 3));
       s.ring.phase += Math.min(w, ORBIT.mostRingSpeed / s.fitR) * dt;
+      const off = Math.hypot(s.dr, s.dy);
+      if (off > 0) { const k = Math.max(0, off - EASE * dt) / off; s.dr *= k; s.dy *= k; }
     }
     place();
     const before = sims.map((s) => [s.sx, s.sy] as const);
@@ -338,7 +356,6 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     const cap = settings.mostTurns * 2 * Math.PI;
     sims.forEach((s, i) => {
       const [px, py] = before[i]!;
-      if (s.psx === null) { s.psx = px; s.psy = py; }
       const dx = s.sx - px, dy = s.sy - py;
       const shown = s.size * s.scale;
       const want = Math.max(-cap, Math.min(cap, (dx / dt) / Math.max(6, shown / 2) * ORBIT.spin));
