@@ -184,6 +184,24 @@ test('an autocorrect save is refused while its play is held, and saves once the 
   assert.match(String((said.body as { error: string }).error), /^This card's effect can't be changed by its post's author until .+\.$/);
 });
 
+test('a play that wraps a card checks the gift by its own rules, adds its price to the box\'s and sends it apart; an open is the service\'s and is heard as an open and a gift', async () => {
+  const okv = <T,>(value: T) => ({ ok: true as const, value });
+  const present = { key: 'present', name: 'Present', alignment: 'sweet' as const, rarity: 'uncommon' as const, wraps: true as const, stack: 1, playPrice: () => 150, validateConfig: (c: unknown) => okv(c ?? {}), canApply: () => okv(undefined) };
+  const where = { ...instance, cards: [...instance.cards, present] };
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 1200, body: 'x'.repeat(1200), effects: [] }, play_card: { id: 'k', kind: 'card' } });
+  const out = await runAction(dbs, where, { action: 'playCard', card: 'present', character: id, target, config: {}, message: '', gift: { card: 'whoops', config: { color: 'Red', seed: 7 } } });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.equal(calls.at(-1), `service:play_card:${JSON.stringify({ card: 'present', through: id, target, config: {}, message: '', gift_card: 'whoops', gift_config: { color: 'red' }, who: whoami, price: 200, gift_price: 50 })}`);
+  const wrapper = await runAction(pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 1200, body: 'x', effects: [] } }).dbs, where, { action: 'playCard', card: 'present', character: id, target, config: {}, message: '', gift: { card: 'present', config: {} } });
+  assert.deepEqual({ status: wrapper.status, body: wrapper.body }, { status: 400, body: { error: "a present can't hold another present", field: 'gift' } });
+  const thread = '44444444-4444-4444-8444-444444444444';
+  const opened = await runAction(pair({ whoami, open_gift: { box: id, did: 'landed', why: null, open: { id: 'o', thread }, gift: { id: 'g', thread } } }).dbs, where, { action: 'openGift', box: id });
+  assert.equal(opened.status, 200);
+  assert.deepEqual(opened.broadcasts, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'o', thread } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'g', thread } }]);
+  const returned = await runAction(pair({ whoami, open_gift: { box: id, did: 'returned', why: 'no', open: { id: 'o', thread }, gift: null } }).dbs, where, { action: 'openGift', box: id });
+  assert.deepEqual(returned.broadcasts, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'o', thread } }]);
+});
+
 test('what an action wrote is broadcast as its public projection, on its thread\'s or board\'s channel; a purchase never is', async () => {
   const thread = '44444444-4444-4444-8444-444444444444';
   const board = '55555555-5555-4555-8555-555555555555';

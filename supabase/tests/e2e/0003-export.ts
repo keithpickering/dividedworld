@@ -160,6 +160,15 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into card_ledger (account, card, kind, price) values (ann, 'expcatch', 'bought', 0), (bob, 'blot', 'bought', 0);
       perform set_card(ann, 'expcatch', a, p, '{"card": "blot"}', 0, 'blot');
       perform play_card(bob, 'blot', b, p, '{}', 0, '');
+      -- A present left on a post (0457): the box's play is an Act of the post, and what it wraps is a gift_box row the giver alone reads, carried as it was. A second box on another post is opened by its author, so its open Act and the gift's play are carried too.
+      declare gift_post uuid := tests.post(a, t, 'A post that holds a present.'); open_post uuid := tests.post(b, t, 'A post whose present was opened.'); opened_box uuid;
+      begin
+        insert into card_kinds (key, name, alignment, rarity, play, stack, wraps) values ('expbox', 'Exported Present', 'sweet', 'uncommon', 'cast', 1, true), ('expgift', 'Exported Gift', 'salty', 'common', 'cast', 2, false);
+        insert into card_ledger (account, card, kind, price) values (ann, 'expbox', 'bought', 0), (ann, 'expbox', 'bought', 0), (ann, 'expgift', 'bought', 0), (ann, 'expgift', 'bought', 0);
+        perform play_card(ann, 'expbox', a, gift_post, '{}', 0, '', 'post', null, null, null, null, '{}', null, 'expgift', '{}', 0);
+        opened_box := (play_card(ann, 'expbox', a, open_post, '{}', 0, '', 'post', null, null, null, null, '{}', null, 'expgift', '{}', 0) ->> 'id')::uuid;
+        perform open_gift(bob, opened_box);
+      end;
       -- A Move set face down with a phrase (0142, Autocorrect's kind): its back holds the phrase and no catch, set on a post of its own.
       -- A Hall Pass set face down on another post (0142): a Mod Bot's visit to that post springs it, and the visit ends (0105, 0110).
       insert into card_kinds (key, name, alignment, rarity, play, trap, reaches)

@@ -1253,7 +1253,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   const idOk = (id: string) => UUID.test(id);
   const endsByTarget = async (ids: readonly string[]): Promise<Row[]> => {
-    const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card_end').in('target_act_id', part).order('created_at', { ascending: true }).limit(ID_CHUNK)));
+    const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').in('kind', ['card_end', 'open_gift']).in('target_act_id', part).order('created_at', { ascending: true }).limit(ID_CHUNK)));
     return merged(rows, 'created_at', 'id');
   };
   const act = async <T,>(body: Row, map: (r: Row) => T | Promise<T>, keepalive = false): Promise<Answer<T>> => {
@@ -1567,8 +1567,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     /* An admin's end of a card goes through the act function, which owns the broadcasts (a layer comes off for everyone reading). */
     reverseCard: (play) => act({ action: 'reverseCard', play }, (r) => ({ act: r['id'], play: r['play'] })),
-    /* Stub until the database task (season two cards plan, Task 5) adds `open_gift`; `playCard` below does not yet pass `gift_card`/`gift_config` either. */
-    openGift: async () => ({ ok: false, error: 'opening a present is not available yet' }),
+    /* The post's author opens a present (open_gift, 0457), through the act function as every write is: the open Act and the gift's own play, if it landed, are heard on the thread; the answer names which. */
+    openGift: (box) => act({ action: 'openGift', box }, (r) => ({ box: String(r['box']), did: r['did'] === 'landed' ? 'landed' as const : 'returned' as const, gift: isObject(r['gift']) ? toAct(r['gift']) : null, why: typeof r['why'] === 'string' ? r['why'] : null })),
     async threads(board, page) {
       /* The page is the list's rows; the total is the board's counter (a trigger keeps it), so a page turn counts nothing. */
       const total = async () => num((await list(() => client.from('board_counts').select('threads').eq('board', board).limit(1)))[0]?.['threads']);
@@ -1750,7 +1750,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* A card that replies sends its reply as `body` and `framing`, as a post does; the function names them for the play. */
     /* The answer of a play that carried a reply names it too (`under`, as the broadcast does): it is handed to the thread's listeners here, as the broadcast would, so the caster's own screen nests it
        even where the broadcast is slow or lost; a screen that hears both ignores the second. */
-    playCard: (card, character, target, config, message, reach, fromPost, first, reply, boardThread) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(boardThread === undefined ? {} : { boardThread }), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...framed(reply.framing) }) }, (row) => {
+    playCard: (card, character, target, config, message, reach, fromPost, first, reply, boardThread, gift) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(boardThread === undefined ? {} : { boardThread }), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...framed(reply.framing) }), ...(gift === undefined ? {} : { gift: { card: gift.card, config: gift.config } }) }, (row) => {
       const { under, ...card } = row;
       if (isObject(under) && typeof card['thread'] === 'string') for (const l of [...(topics.get(`thread:${card['thread']}`)?.listeners ?? [])]) l('under', under);
       return toAct(card);

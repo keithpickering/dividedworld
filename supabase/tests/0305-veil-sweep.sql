@@ -92,6 +92,7 @@ select 'relation', n, m, w from (values
   ('effect_releases', 'no author', 'the caller''s own releases of effects'),
   ('effect_state', 'no author', 'play, state and saved_at, the three columns granted (0357): `saved_by`, the character that saved the state and so the post''s author, is not granted to a player, and the check by column below holds it so'),
   ('face_down', 'no author', 'the caller''s own face-down cards (row security)'),
+  ('gift_box', 'no author', 'the caller''s own wrapped gifts (row security), as face_down is'),
   ('ledger', 'no author', 'the caller''s own ledger (row security)'),
   ('machine_now', 'no author', 'the machine''s grid'),
   ('moves_log', 'no author', 'a Boss''s moves: staff, public'),

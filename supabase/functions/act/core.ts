@@ -14,7 +14,7 @@
  */
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
-import { casterMessage, refusalTime, decideDraw, decidePlay, decideSet, decideUse, decideWash, effectsOnTarget, postTarget, type CardEffect, type CardRules, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
+import { casterMessage, giftProblem, refusalTime, decideDraw, decidePlay, decideSet, decideUse, decideWash, effectsOnTarget, postTarget, type CardEffect, type CardRules, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
 import { forgedList, forgedSet } from '../../../engine/bbcode/quoted.ts';
 import { contentOf, mapPlaces, type Attachment } from '../../../engine/rules/anchor.ts';
 import { frameProblem } from '../../../engine/rules/frame.ts';
@@ -103,6 +103,8 @@ const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   play_card: (a) => { const card = without(without(a, 'sprung'), 'under'); return withSprung(a, [...act(card), ...onReach(card), ...under(card, a.under)]); },
   // An admin's end of a card: the card_end is an Act of the play's thread. For a play beyond a post the answer also names its `reach`
   // (reverse_card), and the end is heard on `reach` too, as the play was; neither the `play` nor the `reach` is sent on.
+  // A present opened: the open Act is the post's author's, and the gift landed (or none) is the giver's play; both are Acts of the box's thread, heard as any are. The answer's `why` and `did` ride in the open Act's own payload.
+  open_gift: (a) => [...act(a.open), ...act(a.gift)],
   reverse_card: (a) => {
     const end = without(without(a, 'play'), 'reach');
     return [...act(end), ...(a.reach === 'character' || a.reach === 'thread' || a.reach === 'board' ? [{ topic: 'reach', event: 'effect', payload: end }] : [])];
@@ -329,6 +331,18 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         // A card that needs a caster message refuses a blank one on the message field, as the screens show it there.
         if (!play.ok) return refused(play.why === rules.needsMessage ? 'message' : 'config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
+        // A card that wraps another (design 1.4): the gift is one a present may hold and its configuration is its own card's to check; its price on this post is added to the box's, both charged at the wrap, and sent apart (`gift_price`) so the database writes each card's own ledger row.
+        // A card that does not wrap is sent no gift, and the database refuses one in plain words; so is a wrapper sent none.
+        if (decision.play === 'cast' && rules.wraps === true && decision.args.gift_card !== undefined) {
+          const giftRules = instance.cards.find((c) => c.key === decision.args.gift_card);
+          if (!giftRules) return refused('gift', `there is no card ${JSON.stringify(decision.args.gift_card)}`);
+          const problem = giftProblem(rules, giftRules, decision.args.gift_config);
+          if (problem !== null) return refused('gift', problem);
+          const checked = giftRules.validateConfig(decision.args.gift_config);
+          if (!checked.ok) return refused('gift', checked.why);
+          const extra = Math.max(0, giftRules.playPrice(tuned.settings, target, checked.value, effects));
+          args = { ...args, gift_config: checked.value, gift_price: extra, price: play.value.price + extra };
+        }
         // A card that writes buys its tokens at this decision, from the settings as the rows hold them now; the database writes them with the play and the worker and the log read them there.
         if (play.value.tokens !== undefined) args = { ...args, tokens: play.value.tokens };
         // A surface card's first draw goes with the play, in one transaction (play_surface_card): its payload, its cells, the wall's limit from the settings rows and the card's most live draws.

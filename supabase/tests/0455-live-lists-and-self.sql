@@ -493,7 +493,7 @@ declare
   infraction uuid;
   moved uuid;
   theirs_post uuid;
-  fixtures text[] := array['infraction', 'ban', 'move', 'move_end', 'card_end', 'appeal_ruling', 'unmask', 'spring'];
+  fixtures text[] := array['infraction', 'ban', 'move', 'move_end', 'card_end', 'appeal_ruling', 'unmask', 'spring', 'open_gift'];
 begin
   insert into characters (id, name, staff, staff_kind, debuted_at) values (gen_random_uuid(), 'Poke Mod', 'poke-mod', 'persona', now()) returning id into staff;
   -- The guards on the writers' own shapes stand down for these inserts (a rollback gives them back): this file asks what a poke does with an Act of a kind, not whether the Act's writer is allowed to write it.
@@ -533,6 +533,11 @@ begin
     elsif k = 'spring' then
       delete from broadcasts_due;
       insert into acts (character, kind, thread, target_act_id, payload) values (theirs, 'spring', t, theirs_post, pg_temp.lockout_of(mine));
+    elsif k = 'open_gift' then
+      -- A present the character left and opened itself: the opener and the box's character are one owner's, so one poke (a stranger's box is asked below).
+      insert into acts (character, kind, thread, target_act_id, payload) values (mine, 'card', t, theirs_post, '{"card": "pokebox", "message": "", "config": {}, "layer": 1}') returning id into target;
+      delete from broadcasts_due;
+      insert into acts (character, kind, thread, target_act_id, payload) values (mine, 'open_gift', t, target, jsonb_build_object('box', target, 'did', 'returned', 'gift', null, 'why', 'No.'));
     end if;
     if pg_temp.selfs(ann) is distinct from 1 then raise exception 'a "%" Act on a character should queue one self for its owner, queued: [%]', k, pg_temp.all_selfs(); end if;
     if (select count(*) from broadcasts_due where event = 'self') is distinct from 1 then raise exception 'a "%" Act poked someone beside its character''s owner: [%]', k, pg_temp.all_selfs(); end if;
@@ -550,6 +555,11 @@ begin
   delete from broadcasts_due;
   insert into acts (character, kind, thread, target_act_id, payload) values (staff, 'appeal_ruling', t, target, jsonb_build_object('appeal_act', target::text, 'verdict', 'overturned', 'points_delta', 0, 'line', 'Gone.'));
   if pg_temp.selfs(ann) is distinct from 1 or (select count(*) from broadcasts_due where event = 'self') is distinct from 1 then raise exception 'an appeal_ruling on a move should poke the moved character''s owner alone: [%]', pg_temp.all_selfs(); end if;
+  -- An open of a stranger's present pokes the opener and the giver (0457): the giver's hand changes on a return, and the open Act names the box's character and not the giver's owner.
+  insert into acts (character, kind, thread, target_act_id, payload) values (theirs, 'card', t, theirs_post, '{"card": "pokebox", "message": "", "config": {}, "layer": 2}') returning id into target;
+  delete from broadcasts_due;
+  insert into acts (character, kind, thread, target_act_id, payload) values (mine, 'open_gift', t, target, jsonb_build_object('box', target, 'did', 'returned', 'gift', null, 'why', 'No.'));
+  if pg_temp.selfs(ann) is distinct from 1 or pg_temp.selfs(bob) is distinct from 1 or (select count(*) from broadcasts_due where event = 'self') is distinct from 2 then raise exception 'an open_gift should poke the opener and the giver, once each: [%]', pg_temp.all_selfs(); end if;
   -- A card_end that ends a lockout's spring reaches the locked character's owner through `locks`, and not the caster's.
   insert into acts (character, kind, thread, target_act_id, payload) values (theirs, 'spring', t, theirs_post, pg_temp.lockout_of(mine)) returning id into target;
   delete from broadcasts_due;

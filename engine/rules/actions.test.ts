@@ -46,6 +46,20 @@ test('each action is decided into the SQL function that writes it, with that fun
     { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'x-1f480' } });
 });
 
+test('a play carries the card it wraps as gift_card and gift_config, apart from the box\'s own configuration; an open names the box', () => {
+  const present = { ...splat, key: 'present', name: 'Present', wraps: true as const };
+  const where: Instance = { ...instance, cards: [...instance.cards, present] };
+  const play = (more: object = {}) => ({ action: 'playCard', card: 'present', character: id, target: other, ...more });
+  assert.deepEqual((decide(play({ gift: { card: 'splat', config: { color: 'red' } } }), where) as unknown as { args: object }).args,
+    { card: 'present', through: id, target: other, config: {}, message: '', gift_card: 'splat', gift_config: { color: 'red' } }, 'the gift travels apart from config');
+  assert.deepEqual((decide(play(), where) as unknown as { args: object }).args, { card: 'present', through: id, target: other, config: {}, message: '' }, 'no gift is no argument');
+  assert.equal(refusal2(play({ gift: 'splat' }), where), 'gift: is a card and its configuration');
+  assert.equal(refusal2(play({ gift: { card: 7, config: {} } }), where), 'gift: is a card and its configuration');
+  assert.equal(refusal2(play({ gift: { card: 'splat', config: [] } }), where), 'gift: is a card and its configuration');
+  assert.deepEqual(decide({ action: 'openGift', box: other }, instance), { ok: true, rpc: 'open_gift', args: { box: other }, asService: true });
+  assert.match(refusal({ action: 'openGift' }) ?? '', /^box:/);
+});
+
 test('a card that carries a reply sends the reply and its framing with the play; any other card sends neither', () => {
   const cutter = { ...splat, key: 'cutter', name: 'Cutter', replies: true as const };
   const where: Instance = { ...instance, cards: [...instance.cards, cutter] };
