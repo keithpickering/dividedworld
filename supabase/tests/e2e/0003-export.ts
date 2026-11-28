@@ -784,7 +784,9 @@ test('an instance exported and imported into a fresh database is the same instan
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.
-  const empty = [...before].filter(([t, rows]) => rows === '[]' && !MIGRATION_DATA.includes(t)).map(([t]) => t);
+  // live_list_queue (0455) is a queue a transaction drains before it commits, so a committed database never holds a row of it: the export carries the table, empty, and the import makes it again.
+  const DRAINED_AT_COMMIT = ['public.live_list_queue'];
+  const empty = [...before].filter(([t, rows]) => rows === '[]' && !MIGRATION_DATA.includes(t) && !DRAINED_AT_COMMIT.includes(t)).map(([t]) => t);
   assert.deepEqual(empty, [], 'each table should hold something to carry across');
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-export-'));

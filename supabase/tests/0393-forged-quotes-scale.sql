@@ -122,6 +122,10 @@ begin
   raise notice 'many, the same quote 370 times: post() %', spent;
   if jsonb_typeof(r) is distinct from 'object' then raise exception 'many: post returned %', r; end if;
   if spent > MANY_BUDGET then raise exception 'many: the post insert took %, over the budget of %', spent, MANY_BUDGET; end if;
+  -- A test never commits, so the post's commit flush (0455: its row and entry are built then) is timed on its own, against the same budget.
+  t0 := clock_timestamp(); set constraints all immediate; set constraints all deferred; spent := clock_timestamp() - t0;
+  raise notice 'many: the post insert: commit flush %', spent;
+  if spent > MANY_BUDGET then raise exception 'many: the post insert: the commit flush took %, over the budget of %', spent, MANY_BUDGET; end if;
   if (select a.payload ? 'forged' from acts a where a.character = ch and a.kind = 'post' and a.payload ->> 'body' = qbody) then raise exception 'many: the authentic post was written forged'; end if;
 
   -- the hostile body: 350 distinct quotes, each holds in the oldest version only; 350 x 50 x 20,000 is over the budget
@@ -137,6 +141,10 @@ begin
   perform tests.unbecome();
   raise notice 'many, 350 distinct quotes: post() %', spent;
   if spent > MANY_BUDGET then raise exception 'many: the hostile post insert took %, over the budget of %', spent, MANY_BUDGET; end if;
+  -- A test never commits, so the post's commit flush (0455: its row and entry are built then) is timed on its own, against the same budget.
+  t0 := clock_timestamp(); set constraints all immediate; set constraints all deferred; spent := clock_timestamp() - t0;
+  raise notice 'many: the hostile post insert: commit flush %', spent;
+  if spent > MANY_BUDGET then raise exception 'many: the hostile post insert: the commit flush took %, over the budget of %', spent, MANY_BUDGET; end if;
   if (select not coalesce(a.payload -> 'forged' @> to_jsonb(array[post_id]), false) from acts a where a.character = ch and a.kind = 'post' and a.payload ->> 'body' = qbody) then raise exception 'many: the hostile post was not written forged'; end if;
 
   -- 20 distinct quotes: 20 x 50 x 20,000 is under the budget, and every one holds in the oldest version
@@ -185,6 +193,10 @@ begin
     perform tests.unbecome();
     raise notice 'cap, front-odd 200 versions: post() %', spent;
     if spent > CAP_BUDGET then raise exception 'cap: front-odd, 200 versions, the post insert took %, over the budget of %', spent, CAP_BUDGET; end if;
+    -- A test never commits, so the post's commit flush (0455: its row and entry are built then) is timed on its own, against the same budget.
+    t0 := clock_timestamp(); set constraints all immediate; set constraints all deferred; spent := clock_timestamp() - t0;
+    raise notice 'cap: front-odd, 200 versions, the post insert: commit flush %', spent;
+    if spent > CAP_BUDGET then raise exception 'cap: front-odd, 200 versions, the post insert: the commit flush took %, over the budget of %', spent, CAP_BUDGET; end if;
     if (select not coalesce(a.payload -> 'forged' @> to_jsonb(array[post_id]), false) from acts a where a.id = (r ->> 'id')::uuid) then raise exception 'cap: the front-odd post was not written forged'; end if;
   end loop;
 

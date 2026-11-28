@@ -362,6 +362,8 @@ describe('Rankings', () => {
   test('the page\'s requests are the same for every player apart from the player\'s own rows', async () => {
     const w = world();
     /** Every call the screen makes on the backend, with its arguments, in order. */
+    /* A callback, or a listener object made of them (subscribeAccount's, subscribeReach's), is fresh on each render: recorded as one, not by its identity. */
+    const callback = (a: unknown) => (typeof a === 'function' ? 'a function' : typeof a === 'object' && a !== null && Object.values(a).length > 0 && Object.values(a).every((v) => typeof v === 'function') ? 'listeners' : a);
     const recorded = async (account: string) => {
       w.fake.signInAs(account);
       const calls: { readonly name: string; readonly args: readonly unknown[] }[] = [];
@@ -369,8 +371,7 @@ describe('Rankings', () => {
         get(target, key, receiver) {
           const value = Reflect.get(target, key, receiver) as unknown;
           if (typeof value !== 'function' || typeof key !== 'string') return value;
-          /* A callback (onSession's) is a fresh function each render: it is recorded as one, not by its identity. */
-          return (...args: unknown[]) => { calls.push({ name: key, args: args.map((a) => (typeof a === 'function' ? 'a function' : a)) }); return (value as (...a: unknown[]) => unknown).apply(target, args); };
+          return (...args: unknown[]) => { calls.push({ name: key, args: args.map(callback) }); return (value as (...a: unknown[]) => unknown).apply(target, args); };
         },
       }) as Fake;
       const { unmount } = renderIn(api, <RankingsScreen />, { path: '/rankings' });

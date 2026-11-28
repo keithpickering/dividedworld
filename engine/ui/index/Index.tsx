@@ -3,28 +3,103 @@
  * the staff's, whose tag (`UiCopy.staffBoardTag`) says plainly that only the staff post there. A visitor who is not
  * signed in is asked to sign in (the API answers reads only for a session).
  *
+ * It is live: `api.subscribeIndex` sends a board's summary as its threads are posted to. A board on the page takes the summary's count and Last post
+ * in place (boards keep their order); a board not on the page means the list changed, so the index is read again (the router's silent re-read of the shown page, in place). A Last-post
+ * character the page does not know is read once by id.
+ *
  * There is no NEW here: a board's count of unread threads would need a read of every thread on it
  * (the thread list shows NEW per thread, from the player's own reading rows).
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Character, Id, IndexPage } from '../data/api.ts';
+import type { BoardSummary, Character, Id, IndexPage } from '../data/api.ts';
 import { Ago, Byline } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { spanWords } from '../characters/format.ts';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
-import { Link } from '../router.tsx';
+import { Link, useRouterInternals } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import './index.css';
 
+/** How long the first summary of a board not on the page waits for the rest of its burst before the index is read again. */
+const REREAD_AFTER = 50;
+
 /** The index draws its document (the forum-load plan, Task 13): the router loaded it, so the first frame is whole. Signed out, the loader's marker is the front door. */
 export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
-  const { settings, ui } = useKayfa();
+  const { api, settings, ui } = useKayfa();
+  const { retry } = useRouterInternals();
   const page = isSignedOutDoc(doc) ? null : doc;
-  const characters = useMemo<ReadonlyMap<Id, Character>>(() => new Map((page?.characters ?? []).map((c) => [c.id, c])), [page]);
+  const docCharacters = useMemo<ReadonlyMap<Id, Character>>(() => new Map((page?.characters ?? []).map((c) => [c.id, c])), [page]);
+
+  /* What the document shows, and what live summaries changed or named since, kept with the document they were made over: a new document is read as itself on its first render. */
+  const [mine, setMine] = useState<{ readonly doc: ScreenDoc<IndexPage>; readonly live: ReadonlyMap<Id, BoardSummary>; readonly extra: ReadonlyMap<Id, Character> }>(() => ({ doc, live: new Map(), extra: new Map() }));
+  const cur = mine.doc === doc ? mine : { doc, live: new Map<Id, BoardSummary>(), extra: new Map<Id, Character>() };
+  const live = cur.live;
+  const extra = cur.extra;
+  const asked = useRef<Set<Id>>(new Set());
+  const known = useRef<ReadonlySet<Id>>(new Set());
+  const listed = useRef<ReadonlyMap<Id, BoardSummary>>(new Map());
+  const docRef = useRef(doc);
+  const retryRef = useRef(retry);
+  const rereading = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* Boards heard of that the shown document does not list, and those among them the re-read now in flight was asked for. */
+  const unlisted = useRef<Set<Id>>(new Set());
+  const inFlight = useRef<Set<Id>>(new Set());
+  docRef.current = doc;
+  retryRef.current = retry;
+  const armReread = () => {
+    if (rereading.current !== null) return;
+    rereading.current = setTimeout(() => { rereading.current = null; inFlight.current = new Set(unlisted.current); retryRef.current(); }, REREAD_AFTER);
+  };
+  const armRef = useRef(armReread);
+  armRef.current = armReread;
+  /* A new document answers the ids it lists, and the ones a re-read was asked for (a board that is closed never appears: one re-read each, then it is let go). A board heard of while that re-read was in flight stays, and the index is read again for it. */
+  useEffect(() => {
+    asked.current = new Set();
+    const ids = new Set((page?.boards ?? []).map((b) => b.id));
+    for (const id of [...unlisted.current]) if (ids.has(id) || inFlight.current.has(id)) unlisted.current.delete(id);
+    inFlight.current = new Set();
+    if (unlisted.current.size === 0 && rereading.current !== null) { clearTimeout(rereading.current); rereading.current = null; }
+    else if (unlisted.current.size > 0) armReread();
+  }, [doc]);
+  useEffect(() => () => { if (rereading.current !== null) clearTimeout(rereading.current); }, []);
+  known.current = new Set([...docCharacters.keys(), ...extra.keys()]);
+  listed.current = new Map((page?.boards ?? []).map((b) => [b.id, b]));
+
+  const signedIn = page !== null;
+  useEffect(() => {
+    if (!signedIn) return undefined;
+    /* The state is taken as of the document the summary was heard over. */
+    const over = (cur: typeof mine): typeof mine => (cur.doc === docRef.current ? cur : { doc: docRef.current, live: new Map(), extra: new Map() });
+    return api.subscribeIndex({
+      onBoard(b) {
+        if (!listed.current.has(b.id)) {
+          /* A burst of them (one per post) is one re-read, a moment after the first. */
+          unlisted.current.add(b.id);
+          armRef.current();
+          return;
+        }
+        setMine((s) => {
+          const base = over(s);
+          /* A summary is the board's whole state when it was sent, and one channel delivers in send order: the latest to arrive wins, even where Last post goes back or to none (a post reversed or moved). */
+          return { ...base, live: new Map([...base.live, [b.id, b]]) };
+        });
+        const c = b.lastCharacter;
+        if (c === null || known.current.has(c) || asked.current.has(c)) return;
+        asked.current.add(c);
+        const heard = docRef.current;
+        void api.characters([c]).then((who) => {
+          if (!who.length || docRef.current !== heard) return;
+          setMine((s) => { const base = over(s); return { ...base, extra: new Map([...base.extra, ...who.map((w) => [w.id, w] as const)]) }; });
+        }).catch(() => { asked.current.delete(c); /* the next summary or read of the index shows it */ });
+      },
+    });
+  }, [api, signedIn]);
+
+  const characters = useMemo(() => (extra.size === 0 ? docCharacters : new Map([...docCharacters, ...extra])), [docCharacters, extra]);
 
   if (page === null) return <FrontDoor />;
-  const state = { boards: page.boards, characters };
+  const state = { boards: page.boards.map((b) => live.get(b.id) ?? b), characters };
 
   return (
     <div className="kb-index">

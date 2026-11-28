@@ -58,6 +58,22 @@ const world: World = (fake, instance) => {
 };
 
 /**
+ * The bar over the list when a thread waits (docs/plans/2026-11-25-live-lists-and-self-design.md, section 2). A seeded Act sends no row, so the
+ * world posts one live, a moment after the board is shown: the oldest thread is bumped above the one before it, and "1 thread has new posts"
+ * and Show appear above the list. Compared with no manifest.
+ */
+const waitingWorld: World = (fake, instance) => {
+  world(fake, instance);
+  void (async () => {
+    const page = await fake.boardPage('general', 1, []);
+    const last = page?.threads.at(-1);
+    const mine = [...(page?.characters ?? [])].find((c) => c.name === 'Mrs. Hooligan');
+    if (!last || !mine) return;
+    setTimeout(() => void fake.post(last.id, mine.id, 'Bumping this one.', null), 800);
+  })().catch(() => {});
+};
+
+/**
  * A thread spun from post 1 of another, with one reply from a character whose name is long, and a newest thread whose title is long: what the
  * list rows' end-to-end cases (e2e/list-rows.spec.ts, docs/plans/2026-11-12-list-rows-design.md, sections 2.1 and 2.2) need to see a "spun from"
  * line and a last post that does not fit one line. Compared with no manifest. The spin is an Act dated at the clock, so the spun thread is the
@@ -98,6 +114,9 @@ export const Board: Story = {};
 
 /** The list with a spun thread (one reply, a long-named last poster) and a thread with a long title; compared with no manifest. */
 export const Spun: Story = { parameters: { world: spunWorld } };
+
+/** The list with the bar shown: a thread was bumped above the one before it, so it waits behind "1 thread has new posts" and Show. */
+export const Waiting: Story = { parameters: { world: waitingWorld } };
 
 /**
  * The staff's board (staff-board-threads design): a thread for each decision, each handover, the season's Roster Report and the Staff Meetings' minutes.

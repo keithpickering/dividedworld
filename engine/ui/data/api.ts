@@ -2357,7 +2357,22 @@ export interface ThreadListener {
 }
 
 export interface BoardListener {
-  readonly onThread?: (thread: { readonly id: Id; readonly board: Id; readonly title: string; readonly originActId: Id | null; readonly createdAt: string }) => void;
+  /** A thread of the board has a new post (or is new): its row as the board page lists it. May come twice or out of order: key by id, and keep the row with the later `lastAt`. */
+  readonly onRow?: (row: ThreadSummary) => void;
+  /**
+   * A thread of this board was moved to another: the stub this board's next read lists for it (board_page's `stubs`, 0455), for a move that board_page would still list.
+   * A page that shows the thread draws the stub in its place; one that does not shows it as the next read would. May come twice: key by thread.
+   */
+  readonly onMoved?: (stub: BoardStub) => void;
+  /** A thread left this board and this board lists no stub for it (a reversal's old board, or a move older than `movedStubDays`): the page drops its row, pin, sticky and stub. */
+  readonly onGone?: (thread: Id) => void;
+  /** More than 50 threads moved off or onto this board at once, so no per-thread events came: the page is out of date, and a read shows it. */
+  readonly onChanged?: () => void;
+}
+
+export interface IndexListener {
+  /** A board of the index has changed: its entry as the index lists it. May come twice: key by id. */
+  readonly onBoard?: (board: BoardSummary) => void;
 }
 
 /** An alert as the private channel announces it (`account:<id>`, supabase/migrations/0058_alerts.sql): the public projection, with no caster, reactor, account or class. */
@@ -2384,6 +2399,8 @@ export interface LiveSettled {
 export interface AccountListener {
   /** An alert for the player's own account, as it is written. May come twice: key by act and kind, or reread the list. */
   readonly onAlert?: (alert: LiveAlert) => void;
+  /** Something about the player's own state changed (a wallet, a hand, a ban, an infraction, a move on their characters): a poke with no payload, to read the state again. */
+  readonly onSelf?: () => void;
 }
 
 export interface ReachListener {
@@ -3440,6 +3457,8 @@ export interface KayfaApi {
   /* Live: Acts, tallies and saved effects on a thread; new threads on a board. Each returns its unsubscribe. */
   subscribeThread(thread: Id, listener: ThreadListener): () => void;
   subscribeBoard(board: Id, listener: BoardListener): () => void;
+  /** Live: the index's boards, as each changes. Returns its unsubscribe. */
+  subscribeIndex(listener: IndexListener): () => void;
   /** Live: the signed-in player's own alerts (their private channel); nothing while signed out. Returns its unsubscribe. */
   subscribeAccount(listener: AccountListener): () => void;
   /** Live: plays beyond a post, for every page that shows their target (issue 140). Returns its unsubscribe. */

@@ -33,7 +33,7 @@ const NOT_SCREEN = /\.test\.tsx?$|\.stories\.tsx?$/;
  */
 export const WALL_CLOCK = {
   'engine/ui/router.tsx': { count: 8, why: 'navigation ids, the age of a cached page and of a prefetch, and how long a load took: durations on the page\'s own timers' },
-  'engine/ui/player.tsx': { count: 4, why: 'how long an estimate stays fresh, counted from receipt (the header says so): elapsed time between two reads of the same clock' },
+  'engine/ui/player.tsx': { count: 5, why: 'how long an estimate stays fresh, counted from receipt (the header says so), and when a pending poke\'s read is due, so a sooner poke can replace it: elapsed time between two reads of the same clock' },
   'engine/ui/spin/spun.ts': { count: 1, why: 'the spun loader\'s cache age (SPUN_TTL_MS), `Date.now` passed as its `now`: elapsed time between two reads of the same clock, compared with no data time' },
   'engine/ui/alerts/Toasts.tsx': { count: 2, why: 'the time a toast has left on its own countdown, which pauses under a pointer: elapsed time' },
   'engine/ui/audio/captions.ts': { count: 2, why: 'when a said caption line ends, set from its own `ms` and moved later by a repeat: elapsed time on the page\'s own timers, compared with no data time' },

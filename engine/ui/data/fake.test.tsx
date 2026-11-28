@@ -759,24 +759,107 @@ describe('live events', () => {
     const posted = must(await sent);
     await flush();
     expect(got).toEqual([posted]);
-    expect(fake.broadcast.log).toEqual([{ topic: `thread:${thread}`, event: 'act' }]);
+    expect(fake.broadcast.log.filter((e) => e.event === 'act')).toEqual([{ topic: `thread:${thread}`, event: 'act' }]);
   });
-  test('a thread started or spun is announced on its board, and its first Act on its own thread', async () => {
+  test('a thread started is a row on its board and a summary on the index, and its first Act on its own thread', async () => {
     const { fake, anaFace } = world();
     const board = await boardId(fake, 'general');
-    const threads: string[] = [];
-    fake.subscribeBoard(board, { onThread: (t) => threads.push(t.title) });
+    const rows: string[] = [];
+    const boards: string[] = [];
+    fake.subscribeBoard(board, { onRow: (r) => rows.push(`${r.title} ${r.replies}`) });
+    fake.subscribeIndex({ onBoard: (b) => boards.push(`${b.id === board} ${b.lastTitle} ${b.threadCount}`) });
     const started = must(await fake.startThread('general', anaFace, 'Fresh', 'body'));
     await flush();
-    expect(threads).toEqual(['Fresh']);
-    expect(fake.broadcast.log.map((e) => e.topic + ' ' + e.event)).toEqual([`board:${board} thread`, `thread:${started.thread.id} act`]);
+    expect(rows).toEqual(['Fresh 0']);
+    expect(boards).toEqual(['true Fresh 2']);
+    expect(fake.broadcast.log.map((e) => e.topic + ' ' + e.event)).toEqual([`thread:${started.thread.id} act`, `board:${board} row`, 'index board']);
+  });
+  test('a thread moved to another board is a row on the new board, its stub on the old, and a board entry on the index for both', async () => {
+    const { fake, thread } = world();
+    const old = await boardId(fake, 'general');
+    fake.seed.board('side', 'Side');
+    const to = await boardId(fake, 'side');
+    const rows: string[] = [];
+    const stubs: unknown[] = [];
+    const entries: string[] = [];
+    fake.subscribeBoard(to, { onRow: (r) => rows.push(r.title) });
+    fake.subscribeBoard(old, { onMoved: (s) => stubs.push(s) });
+    fake.subscribeIndex({ onBoard: (b) => entries.push(`${b.id === old ? 'old' : 'new'} ${b.threadCount}`) });
+    fake.seed.moveThread(thread, 'side');
+    await flush();
+    expect(rows).toEqual(['Hello']);
+    expect(stubs).toEqual([{ thread, title: 'Hello', movedTo: { id: to, slug: 'side', name: 'Side' }, movedAt: expect.any(String) }]);
+    expect(entries.sort()).toEqual(['new 1', 'old 0']);
+    expect(fake.broadcast.log.map((e) => e.topic + ' ' + e.event).slice(-4)).toEqual([`board:${to} row`, `board:${old} moved`, 'index board', 'index board']);
+    expect(stubs[0]).toEqual((await fake.boardPage('general', 1, []))!.stubs[0]);
+  });
+  test('a move older than movedStubDays sends no stub, and a thread moved back sends a row and no stub to the board it came back to', async () => {
+    const { fake, thread } = world();
+    const old = await boardId(fake, 'general');
+    fake.seed.board('side', 'Side');
+    const to = await boardId(fake, 'side');
+    const stubs: string[] = [];
+    fake.subscribeBoard(old, { onMoved: (s) => stubs.push(`old ${s.title}`) });
+    fake.subscribeBoard(to, { onMoved: (s) => stubs.push(`side ${s.title}`) });
+    fake.seed.moveThread(thread, 'side', { at: Date.now() - 400 * DAY });
+    await flush();
+    expect(stubs).toEqual([]);
+    fake.seed.moveThread(thread, 'general');
+    await flush();
+    expect(stubs).toEqual(['side Hello']);
+  });
+  test('a move older than movedStubDays sends gone to the old board, since it lists no stub', async () => {
+    const { fake, thread } = world();
+    const old = await boardId(fake, 'general');
+    fake.seed.board('side', 'Side');
+    const gone: string[] = [];
+    fake.subscribeBoard(old, { onGone: (id) => gone.push(id) });
+    fake.seed.moveThread(thread, 'side', { at: Date.now() - 400 * DAY });
+    await flush();
+    expect(gone).toEqual([thread]);
+    expect(fake.broadcast.log.map((e) => e.topic + ' ' + e.event)).toContain(`board:${old} gone`);
+  });
+  test('a close that moves more than 50 threads sends changed to both boards', async () => {
+    const { fake, anaFace } = world();
+    const old = await boardId(fake, 'general');
+    fake.seed.board('side', 'Side');
+    const to = await boardId(fake, 'side');
+    for (let i = 0; i < 50; i++) fake.seed.thread('general', anaFace, `T${i}`, 'x');
+    const changed: string[] = [];
+    fake.subscribeBoard(old, { onChanged: () => changed.push('old') });
+    fake.subscribeBoard(to, { onChanged: () => changed.push('side') });
+    fake.seed.closeBoard('general', { mergedInto: 'side' });
+    await flush();
+    expect(changed.sort()).toEqual(['old', 'side']);
+  });
+  test('a post reaches onRow with its new count and onBoard with the board\'s last post', async () => {
+    const { fake, anaFace, thread } = world();
+    const board = await boardId(fake, 'general');
+    const rows: number[] = [];
+    const boards: (string | null)[] = [];
+    fake.subscribeBoard(board, { onRow: (r) => rows.push(r.replies) });
+    fake.subscribeIndex({ onBoard: (b) => boards.push(b.lastThread) });
+    await fake.post(thread, anaFace, 'reply', null);
+    await flush();
+    expect(rows).toEqual([1]);
+    expect(boards).toEqual([thread]);
+  });
+  test('a settlement\'s wallet line, the real settlement path, is no poke, since a settlement is announced on reach', async () => {
+    const { fake, ana, anaFace } = world();
+    const mine = vi.fn();
+    fake.subscribeAccount({ onSelf: mine });
+    /* The real settlement path: the ledger's line credits the wallet through the settlement's own wallet row. */
+    fake.seed.settle({ ledger: [{ character: anaFace, reason: 'face.cheered', amount: 30 }] });
+    await flush();
+    expect(mine).not.toHaveBeenCalled();
+    expect((await fake.log()).wallet.map((e) => e.kind)).toEqual(['settlement']);
   });
   test('an edit is the post again under its own id; a reaction is a tally', async () => {
     const { fake, anaFace, boFace, thread, opener } = world();
     const post = must(await fake.post(thread, anaFace, 'one', null));
     await fake.edit(post.id, anaFace, 'two');
     await fake.react(opener, anaFace, 'fire');
-    expect(fake.broadcast.log.map((e) => e.event)).toEqual(['act', 'act', 'tally']);
+    expect(fake.broadcast.log.map((e) => e.event).filter((e) => e === 'act' || e === 'tally')).toEqual(['act', 'act', 'tally']);
   });
   test('a Turn, a new character, an invite and a mark are not broadcast', async () => {
     const { fake, anaFace, thread } = world();
@@ -796,7 +879,7 @@ describe('live events', () => {
     await fake.post(thread, anaFace, 'three', null);
     await flush();
     expect(got).toEqual([]);
-    expect(fake.broadcast.flush({ reverse: true, twice: true })).toBe(2);
+    expect(fake.broadcast.flush({ reverse: true, twice: true })).toBe(6); // two Acts, each with its row and board entry
     await flush();
     expect(got).toEqual([3, 3, 2, 2]);
   });
@@ -1274,6 +1357,15 @@ describe('what a list row shows', () => {
     const old = fake.seed.card(anaFace, opener, 'whoops');
     fake.seed.legacyNumber(old);
     expect(await place(old)).toEqual({ kind: 'play', card: 'whoops', on: post, from: null, at: null, board });
+  });
+
+  test('a play that kept a legacy place number counts in its thread summary: it is the last Act and moves lastAt', async () => {
+    const { fake, anaFace, opener, thread } = world();
+    const at = Date.now() + 5 * DAY;
+    const old = fake.seed.card(anaFace, opener, 'whoops', { at });
+    fake.seed.legacyNumber(old);
+    const row = await fake.thread(thread);
+    expect([row?.lastAct, row?.lastAt]).toEqual([old, new Date(at).toISOString()]);
   });
 
   test('a play on a board names the board as it is called now: a rename in force shows, and its end gives the old name back (0152)', async () => {
@@ -1808,6 +1900,21 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     fake.signInAs(ana);
     return { fake, ana, anaFace, boFace, thread, opener };
   }
+
+  test('a purchase (a wallet move and a card ledger row) pokes its player alone with onSelf, and a settlement\'s wallet line does not', async () => {
+    const { fake, ana } = shopWorld(562, 1);
+    const mine = vi.fn();
+    const theirs = vi.fn();
+    fake.subscribeAccount({ onSelf: mine });
+    fake.signInAs(fake.seed.account('cy'));
+    fake.subscribeAccount({ onSelf: theirs });
+    fake.signInAs(ana);
+    must(await fake.buyCard(await slotOf(fake, 'splat')));
+    await flush();
+    expect(mine).toHaveBeenCalled();
+    expect(theirs).not.toHaveBeenCalled();
+    expect(fake.broadcast.log.filter((e) => e.event === 'self').map((e) => e.topic)).toEqual(expect.arrayContaining([`account:${ana}`]));
+  });
 
   test('buying takes the card\'s price from the settled wallet, and the count rises by one', async () => {
     const { fake } = shopWorld(562, 1);
@@ -2469,7 +2576,6 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     expect(anas.settlements.flatMap((s) => s.lines.map((l) => l.character))).toEqual([anaFace]);
     expect(anas.cards).toEqual([]);
     expect(anas.wallet.map((e) => e.kind)).toEqual(['settlement']);
-    void ana;
   });
 });
 
@@ -2677,7 +2783,6 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'snare' });
     fake.signInAs(bo);
     expect(await fake.myFaceDown([set.id])).toEqual({});
-    void ana;
   });
 
   test('a Move is set face down like a set card, and a Use is refused, in the card\'s words', async () => {
@@ -2712,6 +2817,28 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(on.find((a) => a.kind === 'spring')?.payload).not.toHaveProperty('outcome');
     expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
+  });
+
+  test('a trap\'s caught ledger row pokes the setter, and the one who was caught gets a poke of their own for the card they spent', async () => {
+    const { fake, ana, bo, anaFace, boFace, opener } = setup();
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    const setter = vi.fn();
+    fake.subscribeAccount({ onSelf: setter });
+    fake.signInAs(bo);
+    const other = vi.fn();
+    fake.subscribeAccount({ onSelf: other });
+    await flush();
+    expect(set.kind).toBe('set');
+    const [setterBefore, otherBefore] = [setter.mock.calls.length, other.mock.calls.length];
+    const logFrom = fake.broadcast.log.length;
+    must(await fake.playCard('blot', boFace, opener, {}, ''));
+    await flush();
+    /* Ana is poked for the caught ledger row (the spring Act names no character of hers), Bo for the card he played: one each. */
+    expect(setter.mock.calls.length - setterBefore).toBe(1);
+    expect(other.mock.calls.length - otherBefore).toBe(1);
+    const selfs = fake.broadcast.log.slice(logFrom).filter((e) => e.event === 'self').map((e) => e.topic);
+    expect(selfs.filter((t) => t === `account:${ana}`)).toHaveLength(1);
+    expect(selfs.filter((t) => t === `account:${bo}`)).toHaveLength(1);
   });
 
   test('a catching set card\'s catch is the setter\'s: a card in the hand, a ledger row and no payout', async () => {
@@ -4901,6 +5028,22 @@ describe('a drive and its gifts, refused and split as the database does', () => 
   }
   const walletOf = async (fake: ReturnType<typeof driveWorld>['fake'], who: string) => { fake.signInAs(who); return (await fake.wallet()).balance; };
 
+  test('a gift pokes the post\'s author (a grant-like wallet move from another player) and the giver, a settlement on the same fake pokes no one', async () => {
+    const { fake, ana, bo, anaFace, boFace, drive } = driveWorld();
+    const theirs = vi.fn();
+    const mine = vi.fn();
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onSelf: theirs });
+    fake.signInAs(ana);
+    fake.subscribeAccount({ onSelf: mine });
+    fake.seed.settle({ ledger: [{ character: anaFace, reason: 'face.cheered', amount: 30 }, { character: boFace, reason: 'face.cheered', amount: 30 }] });
+    await flush();
+    expect([mine.mock.calls.length, theirs.mock.calls.length]).toEqual([0, 0]);
+    must(await fake.donate(anaFace, drive, 25));
+    await flush();
+    expect([mine.mock.calls.length, theirs.mock.calls.length]).toEqual([1, 1]);
+  });
+
   test('a gift takes the amount from the giver, sends the rest to the post\'s author, and answers with the Act and the giver\'s balance', async () => {
     const { fake, ana, bo, anaFace, thread, drive } = driveWorld();
     const given = must(await fake.donate(anaFace, drive, 25));
@@ -5004,7 +5147,6 @@ describe('a drive and its gifts, refused and split as the database does', () => 
     fake.seed.wallet(bo, 100);
     expect(must(await fake.donate(boFace, drive, 25)).balance).toBe(95);
     expect(await walletOf(fake, bo)).toBe(95);
-    void ana;
   });
 
   test('the wall holds the totals, the count and the latest gifts, newest first, and pages by a keyset cursor', async () => {
@@ -5237,8 +5379,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect((await returned(fake)).map((e) => e.act).sort()).toEqual(casts.slice(0, 3).map((c) => c.id).sort());
       expect((await returned(fake)).map((e) => e.price)).toEqual([0, 0, 0]);
       expect((await fake.postPlays([post])).plays.find((a) => a.id === (casts[0]!.id))?.payload).not.toHaveProperty('caught');
-      void ana;
-    });
+      });
 
     test('the own other mask of the sign\'s player is handed back exactly as a stranger is', async () => {
       const { fake, anaFace, anaHeel, posts } = rf();
@@ -5329,6 +5470,23 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(spring.payload).toEqual({ card: 'lkback', trigger: 'cast', did: 'lockedOut', set: back.id, by: move.id, locks: boFace, until: new Date(Date.parse(spring.createdAt) + 24 * 3_600_000).toISOString() });
       expect((await fake.myCards()).find((c) => c.card === 'lksalty')!.held).toBe(before - 1);
       expect((await fake.log()).cards.filter((e) => e.kind === 'returned' || e.kind === 'caught')).toEqual([]);
+    });
+
+    test('the spring that locks a character pokes that character\'s owner for the lock, beside the ledger row of the play', async () => {
+      const { fake, ana, bo, anaFace, boFace, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      const boPokes = vi.fn();
+      fake.subscribeAccount({ onSelf: boPokes });
+      fake.signInAs(ana);
+      const anaPokes = vi.fn();
+      fake.subscribeAccount({ onSelf: anaPokes });
+      await flush();
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      await flush();
+      /* Bo: the spring that names him in \`locks\` and the ledger row of the card he played. Ana: the caught-style ledger row is not written for a lockout, so none. */
+      expect([boPokes.mock.calls.length, anaPokes.mock.calls.length]).toEqual([2, 0]);
     });
 
     test('the locked character is refused a post, a Move and a back in that thread in the SQL\'s words, until an admin ends it; its other mask and other threads are not held', async () => {
@@ -7008,6 +7166,104 @@ describe('discipline cards: hearts, the Unban and Take the Fall', () => {
     fake.signInAs(fake.seed.account('boss', { admin: true }));
     must(await fake.reverseCard(played.id));
     expect(await warn(boFace)).toBe(9);
+  });
+
+  test('what ends or rules on a ban pokes the banned character\'s owner: an unban play, an admin end of the play, and an appeal\'s ruling', async () => {
+    const { fake, ana, bo, anaFace, boFace, opener, file, now } = world();
+    const boPokes = vi.fn();
+    const anaPokes = vi.fn();
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onSelf: boPokes });
+    fake.signInAs(ana);
+    fake.subscribeAccount({ onSelf: anaPokes });
+    const ban = fake.seed.ban(boFace, now + 3 * DAY, { infraction: file(7, DAY), days: 3 });
+    await flush();
+    /* The infraction and the ban each poke the banned owner (two Acts), Ana none. */
+    expect([boPokes.mock.calls.length, anaPokes.mock.calls.length]).toEqual([2, 0]);
+    /* An unban play: the Act is Ana's own card, and the lift row pokes the banned owner (and Ana's wallet and ledger move for the play). */
+    const played = must(await fake.playCard('t-ultra', anaFace, boFace, {}, '', 'character', opener));
+    await flush();
+    expect(boPokes.mock.calls.length).toBe(3);
+    /* The admin's end of that play: the card_end names the play, whose lift names the ban's character. */
+    const before = boPokes.mock.calls.length;
+    const boss = fake.seed.account('boss', { admin: true });
+    fake.signInAs(boss);
+    must(await fake.reverseCard(played.id));
+    await flush();
+    expect(boPokes.mock.calls.length).toBe(before + 1);
+    /* A ruling on the ban: ruling, appeal, ban, two hops. */
+    const appeal = fake.seed.appeal(boFace, ban, 'No.');
+    fake.seed.ruling(appeal, fake.seed.staff('mod2', 'Mod Two', 'mod'), 'overturned', { until: now });
+    await flush();
+    expect(boPokes.mock.calls.length).toBe(before + 2);
+  });
+
+  describe('the self poke of what changes a character, named directly', () => {
+    /* Each test settles what the seeding wrote, counts a poke only after, and asks who of Ana and Bo was poked by the one call under test. */
+    async function pokes(w: ReturnType<typeof world>) {
+      await flush();
+      const bo = vi.fn();
+      const ana = vi.fn();
+      w.fake.signInAs(w.bo);
+      w.fake.subscribeAccount({ onSelf: bo });
+      w.fake.signInAs(w.ana);
+      w.fake.subscribeAccount({ onSelf: ana });
+      await flush();
+      return { count: async () => { await flush(); return [bo.mock.calls.length, ana.mock.calls.length]; } };
+    }
+
+    test('a seeded warn relief pokes the owner of the filed character alone', async () => {
+      const w = world();
+      const inf = w.file(4, DAY);
+      const play = must(await w.fake.playCard('t-fall', w.anaFace, w.opener, {}, ''));
+      const seen = await pokes(w);
+      w.fake.seed.relief(play.id, inf, 1);
+      expect(await seen.count()).toEqual([1, 0]);
+    });
+
+    test('a seeded ban lift pokes the owner of the banned character alone', async () => {
+      const w = world();
+      const ban = w.fake.seed.ban(w.boFace, w.now + 3 * DAY, { infraction: w.file(7, DAY), days: 3 });
+      const play = must(await w.fake.playCard('t-fall', w.anaFace, w.opener, {}, ''));
+      const seen = await pokes(w);
+      w.fake.seed.lift(play.id, ban);
+      expect(await seen.count()).toEqual([1, 0]);
+    });
+
+    test('a seeded end of a card play pokes the owner of the character the play named', async () => {
+      const w = world();
+      w.file(4, DAY);
+      const played = must(await w.fake.playCard('t-heart', w.anaFace, w.boFace, {}, '', 'character', w.opener));
+      const seen = await pokes(w);
+      w.fake.seed.cardEnd(played.id);
+      expect(await seen.count()).toEqual([1, 0]);
+    });
+
+    test('a seeded end of a move pokes the owner of the character the move named', async () => {
+      const w = world();
+      const move = w.fake.seed.move('mod', { board: 'general', name: 'Confer', lasting: { kind: 'conferGroup', params: { character: w.boFace, group: 'regulars' } } });
+      const seen = await pokes(w);
+      w.fake.seed.endMove(move, { why: 'expired' });
+      expect(await seen.count()).toEqual([1, 0]);
+    });
+
+    test('an unmask pokes the owner of the character that dropped its mask, and no other', async () => {
+      const w = world();
+      const seen = await pokes(w);
+      must(await w.fake.unmask(w.anaFace, w.thread, 'It was me.'));
+      expect(await seen.count()).toEqual([0, 1]);
+    });
+
+    test('a ruling on a ban pokes the banned owner alone, not the owner of the infraction the ban rests on (the chain ends at the ban by kind)', async () => {
+      const w = world();
+      /* Bo's ban rests on an infraction filed on Ana's character, a hop past the ban, where the chain ends by kind. */
+      const ban = w.fake.seed.ban(w.boFace, w.now + 3 * DAY, { infraction: w.fake.seed.infraction(w.fake.seed.visit(w.mod, w.hers, { at: w.now - DAY }), { points: 7, at: w.now - DAY }), days: 3 });
+      const appeal = w.fake.seed.appeal(w.boFace, ban, 'No.');
+      const mod2 = w.fake.seed.staff('mod2', 'Mod Two', 'mod');
+      const seen = await pokes(w);
+      w.fake.seed.ruling(appeal, mod2, 'overturned', { until: w.now });
+      expect(await seen.count()).toEqual([1, 0]);
+    });
   });
 
   test('an Ultra Happy Heart lifts every running ban at once; the log says when and by which card', async () => {
