@@ -53,6 +53,8 @@ begin
   on conflict (key) do nothing;
   -- A surface card (Graffiti's kind, 0317): a wall on a post that anyone may draw on and only the post's own character may wash.
   insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, surface) values ('swwall', 'Sw Wall', 'pepperoni', 'rare', 'cast', '{post}', 1, true) on conflict (key) do nothing;
+  -- A present (0457): a card that wraps another, left face up on a post and opened by the post's author.
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, draws_effect, wraps) values ('swbox', 'Sw Present', 'sweet', 'uncommon', 'cast', '{post}', 1, true, true), ('swbox2', 'Sw Present Two', 'sweet', 'uncommon', 'cast', '{post}', 1, true, true) on conflict (key) do nothing;
   -- A rewind card (0413): a play of it names a point of the post, and rewind_view answers with the post as the projection shows it.
   insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack, rewind) values ('swrewind', 'Sw Rewind', 'salty', 'rare', 'cast', '{post}', interval '3 days', 1, 'rare') on conflict (key) do nothing;
 end $$;
@@ -655,7 +657,7 @@ declare
   t uuid := tests.thread('Sw sweep thread'); t3 uuid := tests.thread('Sw elsewhere');
   stand uuid;
   p uuid; p2 uuid; p4 uuid; p5 uuid; back uuid; back5 uuid; q5 uuid; q6 uuid; spring6 uuid; laid5 uuid; laid6 uuid; linked boolean; qa uuid; wall uuid; wash uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid; on_p4 uuid; counts0 jsonb;
-  veiled uuid[]; rwd uuid;
+  veiled uuid[]; rwd uuid; box1 uuid; box2 uuid; open1 uuid; open2 uuid;
   probe record; res text; leaks boolean; found text[] := '{}'; missed text[] := '{}'; phase text;
 begin
   perform pg_temp.cards();
@@ -722,6 +724,17 @@ begin
   insert into acts (character, kind, thread, target_act_id, payload, created_at)
   select a, 'card', t, p, jsonb_build_object('card', u.payload ->> 'card', 'ends', now() - interval '1 day'), now() - interval '2 days' from acts u where u.id = used;
 
+  -- Two presents R left on P (0457), face up, the gift a card of R's: A opens the first now, before any veil, and the second after the cast, while it is live. An open is A's Act on the box (whose character is R's), so a veil
+  -- that covers A's Acts by the character of the post they target alone would leave both showing A.
+  perform pg_temp.hand(ray, 'swbox', 'swbox2', 'swplain', 'swplain');
+  insert into wallets (account, balance) values (ray, 600) on conflict (account) do update set balance = 600;
+  perform tests.become_service();
+  box1 := (play_card(ray, 'swbox', r, p, '{}', 150, '', 'post', null, null, null, null, '{}', null, 'swplain', '{}', 0) ->> 'id')::uuid;
+  box2 := (play_card(ray, 'swbox2', r, p, '{}', 150, '', 'post', null, null, null, null, '{}', null, 'swplain', '{}', 0) ->> 'id')::uuid;
+  open1 := (open_gift(ann, box1) -> 'open' ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform set_config('sweep.box2', box2::text, true);
+
   perform set_config('sweep.wall', wall::text, true); perform set_config('sweep.rewind', rwd::text, true);
   perform set_config('sweep.a', a::text, true); perform set_config('sweep.stand', stand::text, true); perform set_config('sweep.t', t::text, true);
   perform set_config('sweep.p', p::text, true); perform set_config('sweep.used', used::text, true); perform set_config('sweep.general', general::text, true);
@@ -759,6 +772,7 @@ begin
     ('my_followed_threads', 'id', 'select coalesce(jsonb_agg(to_jsonb(f)), ''[]'')::text from my_followed_threads f', false, false),
     ('my_cards_ended', 'id', 'select coalesce(jsonb_agg(to_jsonb(e)), ''[]'')::text from my_cards_ended e', true, false),
     ('play_moment', 'id', 'select play_moment(current_setting(''sweep.used'')::uuid)::text', true, false),
+    ('play_moment of a box', 'id', 'select play_moment(current_setting(''sweep.box2'')::uuid)::text', true, false),
     ('rewind_view', 'id', 'select rewind_view(current_setting(''sweep.rewind'')::uuid)::text', true, false),
     ('effects_above', 'id', 'select coalesce(jsonb_agg(to_jsonb(e)), ''[]'')::text from effects_above(array(select distinct x.character from acts_public x where x.thread = current_setting(''sweep.t'')::uuid and x.character is not null), current_setting(''sweep.t'')::uuid, current_setting(''sweep.general'')::uuid) e', true, false),
     ('card_target_reach', 'nonempty', 'select coalesce(card_target_reach(''post'', current_setting(''sweep.p'')::uuid) -> ''above'' -> ''character'', ''[]'')::text', true, false),
@@ -812,7 +826,7 @@ begin
   end $f$;
 
   -- The Acts that are veiled once the cast has landed: P, its edit, A's use card on it (its character is A's, its target is P). Set before the cast too, so the `absent` probes look for the same ids in both phases.
-  veiled := array[p, edit, used, wash];
+  veiled := array[p, edit, used, wash, open1];
   perform set_config('sweep.veiled', array_to_string(veiled, ','), true);
 
   -- ---- 1. The detector's poison: before the cast, every probe that can fire does, as R ----
@@ -843,6 +857,11 @@ begin
   select k.id into laid6 from acts k where k.kind = 'card' and k.target_act_id = q6 and k.character = a;
   if spring6 is null or laid6 is null then raise exception 'the back on the veiled post did not spring a card of A''s'; end if;
   veiled := veiled || array[back, spring6, laid6];
+  -- A opens the second present while the veil is live: the open is A's Act on R's box, and shown under the stand-in like A's other Acts on P.
+  perform tests.become_service();
+  open2 := (open_gift(ann, box2) -> 'open' ->> 'id')::uuid;
+  perform tests.unbecome();
+  veiled := veiled || array[open2];
   -- An admin ends that card while the veil is up: R, whose quote it lies on, is told by my_cards_ended and the log who laid it, which must be the stand-in as the card is shown (the `my_cards_ended` probe reads it as R).
   perform set_config('kayfabb.card_end_writer', 'on', true);
   insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, laid6, '{"why": "reversed", "by": "admin"}');

@@ -12,6 +12,7 @@
 --   7. open_gift                new: security definer, the service role's (as play_card is) for the account the Edge Function names.
 --   8. reverse_card             copied whole from 0423_rulings_alerts.sql: an unopened present an admin ends gives its gift back to the giver (a `returned` ledger row naming the end); an opened one is refused in plain words.
 --   9. self_kinds, act_self_characters   copied whole from 0455_live_lists_and_self.sql: `open_gift` pokes the opener and the giver's character's owner, the box's own character, whose hand changes on a return.
+--  9b. the veil's cover  post_veils_cover and acts_veil_cover, copied whole from 0395_polls.sql: an open is the post's author's Act on the box, whose target is the box and not the post, so the author veil's cover reads it through its box to the post (as a draw or a wash is read through its card), live and, for an open written before the veil landed, at the cast.
 --  10. the "still up" readers  play_moment (0375), spin_moment (0368), search_post_cards (0117), kind_plays (0410), thread_page (0456) and pool_thread (0420), each copied whole: an open is the box's end for them. lockout_ends is unchanged (a lockout is a spring; a box is no spring).
 --
 -- Owner decisions built here (and in the fake, engine/ui/data/fake.ts, which mirrors them):
@@ -1704,6 +1705,65 @@ begin
 end $$;
 revoke execute on function open_gift(uuid, uuid) from public, anon, authenticated;
 grant execute on function open_gift(uuid, uuid) to service_role;
+
+-- ---- 7b. the author veil covers an open ----
+
+-- An open is the post's author's Act with the box as its target, and the box's character is the giver's, so 0371's cover (the Act's character is the character of the Act's target post) never held it, and the open showed the true author
+-- through acts_public, post_plays, kind_plays, thread_page, play_moment and spin_moment, and the act function's broadcast. Both halves of the cover read an open through its box to the post, as they read a draw or a wash through its card:
+-- acts_veil_cover covers an open written while a veil is live, post_veils_cover the opens the author wrote before it landed. Each copied whole from 0395_polls.sql (its latest definition); the changes are the two lines marked "0457".
+create or replace function post_veils_cover() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform veil_cover_lock(new.post);
+  insert into post_veil_cover (act, play)
+  select new.post, new.play
+  union
+  -- The author's Acts on the post, in two selects so that each reaches an index of its own: acts_target is partial (kind <> 'edit') and acts_edits holds the edits (kind = 'edit'); one select over both is a scan of the author's Acts.
+  select a.id, new.play from acts a
+  where a.target_act_id = new.post and a.character = new.author and a.kind not in ('post', 'spin', 'edit')
+  union
+  select a.id, new.play from acts a
+  where a.target_act_id = new.post and a.character = new.author and a.kind = 'edit'
+  union
+  select d.id, new.play from acts k join acts d on d.target_act_id = k.id
+  where k.kind = 'card' and k.target_act_id = new.post and d.kind in ('draw', 'wash') and d.character = new.author
+  union
+  -- 0457: the opens the author wrote on the boxes left on the post (acts_target holds each by its box).
+  select o.id, new.play from acts k join acts o on o.target_act_id = k.id
+  where k.kind = 'card' and k.target_act_id = new.post and o.kind = 'open_gift' and o.character = new.author
+  union
+  select b.id, new.play from acts p join acts b on b.target_act_id = p.id and b.kind = 'ballot' and b."character" = new.author
+  where p.kind = 'poll' and p.target_act_id = new.post
+  union
+  select k.id, new.play from acts p join acts k on k.target_act_id = p.id and k.kind = 'poll_close' and k."character" = new.author
+  where p.kind = 'poll' and p.target_act_id = new.post
+  union
+  select c.card, new.play from post_veil_cards c where c.post = new.post and c.author = new.author
+  on conflict do nothing;
+  return null;
+end $$;
+
+create or replace function acts_veil_cover() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  tgt record;
+  pst uuid;
+  pc uuid;
+begin
+  select t.id, t.kind, t.target_act_id into tgt from acts t where t.id = new.target_act_id;
+  if new.kind in ('draw', 'wash', 'open_gift') and tgt.kind = 'card' then pst := tgt.target_act_id;  -- 0457: an open is read through its box
+  elsif new.kind in ('ballot', 'poll_close') and tgt.kind = 'poll' then pst := tgt.target_act_id;
+  else pst := tgt.id; end if;
+  select a.character into pc from acts a where a.id = pst;
+  if pc is not null and pc = new.character then
+    perform veil_cover_lock(pst);
+    insert into post_veil_cover (act, play)
+    select new.id, v.play from post_veils v
+    where v.post = pst and v.veil = 'author' and v.author = new.character and v.ends_at > now()
+    on conflict do nothing;
+  end if;
+  return null;
+end $$;
 
 -- ---- 8. reverse_card ----
 

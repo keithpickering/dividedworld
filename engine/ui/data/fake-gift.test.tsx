@@ -127,6 +127,34 @@ describe('a card wrapped in another, as the server holds it (season two design, 
     fake.signInAs(bo);
     expect(await fake.openGift(wrapped.id)).toEqual(refused('this present was already opened or ended'));
   });
+  test('an open on a post under a live author veil is shown under the stand-in, whether opened before the veil or after it, as acts_public shows the author\'s other Acts', async () => {
+    const whodunnit = { ...base, key: 'whodunnit', name: 'Whodunnit?', alignment: 'pepperoni' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 3 }, veil: 'author' as const, canApply: () => okv(undefined) };
+    const { fake, ana, bo, anaFace, boFace, opener } = setupIn({ ...world, anonymous: { name: 'Nobody', tagline: '' }, cards: [...world.cards, whodunnit] });
+    const cy = fake.seed.account('cy');
+    const cyFace = fake.seed.character(cy, 'Cy Face', 'face');
+    fake.seed.cards(cy, { whodunnit: 1 });
+    /* Two presents on Bo's post; Bo opens the first in the open, then Cy veils the post, then Bo opens the second. */
+    const first = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    fake.signInAs(bo);
+    const before = must(await fake.openGift(first.id));
+    fake.signInAs(cy);
+    must(await fake.playCard('whodunnit', cyFace, opener, {}, ''));
+    const stand = (await fake.act(opener))!.character!;
+    expect(stand).not.toBe(boFace);
+    fake.signInAs(ana);
+    const second = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    fake.signInAs(bo);
+    const after = must(await fake.openGift(second.id));
+    for (const reader of [ana, cy, bo]) {
+      fake.signInAs(reader);
+      const opens = await fake.cardEnds([first.id, second.id]);
+      expect(opens.map((a) => [a.kind, a.character])).toEqual([['open_gift', stand], ['open_gift', stand]]);
+      expect(JSON.stringify(opens)).not.toContain(boFace);
+      expect((await fake.postPlays([opener])).plays.filter((a) => a.kind === 'open_gift').every((a) => a.character === stand)).toBe(true);
+    }
+    expect(before.did).toBe('landed');
+    expect(after.did).toBe('landed');
+  });
   test('an open is its own Act, and no feed of an admin\'s ended cards reads it as one', async () => {
     const { fake, ana, bo, boFace, anaFace, opener } = setup();
     const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));

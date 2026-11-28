@@ -980,7 +980,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const spring = acts.get(a.payload.spring as string);
       return spring !== undefined && spring.kind === 'spring' && spring.target !== null && liveVeils(spring.target, 'author').some((v) => v.author === a.character);
     })();
-    return veiled || walled || sprung ? standIn().id : a.character;
+    /* An open (0457) is the post's author's Act on the box, whose target is the box and whose character is the giver's: read through its box to the post, as a draw or a wash is read through its card. */
+    const box = deep && a.kind === 'open_gift' && a.target !== null ? acts.get(a.target) : undefined;
+    const opened = box !== undefined && box.kind === 'card' && box.target !== null && liveVeils(box.target, 'author').some((v) => v.author === a.character);
+    return veiled || walled || sprung || opened ? standIn().id : a.character;
   }
   /** my_veiled_posts (0357): the caller's own live author veils among these posts, by post, for the player of the post's own character alone. */
   const myVeiled = (posts: readonly Id[]) => [...veils].filter(([play, v]) => v.veil === 'author' && v.author !== null && posts.includes(v.post) && veilLive(play, v) && characters.get(v.author)?.owner === me()?.id)
