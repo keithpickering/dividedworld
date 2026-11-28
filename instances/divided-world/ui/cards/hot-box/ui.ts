@@ -18,7 +18,7 @@ import type { Settings } from '../../../../../engine/rules/types.ts';
 const HotBoxEffect = lazy(() => import('../../hot-box/Effect.tsx').then((m) => ({ default: m.HotBoxEffect })));
 
 /*
- * Hot Box (docs/plans/2026-11-15-wave-1-cards-design.md, section 2.2): Salty's smoke over a post's words, in the caster's color,
+ * Hot Box (docs/plans/2026-11-15-wave-1-cards-design.md, section 2.2): Salty's smoke over a post's row (its content area where there is no row), in the caster's color,
  * cleared by a reader on their own screen (ui/hot-box/Effect.tsx); the form picks the color (ui/hot-box/ConfigForm.tsx).
  */
 export const ui: CardUi = {
@@ -26,8 +26,10 @@ export const ui: CardUi = {
   art: { color: '#ff3d7f', ink: '#14030a', canvas: hotBoxCanvas, mark: hotBoxMark, credit: hotBoxArt.credit, tagline: 'Smoke out a post.' },
   summary: 'Fills a post with smoke in your color. Readers wave it away to read, and it rolls back in.',
   status: 'Smoke on this post',
-  hint: 'Point at the words to part the smoke.',
+  hint: 'Point at the smoke to part it.',
   Effect: HotBoxEffect,
+  /* In a thread's post the smoke is drawn over the post's whole row, postbit included (the engine's row layer); elsewhere it fills the content area. */
+  fillsRow: true,
   ConfigForm: HotBoxConfigForm,
   /* Each play's tag takes the color of its smoke, as the hex the effect draws (a Mod Bot's may be a color's name). */
   tag: (play) => {
@@ -41,9 +43,9 @@ export const ui: CardUi = {
   },
   describe: (settings: Settings) => {
     const hours = settings.economy['hotBox.holdHours'];
-    const airs = `the post's author can hold Air it out to clear it line by line for good, and once it is all aired out the post can be smoked again.`;
+    const airs = `the post's author can hold Air it out to clear it for good, and once it is all aired out the post can be smoked again.`;
     const air = hours ? `${hours === 1 ? '1 hour' : `${hours} hours`} after it lands, ${airs}` : `The ${airs.slice(4)}`;
-    return `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read until a reader waves it away, and the smoke rolls back in. It is the same for every reader, the post's author and you included. Over ${spanWords(HOT_BOX_THINS)} it thins to a haze, and the haze stays. ${air} One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`;
+    return `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the post can't be read until a reader waves it away, and the smoke rolls back in. It is the same for every reader, the post's author and you included. Over ${spanWords(HOT_BOX_THINS)} it thins to a haze, and the haze stays. ${air} One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`;
   },
   /* A color the card cannot read says nothing, rather than the name `inkName` gives it ("ink"). */
   logPlay: (config) => {

@@ -174,7 +174,7 @@ export function airedOut(state: unknown): boolean {
 }
 
 /**
- * How tall the band the author has aired out is, in px of a content area `boxHeight` tall, measured from its top border: the saved share (`{ aired }`,
+ * How tall the band the author has aired out is, in px of a box `boxHeight` tall (the row, or the content area where there is no row), measured from its top border: the saved share (`{ aired }`,
  * more than 0 and less than 1) of the height, the whole box for a play aired out clean, and 0 for none or for a state the card would not keep. The band is
  * the area's full width, and no smoke is drawn, cleared into, or masked over in it.
  */

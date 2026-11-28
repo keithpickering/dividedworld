@@ -2,6 +2,9 @@
  * A post wearing a live play of a card that covers the row (`CardUi.coversRow`) has the card's `Cover` drawn over its whole row, inside the row's grid, until the reader opens it.
  * The cards here are the engine's own test cards, never an instance's.
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -9,6 +12,7 @@ import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { CardUi, CoverProps, EffectProps } from '../cards/types.ts';
 import { useThread } from './context.ts';
+import { overInkZ, ROW_Z_BASE, rowZ } from './cover.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 
@@ -17,6 +21,7 @@ const rules = (key: string, extra: Partial<CardRules> = {}): CardRules => ({
   canApply: (t, e, _c, now) => landsOn({ key, reaches: ['post'], ...(extra.stack ? { stack: extra.stack } : {}) }, t, e, now),
   ...extra,
 });
+const here = path.dirname(fileURLToPath(import.meta.url));
 const instance: Instance = {
   ...testInstance,
   cards: [...testInstance.cards, rules('cover-card', { lasts: { unit: 'day', count: 1 }, stack: 3 }), rules('cover-b', { lasts: { unit: 'day', count: 1 } }), rules('bare', { lasts: { unit: 'day', count: 1 } }), rules('probe', { lasts: { unit: 'day', count: 1 } }), rules('folder', { lasts: { unit: 'day', count: 1 } }), rules('filler', { lasts: { unit: 'day', count: 1 } })],
@@ -312,6 +317,66 @@ describe('the row\'s layers are in the instance\'s order (InstanceUi.rowOrder)',
     const again = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
     await waitFor(() => expect(layer(again)).not.toBeNull());
     expect(z(layer(again))).toBeLessThan(z(covers(again)[0]!));
+  });
+
+  /* An over-ink box (the ORIGIN box, spin/Origin.tsx) stands over the row's fill layers (issue #1275). jsdom cannot composite, so the contract the browser stacks by is asserted: the grid names the box's level
+     (`--kb-over-z`), it is over every layer and under a shut cover, and the CSS that uses it takes the body out of its own stacking context (else the level is trapped inside the body, under the layers). */
+  const overZ = (article: HTMLElement) => Number(grid(article).style.getPropertyValue('--kb-over-z'));
+  test('with a fill layer up, the grid\'s over-ink level is above the layer; with a cover shut it is under the cover and over the layers ranked inside it', async () => {
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'filler');
+    const first = open(w, ['filler', 'cover-card']);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await waitFor(() => expect(layer(second)).not.toBeNull());
+    expect(overZ(second)).toBeGreaterThan(z(layer(second)));
+    first.unmount();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    open(w, ['cover-card', 'filler']);
+    const again = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await waitFor(() => expect(covers(again).length).toBe(1));
+    expect(overZ(again), 'under the shut cover').toBeLessThan(z(covers(again)[0]!));
+    expect(overZ(again), 'over the layer ranked inside the cover').toBeGreaterThan(z(layer(again)));
+    /* The marks strip stands at the level above it and the callout above that (fold.css), still under the shut cover. */
+    expect(overZ(again) + 2, 'the callout is under the shut cover').toBeLessThan(z(covers(again)[0]!));
+    expect(Math.min(z(layer(again)), overZ(again)), 'every level of the row is over what a card draws inside the body (an effect\'s element there keeps under ROW_Z_BASE)').toBeGreaterThanOrEqual(ROW_Z_BASE);
+  });
+
+  test('the CSS lifts the marks strip and the callout over the ORIGIN box, so a mark on its top edge stays pressable, and frees nothing without a layer', () => {
+    const fold = fs.readFileSync(path.resolve(here, 'fold.css'), 'utf8').replace(/\s+/gu, ' ');
+    expect(fold).toMatch(/\.kb-act-grid:has\(> \.kb-row-layer\) \.kb-marks \{[^}]*z-index: calc\(var\(--kb-over-z\) \+ 1\);/u);
+    expect(fold).toMatch(/\.kb-act-grid:has\(> \.kb-row-layer\) \.kb-marks \.kb-callout \{[^}]*z-index: calc\(var\(--kb-over-z\) \+ 2\);/u);
+    expect(fold).toMatch(/\.kb-act-grid:has\(> \.kb-row-layer\) > \.kb-act-meta\[data-kb-landed\] \{[^}]*z-index: calc\(var\(--kb-over-z\) \+ 1\);/u);
+  });
+
+  test('no effect element a card draws in the body stands at or over the row\'s lowest level, so a shut cover hides it (the grid is the context, the body is not)', () => {
+    const root = path.resolve(here, '../../..');
+    const dirs = ['engine/ui/cards', 'instances/divided-world/cards'];
+    const files = dirs.flatMap((d) => (fs.readdirSync(path.join(root, d), { recursive: true }) as string[]).filter((f) => f.endsWith('.css')).map((f) => path.join(root, d, f)));
+    expect(files.length).toBeGreaterThan(5);
+    const worst = Math.max(...files.flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/z-index:\s*(\d+)/gu)].map((m) => Number(m[1]))));
+    expect(worst, 'the highest z-index an effect or card stylesheet sets (Whoops! cursor, 60)').toBeGreaterThanOrEqual(60);
+    expect(worst).toBeLessThan(ROW_Z_BASE);
+    expect(fs.readFileSync(path.resolve(here, 'thread.css'), 'utf8')).toMatch(/\.kb-act-grid \{\s*isolation: isolate;/u);
+  });
+
+  test('the level is defined from the order alone: over every layer with no cover, and between the layers around a cover', () => {
+    expect(overInkZ(['a', 'b'], undefined)).toBeGreaterThan(rowZ(['a', 'b'], 'a'));
+    expect(overInkZ(['a', 'b'], undefined)).toBeGreaterThan(rowZ(['a', 'b'], 'zzz'));
+    expect(overInkZ(['a', 'b'], 'a') + 2).toBeLessThan(rowZ(['a', 'b'], 'a'));
+    expect(overInkZ(['a', 'b'], 'a'), 'over the layer ranked inside the cover').toBeGreaterThan(rowZ(['a', 'b'], 'b'));
+  });
+
+  test('a row with no fill layer names no over-ink level', async () => {
+    const w = world();
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    expect(grid(second).style.getPropertyValue('--kb-over-z')).toBe('');
+  });
+
+  test('the CSS lifts the ORIGIN box by that level and frees the body of its stacking context only where a layer is up', () => {
+    const fold = fs.readFileSync(path.resolve(here, 'fold.css'), 'utf8').replace(/\s+/gu, ' ');
+    expect(fold).toMatch(/\.kb-act-grid:has\(> \.kb-row-layer\) > \.kb-act-main \{[^}]*isolation: auto;[^}]*z-index: auto;/u);
+    expect(fold).toMatch(/\.kb-act-grid:has\(> \.kb-row-layer\) \.kb-origin\[data-kb-over-ink\] \{[^}]*z-index: var\(--kb-over-z\);/u);
   });
 
   test('a fill\'s play ending removes its layer', async () => {

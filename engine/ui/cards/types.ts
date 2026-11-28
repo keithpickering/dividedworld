@@ -197,6 +197,11 @@ export interface EffectProps {
   /** The post, as every reader sees it now (its current words included). */
   readonly post: Act;
   /**
+   * The BBCode source the screen draws for this post: the drawn version's body under a live rewind (`rewound.rewind.version`), the moment's version in a moment, a History row's own version there, and `post.currentPayload.body` otherwise. An effect that reads the words reads these, never `post`'s alone.
+   * Given to every effect, for now; it will be narrowed to the cards that redraw the words (docs/plans/2026-11-28-slog-forms-plan.md).
+   */
+  readonly body?: string;
+  /**
    * This card's plays on the post, ordered by layer, then by when they were played: one for most cards, up to the card's stack for the rest. A card named by another's
    * `CardUi.drawnBy` is also given that card's plays that fall on the post: they follow the card's own, and each carries its `reach` (a post's own plays carry none), which is how
    * an effect tells a lent play from its own. Its saved state and its release are in `states` and `released` with the card's own plays'.

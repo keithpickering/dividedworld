@@ -100,7 +100,10 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const shownPresent = useShownPresent(lens);
   const presenting = rewound !== null && bodyOf !== undefined && shownPresent === rewound.rewind.play;
   const hidden = useMemo(() => hiddenByRewind(rewound, presenting), [rewound, presenting]);
-  const words = rewound && bodyOf && !presenting ? bodyOf(rewound.rewind.version) : children;
+  /* The version whose words are drawn in place of the post's now (null where none); the effects are given its body (`EffectProps.body`) so one that reads the words reads these. */
+  const rewoundTo = rewound && bodyOf && !presenting ? rewound.rewind.version : null;
+  const words = rewoundTo && bodyOf ? bodyOf(rewoundTo) : children;
+  const drawnBody = bodyText(rewoundTo ?? post);
   /*
    * The tails of the plays here that write, read for the page together (tails.ts): a post with none of them is never read. The version drawn
    * is the post's current one, the newest any play has a row for, and a failed regeneration keeps the tail the play had (`resolveWritten`).
@@ -289,6 +292,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
         <BoundEffect
           key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach} cardKey={key}
           post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
+          {...(drawnBody !== undefined ? { body: drawnBody } : {})}
           {...(kept ? { kept: true as const } : {})} written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
           save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
           give={give} moreGifts={moreGifts} wallet={wallet}
@@ -472,6 +476,12 @@ const writingKeys = (cards: readonly CardRules[]): ReadonlySet<string> => new Se
 /** Whether a play is of a card that writes, on its post's own reach (a card that writes reaches a post alone). */
 const writes = (play: CardPlay, keys: ReadonlySet<string>): boolean => keys.has(play.card) && !play.reach && !play.faceDown;
 /** Each drive of a card (drivesOfPlays says which plays make one), in the order each was first played, with what the page knows of its gifts. */
+/** The BBCode source of an Act's current words, for `EffectProps.body`; undefined where it has none (a hidden version). */
+function bodyText(a: Act): string | undefined {
+  const body = a.currentPayload.body;
+  return typeof body === 'string' ? body : undefined;
+}
+
 function drivesOf(played: readonly PlayedDrive[], card: string, gifts: ReadonlyMap<Id, Gifts>, now: number): readonly Drive[] {
   return played.filter((d) => d.card === card).map((d): Drive => {
     const g = gifts.get(d.id);
@@ -721,7 +731,7 @@ export function MomentEffects({ moment, place, nameOf, onView, children }: {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
       <MomentEffect key={`${reach}:${key}`} Effect={Effect} card={key} at={at} onView={onView}
-        post={moment.version} plays={mine} states={reach === 'post' ? here.states : NO_STATES} released={NONE_RELEASED}
+        post={moment.version} {...(bodyText(moment.version) !== undefined ? { body: bodyText(moment.version)! } : {})} plays={mine} states={reach === 'post' ? here.states : NO_STATES} released={NONE_RELEASED}
         written={tails} {...(drawnAt !== null && reach === 'post' ? { version: drawnAt } : {})}
         reader={MOMENT_READER} place={place} reach={reach} nameOf={nameOf} ink={claims.at(`${reach}:${key}`, rank)}>
         {wrapped}
@@ -750,9 +760,11 @@ function useMomentVersion(version: Act, wanted: boolean): Id | null {
  * given `written` for this version's own rows and no saved state, so a tail shows in full whatever was cleared. A play with nothing for this
  * version draws none, and a post whose plays have nothing draws its words alone. Nothing here saves, releases or takes input.
  */
-export function VersionEffects({ post, version, plays, written, nameOf = () => '', children }: {
+export function VersionEffects({ post, version, body, plays, written, nameOf = () => '', children }: {
   /** The post (its words are `children`, the version's own). */
   readonly post: Act; readonly version: Id;
+  /** The version's own BBCode source, given to each effect as `EffectProps.body`. */
+  readonly body?: string;
   /** The live writing plays on the post, in play order; those with nothing in `written` are left out. */
   readonly plays: readonly CardPlay[];
   readonly written: ReadonlyMap<Id, Written>;
@@ -767,7 +779,7 @@ export function VersionEffects({ post, version, plays, written, nameOf = () => '
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
       <StillEffect key={key} Effect={Effect} card={key}
-        post={post} plays={has.filter((p) => p.card === key)} states={NO_STATES} released={NONE_RELEASED} written={written} version={version}
+        post={post} {...(body !== undefined ? { body } : {})} plays={has.filter((p) => p.card === key)} states={NO_STATES} released={NONE_RELEASED} written={written} version={version}
         reader={{ author: false, caster: false }} place="thread" reach="post" nameOf={nameOf}>
         {wrapped}
       </StillEffect>

@@ -39,6 +39,7 @@ test('the instance sells its cards at their prices', () => {
     ['card-collector', 'salty', 150],
     ['cheap-shot', 'salty', 150],
     ['class-clown', 'pepperoni', 150],
+    ['console-slog', 'salty', 100],
     ['feelin-fab', 'sweet', 20],
     ['feelin-glam', 'sweet', 300],
     ['force-field', 'sweet', 150],
@@ -48,6 +49,7 @@ test('the instance sells its cards at their prices', () => {
     ['graffiti', 'pepperoni', 300],
     ['hall-pass', 'sweet', 150],
     ['happy-heart', 'sweet', 150],
+    ['heads-will-roll', 'pepperoni', 300],
     ['heat-magnet', 'salty', 100],
     ['hot-box', 'salty', 100],
     ['hype-up', 'sweet', 100],
@@ -418,8 +420,9 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   // Off Day and Ultra Happy Heart are the legendaries that share the 2: two, at 0.01 each, so Ultra Happy Heart can be pulled.
   // So Very Happy (rare, the so-very-happy plan's Task 7) joined them, so nine share the 24.
   // Buzzkill (rare, the buzzkill plan's Task 7) joined them, so ten share the 24. Time Machine (rare, the Time Machine plan's Task 6) makes eleven.
+  // Heads Will Roll (rare, the season two cards plan's Task 6) makes twelve.
   const rares = cards.filter((c) => c.rarity === 'rare');
-  assert.deepEqual(rares.map((c) => c.key).sort(), ['buzzkill', 'feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'so-very-happy', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'time-machine', 'whodunnit']);
+  assert.deepEqual(rares.map((c) => c.key).sort(), ['buzzkill', 'feelin-glam', 'graffiti', 'heads-will-roll', 'line-cutter', 'main-event', 'so-very-happy', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'time-machine', 'whodunnit']);
   for (const c of rares) assert.ok(Math.abs(chance.get(c.key)! - 0.24 / rares.length) < 1e-9, `${c.name} at ${chance.get(c.key)}`);
   const legendaries = cards.filter((c) => c.rarity === 'legendary');
   assert.deepEqual(legendaries.map((c) => c.key).sort(), ['off-day', 'ultra-happy-heart']);

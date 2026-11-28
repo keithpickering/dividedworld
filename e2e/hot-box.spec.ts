@@ -58,7 +58,9 @@ const wave = (page: Page) => page.getByRole('button', { name: 'Wave the smoke' }
 /** The post's Hot Box mark, which opens the Lens. */
 const MARK = `${POST} .kb-mark[data-kb-card="hot-box"]:not(.kb-ghost-mark)`;
 const LENS = (page: Page) => page.getByRole('dialog', { name: 'Cards on this post' });
-const words = (page: Page) => page.locator(`${POST} .dw-hotbox-words`);
+/** The post's words: the engine's words box in the post's own content area (the smoke fills the row and has no words box of its own). */
+const WORDS = `${POST} .kb-act-grid > [data-kb-content-area] [data-kb-words-box]`;
+const words = (page: Page) => page.locator(WORDS);
 const link = (page: Page) => words(page).locator('a');
 
 /**
@@ -141,7 +143,7 @@ async function lines(page: Page): Promise<Box[]> {
       if (last && Math.abs(last.y - f.y) < 4) { last.x = Math.min(last.x, f.x); last.r = Math.max(last.r, f.r); last.b = Math.max(last.b, f.b); } else out.push({ ...f });
     }
     return out.map((o) => ({ x: o.x, y: o.y, w: o.r - o.x, h: o.b - o.y }));
-  }, `${POST} .dw-hotbox-words`);
+  }, WORDS);
 }
 
 /** The smoke's tile canvas at a viewport point (the layer holds a canvas for each tile): the mean of the (2 * half + 1) square around it, each channel as the canvas holds it; null when no tile holds the point. */
@@ -217,14 +219,20 @@ async function aim(page: Page) {
  * The smoke's radius, read from the content area's width (the smoke's container is the post's whole content area, `.kb-act-main`, border to border: the owner's
  * word of 2026-11-15, as Whoops! and Feelin' Fab fill theirs). Not the words' box, which is narrower by the area's padding.
  */
-const radiusOf = async (page: Page) => holeRadius((await areaBox(page)).w);
+const radiusOf = async (page: Page) => holeRadius((await rowBox(page)).w);
 
 /** The post's content area's padding box in the viewport: its border box inside its borders (`clientLeft`, `clientTop`), `clientWidth` by `clientHeight`. */
 const areaBox = (page: Page): Promise<Box> => page.evaluate((sel) => {
-  const area = document.querySelector(sel)!.closest<HTMLElement>('.kb-act-main')!;
+  const area = document.querySelector<HTMLElement>(sel)!;
   const r = area.getBoundingClientRect();
   return { x: r.left + area.clientLeft, y: r.top + area.clientTop, w: area.clientWidth, h: area.clientHeight };
-}, `${POST} .dw-hotbox`);
+}, `${POST} .kb-act-grid > [data-kb-content-area]`);
+/** The post's row, the smoke's box (design docs/plans/2026-11-27-season-two-cards-design.md, section 7): the grid's padding box, postbit included, which the row layer's `inset: 0` fills. */
+const rowBox = (page: Page): Promise<Box> => page.evaluate((sel) => {
+  const row = document.querySelector<HTMLElement>(sel)!;
+  const r = row.getBoundingClientRect();
+  return { x: r.left + row.clientLeft, y: r.top + row.clientTop, w: row.clientWidth, h: row.clientHeight };
+}, `${POST} .kb-act-grid`);
 const wordsBox = async (page: Page): Promise<Box> => { const b = (await words(page).boundingBox())!; return { x: b.x, y: b.y, w: b.width, h: b.height }; };
 /**
  * The smoke's box in the viewport: the union of its tiles' canvases (the layer places each at its offset in the box). The union is the content area only
@@ -240,7 +248,7 @@ const canvasBox = (page: Page): Promise<Box> => page.locator(`${POST} canvas.dw-
 
 /** The tiles together are the content area's padding box, to a pixel, and each tile's bitmap is made. */
 async function expectCanvasFillsArea(page: Page) {
-  const a = await areaBox(page), c = await canvasBox(page);
+  const a = await rowBox(page), c = await canvasBox(page);
   for (const k of ['x', 'y', 'w', 'h'] as const) expect(Math.abs(c[k] - a[k]), `the canvas's ${k} is the content area's (${JSON.stringify(c)} against ${JSON.stringify(a)})`).toBeLessThanOrEqual(1);
   expect(await page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluateAll((els) => els.length > 0 && els.every((el) => (el as HTMLCanvasElement).width > 0 && (el as HTMLCanvasElement).height > 0))).toBe(true);
 }
@@ -339,12 +347,18 @@ test('the words under the smoke are covered in the caster\'s color, and inert', 
   expect(inFogHue(px), `the fog over the words is in the smoke's hue (${JSON.stringify(px)})`).toBe(true);
   expect(await words(page).evaluate((el) => (el as HTMLElement).inert)).toBe(true);
   /* Inert for a pointer too: what the point over a word hits is not the words. */
-  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('.dw-hotbox-words') ?? null, [line.x + 40, line.y + line.h / 2] as const)).toBeNull();
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-kb-words-box]') ?? null, [line.x + 40, line.y + line.h / 2] as const)).toBeNull();
 });
 
-test('the smoke fills the post\'s content area border to border, beyond the words\' box', async ({ page }) => {
+test('the smoke fills the post\'s row border to border, postbit included, beyond the words\' box', async ({ page }) => {
   await open(page, 'fresh-light');
   await expectCanvasFillsArea(page);
+  /* The postbit's cell is in the row: the smoke is over it too. */
+  const bit = await page.locator(`${POST} .kb-act-grid > :not([data-kb-content-area]):not(.kb-row-layer)`).evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 20), w: r.width }; }).find((b) => b.w > 20));
+  expect(bit, 'the row has a cell beside the words').toBeDefined();
+  const bitFog = (await fogAt(page, bit!.x, bit!.y, 1))!;
+  expect(bitFog, 'the smoke is over the postbit').not.toBeNull();
+  expect(bitFog.a).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
   const a = await areaBox(page), w = await wordsBox(page);
   expect(w.x - a.x, 'the area has padding around the words, which is what this checks').toBeGreaterThanOrEqual(6);
   const spots = await offWords(page);
@@ -376,7 +390,7 @@ test('a mouse in the area\'s padding, outside the words, opens a clearing there'
   await expect.poll(() => alphaAt(page, left.x, left.y), 'and in the left padding too').toBeLessThanOrEqual(2);
 });
 
-test('the post holds no control of its own, and nothing else of it is hit or under the fog', async ({ page }) => {
+test('the post holds no control of its own, and every control in its row is under the smoke yet pressable', async ({ page }) => {
   await open(page, 'fresh-light', { frozen: true });
   await expect(page.locator(`${POST} .dw-hotbox-wave`), 'no wave button stands on the post').toHaveCount(0);
   await expect(wave(page), 'and no "Wave the smoke" is there before the Lens is open').toHaveCount(0);
@@ -385,7 +399,7 @@ test('the post holds no control of its own, and nothing else of it is hit or und
     const post = document.querySelector('#post-43')!;
     const canvases = [...post.querySelectorAll<HTMLElement>('canvas.dw-hotbox-smoke')];
     const found = [...post.querySelectorAll<HTMLElement>('button, a[href], [role="button"], [data-kb-over-ink], .kb-mark')]
-      .filter((el) => !el.closest('.dw-hotbox-words') && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0);
+      .filter((el) => !el.closest('[data-kb-words-box]') && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0);
     const name = (el: HTMLElement) => `${el.tagName.toLowerCase()}.${String(el.className).split(/\s+/u)[0] ?? ''}${el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : ''}`;
     const center = (el: HTMLElement) => { const b = el.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] as const; };
     const blocked = found.filter((el) => { const [x, y] = center(el); const hit = document.elementFromPoint(x, y); return !(hit && (hit === el || el.contains(hit))); }).map(name);
@@ -398,7 +412,11 @@ test('the post holds no control of its own, and nothing else of it is hit or und
   test.info().annotations.push({ type: 'post controls', description: `all: ${report.all.join(', ')}; blocked: ${report.blocked.join(', ') || 'none'}; under the fog: ${report.under.join(', ') || 'none'}` });
   console.log(`hot-box post #43 controls: ${JSON.stringify(report)}`);
   expect(report.blocked, 'no control of the post is blocked by the smoke').toEqual([]);
-  expect(report.under.filter((n) => n.includes('kb-reactions') || n.includes('kb-mark')), 'the reactions row and the mark are above the fog').toEqual([]);
+  /* The smoke is over the whole row, postbit included (design docs/plans/2026-11-27-season-two-cards-design.md, section 7), so the row's controls are plainly under it; what matters is that a press still reaches each. The mark's press is made for real: it opens the Lens, where Wave the smoke is the way out. */
+  expect(report.all.some((n) => n.includes('kb-mark')), 'the row holds the card\'s mark').toBe(true);
+  await page.locator(MARK).click();
+  await expect(LENS(page), 'a click on the mark under the smoke opens the Lens').toBeVisible();
+  await expect(wave(page)).toBeVisible();
 });
 
 test('a mouse over a line clears it there, softly, and it closes again after the pointer leaves', async ({ page }) => {
@@ -451,9 +469,9 @@ test('the Lens opens from the card\'s mark and shows the state, the way out and 
   await page.locator(`${POST} .kb-mark[data-kb-card="hot-box"]:not(.kb-ghost-mark)`).click();
   const lens = page.getByRole('dialog', { name: 'Cards on this post' });
   await expect(lens).toBeVisible();
-  await expect(lens.getByText('Smoke over the words')).toBeVisible();
+  await expect(lens.getByText('Smoke over the post')).toBeVisible();
   /* The page's reader is the post's author, and the play landed just now: the hold is on, so the author is told when they can air it out and reads through as any reader does until then. */
-  await expect(lens.locator('.kb-lens-ends')).toContainText(/^You can air it out for good in \d+h \d+m\. Until then, point at the words, or hold Wave the smoke, to read\./u);
+  await expect(lens.locator('.kb-lens-ends')).toContainText(/^You can air it out for good in \d+h \d+m\. Until then, point at the smoke, or hold Wave the smoke, to read\./u);
   await expect(lens.locator('.kb-lens-ends')).toContainText(/Ends/u);
   await expect(lens.getByRole('button', { name: 'Wave the smoke' })).toBeVisible();
 });
@@ -507,7 +525,8 @@ test('Tab reaches the mark, Enter opens the Lens, Tab reaches "Wave the smoke", 
   /* Under the fog again: the last line, still in view, whose tile was held cleared through the wave, and then the first, whose tile is made after it (fogged, not bare). */
   for (const index of [-1, 0]) {
     const l = await view(index);
-    await expect.poll(() => alphaAt(page, l.x + l.w / 2, l.y + l.h / 2), `the smoke is back over line ${index}`).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
+    /* The page's clock is frozen, and a tile is repainted in the frame that follows a move of it: each look at the pixel moves the clock a frame, as `view` does until the tile is held. */
+    await expect.poll(async () => { const a = await alphaAt(page, l.x + l.w / 2, l.y + l.h / 2); if (!(a >= (fogAlpha(1) - 0.06) * 255)) await run(page, 16); return a; }, `the smoke is back over line ${index}`).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
   }
   /* Focus was in the words when they went inert: it goes to the post's mark (No player is ever stuck), and nowhere else is it moved. */
   await expect(page.locator(MARK)).toBeFocused();
@@ -585,16 +604,23 @@ test('one click on the Lens\'s hold holds for a second and does not finish a pos
   await expect(words(page), 'one click does not take a post\'s sweep to its end').toHaveJSProperty('inert', true);
 });
 
-test('twelve clicks on the Lens\'s hold, 900 ms apart, finish the short post\'s sweep', async ({ page }) => {
+test('clicks on the Lens\'s hold, 900 ms apart, finish the short post\'s sweep of the row', async ({ page }) => {
   test.setTimeout(120_000);
   await open(page, 'fresh-light', { frozen: true });
   await openLens(page);
+  /* The sweep goes over the row's height, postbit included (design section 7), a line at a time at the scrub's pace, so it is longer than the content area's was: the most clicks it can need is the row's height in the shortest lines
+     the sweep tells apart (it merges those 2 px apart), a line of the row's width each, with a second of the hold per click. */
+  const row = await rowBox(page);
+  const most = Math.ceil((row.h / 12) * (row.w / SWEEP_PX_S) * 1000 / 900);
+  let clicks = 0;
   /* Each click comes before the last one's second is out, so the hold goes on from one to the next. */
-  for (let i = 0; i < 12; i++) {
+  while (clicks < most && await words(page).evaluate((el) => (el as HTMLElement).inert)) {
     await wave(page).dispatchEvent('click');
     await run(page, 900);
+    clicks += 1;
   }
-  await expect(words(page), 'the held sweep reached the end of the post').not.toHaveJSProperty('inert', true);
+  expect(clicks, 'it took more than the one click that does not finish a post').toBeGreaterThan(1);
+  await expect(words(page), `the held sweep reached the end of the post (${clicks} clicks of at most ${most})`).not.toHaveJSProperty('inert', true);
 });
 
 test('the fog fills the area at rest, and its repaints are at most 20 a second', async ({ page }) => {
@@ -780,17 +806,17 @@ test.describe('under forced colors', () => {
       await page.emulateMedia({ forcedColors: 'active' });
       const sign = page.locator(`${POST} .dw-hotbox-sign`);
       await expect(sign).toBeVisible();
-      await expect(sign).toContainText('Smoke over the words');
+      await expect(sign).toContainText('Smoke over the post');
       /* The page's reader is the post's author, inside the hold: the sign says when they can air it out, and the way through until then. */
-      await expect(sign).toContainText(/You can air it out for good in \d+h \d+m\. Until then, point at the words, or hold Wave the smoke, to read\./u);
+      await expect(sign).toContainText(/You can air it out for good in \d+h \d+m\. Until then, point at the smoke, or hold Wave the smoke, to read\./u);
       const text = await systemColor(page, 'CanvasText');
       const frame = page.locator(`${POST} .dw-hotbox-frame`);
       await expect(frame).toBeVisible();
       expect(await frame.evaluate((el) => { const c = getComputedStyle(el); return { style: c.outlineStyle, width: c.outlineWidth, color: c.outlineColor }; })).toEqual({ style: 'solid', width: '2px', color: text });
       await expect(page.locator(`${POST} canvas.dw-hotbox-smoke`), 'no tile is made under forced colors').toHaveCount(0);
-      /* The outline is the content area's, border to border (the smoke's container), not the words'. */
-      const fb = (await frame.boundingBox())!, ab = await areaBox(page);
-      for (const [k, v] of [['x', fb.x], ['y', fb.y], ['w', fb.width], ['h', fb.height]] as const) expect(Math.abs(v - ab[k]), `the frame's ${k} is the area's`).toBeLessThanOrEqual(1);
+      /* The outline is the row's, border to border (the smoke's container), postbit included, not the words'. */
+      const fb = (await frame.boundingBox())!, ab = await rowBox(page);
+      for (const [k, v] of [['x', fb.x], ['y', fb.y], ['w', fb.width], ['h', fb.height]] as const) expect(Math.abs(v - ab[k]), `the frame's ${k} is the row's`).toBeLessThanOrEqual(1);
       /* No frame is drawn for a canvas nobody sees. The toggle has settled first (the sign is up above; a short step lets the effect's own re-render and its last paint go by). */
       await run(page, 100);
       await page.waitForTimeout(200);
@@ -1022,7 +1048,7 @@ test.describe('at a phone\'s width', () => {
 
   test('a vertical swipe that starts on the smoked words scrolls the page and leaves no long wake', async ({ page }) => {
     await open(page, 'long-post');
-    const host = page.locator(`${POST} .dw-hotbox-words`);
+    const host = words(page);
     /* The post's words a third of the way down the screen, so a swipe up starts on them. */
     await host.evaluate((el) => { window.scrollBy(0, el.getBoundingClientRect().top - 300); });
     await settled(page, { loops: true });

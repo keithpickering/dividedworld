@@ -925,6 +925,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const params = at.payload['params'] as Record<string, unknown> | undefined;
       for (const c of [at.payload['character'], params?.['character'], at.payload['locks']]) { const id = selfCharacter(c); if (id !== null) named.add(id); }
       if (hop === 0 && at.kind === 'unmask' && at.character !== null && characters.has(at.character)) named.add(at.character);
+      /* An open is the opener's own Act and changes the giver's hand on a return: both are poked, the giver through the box's character (`act_self_characters`, 0457). */
+      if (hop === 0 && at.kind === 'open_gift') for (const c of [at.character, at.target === null ? null : acts.get(at.target)?.character ?? null]) if (c !== null && characters.has(c)) named.add(c);
       for (const l of banLifts) if (l.play === at.id) { const id = selfCharacter(acts.get(l.ban)?.payload['character']); if (id !== null) named.add(id); }
       /* Mirrors act_self_characters' two-hop limit; the kind cut (SELF_CHAIN) ends today's chains first. */
       if (hop >= 2 || !SELF_CHAIN.has(at.kind) || at.target === null) break;
@@ -978,7 +980,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const spring = acts.get(a.payload.spring as string);
       return spring !== undefined && spring.kind === 'spring' && spring.target !== null && liveVeils(spring.target, 'author').some((v) => v.author === a.character);
     })();
-    return veiled || walled || sprung ? standIn().id : a.character;
+    /* An open (0457) is the post's author's Act on the box, whose target is the box and whose character is the giver's: read through its box to the post, as a draw or a wash is read through its card. */
+    const box = deep && a.kind === 'open_gift' && a.target !== null ? acts.get(a.target) : undefined;
+    const opened = box !== undefined && box.kind === 'card' && box.target !== null && liveVeils(box.target, 'author').some((v) => v.author === a.character);
+    return veiled || walled || sprung || opened ? standIn().id : a.character;
   }
   /** my_veiled_posts (0357): the caller's own live author veils among these posts, by post, for the player of the post's own character alone. */
   const myVeiled = (posts: readonly Id[]) => [...veils].filter(([play, v]) => v.veil === 'author' && v.author !== null && posts.includes(v.post) && veilLive(play, v) && characters.get(v.author)?.owner === me()?.id)
@@ -2965,6 +2970,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!giftRules) return refuse(`there is no card "${gift.card}"`, 'gift');
       const problem = giftProblem(rules, giftRules, gift.config);
       if (problem !== null) return refuse(problem, 'gift');
+      /* Only a post's author opens its box, so a post no account owns (a staff character's) is turned away at the wrap, in the same words for every caster: who is on staff is public. The giver's own post is allowed. */
+      if (on.character === null || !characters.get(on.character)?.owner) return refuse("a present is left on a player's post, since only its author can open it", 'target');
     }
     /* A staff character casts no card that ends a Gimmick (place_cast, 0405), said before the Ward is asked; the fake's acting() turns a staff character away anyway, so this mirrors the server's guard. */
     if (rules.cuts !== undefined && characters.get(character)?.staff !== undefined) return refuse('a staff character casts no card that ends a Gimmick');
@@ -2997,7 +3004,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const hidden = rules.discipline.kind === 'fall' ? liveVeils(on.id, 'author') : [];
       if (hidden.length > 0) return refuse(`this post's author is hidden until ${refusalTime(iso(Math.max(...hidden.map((v) => v.endsAt))))}; nobody takes the fall for it before then`);
       if (on.character !== null && characters.get(on.character)?.staff) return refuse(`${rules.name} is played on a player's post`);
-      const banned = bannedUntilOf(character);
+      const banned = asGiver ? null : bannedUntilOf(character);
       if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
     }
     /* What the card's landing refuses on this post (land_refusal, 0357): public facts alone, the same for every caster, before anything is paid or written. */
@@ -3016,7 +3023,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
     }
     /* place_cast asks not_locked_out once the thread is known, before its back is met, so the Move that springs a lockout is not refused by it. */
-    const lockedOut = lockedOutRefusal(character, on.thread);
+    /* A gift's landing is the post's own checks alone, whatever has happened to its giver since: no ban, lockout, hand or wallet is asked (openGift). */
+    const lockedOut = asGiver ? null : lockedOutRefusal(character, on.thread);
     if (lockedOut) return lockedOut;
     if (reply !== undefined && !carries) return refuse('only a card that carries a reply takes one', 'body');
     if (carries && !/[\p{L}\p{N}]/u.test(reply?.body ?? '')) return refuse('write the reply this card carries', 'body');
@@ -3110,8 +3118,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       ? write({ id: replyId, character, kind: 'post', thread: on.thread, payload: { body: reply.body } }) : null;
     if (replied) underPlays.set(written.id, { parent: target, reply: replied.id });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
-    spend(account, charged, 'play', written.id);
-    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: charged });
+    /* A gift's landing at the open is paid for already (at the wrap) and writes no row of its own. */
+    if (!asGiver) {
+      spend(account, charged, 'play', written.id);
+      /* The box's row carries the box's own price; the wrapped card has its own row beside it, at the extra price it costs on this post. */
+      recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
+      if (wrapped) recordCard(account.id, written.at, { card: gift!.card, kind: 'played', act: written.id, price: giftPrice });
+    }
     if (wrapped) gifts.set(written.id, { account: account.id, card: gift!.card, config: giftConfig!.ok ? (giftConfig!.value as Record<string, unknown>) : {} });
     sendAct(written);
     /* The reply is heard as `under`, after its card, and never as an act of its own: no screen draws it at the thread's tail first. */
@@ -3159,7 +3172,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const giver = accounts.get(held.account)!;
     reversedPlays.add(boxId);
     const tried = playCard(held.card, box.character!, box.target, held.config, '', 'post', undefined, undefined, undefined, undefined, undefined, { account: giver });
-    const open = write({ character: post.character, kind: 'open_gift', thread: box.thread, target: boxId, payload: { box: boxId, did: tried.ok ? 'landed' : 'returned', gift: tried.ok ? tried.value.id : null, why: tried.ok ? null : tried.error } });
+    const open = write({ character: post.character, kind: 'open_gift', thread: box.thread, target: boxId, payload: { box: boxId, did: tried.ok ? 'landed' : 'returned', gift: tried.ok ? tried.value.id : null, why: tried.ok ? null : tried.error, ...(tried.ok && tried.value.payload.caught !== undefined ? { caught: true } : {}) } });
     sendAct(open);
     gifts.delete(boxId);
     openedBoxes.add(boxId);

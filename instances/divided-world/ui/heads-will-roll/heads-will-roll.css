@@ -1,0 +1,204 @@
+/*
+ * Heads Will Roll (Effect.tsx): the space ground and its starfield fill the post's content area border to border, under the words; the heads lie over the same box and take
+ * the pointer themselves, the layer around them none, so a link or a button in the words stays pressable. Both layers are placed in px from the host by Effect.tsx (the box is the
+ * content area's), and a head is moved by `transform` alone: its size is laid out when its mass changes, never in a frame.
+ *
+ * Painting the body (`data-kb-bleed`) the host is no stacking context of its own: the ground lies at the bottom of the body's, the words at its level, the heads over both.
+ */
+.dw-hwr {
+  position: relative;
+  isolation: isolate;
+}
+.dw-hwr[data-kb-bleed] {
+  isolation: auto;
+}
+.dw-hwr-ground {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background-color: #060a1c;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, #ffffff, transparent),
+    radial-gradient(1px 1px at 31% 72%, #d6e4ff, transparent),
+    radial-gradient(1.5px 1.5px at 47% 33%, #ffffff, transparent),
+    radial-gradient(1px 1px at 63% 81%, #ffe9c4, transparent),
+    radial-gradient(1px 1px at 78% 22%, #ffffff, transparent),
+    radial-gradient(1.5px 1.5px at 91% 56%, #cfe0ff, transparent),
+    radial-gradient(1px 1px at 22% 46%, #ffffff, transparent),
+    radial-gradient(1px 1px at 55% 9%, #ffffff, transparent),
+    radial-gradient(ellipse at 50% 120%, #1a2358 0%, transparent 70%);
+  background-size: 140px 110px, 170px 130px, 210px 150px, 130px 120px, 190px 140px, 230px 160px, 120px 100px, 160px 120px, 100% 100%;
+}
+.dw-hwr[data-kb-bleed] > .dw-hwr-ground {
+  z-index: -1;
+}
+.dw-hwr-words {
+  position: relative;
+  z-index: 1;
+  color: #f2f5ff;
+  text-shadow: 0 1px 2px #000000, 0 0 6px rgba(0, 0, 0, 0.85);
+}
+.dw-hwr-words a {
+  color: #9fd3ff;
+}
+.dw-hwr[data-kb-bleed] > .dw-hwr-words {
+  z-index: 0;
+}
+
+.dw-hwr-heads {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+.dw-hwr-head {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  will-change: transform;
+}
+.dw-hwr-head:focus-visible {
+  outline: 3px solid #19e3ff;
+  outline-offset: 3px;
+}
+/* A small head's target grows to a finger's, over the space around it, without growing the head. */
+.dw-hwr-head::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+}
+.dw-hwr-plain {
+  cursor: default;
+  pointer-events: none;
+}
+.dw-hwr-plain::after {
+  content: none;
+}
+.dw-hwr-ball {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 38%),
+    radial-gradient(circle at 50% 50%, #5b6bd6, #2b2f78 72%, #14173f 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55), 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+/* An Overreaction's head is its own color; the head the reader sent has a ring. */
+.dw-hwr-head[data-local] > .dw-hwr-ball {
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 38%),
+    radial-gradient(circle at 50% 50%, #e0568a, #8a2150 72%, #3f0d26 100%);
+}
+.dw-hwr-head[data-react] > .dw-hwr-ball {
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 38%),
+    radial-gradient(circle at 50% 50%, #2fb8c9, #12606c 72%, #062d34 100%);
+}
+.dw-hwr-head[data-yours] > .dw-hwr-ball {
+  box-shadow: 0 0 0 2px #ffe27a, 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.dw-hwr-head[data-pending] > .dw-hwr-ball {
+  opacity: 0.7;
+}
+/* The face stays upright: only the ball under it rolls. */
+.dw-hwr-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 0;
+  text-shadow: 0 1px 2px #000000;
+  pointer-events: none;
+}
+.dw-hwr-face b {
+  font-size: 0.7em;
+  font-weight: bold;
+}
+/* The reel-in: a thin bar inside the head's foot (never under it, where the box's bottom border would clip it), filling over the time the catch takes (its duration is set inline). */
+.dw-hwr-reel {
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  bottom: 12%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.dw-hwr-reel::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: #ffe27a;
+  transform-origin: left center;
+  animation: dw-hwr-reel linear forwards;
+  animation-duration: inherit;
+}
+@keyframes dw-hwr-reel {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.dw-hwr-note {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  margin: 0;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #ffffff;
+  font-size: 12px;
+  pointer-events: none;
+}
+.dw-hwr-note:empty {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .dw-hwr-ground {
+    background: Canvas;
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+  .dw-hwr-words,
+  .dw-hwr-words a {
+    color: CanvasText;
+    text-shadow: none;
+  }
+  .dw-hwr-ball {
+    background: ButtonFace;
+    box-shadow: inset 0 0 0 2px ButtonText;
+  }
+  .dw-hwr-face {
+    color: ButtonText;
+    text-shadow: none;
+  }
+  .dw-hwr-reel::after {
+    background: Highlight;
+  }
+}

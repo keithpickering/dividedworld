@@ -67,7 +67,7 @@ const RUN_STEP_MS = 40;
 const RUN_EVERY_MS = 1000;
 
 /**
- * Drives a mouse along the post's second line, from 60 px in to 260 px in, and parks it there, again every second. Dispatched on the content area, where the
+ * Drives a mouse along the post's second line, from 60 px in to 260 px in, and parks it there, again every second. Dispatched on the content area (in a thread's row the pointer is read on the row, which holds it), where the
  * smoke reads the pointer; it waits for the post's words and for the smoke's canvas, so that the first run is not lost to a post still being drawn.
  */
 function useParted(on: boolean, thread: string | null, ready: boolean) {
@@ -78,7 +78,7 @@ function useParted(on: boolean, thread: string | null, ready: boolean) {
     const timers = new Set<ReturnType<typeof setTimeout>>();
     let every: ReturnType<typeof setInterval> | undefined;
     const secondLine = () => {
-      const words = document.querySelector('#post-43 .dw-hotbox-words');
+      const words = document.querySelector('#post-43 .kb-act-grid > [data-kb-content-area] [data-kb-words-box]');
       if (!words) return null;
       const tops = new Map<number, { left: number; top: number; height: number }>();
       const walk = document.createTreeWalker(words, NodeFilter.SHOW_TEXT);

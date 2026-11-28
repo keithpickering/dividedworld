@@ -7,7 +7,7 @@
  * It lasts (docs/plans/2026-11-27-lasting-gags-design.md, section 2): over the first three days (`HOT_BOX_THINS`, a constant
  * of its screen) the smoke thins to a haze, and the haze stays; a play has no `lasts` and ends only if it carries an `ends`
  * (one played before this shipped). The post's author can air it out, line by line, for everyone: the saved state is
- * `{ aired }`, the share of the content area's height cleared from its top (more than 0 and less than 1, to a
+ * `{ aired }`, the share of the row's height (the content area's where there is no row) cleared from its top (more than 0 and less than 1, to a
  * ten-thousandth), or `{ clean: true }` once all of it is. The author's saves are held for `hotBox.holdHours` after the play
  * lands (`stateHeldUntil`; 0 holds none). Aired out clean is final (`drawsEffect.final`): no later save is taken, the play
  * holds no place in the card's stack, and the post can be smoked again.

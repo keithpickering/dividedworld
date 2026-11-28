@@ -19,6 +19,7 @@ import { ui as buzzkillUi } from './cards/buzzkill/ui.ts';
 import { ui as cardCollectorUi } from './cards/card-collector/ui.ts';
 import { ui as cheapShotUi } from './cards/cheap-shot/ui.ts';
 import { ui as classClownUi } from './cards/class-clown/ui.ts';
+import { ui as consoleSlogUi } from './cards/console-slog/ui.ts';
 import { ui as feelinFabUi } from './cards/feelin-fab/ui.ts';
 import { ui as feelinGlamUi } from './cards/feelin-glam/ui.ts';
 import { ui as forceFieldUi } from './cards/force-field/ui.ts';
@@ -28,6 +29,7 @@ import { ui as goodVibesUi } from './cards/good-vibes/ui.ts';
 import { ui as graffitiUi } from './cards/graffiti/ui.ts';
 import { ui as hallPassUi } from './cards/hall-pass/ui.ts';
 import { ui as happyHeartUi } from './cards/happy-heart/ui.ts';
+import { ui as headsWillRollUi } from './cards/heads-will-roll/ui.ts';
 import { ui as heatMagnetUi } from './cards/heat-magnet/ui.ts';
 import { ui as hotBoxUi } from './cards/hot-box/ui.ts';
 import { ui as hypeUpUi } from './cards/hype-up/ui.ts';
@@ -75,6 +77,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   cardCollectorUi,
   cheapShotUi,
   classClownUi,
+  consoleSlogUi,
   feelinFabUi,
   feelinGlamUi,
   forceFieldUi,
@@ -84,6 +87,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   graffitiUi,
   hallPassUi,
   happyHeartUi,
+  headsWillRollUi,
   heatMagnetUi,
   hotBoxUi,
   hypeUpUi,

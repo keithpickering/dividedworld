@@ -145,7 +145,19 @@ const played = (r: Fields, instance: Instance, play: 'cast' | 'use'): Fields => 
   // A card that replies carries a post of the caster's, bounded as the post action bounds one; a Use and any other card carry none.
   const replies = play === 'cast' && instance.cards.find((c) => c.key === key)?.replies === true;
   const reply = replies ? { reply: replyText(r, instance.settings.postMaxLength), ...framing(r) } : {};
-  return { card: key, through, target, config: r.config ?? {}, message: r.message ?? '', ...reached(r, instance, key, play), ...firstDraw(r, instance, key), ...reply };
+  return { card: key, through, target, config: r.config ?? {}, message: r.message ?? '', ...reached(r, instance, key, play), ...firstDraw(r, instance, key), ...reply, ...(play === 'cast' ? wrapped(r) : {}) };
+};
+
+/**
+ * The card a play wraps (design 1.4), sent apart from the box's own `config` so it never joins the box's payload: a card from the caster's hand and the caster's configuration of it. Which card may be wrapped, its configuration and its price
+ * are the card's rules' to say (the act function, with `giftProblem`), and whether the caster holds it is the database's.
+ */
+const wrapped = (r: Fields): { gift_card?: string; gift_config?: object } => {
+  const g = r.gift;
+  if (g === undefined || g === null) return {};
+  const { card: key, config } = (typeof g === 'object' && !Array.isArray(g) ? g : {}) as Fields;
+  if (typeof key !== 'string' || typeof config !== 'object' || config === null || Array.isArray(config)) throw new Refused('gift', 'is a card and its configuration');
+  return { gift_card: key, gift_config: config };
 };
 
 /**
@@ -362,6 +374,8 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   },
   // An admin ends a card play (supabase/migrations/0092_card_end.sql): the player's own call, since only_admins reads the caller.
   reverseCard: (r) => ({ rpc: 'reverse_card', args: { play: id(r, 'play') } }),
+  // The post's author opens a present (supabase/migrations/0457_gift_boxes.sql, open_gift): the service's call for the account, as a play is; whose post it is and whether the gift lands are the database's to say.
+  openGift: (r) => ({ rpc: 'open_gift', args: { box: id(r, 'box') }, asService: true }),
   saveEffect: (r) => {
     if (typeof r.state !== 'object' || r.state === null) throw new Refused('state', 'is the effect\'s state, an object');
     return { rpc: 'save_effect_state', args: { through: id(r, 'character'), on_play: id(r, 'play'), state: r.state }, asService: true, needsCardOfPlay: true };

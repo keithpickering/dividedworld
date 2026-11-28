@@ -18,6 +18,7 @@ import { buzzkill, price as buzzkillPrice } from './buzzkill.ts';
 import { cardCollector as cardCollectorBase, price as cardCollectorPrice } from './card-collector.ts';
 import { cheapShot, price as cheapShotPrice } from './cheap-shot.ts';
 import { classClown, price as classClownPrice } from './class-clown.ts';
+import { consoleSlog, price as consoleSlogPrice } from './console-slog.ts';
 import { feelinFab, price as feelinFabPrice } from './feelin-fab.ts';
 import { feelinGlam, price as feelinGlamPrice } from './feelin-glam.ts';
 import { forceField, price as forceFieldPrice } from './force-field.ts';
@@ -27,6 +28,7 @@ import { goodVibes, price as goodVibesPrice } from './good-vibes.ts';
 import { graffiti, price as graffitiPrice } from './graffiti.ts';
 import { hallPass, price as hallPassPrice } from './hall-pass.ts';
 import { happyHeart, price as happyHeartPrice } from './happy-heart.ts';
+import { headsWillRoll, price as headsWillRollPrice } from './heads-will-roll.ts';
 import { heatMagnet, price as heatMagnetPrice } from './heat-magnet.ts';
 import { hotBox, price as hotBoxPrice } from './hot-box.ts';
 import { hypeUp, price as hypeUpPrice } from './hype-up.ts';
@@ -72,6 +74,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [cardCollectorBase as CardRules, cardCollectorPrice],
   [cheapShot as CardRules, cheapShotPrice],
   [classClown as CardRules, classClownPrice],
+  [consoleSlog as CardRules, consoleSlogPrice],
   [feelinFab as CardRules, feelinFabPrice],
   [feelinGlam as CardRules, feelinGlamPrice],
   [forceField as CardRules, forceFieldPrice],
@@ -81,6 +84,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [graffiti as CardRules, graffitiPrice],
   [hallPass as CardRules, hallPassPrice],
   [happyHeart as CardRules, happyHeartPrice],
+  [headsWillRoll as CardRules, headsWillRollPrice],
   [heatMagnet as CardRules, heatMagnetPrice],
   [hotBox as CardRules, hotBoxPrice],
   [hypeUp as CardRules, hypeUpPrice],

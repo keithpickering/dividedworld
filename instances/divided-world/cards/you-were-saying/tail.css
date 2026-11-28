@@ -1,6 +1,6 @@
 /*
  * You Were Saying?'s tail (Effect.tsx): the old voice's words as terminal output bleeding into the post (the design's section 5, look B of
- * docs/research/2026-11-07-you-were-saying/look.html, which the owner chose). Courier, green on a faint green wash, inline after the post's
+ * docs/research/2026-11-07-you-were-saying/look.html, which the owner chose). Verdana, green on a faint green wash (Console Slog's green Courier terminal is its alone, docs/plans/2026-11-27-season-two-cards-design.md, section 3.4), inline after the post's
  * words (the engine's body is inline where a tail follows: engine/ui/bbcode/bbcode.css), each play's words a span of its own in the same run.
  *
  * The tail carries its own ground, as a piece of the game laid on the 2003 page does (Autocorrect's tape), so it reads on every board and every
@@ -11,7 +11,7 @@
 .dw-ywst {
   --dw-ywst-ink: #0a6b2a;
   --dw-ywst-ground: #eaf4ed;
-  font-family: 'Courier New', Courier, 'Liberation Mono', monospace;
+  font-family: Verdana, Geneva, sans-serif;
   color: var(--dw-ywst-ink);
   /* The model's text can hold paragraph breaks and a word longer than the column: both are kept and broken here (the block is no part of .kb-bb). */
   white-space: pre-wrap;
@@ -66,7 +66,10 @@
  * The block cursor, one in the run: it blinks, and holds still where it is told to (a moment, reduced motion). Its element is an empty
  * inline, a point in the run that takes no room and gives a word no place to break; the block is drawn from that point, out of the flow.
  * At the end of the run it is drawn back over its place; in the middle (`data-kb-mid`) it is drawn forward, over the next hidden character.
- * The offsets put the block where the place is in Courier New and Liberation Mono, whose line descends 0.3em: 0.15em below the baseline.
+ * The offsets put the block where the place is: its bottom 0.15em below the baseline, as the place's `vertical-align` puts it. The empty inline's bottom
+ * is where its font's line descends, so `bottom` is that descent less 0.15em. Verdana's hhea descender is 430 of 2048 units, 0.21em, so 0.21 - 0.15 = 0.06em
+ * (Courier New's was 0.30em, which gave 0.15em). The block is drawn with its own width and height, so only this offset depends on the font's metrics; a face
+ * that stands in for Verdana (Geneva on a Mac, whose descent is about 0.2em, DejaVu Sans, 0.24em) puts it within 0.04em of the place.
  */
 .dw-ywst-cursor {
   position: relative;
@@ -75,7 +78,7 @@
   content: '';
   position: absolute;
   right: 0;
-  bottom: 0.15em;
+  bottom: 0.06em;
   width: 0.55em;
   height: 1.05em;
   background: currentColor;

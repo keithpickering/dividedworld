@@ -55,7 +55,10 @@ describe('a card wrapped in another, as the server holds it (season two design, 
   const box = { ...base, key: 'present', name: 'Present For You', alignment: 'sweet' as const, rarity: 'uncommon' as const, wraps: true as const, stack: 1, playPrice: () => 150, canApply: (t: CardTarget, e: readonly CardEffect[], _c: unknown, now?: Date) => landsOn({ key: 'present', stack: 1 }, t, e, now) };
   const world: Instance = { ...instance, cards: [blot, shield, box], settings: { ...settings, economy: {} } };
   function setup(wallet = 600, hand: Record<string, number> = { present: 2, blot: 2 }) {
-    const fake = createFake({ instance: world });
+    return setupIn(world, hand, wallet);
+  }
+  function setupIn(inWorld: Instance, hand: Record<string, number> = { present: 2, blot: 2 }, wallet = 600) {
+    const fake = createFake({ instance: inWorld });
     const ana = fake.seed.account('ana');
     const bo = fake.seed.account('bo');
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
@@ -124,6 +127,34 @@ describe('a card wrapped in another, as the server holds it (season two design, 
     fake.signInAs(bo);
     expect(await fake.openGift(wrapped.id)).toEqual(refused('this present was already opened or ended'));
   });
+  test('an open on a post under a live author veil is shown under the stand-in, whether opened before the veil or after it, as acts_public shows the author\'s other Acts', async () => {
+    const whodunnit = { ...base, key: 'whodunnit', name: 'Whodunnit?', alignment: 'pepperoni' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 3 }, veil: 'author' as const, canApply: () => okv(undefined) };
+    const { fake, ana, bo, anaFace, boFace, opener } = setupIn({ ...world, anonymous: { name: 'Nobody', tagline: '' }, cards: [...world.cards, whodunnit] });
+    const cy = fake.seed.account('cy');
+    const cyFace = fake.seed.character(cy, 'Cy Face', 'face');
+    fake.seed.cards(cy, { whodunnit: 1 });
+    /* Two presents on Bo's post; Bo opens the first in the open, then Cy veils the post, then Bo opens the second. */
+    const first = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    fake.signInAs(bo);
+    const before = must(await fake.openGift(first.id));
+    fake.signInAs(cy);
+    must(await fake.playCard('whodunnit', cyFace, opener, {}, ''));
+    const stand = (await fake.act(opener))!.character!;
+    expect(stand).not.toBe(boFace);
+    fake.signInAs(ana);
+    const second = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    fake.signInAs(bo);
+    const after = must(await fake.openGift(second.id));
+    for (const reader of [ana, cy, bo]) {
+      fake.signInAs(reader);
+      const opens = await fake.cardEnds([first.id, second.id]);
+      expect(opens.map((a) => [a.kind, a.character])).toEqual([['open_gift', stand], ['open_gift', stand]]);
+      expect(JSON.stringify(opens)).not.toContain(boFace);
+      expect((await fake.postPlays([opener])).plays.filter((a) => a.kind === 'open_gift').every((a) => a.character === stand)).toBe(true);
+    }
+    expect(before.did).toBe('landed');
+    expect(after.did).toBe('landed');
+  });
   test('an open is its own Act, and no feed of an admin\'s ended cards reads it as one', async () => {
     const { fake, ana, bo, boFace, anaFace, opener } = setup();
     const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
@@ -155,6 +186,82 @@ describe('a card wrapped in another, as the server holds it (season two design, 
     fake.signInAs(boss);
     expect(await fake.reverseCard(wrapped.id)).toEqual(refused('that present was already opened'));
   });
+  test('a present is left on a post one of the players can open: a staff character\'s is refused in plain words, and the giver\'s own is allowed', async () => {
+    const { fake, anaFace, thread } = setup();
+    const mod = fake.seed.staff('mod', 'Mod Bot', 'mod');
+    const staffPost = fake.seed.staffPost(mod, thread, 'A staff post.');
+    expect(await fake.playCard('present', anaFace, staffPost, {}, '', 'post', undefined, undefined, undefined, undefined, gift)).toEqual(refused("a present is left on a player's post, since only its author can open it", 'target'));
+    expect(await held(fake)).toEqual({ present: 2, blot: 2 });
+    expect((await fake.wallet()).balance).toBe(600);
+    /* Their own post: they are its author, so they can open it. */
+    const mine = fake.seed.thread('general', anaFace, 'Mine', 'x'.repeat(30));
+    const wrapped = must(await fake.playCard('present', anaFace, mine.act, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    expect(must(await fake.openGift(wrapped.id))).toMatchObject({ did: 'landed' });
+  });
+
+  test('a wrap writes a card-ledger row for the box at its own price and one for the gift at the gift\'s extra price; a return writes a returned row for the gift', async () => {
+    const { fake, ana, bo, boFace, anaFace, opener } = setup();
+    const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    const played = async () => (await fake.log()).cards.filter((e) => e.kind === 'played').map((e) => ({ card: e.card, act: e.act, price: e.price }));
+    const rows = await played();
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(expect.arrayContaining([{ card: 'present', act: wrapped.id, price: 150 }, { card: 'blot', act: wrapped.id, price: 50 }]));
+    fake.signInAs(bo);
+    must(await fake.useCard('shield', boFace, opener, {}, ''));
+    const returned = must(await fake.openGift(wrapped.id));
+    expect(returned.did).toBe('returned');
+    fake.signInAs(ana);
+    const open = (await fake.characterActs(boFace, ['open_gift'], { offset: 0, limit: 5 }))[0]!;
+    expect((await fake.log()).cards.filter((e) => e.kind === 'returned')).toMatchObject([{ card: 'blot', act: open.id, price: 0 }]);
+    expect(await played()).toHaveLength(2);
+  });
+
+  test('a gift a trap catches at the open counts as landed: the open says so and the card is the setter\'s, not the giver\'s', async () => {
+    const trapped = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'blot', canApply: () => okv(undefined) };
+    const { fake, ana, bo, boFace, anaFace, opener } = setupIn({ ...world, cards: [...world.cards, trapped] });
+    fake.seed.cards(bo, { snare: 1 });
+    fake.signInAs(bo);
+    must(await fake.setCard('snare', boFace, opener, {}));
+    fake.signInAs(ana);
+    const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    fake.signInAs(bo);
+    const opened = must(await fake.openGift(wrapped.id));
+    expect(opened).toMatchObject({ did: 'landed', why: null });
+    expect(opened.gift!.payload.caught).toBeDefined();
+    const act = (await fake.characterActs(boFace, ['open_gift'], { offset: 0, limit: 5 }))[0]!;
+    expect(act.payload).toMatchObject({ did: 'landed', gift: opened.gift!.id, caught: true });
+    expect((await held(fake)).blot).toBe(1);
+    fake.signInAs(ana);
+    expect(await held(fake)).toEqual({ present: 1, blot: 1 });
+  });
+
+  test('the box\'s slot is freed before the gift is tried: on a one-slot post, an effect-drawing gift lands from an effect-drawing box', async () => {
+    const drawing = { ...box, drawsEffect: {}, canApply: (t: CardTarget, e: readonly CardEffect[], _c: unknown, now?: Date) => landsOn({ key: 'present', stack: 1, drawsEffect: {} }, t, e, now) };
+    const ink = { ...blot, key: 'ink', name: 'Ink', drawsEffect: {}, canApply: (t: CardTarget, e: readonly CardEffect[], _c: unknown, now?: Date) => landsOn({ key: 'ink', stack: 2, drawsEffect: {} }, t, e, now) };
+    const tight: Instance = { ...world, cards: [ink, drawing], settings: { ...settings, postEffects: 1 } };
+    const { fake, ana, bo, anaFace, opener } = setupIn(tight, { present: 1, ink: 1 });
+    const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, { card: 'ink', config: {} }));
+    /* The box holds the post's one slot while it waits: a second effect is refused there. */
+    expect((await fake.playCard('ink', anaFace, opener, {}, '')).ok).toBe(false);
+    fake.signInAs(bo);
+    const opened = must(await fake.openGift(wrapped.id));
+    expect(opened).toMatchObject({ did: 'landed', why: null });
+    expect(opened.gift).toMatchObject({ kind: 'card', payload: { card: 'ink' } });
+    fake.signInAs(ana);
+    expect(await held(fake)).toEqual({});
+  });
+
+  test('an open pokes both the opener and the giver with self (the open Act names the box\'s character, whose hand changes on a return)', async () => {
+    const { fake, ana, bo, boFace, anaFace, opener } = setup();
+    const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    fake.signInAs(bo);
+    must(await fake.useCard('shield', boFace, opener, {}, ''));
+    const from = fake.broadcast.log.length;
+    must(await fake.openGift(wrapped.id));
+    const topics = fake.broadcast.log.slice(from).filter((e) => e.event === 'self').map((e) => e.topic);
+    expect(topics).toEqual(expect.arrayContaining([`account:${ana}`, `account:${bo}`]));
+  });
+
   test('a wrap is refused when the giver holds no copy of the gift, or the wallet is short of the box and the gift together, and nothing changes hands', async () => {
     const none = setup(600, { present: 1 });
     expect(await none.fake.playCard('present', none.anaFace, none.opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift)).toEqual(refused('you hold no "blot" card to wrap; the Vending Machine sells them', 'gift'));

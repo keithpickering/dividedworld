@@ -543,7 +543,8 @@ describe('reads and their rows', () => {
     const ends = await h.api.cardEnds([A, A, 'x),y']);
     const q = h.to('acts_public');
     expect(q).toHaveLength(1);
-    expect(q[0]?.url.searchParams.get('kind')).toBe('eq.card_end');
+    /* An open of a present is the box's end too (open_gift, 0457), though no admin's. */
+    expect(q[0]?.url.searchParams.get('kind')).toBe('in.(card_end,open_gift)');
     expect(q[0]?.url.searchParams.get('target_act_id')).toBe(`in.(${A})`);
     expect(ends.map((e) => [e.id, e.targetActId])).toEqual([[D, A]]);
     expect(await h.api.cardEnds([])).toEqual([]);
@@ -1553,6 +1554,18 @@ describe('buying and playing a card', () => {
       { action: 'playCard', card: 'line-cutter', character: B, target: A, config: {}, message: '', body: 'Excuse me.' },
       { action: 'playCard', card: 'line-cutter', character: B, target: A, config: {}, message: '', body: 'Excuse me.' },
     ]);
+  });
+
+  it('wraps a card in a present apart from the box\'s configuration, and opens one through the act function, answering what landed or why not', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json(r.body && (r.body as { action?: string }).action === 'openGift' ? { box: A, did: 'returned', why: 'this post\'s Shield turns away cards up to uncommon', open: ACT_ROW, gift: null } : ACT_ROW) : undefined));
+    expect(await h.api.playCard('present', B, A, {}, '', undefined, undefined, undefined, undefined, undefined, { card: 'blot', config: { size: 2 } })).toEqual({ ok: true, value: ACT });
+    expect(await h.api.openGift(A)).toEqual({ ok: true, value: { box: A, did: 'returned', gift: null, why: 'this post\'s Shield turns away cards up to uncommon' } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([
+      { action: 'playCard', card: 'present', character: B, target: A, config: {}, message: '', gift: { card: 'blot', config: { size: 2 } } },
+      { action: 'openGift', box: A },
+    ]);
+    const landed = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ box: A, did: 'landed', why: null, open: ACT_ROW, gift: ACT_ROW }) : undefined));
+    expect(await landed.api.openGift(A)).toEqual({ ok: true, value: { box: A, did: 'landed', gift: ACT, why: null } });
   });
 
   it('takes a face-down card back through the act function, naming the character and the set, and reads the take-back\'s Act', async () => {
