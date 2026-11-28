@@ -637,7 +637,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 25 });
     await show(fake, me, pipe);
     const [row] = await rowsOf();
-    expect(row).toEqual(['Oct 28 · 13:00', 'You played Whoops!', 'As Pipewrench, on Gloomba\'s post #1. This post added 0.25.', '−0.25', '2.75']);
+    expect(row).toEqual(['Oct 28 · 13:00', 'You played Whoops!', 'As Pipewrench, on Gloomba\'s post #1. This play cost 0.25 more.', '−0.25', '2.75']);
     expect(within(bodyRows()[0]!).getByRole('link', { name: 'Gloomba\'s post #1' })).toHaveAttribute('href', expect.stringMatching(/#post-1$/u));
   });
 

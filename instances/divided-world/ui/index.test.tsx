@@ -1218,7 +1218,7 @@ describe('the Happy Hearts, Take the Fall and Tattle-Tale in plain words (card n
     const say = (k: string, s = instance.settings) => ui(k)!.describe(s);
     expect(say('happy-heart')).toBe(`A Sweet card, ${rules('happy-heart').rarity}, cast from any post by the character it lands on. It takes the oldest 2 warn points off that character's warn bar at once, as many as the lightest breach lands, or as many as are left. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`);
     expect(say('super-happy-heart')).toBe(`A Sweet card, ${rules('super-happy-heart').rarity}, cast from any post by the character it lands on. It takes every point off that character's warn bar at once. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`);
-    expect(say('ultra-happy-heart')).toBe(`A Sweet card, ${rules('ultra-happy-heart').rarity}, cast from any post by a banned character. It ends that character's ban at once. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. Any character but the banned one can play it, one of your own included. It is always cast face up. It costs nothing more to play.`);
+    expect(say('ultra-happy-heart')).toBe(`A Sweet card, ${rules('ultra-happy-heart').rarity}, cast from any post by a banned character. It ends that character's ban at once. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. Any character that isn't banned can play it, one of your own included. It is always cast face up. It costs nothing more to play.`);
     expect(say('take-the-fall')).toBe(`A Sweet card, ${rules('take-the-fall').rarity}, cast face up on a post by another character. The next time a Mod Bot's visit to that post files, its warn points land on the character that played this card instead of the post's author, and a ban they bring is that character's too. Only the points and the ban move: the post keeps its notice. One fits on a post. It waits until a visit files, the first filing uses it up, and it can be played while a visit is open. The character that took the fall can appeal the filing. It costs nothing more to play.`);
     expect(say('tattle-tale')).toBe(`A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For a week, when a Mod Bot's patrol picks which recent posts to look at, that character's posts count double in the draw, so they are more likely to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`);
     // The lightest band is the least of the three, in whatever order the settings hold them; one point is "1 warn point".
@@ -1914,7 +1914,7 @@ describe('the copy pass: the card descriptions say what their rules say, and no 
     ['tattle-tale', ['still drops a finding'], ['the Mod Bot still judges each post against the rules.']],
     ['thick-skin', ['pays more for the same reaction'], ['where this card is still up when that window ends']],
     ['this', ['its price at the machine'], ['It costs nothing more to play.']],
-    ['ultra-happy-heart', ['the character can post, react and play cards again from that moment', 'A banned character cannot play cards'], ['Any character but the banned one can play it, one of your own included.']],
+    ['ultra-happy-heart', ['the character can post, react and play cards again from that moment', 'A banned character cannot play cards'], ["Any character that isn't banned can play it, one of your own included."]],
     ['you-were-saying', ['an edit to the post gets a fresh take'], ['The author can erase it, but all at once.']],
   ];
   test.each(CASES)('%s: the cut words are gone and the new ones are said', (key, gone, says) => {
@@ -1922,17 +1922,19 @@ describe('the copy pass: the card descriptions say what their rules say, and no 
     for (const g of gone) expect(said, `${key} still says "${g}"`).not.toContain(g);
     for (const s of says) expect(said, `${key} does not say "${s}"`).toContain(s);
   });
-  test('Time Machine\'s summary follows its lasts when they are retuned, as its describe does', async () => {
+  test('Time Machine\'s summary follows its lasts and its rarity cap when they are retuned, as its describe does', async () => {
     /* The summary is written when the card loads, so the card is loaded again with its lasts changed. */
     vi.resetModules();
     vi.doMock('../cards/time-machine.ts', async (importOriginal) => {
       const real = await importOriginal<typeof import('../cards/time-machine.ts')>();
-      return { ...real, timeMachine: { ...real.timeMachine, lasts: { unit: 'day', count: 5 } } };
+      return { ...real, timeMachine: { ...real.timeMachine, lasts: { unit: 'day', count: 5 }, rewind: { ...real.timeMachine.rewind, upTo: 'uncommon' } } };
     });
     try {
       const { ui: retunedUi } = await import('./cards/time-machine/ui.ts');
       expect(retunedUi.describe(instance.settings)).toContain('For 5 days');
       expect(retunedUi.summary).toContain('For 5 days');
+      expect(retunedUi.describe(instance.settings)).toContain('no card up to uncommon');
+      expect(retunedUi.summary).toContain('no card up to uncommon');
     } finally {
       vi.doUnmock('../cards/time-machine.ts');
       vi.resetModules();

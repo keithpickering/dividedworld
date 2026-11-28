@@ -1043,7 +1043,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       key: `played:${e.act ?? i}`, kind: 'played', at: e.at, what: `You played ${cardName(e.card)}${place ? ` on ${place}` : ''}`,
       details: [
         `As ${nameOf(caster, 'one of your characters')}, on `, link ?? 'a post', '. ',
-        e.price > 0 ? `This ${place ? 'play' : 'post'} added ${plain(e.price)}.` : 'This play cost nothing more.',
+        e.price > 0 ? `This play cost ${plain(e.price)} more.` : 'This play cost nothing more.',
         ...said(e.card, play), ...pierceSaid(play), ...cutSaid(play),
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
