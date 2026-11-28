@@ -1,7 +1,7 @@
 /**
  * The reader's pointer over a fog (moved out of `Effect.tsx` unchanged when Steel Chair's puff came to be cleared the way Hot Box's smoke is,
  * docs/plans/2026-11-23-steel-chair-objects-design.md, section 4): a mouse or pen moves the fog aside where it points, a finger where it touches or drags,
- * and each leaves a wake. It keeps only what the effect that uses it gives it a place for (`PointerModel`): the clearings and the trail, in the content area's px, which
+ * and each leaves a wake. It keeps only what the effect that uses it gives it a place for (`PointerModel`): the clearings and the trail, in the smoke's box's px, which
  * `smoke.ts` says how open they are and `fog.ts` makes into a field. Nothing is saved, sent or counted.
  */
 import { useEffect, useRef } from 'react';
@@ -59,13 +59,13 @@ export interface PointerOptions {
   readonly changed: (y: number) => void;
 }
 
-/* ---- the pointer: on the content area, passive, never prevented, never captured ---- */
+/* ---- the pointer: on the row (the content area where there is none), passive, never prevented, never captured ---- */
 export function usePointerClearings(areaEl: HTMLElement | null, options: PointerOptions): void {
   const latest = useRef(options);
   latest.current = options;
   useEffect(() => {
     if (!areaEl) return;
-    /* The pointer is read on the content area, which the fog fills (the host where there is none), and placed in its padding box. */
+    /* The pointer is read on the row, which the fog fills (the content area where there is no row) (the host where there is none), and placed in its padding box. */
     const area = areaEl;
     const model = { get current() { return latest.current.model.current; } };
     const now = () => latest.current.now();

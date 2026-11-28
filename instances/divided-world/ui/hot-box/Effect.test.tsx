@@ -876,7 +876,7 @@ describe('the held sweep', () => {
     pass(LINE_MS);
     expect(readout(s)).toBe('Second line.');
     release(s);
-    expect(last(s).state).toBe('Smoke over the words');
+    expect(last(s).state).toBe('Smoke over the post');
   });
 
   test('a finished line stays clear while the hold lasts, across the box, and the clearing travels along the line', () => {
@@ -901,7 +901,7 @@ describe('the held sweep', () => {
     pass(LINE_MS + 500, 50);
     expect(rowMean(s, 90)).toBe(0);
     release(s);
-    expect(last(s).state).toBe('Smoke over the words');
+    expect(last(s).state).toBe('Smoke over the post');
     pass(SMOKE.roll / 2, 50);
     expect(rowMean(s, 90)).toBeGreaterThan(0);
     expect(rowMean(s, 90)).toBeLessThan(whole());
@@ -929,7 +929,7 @@ describe('the held sweep', () => {
     expect(picture(s)).toBe(false);
     pass(200);
     expect(inert(s)).toBe(true);
-    expect(last(s).state).toBe('Smoke over the words');
+    expect(last(s).state).toBe('Smoke over the post');
     pass(SMOKE.roll / 2, 50);
     expect(Math.max(...alphas(recOf(canvas(s))))).toBeLessThan(whole());
     pass(SMOKE.roll, 50);
@@ -1005,7 +1005,7 @@ describe('the held sweep', () => {
     expect(last(s).state).toBe('Waving it away');
     sizes = { ...BOX, width: 400 };
     act(() => { for (const cb of sizeWatchers) cb(); });
-    expect(last(s).state).toBe('Smoke over the words');
+    expect(last(s).state).toBe('Smoke over the post');
     pass(SWEEP_MS * 2);
     expect(inert(s)).toBe(true);
   });
@@ -1080,7 +1080,7 @@ describe('the held sweep', () => {
   test('the Lens\'s hold control drives the sweep: start and stop, and stop before a start does nothing', () => {
     const s = setup();
     act(() => { wave(s).stop(); });
-    expect(last(s).state).toBe('Smoke over the words');
+    expect(last(s).state).toBe('Smoke over the post');
     act(() => { wave(s).start(); });
     expect(last(s).state).toBe('Waving it away');
     pass(SWEEP_MS);
@@ -1583,12 +1583,12 @@ describe('the content area is the container', () => {
     expect(last(s).state).toBe('Waving it away');
     sizes = { ...BOX, top: 130 };
     act(() => { for (const cb of sizeWatchers) cb(); });
-    expect(last(s).state).toBe('Smoke over the words');
+    expect(last(s).state).toBe('Smoke over the post');
     pass(LINE_MS * 4, 50);
     expect(inert(s)).toBe(true);
     /* The hold really stopped: no line is announced, the post is never waved, and the fog is whole again. */
     expect(readout(s)).toBe('');
-    expect(last(s).state).toBe('Smoke over the words');
+    expect(last(s).state).toBe('Smoke over the post');
     for (const c of tiles(s)) expect(alphas(recOf(c))).toEqual(new Set([whole()]));
   });
 
@@ -1601,7 +1601,7 @@ describe('the content area is the container', () => {
     expect(last(s).state).toBe('Waving it away');
     sizes = { ...BOX, top: BOX.top + 5 };
     act(() => { for (const cb of sizeWatchers) cb(); });
-    expect(last(s).state).toBe('Smoke over the words');
+    expect(last(s).state).toBe('Smoke over the post');
   });
 
   test('after unmount, and after the play ends, a pointer move on the content area opens nothing and throws nothing, and its listeners are all removed', () => {
@@ -1738,8 +1738,8 @@ describe('what it tells the Lens', () => {
   test('its view, in the plan\'s words, with one hold control', () => {
     const s = setup();
     expect(last(s)).toMatchObject({
-      state: 'Smoke over the words',
-      ends: `Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), NOW)}.`,
+      state: 'Smoke over the post',
+      ends: `Point at the smoke, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), NOW)}.`,
       yours: true,
       notes: {},
     });
@@ -1773,7 +1773,7 @@ describe('what it tells the Lens', () => {
     pass(SMOKE.roll);
     press(s);
     pass(SWEEP_MS + SMOKE.waved + SMOKE.roll);
-    expect(new Set(views(s).map((v) => v.state))).toEqual(new Set(['Smoke over the words', 'Waving it away', 'Waved clear for you']));
+    expect(new Set(views(s).map((v) => v.state))).toEqual(new Set(['Smoke over the post', 'Waving it away', 'Waved clear for you']));
     for (const v of views(s)) {
       expect(viewProblems(v, { holds: false, covers: true })).toEqual([]);
       expect(v.state.split(/\s+/u).length).toBeLessThanOrEqual(6);
@@ -2070,7 +2070,7 @@ describe('a moment', () => {
 
   test('the way out says "Ends" at the moment, though the page\'s clock is past the end', () => {
     const s = past();
-    expect(last(s).ends).toBe(`Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), AT)}.`);
+    expect(last(s).ends).toBe(`Point at the smoke, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), AT)}.`);
     expect(last(s).ends).toContain('Ends ');
     expect(last(s).ends).not.toContain('Ended');
   });
@@ -2105,7 +2105,7 @@ describe('a moment', () => {
     expect(inert(s)).toBe(true);
     expect(way(s)).toHaveTextContent(smokedWay('Wave the smoke'));
     expect(s.container.querySelector('[aria-live]')).not.toBeNull();
-    expect(last(s)).toMatchObject({ state: 'Smoke over the words' });
+    expect(last(s)).toMatchObject({ state: 'Smoke over the post' });
   });
 
   test('the waved window ending with focus in the words, in a post with no Hot Box mark, leaves focus where it is', () => {
@@ -2257,7 +2257,7 @@ describe('the author airs it out', () => {
       const s = setup({ plays: [endless(hoursAgo)] });
       expect(label(s)).toBe('Wave the smoke');
       expect(wave(s).describe).toBe(WAVE_DESCRIBE);
-      expect(last(s).ends).toBe('Point at the words, or hold Wave the smoke, to read.');
+      expect(last(s).ends).toBe('Point at the smoke, or hold Wave the smoke, to read.');
       s.unmount();
     }
   });
@@ -2427,7 +2427,7 @@ describe('the author airs it out', () => {
     expect(alphaAt(s, 400, 290)).toBe(0);
     expect(alphaAt(s, 400, 320)).toBeGreaterThan(0);
     expect(alphaAt(s, 4, 599)).toBeGreaterThan(0);
-    expect(last(s).state).toBe('Smoke over part of the words');
+    expect(last(s).state).toBe('Smoke over part of the post');
     press(s);
     pass(LINE_MS + 200);
     expect(readout(s)).toBe('Third line.');
@@ -2463,7 +2463,7 @@ describe('the author airs it out', () => {
   test('a clean play does not block a new one: the newest play not over and not clean is the one drawn', () => {
     const s = setup({ plays: [endless(30, { id: 'old', config: { color: 'red' } }), endless(1, { id: 'new', layer: 2, config: { color: 'blue' } })], states: kept({ clean: true }, 'old') });
     expect(rgbVar(s)).toBe('0 0 255');
-    expect(last(s).state).toBe('Smoke over the words');
+    expect(last(s).state).toBe('Smoke over the post');
   });
 
   test('a play with no ends keeps drawing a week on, at the floor\'s opacity', () => {
@@ -2503,10 +2503,10 @@ describe('the author airs it out', () => {
     expect(nextWake(m, NOW + span * 3, o)).toBeNull();
   });
 
-  test('the Lens says part of the words aired for every reader, and the author\'s ends line adds the play\'s own end', () => {
+  test('the Lens says part of the post aired for every reader, and the author\'s ends line adds the play\'s own end', () => {
     const s = setup({ plays: [play()], states: kept({ aired: 0.5 }) });
-    expect(last(s).state).toBe('Smoke over part of the words');
-    expect(last(s).ends).toBe(`Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), NOW)}.`);
+    expect(last(s).state).toBe('Smoke over part of the post');
+    expect(last(s).ends).toBe(`Point at the smoke, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), NOW)}.`);
     const t = setup({ reader: AUTHOR, plays: [play({ playedAt: iso(NOW - 30 * HOUR) })] });
     expect(last(t).ends).toBe(`Hold Air it out to clear the smoke line by line, for good and for everyone. Let go and you keep what you cleared. ${endsWords(iso(ENDS), NOW)}.`);
   });
@@ -2590,7 +2590,7 @@ describe('the author airs it out', () => {
     pass(SWEEP_MS + 2000);
     await settled();
     for (const v of views(s)) expect(viewProblems(v, { holds: false, covers: true })).toEqual([]);
-    expect(new Set(views(s).map((v) => v.state))).toEqual(new Set(['Smoke over part of the words', 'Airing it out', 'Waved clear for you']));
+    expect(new Set(views(s).map((v) => v.state))).toEqual(new Set(['Smoke over part of the post', 'Airing it out', 'Waved clear for you']));
   });
 
   test('forced colors: the mask starts below the aired band, which is clear across the whole area', () => {

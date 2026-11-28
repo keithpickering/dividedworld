@@ -26,7 +26,7 @@ export const ui: CardUi = {
   art: { color: '#ff3d7f', ink: '#14030a', canvas: hotBoxCanvas, mark: hotBoxMark, credit: hotBoxArt.credit, tagline: 'Smoke out a post.' },
   summary: 'Fills a post with smoke in your color. Readers wave it away to read, and it rolls back in.',
   status: 'Smoke on this post',
-  hint: 'Point at the words to part the smoke.',
+  hint: 'Point at the smoke to part it.',
   Effect: HotBoxEffect,
   /* In a thread's post the smoke is drawn over the post's whole row, postbit included (the engine's row layer); elsewhere it fills the content area. */
   fillsRow: true,
@@ -45,7 +45,7 @@ export const ui: CardUi = {
     const hours = settings.economy['hotBox.holdHours'];
     const airs = `the post's author can hold Air it out to clear it line by line for good, and once it is all aired out the post can be smoked again.`;
     const air = hours ? `${hours === 1 ? '1 hour' : `${hours} hours`} after it lands, ${airs}` : `The ${airs.slice(4)}`;
-    return `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. Over ${spanWords(HOT_BOX_THINS)} it thins to a haze, and the haze stays. ${air} One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`;
+    return `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the post can't be read: a reader points at the smoke to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. Over ${spanWords(HOT_BOX_THINS)} it thins to a haze, and the haze stays. ${air} One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`;
   },
   /* A color the card cannot read says nothing, rather than the name `inkName` gives it ("ink"). */
   logPlay: (config) => {

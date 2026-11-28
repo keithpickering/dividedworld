@@ -174,7 +174,7 @@ describe('Whoops! and Hot Box where the post has no row (Hot Box fills the row, 
     const view = hot(p) as CardView;
     expect(view.controls).toHaveLength(1);
     expect(view.controls[0]).toMatchObject({ kind: 'hold', label: 'Wave the smoke' });
-    expect(view.state).toBe('Smoke over the words');
+    expect(view.state).toBe('Smoke over the post');
     act(() => { wave(p).start(); });
     expect(hot(p)!.state).toBe('Waving it away');
     pass(SWEEP_MS);

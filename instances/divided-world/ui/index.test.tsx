@@ -676,10 +676,10 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ui.art.tagline).toBe('Smoke out a post.');
     expect(ui.summary).toBe('Fills a post with smoke in your color. Readers wave it away to read, and it rolls back in.');
     expect(ui.status).toBe('Smoke on this post');
-    expect(ui.hint).toBe('Point at the words to part the smoke.');
+    expect(ui.hint).toBe('Point at the smoke to part it.');
     expect(ui.Effect).toBeDefined();
     expect(ui.ConfigForm).toBeDefined();
-    const body = (thins: string, air: string) => `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. Over ${thins} it thins to a haze, and the haze stays. ${air} One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`;
+    const body = (thins: string, air: string) => `A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the post can't be read: a reader points at the smoke to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. Over ${thins} it thins to a haze, and the haze stays. ${air} One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`;
     expect(instance.settings.economy['hotBox.holdHours']).toBe(24);
     expect(ui.describe(instance.settings)).toBe(body(spanWords(HOT_BOX_THINS), "24 hours after it lands, the post's author can hold Air it out to clear it line by line for good, and once it is all aired out the post can be smoked again."));
     expect(ui.describe(instance.settings)).toContain('Over 3 days it thins to a haze, and the haze stays.');

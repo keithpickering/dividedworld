@@ -25,7 +25,7 @@
  * is made for the page and shared by every post, which reads it at its own offset.
  *
  * The grid stands one cell outside the box on every side, so its own edge cells (never stepped: the flow has no neighbor to read there) are off the
- * content area and a clearing at the post's border opens all the way to it.
+ * box and a clearing at the post's border opens all the way to it.
  */
 import { mulberry32 } from '../../cards/whoops/splat.ts';
 import { SMOKE, covered, openness, trailOpenness, type Clearing, type TrailPoint } from './smoke.ts';

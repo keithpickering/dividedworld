@@ -52,8 +52,8 @@
  *  - forced colors, where the fog cannot be drawn in system colors: the words themselves are masked, a flat layer at `maskAlpha` over the words, a
  *    hard-edged disc for each of the model's `hardDiscs` (a clearing more open than not, a trail point in the first half of its wake), a rectangle for each
  *    line the sweep has finished. No layer is made, so no tile and no stand-in is drawn and no frame is requested; the mask is moved on a 50 ms timer, or on
- *    the times things change under reduced motion. A ring (system colors) shows where each disc is, a sign says what the Lens says, and the content area is
- *    outlined in `CanvasText`, because a smoked post would otherwise look blank. The outline and the rings are drawn by a frame laid over the content area
+ *    the times things change under reduced motion. A ring (system colors) shows where each disc is, a sign says what the Lens says, and the smoke's box is
+ *    outlined in `CanvasText`, because a smoked post would otherwise look blank. The outline and the rings are drawn by a frame laid over the smoke's box
  *    (`dw-hotbox-frame`), never by the words' own box, which its mask would take away with the rest.
  *
  * The control is the Lens's alone (the owner, 2026-11-16): the post holds no button. A card's control on the post could be covered and inert under another
@@ -66,7 +66,7 @@
  * thrown: when the window ends, only focus that was inside the words (which the browser would drop) goes to the post's Hot Box mark. While the words are
  * inert nothing inside them is lifted above the fog (hot-box.css): a fold's bar under smoke is under it like the words, and neither looks nor is pressable.
  *
- * Nothing here is stopped or prevented: the pointer is read passively on the content area, and a press reaches every listener above it. A finger's
+ * Nothing here is stopped or prevented: the pointer is read passively on the row (the content area where there is no row), and a press reaches every listener above it. A finger's
  * vertical swipe scrolls the page as ever (`touch-action: pan-y` on the host); its drag across a line moves its clearing and leaves a wake.
  *
  * In a play's moment (`moment`, docs/plans/2026-11-16-playable-moments-design.md) the effect is the live one in every way but the clock of the smoke: the
@@ -114,13 +114,13 @@ export const smokedRestWay = (label: string): string => `The rest of this post i
 export const AIR_LABEL = 'Air it out';
 export const AIR_DESCRIBE = `Hold Space or Enter on this button to air the smoke out line by line. Let go and you keep what you cleared. Hold to the end and the post is clear for good.`;
 
-const STATE_SMOKE = 'Smoke over the words';
-const STATE_PART = 'Smoke over part of the words';
+const STATE_SMOKE = 'Smoke over the post';
+const STATE_PART = 'Smoke over part of the post';
 const STATE_WAVING = 'Waving it away';
 const STATE_AIRING = 'Airing it out';
 const STATE_WAVED = 'Waved clear for you';
 const STATE_AIRED = 'Aired out';
-const ENDS_READER = `Point at the words, or hold ${WAVE_LABEL}, to read.`;
+const ENDS_READER = `Point at the smoke, or hold ${WAVE_LABEL}, to read.`;
 const ENDS_AUTHOR = `Hold ${AIR_LABEL} to clear the smoke line by line, for good and for everyone. Let go and you keep what you cleared.`;
 const ENDS_AIRED = 'Its author aired it out for good.';
 
@@ -358,7 +358,7 @@ function maskWords(el: HTMLElement, mask: CSSProperties | undefined): void {
 
 /**
  * The words' mask, forced colors only: the flat layer, a hard disc for each of the model's `hardDiscs`, a rectangle for each finished line; none while the
- * post is clear. The discs and bands are in the content area's coordinates and the mask is the words' own, so each is moved by where the words stand in the
+ * post is clear. The discs and bands are in the smoke's box's coordinates (the row's, or the content area's where there is no row) and the mask is the words' own, so each is moved by where the words stand in the
  * area (`ox`, `oy`); the radius is the area's.
  */
 function maskFor(discs: readonly { readonly x: number; readonly y: number }[], rects: Cuts['rects'], s: number, g: number, r: number, ox: number, oy: number): CSSProperties | undefined {
@@ -741,7 +741,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
   /* ---- in view, and met ---- */
   useEffect(() => {
     if (!areaEl) return;
-    /* The content area is what the smoke covers, so it is what is watched, with a margin above and below. */
+    /* The row (the content area where there is no row) is what the smoke covers, so it is what is watched, with a margin above and below. */
     return watchInView(areaEl, setInView, { rootMargin: '200px 0px' });
   }, [areaEl]);
   useEffect(() => { refresh(); }, [inView, fixedAt, refresh]);
@@ -753,7 +753,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     met();
   }, [moment, inView, met]);
 
-  /* ---- the pointer: on the content area, passive, never prevented, never captured (pointer.ts) ---- */
+  /* ---- the pointer: on the row (the content area where there is none), passive, never prevented, never captured (pointer.ts) ---- */
   usePointerClearings(areaEl, {
     model,
     now: () => api.now(),
