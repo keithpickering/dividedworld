@@ -3,6 +3,7 @@
  * prompt, a black ground with green Courier, scanlines over it, a prompt line (`C:\DW\POSTS> type 4471.txt`, the post's number) and a block cursor, and a
  * reader mashes keys, or taps, to type the post out. The post's words are not drawn while it holds the reader: the terminal prints them from the post's
  * parsed BBCode (slog.ts), a character at a time, and an image loads in green phosphor a band a press.
+ * An image's box is laid out at its full height from the first press, hidden with the untyped text, and revealed band by band, so the post does not grow mid-mash.
  *
  * The box. The terminal fills the post's content area border to border (CLAUDE.md, "An effect fills the post, border to border"): two layers, a ground under
  * the words and the scanlines over them, are placed over the area `bodyOf` finds and `bodyBox` measures, in a thread and in a spun thread's ORIGIN box alike
@@ -88,6 +89,28 @@ function draw(units: readonly Unit[], to: number): ReactNode[] {
     i++;
   }
   flush();
+  return out;
+}
+
+/** What is not out yet, laid out hidden in its place: its text, and each image that has not begun as a box at full height with no band showing. */
+function drawRest(units: readonly Unit[], from: number): ReactNode[] {
+  const out: ReactNode[] = [];
+  let text = '';
+  for (let i = from; i < units.length; i++) {
+    const u = units[i]!;
+    if (u.kind === 'char') { text += u.ch; continue; }
+    /* An image that began before `from` has its box drawn with the words that are out; its other bands add nothing. */
+    if (i > 0 && units[i - 1]!.kind === 'band' && (units[i - 1] as { band: number }).band + 1 === u.band) continue;
+    if (i === from && u.band > 0) continue;
+    if (text !== '') { out.push(text); text = ''; }
+    out.push(
+      <span key={`r${i}`} className="dw-slog-image" data-kb-slog-image="" data-kb-bands-out={0}>
+        <img src={u.src} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
+        <span className="dw-slog-mask" style={{ top: '0%' }} />
+      </span>,
+    );
+  }
+  if (text !== '') out.push(text);
   return out;
 }
 
@@ -216,7 +239,7 @@ export function ConsoleSlogEffect({ post, plays, released, reader, still, moment
         <pre className="dw-slog-out" data-kb-slog-out="">
           <span data-kb-slog-shown="">{draw(units, shown)}</span>
           <span className="dw-slog-cursor" data-kb-cursor="" aria-hidden="true" {...(still || done ? { 'data-kb-still': '' } : {})} />
-          <span className="dw-slog-rest" data-kb-slog-rest="" aria-hidden="true">{units.slice(shown).map((u) => (u.kind === 'char' ? u.ch : '')).join('')}</span>
+          <span className="dw-slog-rest" data-kb-slog-rest="" aria-hidden="true">{drawRest(units, shown)}</span>
         </pre>
       </div>
       <div ref={scan} className="dw-slog-scan" aria-hidden="true" />

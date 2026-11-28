@@ -11,7 +11,7 @@
  *
  * The momentum. A press is a fresh key press or a tap. One within `rhythmMs` of the last builds a streak by one; each `perStep` presses of streak make a press
  * worth one more unit, to `mostPerPress`. A pause lets the streak drain by `drain` a second once the rhythm has lapsed, and a press after one starts
- * from what drained, less a step: breaking the rhythm costs. All four are the settings' (`consoleSlog.*`), so the mash is tuned, not rewritten.
+ * from what drained, nothing more. All four are the settings' (`consoleSlog.*`), so the mash is tuned, not rewritten.
  */
 import type { BbNode } from '../../../../engine/bbcode/parse.ts';
 
@@ -110,9 +110,9 @@ export function drained(streak: number, idleMs: number, s: SlogSettings): number
   return Math.max(0, streak - (s.drain * Math.max(0, idleMs - s.rhythmMs)) / 1000);
 }
 
-/** The streak after a press `sinceLastMs` after the last: one more in rhythm; out of it, what drained over the pause, less a step. */
+/** The streak after a press `sinceLastMs` after the last: one more in rhythm; out of it, what drained over the pause (nothing more: the drain alone, design section 3.1). */
 export function nextStreak(streak: number, sinceLastMs: number, s: SlogSettings): number {
-  return sinceLastMs <= s.rhythmMs ? streak + 1 : Math.max(0, drained(streak, sinceLastMs, s) - s.perStep);
+  return sinceLastMs <= s.rhythmMs ? streak + 1 : drained(streak, sinceLastMs, s);
 }
 
 /** How many units a press reveals at this streak: one, and one more for each `perStep` of streak, to `mostPerPress`. */

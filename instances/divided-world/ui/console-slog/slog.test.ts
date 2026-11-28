@@ -65,10 +65,10 @@ test('a press is worth one character, and one more for every perStep presses of 
   assert.equal(pressWorth(100, { ...S, mostPerPress: 3 }), 3);
 });
 
-test('a press within the rhythm builds the streak by one; a press after a pause does not, and costs a step', () => {
+test('a press within the rhythm builds the streak by one; a press after a pause does not, and starts from what drained', () => {
   assert.equal(nextStreak(7, 450, S), 8, 'at the window\'s edge it is still in rhythm');
   assert.equal(nextStreak(7, 100, S), 8);
-  assert.equal(nextStreak(20, 1450, S), 3, 'out of rhythm: drained over the pause (a second past the window), and a step off');
+  assert.equal(nextStreak(20, 1450, S), 8, 'out of rhythm: what drained over the pause (a second past the window: 20 - 12), and nothing more');
   assert.equal(nextStreak(3, 2000, S), 0, 'never below nothing');
 });
 

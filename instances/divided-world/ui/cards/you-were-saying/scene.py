@@ -1,6 +1,6 @@
 """You Were Saying? card art: the old voice as an old beige computer, a post on its screen that it
 has gone on writing in green, the green running out past the glass. (The card has an outdated model continue a
-post; in play its words are Courier with a green tint, a block cursor at their end.)"""
+post; in play its words are Verdana with a green tint, a block cursor at their end.)"""
 import sys, os, math, random
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # rig.py is one folder up, shared by every card
 sys.dont_write_bytecode = True           # no __pycache__ beside the card folders: the art guard reads every folder there as a card's

@@ -198,7 +198,9 @@ describe('Console Slog', () => {
     slow(12);
     expect(typed()).toBe('[IMG] p.png\n');
     const box = () => document.querySelector<HTMLElement>('[data-kb-slog-image]');
-    expect(box(), 'the picture starts with its first band').toBeNull();
+    expect(box(), 'its box is laid out from the first press, hidden, so the post does not grow').not.toBeNull();
+    expect(box()).toHaveAttribute('data-kb-bands-out', '0');
+    expect(box()!.querySelector('.dw-slog-mask')).toHaveStyle({ top: '0%' });
     slow(2);
     expect(box()).toHaveAttribute('data-kb-bands-out', '2');
     expect(box()!.querySelector('img')).toHaveAttribute('src', 'https://e.test/pics/p.png');
