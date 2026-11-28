@@ -22,12 +22,10 @@ Files: `engine/ui/cards/types.ts`, `engine/ui/cards/Effects.tsx`, `engine/ui/tip
 - `EffectProps.redrawn?: true`: set by `PostEffects` (and the moment and version wraps) on every effect but a redrawing
   card's own, while the post has a live play of a redrawing card whose id is not in its layer's `released`. Read from
   the plays and `released` alone, never from who owns anything.
-- `EffectProps.body?: string`: given to a redrawing card only: the BBCode source the screen draws for this post. That is
-  the drawn version's body under a live rewind (`rewound.rewind.version`), the moment's version in a moment, and
-  `post.currentPayload.body` otherwise. Find where `bodyOf(version)` gets its version, and pass the same version's body.
-  #1273 may already carry a fix for the rewind (the orchestrating session asked its build for one). If main carries one,
-  this task adopts it, or reshapes it into `EffectProps.body` where that is the better seam, and adds no second path:
-  one place decides which version the terminal types, and #1273's test for it stays, moved if the seam moves.
+- `EffectProps.body?: string` is already #1273's (66525ccb): the BBCode the screen draws (a live rewind's version, a
+  moment's, History's, or the post's own), given to every effect, with Console Slog typing `body ?? post.currentPayload.body`.
+  This task keeps it as built, one path, and adds nothing for it; it may stay on every effect, since no effect computes
+  anything private from it.
 - `instanceUiProblems`: a `redraws` card that is also `takeover`, `coversRow`, `fillsRow` or `foldsRow`, whose rules
   `writes`, or that has no `Effect`, is a problem named in plain words.
 
@@ -35,8 +33,7 @@ Tests first:
 - `nestOrder` puts a `redraws` card innermost, before the writing cards, whether it comes first or last in play order;
   a `beneath` card, a character-reach card and a writing card are all outside it.
 - A mounted `PostEffects` with a redrawing play and a second card: the second gets `redrawn` until the play is in
-  `released`, and then it does not. The redrawing card gets `body`: the rewound version's body under a rewind, the
-  current one otherwise.
+  `released`, and then it does not.
 - The check's poisons, each red once: `redraws` with `takeover`; with `coversRow`; with `fillsRow`; with `foldsRow`; on
   a writing card; with no `Effect`.
 
@@ -67,7 +64,7 @@ Model: sonnet
 
 Files: `instances/divided-world/ui/console-slog/slog.ts`, `Effect.tsx`, `slog.css`, their tests.
 
-- `ui.ts` sets `redraws: true`. The effect types `EffectProps.body`, falling back to `post.currentPayload.body`.
+- `ui.ts` sets `redraws: true`. The effect keeps typing `body ?? post.currentPayload.body`, as #1273 built it.
 - **Units.** `unitsOf` gives each char unit that stands for the post's visible text its visible offset (`at`), using
   `visibleWalk`'s offsets, so a quote, code, a link's address and the `[IMG]` lines are units with no offset. The forms
   are laid in with `plainOf` over `useTextLayers()`: a `text` piece replaces its offsets' units, and `before`, `after` and

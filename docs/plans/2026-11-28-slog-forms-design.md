@@ -51,10 +51,9 @@ combinations stop depending on who cast first, and Heads Will Roll is always the
   You Were Saying?'s tail, the foil's canvas, the glitter's canvases, Heads Will Roll's starfield) draws its form instead,
   below, and not its own drawing. An effect that draws over the content area draws as on any post. Once the reader is
   released, `redrawn` is false and everything is drawn as written.
-- **`EffectProps.body`** (new, given to a redrawing card): the BBCode source of the version the screen draws for this
+- **`EffectProps.body`** (#1273 built it, on every effect, while this design was made): the BBCode source of the version the screen draws for this
   post: the current payload's body, a live rewind's version, or a moment's version. The terminal types this, so a rewound
-  post is typed as the rewound words (the survey's bug). Where #1273 already fixed that bug, this adopts or reshapes its
-  fix, and there is one path, not two.
+  post is typed as the rewound words (the survey's bug). #1273 fixed it at this seam, so there is one path, not two.
 - **The instance check** (`instanceUiProblems`) refuses a card that `redraws` and is also a `takeover`, `coversRow`,
   `fillsRow` or `foldsRow`, or whose rules write (`CardRules.writes`), and one with no `Effect`; its test drives each red.
 
