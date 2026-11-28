@@ -25,6 +25,9 @@ Files: `engine/ui/cards/types.ts`, `engine/ui/cards/Effects.tsx`, `engine/ui/tip
 - `EffectProps.body?: string`: given to a redrawing card only: the BBCode source the screen draws for this post. That is
   the drawn version's body under a live rewind (`rewound.rewind.version`), the moment's version in a moment, and
   `post.currentPayload.body` otherwise. Find where `bodyOf(version)` gets its version, and pass the same version's body.
+  #1273 may already carry a fix for the rewind (the orchestrating session asked its build for one). If main carries one,
+  this task adopts it, or reshapes it into `EffectProps.body` where that is the better seam, and adds no second path:
+  one place decides which version the terminal types, and #1273's test for it stays, moved if the seam moves.
 - `instanceUiProblems`: a `redraws` card that is also `takeover`, `coversRow`, `fillsRow` or `foldsRow`, whose rules
   `writes`, or that has no `Effect`, is a problem named in plain words.
 

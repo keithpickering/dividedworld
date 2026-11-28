@@ -53,7 +53,8 @@ combinations stop depending on who cast first, and Heads Will Roll is always the
   released, `redrawn` is false and everything is drawn as written.
 - **`EffectProps.body`** (new, given to a redrawing card): the BBCode source of the version the screen draws for this
   post: the current payload's body, a live rewind's version, or a moment's version. The terminal types this, so a rewound
-  post is typed as the rewound words (the survey's bug).
+  post is typed as the rewound words (the survey's bug). Where #1273 already fixed that bug, this adopts or reshapes its
+  fix, and there is one path, not two.
 - **The instance check** (`instanceUiProblems`) refuses a card that `redraws` and is also a `takeover`, `coversRow`,
   `fillsRow` or `foldsRow`, or whose rules write (`CardRules.writes`), and one with no `Effect`; its test drives each red.
 
