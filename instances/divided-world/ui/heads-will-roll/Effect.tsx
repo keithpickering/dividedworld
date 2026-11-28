@@ -70,6 +70,7 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, moment, cove
   const [reeling, setReeling] = useState<Reeling | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPointer = useRef(0);
+  const pointerHeld = useRef(false);
 
   const cards = settings.cardSettings;
   const orbitSettings = useMemo(() => ({
@@ -220,10 +221,14 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, moment, cove
   const onPointerDown = (e: ReactPointerEvent<HTMLElement>, id: string, key: string | null): void => {
     if (e.button > 0) return;
     lastPointer.current = Date.now();
+    pointerHeld.current = true;
     activate(id, key, true, e.currentTarget);
   };
-  /* A press that ended without a click (a touch dragged off, a cancel) is over: it must not swallow a switch's click that follows. */
-  const onPointerEnd = (): void => { lastPointer.current = 0; };
+  /* A touch tap fires pointerdown, pointerup, pointerleave, then click: a leave after the release is part of the tap and its click still follows, so only a cancel, or a leave while the
+     pointer is still held (dragged off, no click will come), ends the press. Such a press must not swallow a switch's click that follows. */
+  const onPointerUp = (): void => { pointerHeld.current = false; };
+  const onPointerCancel = (): void => { pointerHeld.current = false; lastPointer.current = 0; };
+  const onPointerLeave = (): void => { if (pointerHeld.current) { pointerHeld.current = false; lastPointer.current = 0; } };
   const onClick = (e: { currentTarget: HTMLElement }, id: string, key: string | null): void => {
     /* The press that made this click was already handled; a click with none before it is a switch or a screen reader's. */
     if (lastPointer.current !== 0 && Date.now() - lastPointer.current < SAME_GESTURE_MS) { lastPointer.current = 0; return; }
@@ -281,8 +286,9 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, moment, cove
               {...(chip?.pending ? { 'data-pending': '' } : {})}
               aria-label={chip ? headLabel(chip.emoji, Math.max(1, chip.count ?? 1), { local: chip.local, mine, pending: chip.pending !== null, plain: false }) : 'React, press to pick a new reaction'}
               onPointerDown={(e) => onPointerDown(e, p.id, key)}
-              onPointerCancel={onPointerEnd}
-              onPointerLeave={onPointerEnd}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerCancel}
+              onPointerLeave={onPointerLeave}
               onClick={(e) => onClick(e, p.id, key)}
               onKeyDown={(e) => onKeyDown(e, p.id, key)}
               onKeyUp={onKeyUp}

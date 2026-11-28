@@ -199,6 +199,42 @@ describe('Heads Will Roll: the heads', () => {
     expect(document.querySelector('.dw-hwr-reel')).not.toBeNull();
   });
 
+  test('a real touch tap (down, up, leave, click) catches a moving head exactly once', () => {
+    const { deck, press } = deckOf();
+    mount(deck);
+    const h = heads()[0]!;
+    fireEvent.pointerDown(h, { button: 0, pointerType: 'touch' });
+    fireEvent.pointerUp(h, { button: 0, pointerType: 'touch' });
+    fireEvent.pointerLeave(h, { pointerType: 'touch' });
+    fireEvent.click(h);
+    expect(press).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.dw-hwr-reel')).toBeNull();
+  });
+
+  test('a real touch tap under still starts one reel that lands once and is not cancelled by its click', () => {
+    const { deck, press } = deckOf();
+    mount(deck, { still: true });
+    see(true);
+    const h = heads()[0]!;
+    fireEvent.pointerDown(h, { button: 0, pointerType: 'touch' });
+    fireEvent.pointerUp(h, { button: 0, pointerType: 'touch' });
+    fireEvent.pointerLeave(h, { pointerType: 'touch' });
+    fireEvent.click(h);
+    expect(document.querySelector('.dw-hwr-reel')).not.toBeNull();
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(press).toHaveBeenCalledTimes(1);
+  });
+
+  test('a press dragged off before release, with no click, does not swallow a later switch click', () => {
+    const { deck } = deckOf();
+    mount(deck);
+    const h = heads()[0]!;
+    fireEvent.pointerDown(h, { button: 0, pointerType: 'mouse' });
+    fireEvent.pointerLeave(h, { pointerType: 'mouse' });
+    act(() => { fireEvent.click(h); });
+    expect(document.querySelector('.dw-hwr-reel')).not.toBeNull();
+  });
+
   test('the React head opens the picker with only the new kinds, and a press on it needs no reel', () => {
     const { deck, open, press } = deckOf();
     mount(deck);
