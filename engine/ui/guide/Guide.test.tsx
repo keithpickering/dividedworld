@@ -403,6 +403,11 @@ describe('the Strategy Guide as Divided World writes it: the cut words are gone'
   test('the real guide is drawn, so the absences below mean something', () => {
     expect(rendered()).toContain('Pepperoni could go either way');
   });
+  test('the cuts keep their paragraphs apart', () => {
+    const paragraphs = [...document.querySelectorAll('p')].map((p) => p.textContent ?? '');
+    expect(paragraphs.some((t) => t.startsWith('The forecast always says up to'))).toBe(true);
+    expect(paragraphs.some((t) => t.startsWith('A Reversal takes no conditions.'))).toBe(true);
+  });
   test('the reaction wait no longer says the tile shows it', () => {
     expect(rendered()).not.toContain('and the tile shows the wait');
   });

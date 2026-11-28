@@ -76,6 +76,7 @@ Aura is the score and also the money, which I'm told is how the real economy wor
 ### The settlement
 
 Aura doesn't land the moment somebody reacts. It lands at the **settlement**, and settlements are {{setting:settlementLength}} apart. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of the ghost as a forecast and the settlement as the weather.
+
 The forecast always says **up to**, because it can count reactions the settlement won't. It counts every reaction as if anybody could have left it, while the settlement never pays a player for reacting to their own cards and characters. It also skips a few adjustments the settlement makes. The settlement is exact. The forecast is me squinting.
 
 A few cards pay their player a share of a vote at the settlement, whatever anybody's class, and never out of another player's Aura.
@@ -166,6 +167,7 @@ A Move set with no conditions springs on the first quote of your post, from anyo
 - **Says.** The quoting post's own words contain a phrase you type.
 - **Quotes.** What the quote holds of your post contains a passage you pick from it. Highlight it in your post's text when you set the card, or type it.
 - **Who.** **Anyone**, **Only these** or **Anyone but these**. The last two take a short list of characters. You can name any character you can search for, your own other masks included.
+
 A Reversal takes no conditions. A few cards, Autocorrect, THIS and Laugh Track among them, wait for the phrase you gave the card itself, so Says is filled in from it and can't be changed.
 
 **How a phrase matches.** Says, the passage and the cards with a phrase of their own all use the same looser matching, so you only learn it once:

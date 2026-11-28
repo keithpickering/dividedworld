@@ -632,7 +632,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     void hoo;
   });
 
-  test('a card played: as which character, on whose post, and what the post added past the card, paid for at the machine', async () => {
+  test('a card played: as which character, on whose post, and what the post added past the card', async () => {
     const { fake, me, pipe, g1 } = cardWorld();
     fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 25 });
     await show(fake, me, pipe);
