@@ -29,7 +29,7 @@
  *  - Before you start has two more rows the board does not draw, a Sound row for the game's sounds and one for the interface's, after Brighter effects
  *    (docs/plans/2026-11-11-laugh-track-design.md: the owner chose to offer the sound settings in the welcome step, as Brighter effects is, a new
  *    player's first meeting with the choice; Settings gains a Sound section too). Each is the skewed Off/On radios with its sentence, about 162px
- *    tall with the volume slider hidden (it shows only while On, and the default is Off), so the two calls to action stand lower again by 324.5px (`SOUND`).
+ *    tall with the volume slider hidden (it shows only while On, and the default is Off), so the two calls to action stand lower again. The rows' sentences wrap with their copy, so those two are held by height only (`box: 'tall'`), the rows above them being the build's alone.
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -41,8 +41,6 @@ const PROSE = { y: 28 + LETTER } as const;
 const TILES = { y: 107.2 + LETTER } as const;
 /** Under the Brighter effects row: the TILES shift and that row's own height (178px, as the first run measured). */
 const EFFECTS = { y: 285.2 + LETTER } as const;
-/** Under the two Sound rows: the EFFECTS shift and the two rows' heights (324.5px together, as the first run measured; each is one row of two radios and its sentence, 162px). */
-const SOUND = { y: 609.7 + LETTER } as const;
 
 const manifest: BoardManifest = {
   board: '2026-11-05-backfill/19-welcome',
@@ -65,8 +63,8 @@ const manifest: BoardManifest = {
     { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
     { id: 'size', role: 'heading', name: 'TEXT SIZE', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
     { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together, and nothing is cut off at any size.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
-    { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'p4', originEdge: 'bottom' },
-    { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'p4', originEdge: 'bottom' },
+    { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'tall', buildShift: { height: -6 }, origin: 'p4', originEdge: 'bottom' },
+    { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'tall', buildShift: { height: -6 }, origin: 'p4', originEdge: 'bottom' },
   ],
 };
 

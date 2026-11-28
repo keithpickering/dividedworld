@@ -124,7 +124,7 @@ describe('the welcome page', () => {
     const before = await screen.findByRole('region', { name: 'Before you start' });
     const game = await within(before).findByRole('radiogroup', { name: 'Game sounds' });
     expect(within(game).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(['Off', 'On']);
-    expect(within(before).getByText('Sounds that cards and other game effects make on the board. Every one is also shown as a caption.')).toBeInTheDocument();
+    expect(within(before).getByText('Sounds that cards and other game effects make on the board. Every one is also shown as a caption. An iPhone set to silent keeps them silent.')).toBeInTheDocument();
     expect(within(before).getByText('Sounds the board itself makes, apart from the game. This forum has none yet.')).toBeInTheDocument();
     expect(within(before).queryByRole('slider')).toBeNull();
     await userEvent.click(within(game).getByRole('radio', { name: 'On' }));

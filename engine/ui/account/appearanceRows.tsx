@@ -89,7 +89,7 @@ export function EffectsRow({ value, onChange, level }: { readonly value: Prefere
 const SAVE_QUIET_MS = 250;
 
 const SOUND_ROW: Readonly<Record<SoundBus, { readonly legend: string; readonly volume: string; readonly says: string }>> = {
-  game: { legend: 'Game sounds', volume: 'Game volume', says: 'Sounds that cards and other game effects make on the board. Every one is also shown as a caption.' },
+  game: { legend: 'Game sounds', volume: 'Game volume', says: 'Sounds that cards and other game effects make on the board. Every one is also shown as a caption. An iPhone set to silent keeps them silent.' },
   interface: { legend: 'Interface sounds', volume: 'Interface volume', says: 'Sounds the board itself makes, apart from the game.' },
 };
 

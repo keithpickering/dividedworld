@@ -16,8 +16,8 @@
  * lacks (the manifest is wrong), a `buildName` that matches nothing in the build.
  */
 
-/** How a landmark's box is compared: `full` (the default), x and y only, y and height only, width and height only, x and width only (`across`), horizontal center and y (`center`, for a box whose width follows its words), or not at all. */
-export type BoxMode = 'full' | 'position' | 'height' | 'size' | 'across' | 'center' | 'none';
+/** How a landmark's box is compared: `full` (the default), x and y only, y and height only, height only (`tall`, a part whose place stands under rows only the build draws, so only its height is the board's), width and height only, x and width only (`across`), horizontal center and y (`center`, for a box whose width follows its words), or not at all. */
+export type BoxMode = 'full' | 'position' | 'height' | 'tall' | 'size' | 'across' | 'center' | 'none';
 
 export interface Landmark {
   /** Names the landmark in a snapshot and a report; unique in its manifest. */
@@ -170,7 +170,7 @@ function compareBox(id: string, mode: BoxMode, board: Box, build: Box, origin?: 
   if (mode === 'across') fields.push({ name: 'x', tolerance: POSITION_TOLERANCE }, { name: 'width', tolerance: SIZE_TOLERANCE });
   if (mode === 'height') fields.push({ name: 'y', tolerance: POSITION_TOLERANCE });
   if (mode === 'full' || mode === 'size') fields.push({ name: 'width', tolerance: SIZE_TOLERANCE }, { name: 'height', tolerance: SIZE_TOLERANCE });
-  if (mode === 'height') fields.push({ name: 'height', tolerance: SIZE_TOLERANCE });
+  if (mode === 'height' || mode === 'tall') fields.push({ name: 'height', tolerance: SIZE_TOLERANCE });
   const measured = origin === undefined ? '' : `, measured from ${origin}`;
   if (mode === 'center') {
     const centers: { name: string; board: number; build: number; tolerance: number }[] = [
