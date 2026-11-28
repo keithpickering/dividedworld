@@ -7,6 +7,9 @@
  * sentence, and "Changes save as you make them."
  *
  * Where the build differs by a decision:
+ *  - the Smoke, Contrast and Text size sentences are the copy pass's shorter ones (docs/plans/2026-11-27-copy-pass-plan.md, Task 4),
+ *    named by `buildName` and compared by their place and type; Smoke's and Contrast's each run a line shorter, so the rows under them stand
+ *    `SENTENCE_LINE` higher for each;
  *  - the menu bar holds all six tabs (web Task 3; the glass plan, section 3), as the board draws them
  *    now (it draws Rankings and the Vending Machine too), each compared in full;
  *  - the sections' navigation holds Account, Accessibility, The board and Notifications (the glass plan, section 9, choice 3; the board look's section 9):
@@ -38,14 +41,19 @@ import type { BoardManifest, Landmark } from '../board-match.ts';
  * onboarding plan's Task 7, shared with the welcome page's Before you start), so its box is the whole row, label, choices and sentence, where
  * the board's is the choices' column alone. The label, each choice and the sentence are compared by their own boxes.
  */
-function row(id: string, label: string, group: string, choices: readonly string[], sentence: string, buildGroup?: string, buildSentence?: string): Landmark[] {
+/** One line of a row's sentence at the glass's body size: the copy pass's shorter Smoke and Contrast sentences each run a line shorter than the
+    board's, so each row under them stands that much higher (`docs/plans/2026-11-27-copy-pass-plan.md`, Task 4). */
+const SENTENCE_LINE = 31.5;
+
+function row(id: string, label: string, group: string, choices: readonly string[], sentence: string, buildGroup?: string, buildSentence?: string, raisedBy = 0): Landmark[] {
+  const shift = raisedBy ? { buildShift: { y: -raisedBy } } : {};
   return [
     /* The label's column is 10px wider in the build (240px to the board's 230), so its width is not compared. */
-    { id: `${id}-label`, role: 'heading', name: label, origin: 'accessibility', box: 'position' },
+    { id: `${id}-label`, role: 'heading', name: label, origin: 'accessibility', box: 'position', ...shift },
     { id, role: 'radiogroup', name: group, ...(buildGroup ? { buildName: buildGroup } : {}), type: false, box: 'none' },
-    ...choices.map((c): Landmark => ({ id: `${id}-${c.toLowerCase().replace(/\W+/g, '-')}`, role: 'text', name: c, within: id, origin: 'accessibility' })),
+    ...choices.map((c): Landmark => ({ id: `${id}-${c.toLowerCase().replace(/\W+/g, '-')}`, role: 'text', name: c, within: id, origin: 'accessibility', ...shift })),
     /* A sentence the build words otherwise runs to its own length: its place and its type are compared. */
-    { id: `${id}-sentence`, role: 'text', name: sentence, origin: 'accessibility', ...(buildSentence ? { buildName: buildSentence, box: 'position' as const } : {}) },
+    { id: `${id}-sentence`, role: 'text', name: sentence, origin: 'accessibility', ...(buildSentence ? { buildName: buildSentence, box: 'position' as const } : {}), ...shift },
   ];
 }
 
@@ -86,11 +94,14 @@ const manifest: BoardManifest = {
 
     ...row('motion', 'Motion', 'Motion', ['Follow my device', 'Off', 'Smooth', 'Snappy'],
       'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.'),
-    ...row('smoke', 'Smoke', 'Smoke', ['Full', 'Low', 'Off'], 'How much cloud sits behind the glass. Text is readable at every setting.'),
+    ...row('smoke', 'Smoke', 'Smoke', ['Full', 'Low', 'Off'], 'How much cloud sits behind the glass. Off leaves plain black. Text is readable at every setting.',
+      undefined, 'How much cloud sits behind the glass. Text is readable at every setting.'),
     ...row('contrast', 'Contrast', 'Contrast', ['Standard', 'High'],
-      'High puts solid black behind every line of text on the glass and lifts it all to at least 7:1.'),
+      'High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen.',
+      undefined, 'High puts solid black behind every line of text on the glass and lifts it all to at least 7:1.', SENTENCE_LINE),
     ...row('text-size', 'Text size', 'Text size', ['100%', '125%', '150%', '200%'],
-      'Applies to the board and the glass together, and nothing is cut off at any size.'),
+      'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.',
+      undefined, 'Applies to the board and the glass together, and nothing is cut off at any size.', 2 * SENTENCE_LINE),
     /* The board's Board colors row is not here: the board look made it Settings › The board, a section of its own (the board look design's section 9), held by board 19 of that folder. */
 
     /* The build's Accessibility sections carry a row the board does not (Tips: its switch, Show tips again and Replay the HUD tour, the onboarding plan's Task 9), so this line stands lower than the board's: held by its words and type alone. */

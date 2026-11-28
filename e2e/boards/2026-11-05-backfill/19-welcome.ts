@@ -20,6 +20,7 @@
  *  - The post's top padding is 36px where the board draws 40, and the byline and the headline stand 12 and 9px higher.
  *  - The calls to action are GlassButtons, 48px tall where the board's `.btn` is 54 (the same as boards 14 to 17), at the glass's own width, so
  *    each is compared by its y and height.
+ *  - The Text size note is the copy pass's shorter sentence (docs/plans/2026-11-27-copy-pass-plan.md, Task 4), named by `buildName`.
  *  - The settings' notes and the lede run the post's width where the board draws them 680px wide (compared by their places).
  *  - The Theme row is the board look's tiles (engine/ui/account/ThemePicker.tsx, the board look design's section 9: "the tiles alone" on this page) where the board
  *    draws three radios and a sentence: the sentence is not on this page (Settings › The board says it, held by board 19 of the board look), and the tile row is
@@ -62,7 +63,7 @@ const manifest: BoardManifest = {
     { id: 'motion', role: 'heading', name: 'MOTION', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
     { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
     { id: 'size', role: 'heading', name: 'TEXT SIZE', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
-    { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together, and nothing is cut off at any size.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
+    { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.', buildName: 'Applies to the board and the glass together, and nothing is cut off at any size.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
     { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'tall', buildShift: { height: -6 }, origin: 'p4', originEdge: 'bottom' },
     { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'tall', buildShift: { height: -6 }, origin: 'p4', originEdge: 'bottom' },
   ],
