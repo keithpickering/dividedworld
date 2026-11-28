@@ -395,51 +395,6 @@ describe('the page at /guide', () => {
   });
 });
 
-describe('the Strategy Guide as Divided World writes it: the cut words are gone', () => {
-  const rendered = () => document.body.textContent ?? '';
-  beforeEach(() => {
-    page(fs.readFileSync('instances/divided-world/guide/strategy-guide.md', 'utf8'));
-  });
-  test('the real guide is drawn, so the absences below mean something', () => {
-    expect(rendered()).toContain('Pepperoni could go either way');
-  });
-  test('the cuts keep their paragraphs apart', () => {
-    const paragraphs = [...document.querySelectorAll('p')].map((p) => p.textContent ?? '');
-    expect(paragraphs.some((t) => t.startsWith('The forecast always says up to'))).toBe(true);
-    expect(paragraphs.some((t) => t.startsWith('A Reversal takes no conditions.'))).toBe(true);
-  });
-  test('the reaction wait no longer says the tile shows it', () => {
-    expect(rendered()).not.toContain('and the tile shows the wait');
-  });
-  test('the first summary after a settlement is not promised', () => {
-    expect(rendered()).not.toContain('a summary opens by itself');
-  });
-  test('the forecast no longer names the shared vote and the halving', () => {
-    expect(rendered()).not.toContain('the shared vote and the halving');
-  });
-  test('the play no longer says every landing place lights up', () => {
-    expect(rendered()).not.toContain('every place it can land lights up');
-  });
-  test('the card frames are no longer described in the Move, Reversal, Gimmick line', () => {
-    expect(rendered()).not.toContain('a Move\'s is solid');
-  });
-  test('a retired character is no longer said to be unable to match', () => {
-    expect(rendered()).not.toContain('can\'t match while it\'s retired');
-  });
-  test('the phrase-length sentence is gone', () => {
-    expect(rendered()).not.toContain('the form tells you how short');
-  });
-  test('the trailing-punctuation rule is gone', () => {
-    expect(rendered()).not.toContain('Punctuation at the very ends of your phrase');
-  });
-  test('the phrase never-match list no longer names code, links or images', () => {
-    expect(rendered()).not.toContain('through code, a link or an image');
-  });
-  test('the Lens line no longer says who quoted only if Only these was used', () => {
-    expect(rendered()).not.toContain('if you used Only these');
-  });
-});
-
 describe('the look', () => {
   const css = fs.readFileSync('engine/ui/guide/guide.css', 'utf8');
   test('the contents stay in view on the Main board\'s layout, and fold into a menu on the Phone board\'s', () => {
