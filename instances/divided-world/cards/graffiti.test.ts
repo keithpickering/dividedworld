@@ -421,7 +421,10 @@ test('Graffiti: the reviewer\'s poison, ten Fat strokes over a whole 60 by 40 po
   assert.equal(kept.ok, true, why(kept));
   const frame = surf.frameOf!(kept.ok ? kept.value.payload : {});
   assert.deepEqual(frame, { box: { w: 200, h: 2000 }, imageEms: [] });
-  assert.equal(frameProblem(post, frame!), 'tall');
+  // 200 ems is wider than any content area (the width cap is checked first), so the poison is refused as wide.
+  assert.equal(frameProblem(post, frame!), 'wide');
+  // The same strokes in a frame of an honest width but 2,000 ems tall are refused as taller than the post.
+  assert.equal(frameProblem(post, { box: { w: 60, h: 2000 }, imageEms: [] }), 'tall');
   const fair = draw(drawn([group({ anchor: { kind: 'box' }, strokes: fat })]));
   assert.equal(frameProblem(post, surf.frameOf!(fair.ok ? fair.value.payload : {})!), null);
 });
