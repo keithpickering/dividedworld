@@ -2855,12 +2855,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return e?.card ?? undefined;
   }
   /**
-   * What a present holds (`gift_box`, design 1.4): keyed by the box's play, the giver's account, the gift's card and its checked configuration, and the gift's own price at the wrap.
+   * What an unopened present holds (`gift_box`, design 1.4): keyed by the box's play, the giver's account, the gift's card and its checked configuration.
    * Read only by the giver's own calls (an open lands it as the giver's play or returns it to them, an admin's end hands it back); no Act, payload or answer names it before the open.
+   * An entry is cleared when the box is opened or ended.
    */
+  const gifts = new Map<Id, { readonly account: Id; readonly card: string; readonly config: Readonly<Record<string, unknown>> }>();
   /** Boxes whose open was written: an admin's end of one says so (reverseCard). */
   const openedBoxes = new Set<Id>();
-  const gifts = new Map<Id, { readonly account: Id; readonly card: string; readonly config: Readonly<Record<string, unknown>>; readonly paid: number }>();
+  /** Boxes an admin ended unopened: an open of one says it is over, in the words of an open of any ended box. */
+  const endedBoxes = new Set<Id>();
   /**
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
@@ -3024,7 +3027,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
     spend(account, charged, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: charged });
-    if (wrapped) gifts.set(written.id, { account: account.id, card: gift!.card, config: giftConfig!.ok ? (giftConfig!.value as Record<string, unknown>) : {}, paid: giftPrice });
+    if (wrapped) gifts.set(written.id, { account: account.id, card: gift!.card, config: giftConfig!.ok ? (giftConfig!.value as Record<string, unknown>) : {} });
     sendAct(written);
     /* The reply is heard as `under`, after its card, and never as an act of its own: no screen draws it at the thread's tail first. */
     if (replied) {
@@ -3064,10 +3067,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!account) return refuse('sign in to act');
     const box = acts.get(boxId);
     const held = gifts.get(boxId);
-    if (!box || box.kind !== 'card' || !held || box.target === null) return refuse('there is no present to open');
+    if (!box || box.kind !== 'card' || box.target === null || !(held || openedBoxes.has(boxId) || endedBoxes.has(boxId))) return refuse('there is no present to open');
     const post = acts.get(box.target)!;
     if (post.character === null || characters.get(post.character)?.owner !== account.id) return refuse("only this post's author can open it");
-    if (over(boxId)) return refuse('this present was already opened or ended');
+    if (over(boxId) || !held) return refuse('this present was already opened or ended');
     const giver = accounts.get(held.account)!;
     reversedPlays.add(boxId);
     const tried = playCard(held.card, box.character!, box.target, held.config, '', 'post', undefined, undefined, undefined, undefined, undefined, { account: giver });
@@ -4711,6 +4714,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       sendAct(end);
       /* An unopened present ended by an admin gives its gift back to the giver's hand (design 1.4). */
       const kept = gifts.get(play);
+      if (kept !== undefined) { gifts.delete(play); endedBoxes.add(play); }
       const giver = kept === undefined ? undefined : accounts.get(kept.account);
       if (kept !== undefined && giver) { giver.cards[kept.card] = (giver.cards[kept.card] ?? 0) + 1; recordCard(giver.id, end.at, { card: kept.card, kind: 'returned', act: end.id, price: 0 }); }
       if (!onPost(p)) { const shown = publicAct(end); send('reach', 'effect', () => { for (const l of [...reachListeners]) l.onPlay?.(shown); }); }

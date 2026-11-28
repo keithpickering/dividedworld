@@ -54,14 +54,14 @@ describe('a card wrapped in another, as the server holds it (season two design, 
   const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, gimmick: { kind: 'ward' as const, upTo: 'uncommon' as const }, lasts: { unit: 'day' as const, count: 7 }, canApply: () => okv(undefined) };
   const box = { ...base, key: 'present', name: 'Present For You', alignment: 'sweet' as const, rarity: 'uncommon' as const, wraps: true as const, stack: 1, playPrice: () => 150, canApply: (t: CardTarget, e: readonly CardEffect[], _c: unknown, now?: Date) => landsOn({ key: 'present', stack: 1 }, t, e, now) };
   const world: Instance = { ...instance, cards: [blot, shield, box], settings: { ...settings, economy: {} } };
-  function setup(wallet = 600) {
+  function setup(wallet = 600, hand: Record<string, number> = { present: 2, blot: 2 }) {
     const fake = createFake({ instance: world });
     const ana = fake.seed.account('ana');
     const bo = fake.seed.account('bo');
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'x'.repeat(30));
-    fake.seed.cards(ana, { present: 2, blot: 2 });
+    fake.seed.cards(ana, hand);
     fake.seed.cards(bo, { shield: 1 });
     fake.seed.wallet(ana, wallet);
     fake.signInAs(ana);
@@ -72,8 +72,8 @@ describe('a card wrapped in another, as the server holds it (season two design, 
 
   test('a box takes two cards and charges its price plus the gift\'s, and its Act and payload hold no gift', async () => {
     const { fake, anaFace, opener } = setup();
-    expect(await fake.playCard('present', anaFace, opener, {}, '')).toMatchObject({ ok: false, error: expect.stringMatching(/present/i) });
-    expect(await fake.playCard('blot', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift)).toMatchObject({ ok: false });
+    expect(await fake.playCard('present', anaFace, opener, {}, '')).toEqual(refused('Present For You holds a card: choose the card to wrap in it', 'gift'));
+    expect(await fake.playCard('blot', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift)).toEqual(refused('only a present holds a card, and Blot is not one', 'gift'));
     expect(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, { card: 'present', config: {} })).toEqual(refused("a present can't hold another present", 'gift'));
     expect(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, { card: 'shield', config: {} })).toEqual(refused('a present holds a Move that is cast on a post', 'gift'));
     expect(await held(fake)).toEqual({ present: 2, blot: 2 });
@@ -89,13 +89,13 @@ describe('a card wrapped in another, as the server holds it (season two design, 
   test('only the post\'s author opens a box; the author\'s open lands the gift as the giver\'s play and frees the box\'s slot', async () => {
     const { fake, ana, bo, anaFace, opener } = setup();
     const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
-    expect(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift)).toMatchObject({ ok: false });
+    expect(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift)).toEqual(refused('this post already carries that card', 'config'));
     expect(await fake.openGift(wrapped.id)).toEqual(refused("only this post's author can open it"));
     fake.signInAs(bo);
     const opened = must(await fake.openGift(wrapped.id));
     expect(opened).toMatchObject({ box: wrapped.id, did: 'landed', why: null });
     expect(opened.gift).toMatchObject({ kind: 'card', character: anaFace, targetActId: opener, payload: { card: 'blot' } });
-    expect(await fake.openGift(wrapped.id)).toMatchObject({ ok: false });
+    expect(await fake.openGift(wrapped.id)).toEqual(refused('this present was already opened or ended'));
     /* Nothing more was charged for the open, and the box's slot is free again for another present. */
     fake.signInAs(ana);
     expect((await fake.wallet()).balance).toBe(400);
@@ -114,14 +114,15 @@ describe('a card wrapped in another, as the server holds it (season two design, 
   });
 
   test('an admin\'s end of an unopened box returns the gift to the giver, and the box can then never be opened', async () => {
-    const { fake, ana, anaFace, opener } = setup();
+    const { fake, ana, bo, anaFace, opener } = setup();
     const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
     const boss = fake.seed.account('boss', { admin: true });
     fake.signInAs(boss);
     must(await fake.reverseCard(wrapped.id));
     fake.signInAs(ana);
     expect(await held(fake)).toEqual({ present: 1, blot: 2 });
-    expect(await fake.openGift(wrapped.id)).toMatchObject({ ok: false });
+    fake.signInAs(bo);
+    expect(await fake.openGift(wrapped.id)).toEqual(refused('this present was already opened or ended'));
   });
   test('an open is its own Act, and no feed of an admin\'s ended cards reads it as one', async () => {
     const { fake, ana, bo, boFace, anaFace, opener } = setup();
@@ -153,5 +154,17 @@ describe('a card wrapped in another, as the server holds it (season two design, 
     const boss = fake.seed.account('boss', { admin: true });
     fake.signInAs(boss);
     expect(await fake.reverseCard(wrapped.id)).toEqual(refused('that present was already opened'));
+  });
+  test('a wrap is refused when the giver holds no copy of the gift, or the wallet is short of the box and the gift together, and nothing changes hands', async () => {
+    const none = setup(600, { present: 1 });
+    expect(await none.fake.playCard('present', none.anaFace, none.opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift)).toEqual(refused('you hold no "blot" card to wrap; the Vending Machine sells them', 'gift'));
+    expect(await held(none.fake)).toEqual({ present: 1 });
+    expect((await none.fake.wallet()).balance).toBe(600);
+    /* The box is 1.50 and the gift 0.50 more on this post: 1.99 pays the box and not both. */
+    const poor = setup(199);
+    expect(await poor.fake.playCard('present', poor.anaFace, poor.opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift)).toEqual(refused('that costs 2.00, and your wallet holds 1.99'));
+    expect(await held(poor.fake)).toEqual({ present: 2, blot: 2 });
+    expect((await poor.fake.wallet()).balance).toBe(199);
+    expect((await poor.fake.postPlays([poor.opener])).plays).toEqual([]);
   });
 });
