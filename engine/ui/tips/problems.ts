@@ -27,7 +27,7 @@ export const BADGE_MAX = 12;
 /** The most badges the footer shows: a row of them wraps (engine/ui/frame/frame.css), but a footer of a dozen is a wall. */
 export const BADGES_MAX = 6;
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks' | 'conduct' | 'licensing'> & Partial<Pick<InstanceUi, 'themes' | 'sounds'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks' | 'conduct' | 'licensing'> & Partial<Pick<InstanceUi, 'themes' | 'sounds' | 'rowOrder'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
   /* A theme's `modes` and its preview's keys are one list (tools/theme-preview.mjs reads the keys from the theme's file). */
   for (const t of ui.themes ?? []) {
@@ -98,6 +98,7 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
     if (card.status === undefined) out.push(`the card "${card.key}" has no status, so its Lens heading would be a sentence`);
     else for (const words of statusWords(card.status, instance.cards?.find((c) => c.key === card.key)?.stack ?? 1)) out.push(...wordsProblems('status', words).map((p) => `the card "${card.key}": ${p}`));
   }
+  out.push(...rowOrderProblems(ui));
   return out;
 }
 
@@ -113,6 +114,7 @@ function drawnByProblems(card: CardUi, cards: readonly CardUi[]): string[] {
   const named = cards.find((c) => c.key === card.drawnBy);
   if (named === undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which has no CardUi`);
   else if (named.drawnBy !== undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which is itself drawn by "${named.drawnBy}"; a chain is refused`);
+  else if (named.fillsRow !== undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which fills the row; its effect is drawn in a layer of its own, and a lent play would not reach it`);
   else if (named.Effect === undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which has no Effect to draw it`);
   return out;
 }
@@ -154,6 +156,30 @@ function coversRowProblems(card: CardUi): string[] {
   if (card.Effect === undefined) out.push(`${who} covers the row and has no Effect to cover the content area where a post has no row`);
   if (card.takeover) out.push(`${who} covers the row and is a takeover, which lifts the post out of the row the cover hides`);
   if (card.foldsRow !== undefined) out.push(`${who} covers the row and also folds it; a card does one or the other`);
+  return out;
+}
+
+/**
+ * The row's layers nest in the order `InstanceUi.rowOrder` lists, so it names every card that covers or fills the row and nothing else, each once, and no card does both: a
+ * covering or filling card left out, a key that is no card, a key of a card that neither covers nor fills, a key listed twice, and a card with both flags.
+ */
+export function rowOrderProblems(ui: Pick<InstanceUi, 'cards'> & Partial<Pick<InstanceUi, 'rowOrder'>>): string[] {
+  const out: string[] = [];
+  const cards = ui.cards ?? [];
+  const order = ui.rowOrder ?? [];
+  for (const card of cards) {
+    const who = `the card "${card.key}"`;
+    if (card.coversRow !== undefined && card.fillsRow !== undefined) out.push(`${who} both covers and fills the row; a card does one or the other`);
+    if ((card.coversRow !== undefined || card.fillsRow !== undefined) && !order.includes(card.key)) out.push(`${who} covers or fills the row and is missing from rowOrder`);
+  }
+  const seen = new Set<string>();
+  for (const key of order) {
+    const card = cards.find((c) => c.key === key);
+    if (seen.has(key)) { out.push(`rowOrder lists "${key}" twice`); continue; }
+    seen.add(key);
+    if (card === undefined) out.push(`rowOrder lists "${key}", which is no card`);
+    else if (card.coversRow === undefined && card.fillsRow === undefined) out.push(`rowOrder lists "${key}", which neither covers nor fills the row`);
+  }
   return out;
 }
 

@@ -1567,6 +1567,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     /* An admin's end of a card goes through the act function, which owns the broadcasts (a layer comes off for everyone reading). */
     reverseCard: (play) => act({ action: 'reverseCard', play }, (r) => ({ act: r['id'], play: r['play'] })),
+    /* Stub until the database task (season two cards plan, Task 5) adds `open_gift`; `playCard` below does not yet pass `gift_card`/`gift_config` either. */
+    openGift: async () => ({ ok: false, error: 'opening a present is not available yet' }),
     async threads(board, page) {
       /* The page is the list's rows; the total is the board's counter (a trigger keeps it), so a page turn counts nothing. */
       const total = async () => num((await list(() => client.from('board_counts').select('threads').eq('board', board).limit(1)))[0]?.['threads']);

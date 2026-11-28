@@ -151,6 +151,8 @@ export interface WorldOptions {
   readonly avatars?: Readonly<Record<string, string>>;
   /** The instance's mark and picture for a card's back (`InstanceUi.cardBack`), which a face-down mark is drawn without. */
   readonly cardBack?: InstanceUi['cardBack'];
+  /** The row layers' order (`InstanceUi.rowOrder`), outermost first. */
+  readonly rowOrder?: InstanceUi['rowOrder'];
   /** A different Strategy Guide (its Markdown and hints) than the test world's small one. */
   readonly guide?: GuideUi;
   /** A different welcome letter's Markdown than the test world's one line. */
@@ -219,7 +221,7 @@ export function tapThread(fake: Fake): () => ThreadListener {
 
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.letter || options.conduct || options.licensing || options.copy || options.cardBack || options.sounds ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}), ...(options.letter ? { onboarding: { ...ui.onboarding, letter: options.letter } } : {}), ...(options.conduct ? { conduct: options.conduct } : {}), ...(options.licensing ? { licensing: options.licensing } : {}), ...(options.cardBack ? { cardBack: options.cardBack } : {}), ...(options.sounds ? { sounds: options.sounds } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.letter || options.conduct || options.licensing || options.copy || options.cardBack || options.sounds || options.rowOrder ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}), ...(options.letter ? { onboarding: { ...ui.onboarding, letter: options.letter } } : {}), ...(options.conduct ? { conduct: options.conduct } : {}), ...(options.licensing ? { licensing: options.licensing } : {}), ...(options.cardBack ? { cardBack: options.cardBack } : {}), ...(options.sounds ? { sounds: options.sounds } : {}), ...(options.rowOrder ? { rowOrder: options.rowOrder } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
   return {
     fake,
     ...render(

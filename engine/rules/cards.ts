@@ -410,6 +410,13 @@ export interface CardRules<Config = unknown> {
    * (`staffOffers`), which has no point to pick.
    */
   readonly rewind?: { readonly upTo: Rarity };
+  /**
+   * A card wrapped in another (season two design, section 1.4): the card is cast face up on a post with a second card from the caster's hand, the gift, and the
+   * caster's configuration of it. The gift is a Move that reaches a post and is not itself a wrapper (`giftProblem`); its landing is tried when the post's author
+   * opens the box, never before. It stacks at most 1 and reaches a post alone (`instanceProblems`), is face up only (`faceUpOnly`) and is never offered to a staff
+   * persona (`staffOffers`), which has no second card to give.
+   */
+  readonly wraps?: true;
   /** A use card on a post alone with a time up: while it is up, the first `count` casts on its post whose printed flavor is one of `flavors`, landing and not handed back by a card set face down, each go back to their caster's hand. A staff cast passes over it. */
   readonly refunds?: { readonly flavors: readonly Alignment[]; readonly count: number };
   /** A cast trap's catch: the card it waits for, by key, from its checked configuration (a ride trap may name its card here too). Only a set card that springs on a cast and has no `match` has it. */
@@ -845,8 +852,8 @@ const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
  * its first tag is drawn on the post the caster chose, and a back would carry it blind to a quoting post's box nobody drew for. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
  * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
  */
-export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies' | 'discipline' | 'cuts' | 'rewind'>): boolean =>
-  rules.rewind !== undefined || rules.discipline !== undefined || rules.cuts !== undefined || rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies' | 'discipline' | 'cuts' | 'rewind' | 'wraps'>): boolean =>
+  rules.wraps === true || rules.rewind !== undefined || rules.discipline !== undefined || rules.cuts !== undefined || rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
 
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
@@ -972,6 +979,20 @@ export function fallsOn(play: { readonly at: string; readonly ends?: string }, p
   return from <= written && written < to;
 }
 
+/**
+ * What stops a card being wrapped in a wrapper, in plain words, or null (design 1.4): the gift is a Move cast on a post, is not itself a wrapper, and its own
+ * `validateConfig` takes the configuration it is wrapped with. Its landing on the post is not asked here: that is tried when the box is opened.
+ */
+export function giftProblem(wrapper: Pick<CardRules, 'name' | 'wraps'>, gift: CardRules, config: unknown): string | null {
+  if (wrapper.wraps !== true) return `${wrapper.name} holds no card`;
+  if (gift.wraps === true) return "a present can't hold another present";
+  if (!castOnPost(gift)) return 'a present holds a Move that is cast on a post';
+  // An open is made with no message, no reply and no first draw to give, so a card that needs one could never land from it.
+  if (gift.needsMessage !== undefined || gift.replies === true || gift.surface !== undefined) return "a present can't hold a card that needs words of its own";
+  const checked = gift.validateConfig(config);
+  return checked.ok ? null : checked.why;
+}
+
 /** Whether a card is cast on a post: the cards a cast trap may name, since a caught card is one a caster played there. */
 export const castOnPost = (rules: Pick<CardRules, 'play' | 'reaches'>): boolean => playOf(rules) === 'cast' && reachesOf(rules).includes('post');
 
@@ -1085,6 +1106,8 @@ export function staffOffers(card: CardRules): boolean {
   if (card.trap?.outcome?.kind === 'ride') return false;
   // A staff character's Acts are not settled, so an earn a persona cast would never be paid.
   if (card.gimmick !== undefined && (card.play ?? 'cast') === 'cast') return false;
+  // A wrapper needs a second card from the caster's hand, which a persona has none to give.
+  if (card.wraps === true) return false;
   // A rewind names a point of the post's history, which a persona's play has no way to pick.
   if (card.rewind !== undefined) return false;
   // A card that cuts names a Gimmick by its play, which a persona does not choose (the Buzzkill design, section 2.5).

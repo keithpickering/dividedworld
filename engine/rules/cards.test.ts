@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { coatsOf, fromCoatString, takesOf } from './surface.ts';
-import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, isLive, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, rewindWords, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, isLive, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, giftProblem, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, rewindWords, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import { isPost, type ActKind, type Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -1118,4 +1118,33 @@ test('a rewind card is face up only and is never offered to a staff persona', ()
   assert.equal(staffOffers(clock), false);
   const { rewind: _gone, ...bare } = clock;
   assert.equal(staffOffers(bare as CardRules), true, 'the same card without the rewind');
+});
+
+// A card wrapped in another (season two design, section 1.4): a present holds a Move cast on a post, opened by the post's author.
+const present: CardRules = { ...cast('present', 'uncommon'), wraps: true };
+
+test('a wrapper is face up only and is never offered to a staff persona', () => {
+  assert.equal(faceUpOnly(present), true);
+  assert.equal(faceUpOnly(plain), false, 'the same card without wraps');
+  assert.equal(staffOffers(present), false, 'a persona\'s play has no second card to give');
+  assert.equal(staffOffers(plain), true);
+});
+
+test('giftProblem holds a Move cast on a post, and says in plain words why a card cannot be wrapped', () => {
+  assert.equal(giftProblem(present, plain, {}), null);
+  assert.equal(giftProblem(present, inky, { ink: 'red' }), null);
+  assert.equal(giftProblem(present, present, {}), "a present can't hold another present");
+  assert.equal(giftProblem(present, shield, {}), 'a present holds a Move that is cast on a post', 'a Use is not a Move');
+  assert.equal(giftProblem(present, snare, {}), 'a present holds a Move that is cast on a post', 'a Set is not a Move');
+  assert.equal(giftProblem(present, ground, {}), 'a present holds a Move that is cast on a post', 'a Move on a thread does not reach a post');
+  assert.equal(giftProblem(present, inky, { ink: 'blue' }), 'the ink is red', 'the gift\'s own validator speaks');
+  assert.equal(giftProblem(plain, plain, {}), 'Test plain holds no card', 'only a wrapper holds a gift');
+});
+
+test('giftProblem refuses a gift an open with no words could never land, in true words', () => {
+  const words = "a present can't hold a card that needs words of its own";
+  assert.equal(giftProblem(present, { ...plain, needsMessage: 'say why' }, {}), words);
+  assert.equal(giftProblem(present, { ...plain, replies: true }, {}), words);
+  assert.equal(giftProblem(present, { ...plain, surface: {} as never }, {}), words);
+  assert.equal(giftProblem(present, plain, {}), null);
 });

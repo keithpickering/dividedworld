@@ -99,7 +99,8 @@ async function openThread(w: World, cards: readonly CardUi[] = instanceUi.cards)
   geometry.post = { top: 5000, bottom: 5320 };
   const rendered = renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}?page=1`, cards });
   await screen.findByText(/Please read it this time/u);
-  await new Promise((r) => setTimeout(r, TUNING.settleMs + 60));
+  /* Inside act, so React's own pending work (a render the page's reaction-row scope restarted when it reported its row) is flushed while the clock runs: outside act it waits for the next act, and the card would mount after the test's scrolls. */
+  await act(async () => { await new Promise((r) => setTimeout(r, TUNING.settleMs + 60)); });
   vi.useFakeTimers();
   return rendered;
 }

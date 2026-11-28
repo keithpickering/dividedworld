@@ -79,6 +79,10 @@ interface Props {
   readonly undo: (kind: string) => void;
   /** The reactions cards added to this post: the live ones are listed in their quadrant's group, after the instance's (an ended one is not offered). */
   readonly local?: readonly LocalKind[];
+  /** Offer only the kinds not yet on the post (a card that draws the reactions opens it so, `CardUi.drawsReactions`): the kinds in `onPost` and every kind a card added to the post are left out. */
+  readonly onlyNew?: true;
+  /** The kinds on the post now, as its chips show them: what `onlyNew` leaves out. */
+  readonly onPost?: readonly string[];
   /** A refusal already given (a tile pressed in the row was refused): shown as the picker opens, in the alert. */
   readonly refusal?: string | null;
   /** The post's reactions row, which the picker opens by. */
@@ -86,7 +90,7 @@ interface Props {
   readonly onClose: (refocus: boolean) => void;
 }
 
-export function Picker({ subject, as, own, pending, local = [], press, undo, refusal: given = null, anchor, onClose }: Props) {
+export function Picker({ subject, as, own, pending, local = [], onlyNew, onPost = [], press, undo, refusal: given = null, anchor, onClose }: Props) {
   const { instance, ui, settings } = useKayfa();
   const [placed, setPlaced] = useState<Placed | null>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -139,9 +143,10 @@ export function Picker({ subject, as, own, pending, local = [], press, undo, ref
 
   let first = true;
   /* A quadrant's kinds: the instance's, then the ones cards added to this post that are still live. */
+  const taken = onlyNew ? new Set(onPost) : null;
   const kindsOf = (q: Quadrant) => [
-    ...instance.reactions.filter((r) => r.quadrant === q).map((r) => ({ key: r.key, emoji: r.emoji, name: `${readable(r.key)}, ${ui.quadrantLabels[q]}` })),
-    ...local.filter((k) => k.quadrant === q && !k.ended).map((k) => ({ key: k.key, emoji: k.emoji, name: localName(k.emoji, ui.quadrantLabels[q]) })),
+    ...instance.reactions.filter((r) => r.quadrant === q && !taken?.has(r.key)).map((r) => ({ key: r.key, emoji: r.emoji, name: `${readable(r.key)}, ${ui.quadrantLabels[q]}` })),
+    ...local.filter((k) => k.quadrant === q && !k.ended && !onlyNew).map((k) => ({ key: k.key, emoji: k.emoji, name: localName(k.emoji, ui.quadrantLabels[q]) })),
   ];
   const at = cells(GRID.map((q) => kindsOf(q).length), columns);
   return (
