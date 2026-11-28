@@ -32,7 +32,6 @@ export const ui: CardUi = {
   },
   describe: (settings: Settings) => {
     const e = settings.economy;
-    const s = settings.cardSettings;
-    return `A Salty card, ${consoleSlog.rarity}. It turns a post into an empty command prompt, and a reader types the post out by pressing keys or tapping, one character at a time. A steady rhythm makes each press worth more, up to ${s['consoleSlog.mostPerPress'] ?? 0} characters, and a pause lets that drain. Each reader works through the post once on their own screen, the post's author and whoever played the card among them, and then has it as written for good, on every device. A reader's place is kept in their browser. Links work once all of them is typed, and pictures load in green phosphor a band at a time. One fits on a post. ${setMoveWords('the quoting post')} Playing it on a long post costs ${orbs(e['consoleSlog.perLength'] ?? 0)} more for every ${e['consoleSlog.lengthStep'] ?? 0} characters, ${orbs(e['consoleSlog.mostAdded'] ?? 0)} at most.`;
+    return `A Salty card, ${consoleSlog.rarity}. It turns a post into an empty command prompt, and a reader types the post out by pressing keys or tapping. A steady rhythm types faster. Each reader works through the post once on their own screen, the post's author and whoever played the card among them, and then has it as written for good, on every device. A reader's place is kept in their browser. Links work once all of it is typed. One fits on a post. ${setMoveWords('the quoting post')} Playing it on a long post costs ${orbs(e['consoleSlog.perLength'] ?? 0)} more for every ${e['consoleSlog.lengthStep'] ?? 0} characters, ${orbs(e['consoleSlog.mostAdded'] ?? 0)} at most.`;
   },
 };

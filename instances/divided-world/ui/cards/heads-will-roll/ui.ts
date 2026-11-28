@@ -21,7 +21,7 @@ export const ui: CardUi = {
   Effect: HeadsWillRollEffect,
   drawsReactions: true,
   art: { color: '#d24a2c', ink: '#0d0301', canvas: headsWillRollCanvas, mark: headsWillRollMark, credit: headsWillRollArt.credit, tagline: 'Knock the reactions loose.' },
-  summary: "Knocks a post's reactions loose: they orbit inside it, and a reader catches one to react.",
+  summary: "Knocks a post's reactions loose. A reader catches one to react.",
   status: 'Reactions loose',
   hint: "This post's reactions have come loose. Catch one to react.",
   describe: describeWords,

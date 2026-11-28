@@ -30,7 +30,7 @@ export const headsWillRoll: CardRules<Record<string, never>> = {
     { key: 'headsWillRoll.reelBase', min: 0, max: 5 },
     { key: 'headsWillRoll.reelPerSpeed', min: 0, max: 1 },
   ],
-  seen: (p) => `${who(p)} knocked this post's reactions loose, ${p.ago}: they orbit inside it now, and a reader catches one to react.`,
+  seen: (p) => `${who(p)} knocked this post's reactions loose, ${p.ago}. A reader catches one to react.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(headsWillRoll, target, effects, now),
   /** A persona plays it as it is: there is nothing to choose. */

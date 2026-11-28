@@ -46,5 +46,5 @@ test('its five screen numbers are read within their bounds and the instance hold
 test('a persona may play it, with no options, and it says what the board sees', () => {
   assert.equal(staffOffers(headsWillRoll as CardRules), true);
   assert.deepEqual(staffConfigOf(headsWillRoll as CardRules, () => 0), {});
-  assert.equal(seenOf('heads-will-roll'), "Wario knocked this post's reactions loose, 2 days ago: they orbit inside it now, and a reader catches one to react.");
+  assert.equal(seenOf('heads-will-roll'), "Wario knocked this post's reactions loose, 2 days ago. A reader catches one to react.");
 });

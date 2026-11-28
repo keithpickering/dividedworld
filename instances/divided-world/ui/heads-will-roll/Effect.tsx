@@ -46,7 +46,7 @@ const FONT_SHARE = 0.4;
 
 export const STATE_LOOSE = 'Reactions loose in this post';
 export const STATE_REELING = 'Reeling in a head';
-export const LENS_REPORT = 'The reactions on this post are loose heads, orbiting inside it. Press one to catch it and react. By keyboard or switch, focus a head and press Enter or Space to reel it in: the reaction lands when the bar under the head fills, a little longer for a fast head, and pressing again to cancel lets it go. With reduced motion the heads stand still and every press reels in. The React head opens the picker, which offers only kinds not yet on the post.';
+export const LENS_REPORT = 'The reactions on this post are loose heads. Press one to catch it and react. By keyboard or switch, focus a head and press Enter or Space to reel it in: the reaction lands when the bar under the head fills, and pressing again to cancel lets it go. With reduced motion the heads stand still and every press reels in. The React head opens the picker, which offers only kinds not yet on the post.';
 
 /** One head's words: its emoji and count, then what is true of it. */
 function headLabel(emoji: string, count: number, o: { readonly local: boolean; readonly mine: boolean; readonly pending: boolean; readonly plain: boolean }): string {

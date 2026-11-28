@@ -57,5 +57,5 @@ test('a Mod Bot may play it', () => {
 test('its screens\' numbers are settings with bounds, and a play\'s seen line is the design\'s', () => {
   assert.deepEqual(consoleSlog.screenReads?.map((r) => (typeof r === 'string' ? r : r.key)), ['consoleSlog.rhythmMs', 'consoleSlog.perStep', 'consoleSlog.mostPerPress', 'consoleSlog.drain', 'consoleSlog.bands']);
   assert.deepEqual(['consoleSlog.rhythmMs', 'consoleSlog.perStep', 'consoleSlog.mostPerPress', 'consoleSlog.drain', 'consoleSlog.bands'].map((k) => settings.cardSettings[k]), [450, 5, 8, 12, 16]);
-  assert.equal(seenOf('console-slog'), 'Wario turned this post into a command prompt, 2 days ago: a reader types it out by mashing keys.');
+  assert.equal(seenOf('console-slog'), 'Wario turned this post into a command prompt, 2 days ago. A reader types it out by pressing keys.');
 });

@@ -24,7 +24,7 @@ export const consoleSlog: CardRules<Record<string, never>> = {
   stack: 1,
   /** Its effect is drawn on the post, so the play counts toward the post's limit of drawn effects (`postEffects`). */
   drawsEffect: {},
-  seen: (p) => `${who(p)} turned this post into a command prompt, ${p.ago}: a reader types it out by mashing keys.`,
+  seen: (p) => `${who(p)} turned this post into a command prompt, ${p.ago}. A reader types it out by pressing keys.`,
   reads: [{ key: 'consoleSlog.perLength', whole: true, min: 0 }, { key: 'consoleSlog.lengthStep', whole: true, min: 1 }, { key: 'consoleSlog.mostAdded', whole: true, min: 1 }],
   /** The mash's numbers, read by the screens: the rhythm window, the presses a step takes, the most a press reveals, the presses a second a pause drains, and an image's bands. */
   screenReads: [
