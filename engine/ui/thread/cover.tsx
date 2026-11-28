@@ -33,12 +33,20 @@ export interface RowCovering {
   readonly rowCover: RowCover | null;
   /** The cards whose covers are still shut for this reader, outermost first, one entry for each shut play: what a layer inside them is `covered` by (thread/fill.tsx). */
   readonly shutCards: readonly string[];
+  /** The level an over-ink box stands at in this row while a fill layer is up (`overInkZ`). */
+  readonly overZ: number;
   /** The `div.kb-row-cover` holding the card's `Cover`, to be drawn first inside the grid; null while none is shut. */
   readonly host: ReactNode;
 }
 
 /** The stacking of a row layer, the outermost highest, within the band above the post's own cells (5 and up) that fold.css gives a cover and a fill: a layer ranked outside another draws over it. */
-export const rowZ = (order: readonly string[] | undefined, key: string): number => 5 + (order?.length ?? 0) - rowRank(order, key);
+export const rowZ = (order: readonly string[] | undefined, key: string): number => 5 + 2 * ((order?.length ?? 0) - rowRank(order, key));
+
+/**
+ * The level an over-ink box (the ORIGIN box, spin/Origin.tsx) stands at in the row's grid while a fill layer is up (`--kb-over-z`, thread/fold.css): over every layer, and under the cover that is drawn, if one is. Layers are two levels
+ * apart, so the level just under a cover is over every layer ranked inside it and under every layer ranked outside it; with no cover it is over the topmost layer a card unranked in the order could have.
+ */
+export const overInkZ = (order: readonly string[] | undefined, cover: string | undefined): number => (cover === undefined ? rowZ(order, '') + 1 : rowZ(order, cover) - 1);
 
 /**
  * Whether a post covers its row and the reader's state of it, for a thread's post. It covers while the post wears a live play, on its own reach, of a card that covers the row;
@@ -78,5 +86,5 @@ export function useRowCovering({ plays, actId, eligible, now, cards, grid, post,
     return () => { for (const el of marked) el.removeAttribute('inert'); };
   });
   const host = drawn && Cover && rowCover ? <div className="kb-row-cover" style={{ zIndex: rowZ(order, next!.card) }}><Cover plays={same} cover={rowCover} post={post} /></div> : null;
-  return { covering: total > 0, shut, shutCards: stillShut.map((p) => p.card), rowCover, host };
+  return { covering: total > 0, shut, overZ: overInkZ(order, drawn ? next!.card : undefined), shutCards: stillShut.map((p) => p.card), rowCover, host };
 }

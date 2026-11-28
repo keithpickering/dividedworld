@@ -189,3 +189,28 @@
 .kb-row-layer :is(button, a, input, select, textarea, [role='button'], [role='slider'], [role='dialog'], [tabindex]) {
   pointer-events: auto;
 }
+
+/*
+ * An over-ink box stands over the row's fill layers (issue #1275). The body (`.kb-act-main`) is a stacking context, which keeps its effects' levels inside it (an effect's ground at -1, its ink at 1); the
+ * layers are siblings of the body in the grid, so a box inside the body could never rise over one. While a layer is up the body stops being a context (isolation and z-index auto: it is already positioned
+ * here, so it is still painted over the cells before it), its ground is drawn by its own first pseudo-element at -1 where an effect's -1 stays over it, and the ORIGIN box takes the level the grid names
+ * (`--kb-over-z`, cover.tsx `overInkZ`): over the layers, under a shut cover. Only the ORIGIN box is lifted; the rest of the body's contents stay under the layers as before. Without a layer, none of this applies.
+ */
+.kb-act-grid:has(> .kb-row-layer) > .kb-act-main {
+  position: relative;
+  isolation: auto;
+  z-index: auto;
+  background: none;
+}
+
+.kb-act-grid:has(> .kb-row-layer) > .kb-act-main::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--kb-post-bg);
+}
+
+.kb-act-grid:has(> .kb-row-layer) .kb-origin[data-kb-over-ink] {
+  z-index: var(--kb-over-z);
+}
