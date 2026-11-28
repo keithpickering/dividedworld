@@ -13,12 +13,23 @@
  * and answered by one ask at `freshAfter`, however many came; so a post under a storm of reactions
  * costs one read of the window every thirty seconds at most, and none once the storm passes.
  *
+ * The rows stay current by themselves. The account's own channel carries a bare `self` poke when a wallet, a hand or one of the
+ * player's characters changed (a trap, a refund, a ban, an infraction): one read follows about 300 ms later, joined by any poke that
+ * lands meanwhile. A settlement pokes no one; the HUD hears `settled` on `reach` and reads at a random moment within the alert feed's
+ * spread (`REACH_SPREAD_MS`), so a busy instance's readers do not all read in one second. A poke during a read runs one more read after
+ * it, never two at once. Both are dropped with the account. A read a poke starts is one the player did not ask for: if it fails it keeps
+ * the last good rows and shows no error (#1240), while the read the player's own action starts reports a failure as it always did.
+ *
  * At a settlement the wallet moves; the wallet last shown on this device (`kb-wallet-seen:<account>`)
  * is where the orbs' cascade runs from.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Answer, Boot, Bought, Estimate, HeldCard, Id, KayfaApi, MyCharacter, Opened, Session, Slot, Wallet } from './data/api.ts';
 import { clearDrafts } from './composer/draft.ts';
+import { REACH_SPREAD_MS } from './alerts/useAlertFeed.ts';
+
+/** A poke on the player's own channel is read after this long, so a trap's wallet move and its card's ledger row come as one read. */
+const SELF_DEBOUNCE_MS = 300;
 
 export interface Player {
   readonly session: Session;
@@ -146,12 +157,16 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
 
   /* Each call is numbered: an earlier read landing after a later one changes nothing, and answers as the later one's rows stand. */
   const calls = useRef(0);
-  const refresh = useCallback(async (): Promise<boolean> => {
+  /* The newest read that landed with rows: a failure is dropped only when a later read has landed, never for one merely started. */
+  const landed = useRef(0);
+  /* A quiet read is one the player did not ask for (a poke): it fails without a trace, keeping the rows held. */
+  const readRows = useCallback(async (quiet: boolean): Promise<boolean> => {
     if (!account) return true;
     const mineCall = ++calls.current;
     try {
       const [chars, w, hand] = await Promise.all([api.myCharacters(), api.wallet(), api.myCards()]);
-      if (current.current !== account || calls.current !== mineCall) return true;
+      if (current.current !== account || landed.current > mineCall) return true;
+      landed.current = mineCall;
       const seen = store.get(`kb-wallet-seen:${account}`);
       setHeld({
         for: account, characters: chars, wallet: w, cards: hand, loaded: true, failed: false,
@@ -160,11 +175,14 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
       });
       return true;
     } catch {
+      /* A quiet read keeps the rows and sets no flag; the player's own read's failure is shown. */
+      if (quiet) return false;
       /* The rows as they were: the next action or page asks again. Loading still ends, so the HUD is never blank. */
-      if (current.current === account && calls.current === mineCall) setHeld((h) => ({ ...(h.for === account ? h : emptyFor(account)), loaded: true, failed: true }));
+      if (current.current === account && landed.current < mineCall) setHeld((h) => ({ ...(h.for === account ? h : emptyFor(account)), loaded: true, failed: true }));
       return false;
     }
   }, [api, account]);
+  const refresh = useCallback(() => readRows(false), [readRows]);
 
   useEffect(() => {
     let live = true;
@@ -205,6 +223,41 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
     if (adopted.current?.account === account) return;
     void refresh();
   }, [account, refresh]);
+
+  /* The player's own channel and the settlements: a poke becomes one read, joined with the pokes near it and never run beside another. */
+  useEffect(() => {
+    if (!account) return;
+    let live = true;
+    let out = false;
+    let again = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let due = 0;
+    const read = () => {
+      if (!live) return;
+      if (out) { again = true; return; }
+      out = true;
+      void readRows(true).finally(() => {
+        out = false;
+        if (live && again) { again = false; read(); }
+      });
+    };
+    /* One timer at a time: a poke joins the one waiting unless it would come sooner, which it then replaces. */
+    const soon = (delay: number) => {
+      const at = Date.now() + delay;
+      if (timer !== null && due <= at) return;
+      if (timer !== null) clearTimeout(timer);
+      due = at;
+      timer = setTimeout(() => { timer = null; read(); }, delay);
+    };
+    const offAccount = api.subscribeAccount({ onSelf: () => soon(SELF_DEBOUNCE_MS) });
+    const offReach = api.subscribeReach({ onSettled: () => soon(Math.random() * REACH_SPREAD_MS) });
+    return () => {
+      live = false;
+      if (timer !== null) clearTimeout(timer);
+      offAccount();
+      offReach();
+    };
+  }, [api, account, readRows]);
 
   /*
    * The estimate's asks: one out at a time, none before freshAfter, a held ask answered once at

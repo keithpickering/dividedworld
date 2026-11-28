@@ -446,3 +446,22 @@
 .kb-new-thread[hidden] {
   display: none;
 }
+
+/*
+ * The bar over the list when threads wait (the live-lists design, section 2): the classic table's own bar, one row on the section-bar ground (`td.kb-bar`'s tokens, base.css) with the
+ * table's rule, black on white and no color. It is a polite status region, empty until a thread waits; its Show button reads the page again.
+ */
+.kb-board-new:not(:empty) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3em 0.8em;
+  margin: 0.6em 0;
+  padding: 0.3em 1%;
+  border: 1px solid var(--kb-rule);
+  background: var(--kb-bar-bg);
+  color: var(--kb-bar-fg);
+  text-shadow: var(--kb-bar-shadow);
+  font-size: var(--kb-size-fine);
+  font-weight: bold;
+}

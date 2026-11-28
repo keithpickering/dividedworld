@@ -293,11 +293,18 @@ begin
   if (select count(*) from acts a join characters c on c.id = a.character where a.kind = 'announce' and c.name like 'Many Masks %') is distinct from 150::bigint then
     raise exception 'every announced Turn is announced, once';
   end if;
+  -- The board's rows are built at commit (0455, live_lists_flush), and this file never commits: fire them now.
+  set constraints all immediate;
+  set constraints all deferred;
   perform set_config('role', 'service_role', true);
   due := due_broadcasts();
   perform tests.unbecome();
-  if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'thread' and m ->> 'topic' = 'board:' || system_board()) then
+  -- Its board hears of the thread from the thread's first Act, a row (0455), and no longer from a `thread` event of masks_change's own.
+  if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'row' and m ->> 'topic' = 'board:' || system_board()) then
     raise exception 'a Promos thread the announcement opened was not told to its board';
+  end if;
+  if exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'thread' and m ->> 'topic' like 'board:%') then
+    raise exception 'masks_change still sends a thread event to a board';
   end if;
   -- Oldest first, and only what was sent is cleared.
   if (select array_agg((m ->> 'id')::bigint order by o) from jsonb_array_elements(due) with ordinality as x(m, o))

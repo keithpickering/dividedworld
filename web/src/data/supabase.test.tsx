@@ -1963,18 +1963,85 @@ describe('live', () => {
     expect(s.client.removeChannel).toHaveBeenCalledTimes(1);
   });
 
-  it('maps a board broadcast to a thread and leaves a channel unopened when unsubscribed first', async () => {
+  it('maps a board row broadcast to a thread summary and leaves a channel unopened when unsubscribed first', async () => {
     const s = stub();
-    const onThread = vi.fn();
-    s.api.subscribeBoard(C, { onThread });
+    const onRow = vi.fn();
+    s.api.subscribeBoard(C, { onRow });
     await settle();
     expect(s.channels[0]?.topic).toBe(`board:${C}`);
-    s.channels[0]?.handlers.get('thread')?.({ payload: { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' } });
-    expect(onThread).toHaveBeenCalledWith({ id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00' });
+    expect(s.channels[0]?.handlers.has('row')).toBe(true);
+    expect(s.channels[0]?.handlers.has('thread')).toBe(false);
+    s.channels[0]?.handlers.get('row')?.({ payload: THREAD_ROW });
+    expect(onRow).toHaveBeenCalledWith(expect.objectContaining({ id: T, board: C, title: 'A title', lastSeq: 2, replies: 3, repliesThisWeek: 4, lastAt: '2026-10-01T10:00:00+00:00' }));
     const early = stub();
-    early.api.subscribeBoard(C, { onThread })();
+    early.api.subscribeBoard(C, { onRow })();
     await settle();
     expect(early.channels.filter((c) => c.subscribed)).toEqual([]);
+  });
+
+  it('maps a board `moved` broadcast to the stub the old board lists, and joins the board topic for row, moved, gone and changed', async () => {
+    const s = stub();
+    const onMoved = vi.fn();
+    s.api.subscribeBoard(C, { onMoved });
+    await settle();
+    expect([...(s.channels[0]?.handlers.keys() ?? [])].sort()).toEqual(['changed', 'gone', 'moved', 'row']);
+    s.channels[0]?.handlers.get('moved')?.({ payload: { id: T, title: 'A title', moved_to: 'b-2', moved_to_slug: 'side', moved_to_name: 'Side', moved_at: '2026-10-02T10:00:00+00:00' } });
+    expect(onMoved).toHaveBeenCalledWith({ thread: T, title: 'A title', movedTo: { id: 'b-2', slug: 'side', name: 'Side' }, movedAt: '2026-10-02T10:00:00+00:00' });
+    s.channels[0]?.handlers.get('moved')?.({ payload: { id: T, title: 'A title', moved_at: 'x' } });
+    expect(onMoved).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps a board `gone` broadcast to the thread id and `changed` to a bare call', async () => {
+    const s = stub();
+    const onGone = vi.fn();
+    const onChanged = vi.fn();
+    s.api.subscribeBoard(C, { onGone, onChanged });
+    await settle();
+    s.channels[0]?.handlers.get('gone')?.({ payload: { id: T } });
+    expect(onGone).toHaveBeenCalledWith(T);
+    s.channels[0]?.handlers.get('gone')?.({ payload: {} });
+    expect(onGone).toHaveBeenCalledTimes(1);
+    s.channels[0]?.handlers.get('changed')?.({ payload: {} });
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the index topic for board summaries', async () => {
+    const s = stub();
+    const onBoard = vi.fn();
+    s.api.subscribeIndex({ onBoard });
+    await settle();
+    expect(s.channels.map((c) => c.topic)).toEqual(['index']);
+    expect([...(s.channels[0]?.handlers.keys() ?? [])]).toEqual(['board']);
+    s.channels[0]?.handlers.get('board')?.({ payload: { id: C, slug: 'general', name: 'General', description: '', is_system: false, move_act: null, thread_count: 5, last_at: '2026-10-01T10:00:00+00:00', last_character: B, last_thread: T, last_title: 'A title' } });
+    expect(onBoard).toHaveBeenCalledWith({ id: C, slug: 'general', name: 'General', description: '', isSystem: false, moveAct: null, threadCount: 5, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T, lastTitle: 'A title' });
+  });
+
+  it('maps a row with no last character and no origin, and an empty board entry, to nulls without throwing', async () => {
+    const s = stub();
+    const onRow = vi.fn();
+    const onBoard = vi.fn();
+    s.api.subscribeBoard(C, { onRow });
+    s.api.subscribeIndex({ onBoard });
+    await settle();
+    const rowChannel = s.channels.find((c) => c.topic === `board:${C}`)!;
+    const indexChannel = s.channels.find((c) => c.topic === 'index')!;
+    expect(() => rowChannel.handlers.get('row')?.({ payload: { ...THREAD_ROW, first_act: null, first_character: null, last_act: null, last_character: null, origin_act_id: null, origin_thread: null, origin_place: null } })).not.toThrow();
+    expect(onRow).toHaveBeenCalledWith(expect.objectContaining({ id: T, firstAct: null, firstCharacter: null, lastAct: null, lastCharacter: null, originActId: null, originThread: null, origin: null }));
+    expect(() => indexChannel.handlers.get('board')?.({ payload: { id: C, slug: 'general', name: 'General', description: '', is_system: false, move_act: null, thread_count: 0, last_at: null, last_character: null, last_thread: null, last_title: null } })).not.toThrow();
+    expect(onBoard).toHaveBeenCalledWith({ id: C, slug: 'general', name: 'General', description: '', isSystem: false, moveAct: null, threadCount: 0, lastAt: null, lastCharacter: null, lastThread: null, lastTitle: null });
+  });
+
+  it('hears a self poke on the account channel, with no payload to read', async () => {
+    const s = stub();
+    const onSelf = vi.fn();
+    const onAlert = vi.fn();
+    s.api.subscribeAccount({ onSelf, onAlert });
+    await settle();
+    expect(s.channels.map((c) => c.topic)).toEqual([`account:${A}`]);
+    expect([...(s.channels[0]?.handlers.keys() ?? [])]).toEqual(['alert', 'self']);
+    s.channels[0]?.handlers.get('self')?.({ payload: {} });
+    expect(onSelf).toHaveBeenCalledTimes(1);
+    expect(onAlert).not.toHaveBeenCalled();
   });
 
   it('opens the signed-in account\'s own channel for alerts, and maps an alert broadcast', async () => {
@@ -2112,11 +2179,11 @@ describe('live', () => {
 
     it('leaves a board and an account listener, which pass no callback, untouched', async () => {
       const s = stub();
-      const onThread = vi.fn();
-      s.api.subscribeBoard(C, { onThread });
+      const onRow = vi.fn();
+      s.api.subscribeBoard(C, { onRow });
       await settle();
       expect(() => s.channels[0]?.status?.('SUBSCRIBED')).not.toThrow();
-      expect(onThread).not.toHaveBeenCalled();
+      expect(onRow).not.toHaveBeenCalled();
     });
   });
 });

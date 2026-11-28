@@ -2049,7 +2049,9 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
       const reach = w.fake.subscribeReach.bind(w.fake);
       /* The reach channel never reports joined until released. */
       let release: (() => void) | undefined;
+      /* Only the listener that asks to hear the join (the thread's) is gated: the player's own reach listener (onSettled) asks nothing of it. */
       w.fake.subscribeReach = (l) => {
+        if (!l.onJoined) return reach(l);
         const gated = { ...l, onJoined: () => { release = () => l.onJoined?.(); } };
         return reach(gated);
       };

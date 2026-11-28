@@ -109,6 +109,7 @@ begin
   q := pg_temp.queue('mergeBoard', jsonb_build_object('board', src, 'into', dst));
   t0 := clock_timestamp();
   mv := pg_temp.land(q);
+  set constraints all immediate; set constraints all deferred; -- the commit flush (0455) is part of what a landing costs
   took := clock_timestamp() - t0;
   perform pg_stat_clear_snapshot();
   calls := coalesce((select pg_stat_get_xact_function_calls(fn)), 0);
@@ -121,6 +122,7 @@ begin
 
   t0 := clock_timestamp();
   perform pg_temp.reverse(mv);
+  set constraints all immediate; set constraints all deferred; -- the commit flush (0455) is part of what a reversal costs
   took := clock_timestamp() - t0;
   raise notice 'reversing it took %', took;
   perform pg_temp.expect(took < bound, format('reversing the merge took %s, over the bound of %s', took, bound));

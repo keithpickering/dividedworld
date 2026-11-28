@@ -1,7 +1,10 @@
 import { useLayoutEffect } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { Estimate, KayfaApi, MyCharacter, Session, Slot } from './data/api.ts';
+import type { AccountListener, Estimate, KayfaApi, MyCharacter, ReachListener, Session, Slot } from './data/api.ts';
+import { createFake } from './data/fake.ts';
+import { testInstance } from './test-world.tsx';
+import { REACH_SPREAD_MS } from './alerts/useAlertFeed.ts';
 import { PlayerProvider, usePlayer } from './player.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../rules/pronouns.ts';
 
@@ -21,6 +24,8 @@ function stubApi(over: Partial<KayfaApi> = {}) {
     myCards: async () => [{ card: 'whoops', held: 2 }],
     lastSettledAt: async () => '2026-10-28T08:17:00Z',
     estimate,
+    subscribeAccount: () => () => {},
+    subscribeReach: () => () => {},
     ...over,
   } as unknown as KayfaApi;
   return { api, estimate };
@@ -52,7 +57,7 @@ function Probe() {
 }
 
 beforeEach(() => localStorage.clear());
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('a purchase from the Vending Machine', () => {
   /* A server whose wallet and hand a purchase changes, as the real one's do. */
@@ -189,6 +194,8 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
     const api = {
       session: async () => ({ signedIn: true, account: 'acc-a', bar: null, conductAccepted: true }),
       onSession: (l: (s: Session) => void) => { listener = l; return () => {}; },
+      subscribeAccount: () => () => {},
+      subscribeReach: () => () => {},
       myCharacters: async () => [char('a')],
       wallet: async () => ({ balance: 100, cap: 600 }),
       myCards: async () => [],
@@ -306,6 +313,8 @@ describe('from PR #49\'s fifth review: what the provider holds is the account\'s
     const api = {
       session: async () => ({ signedIn: true, account }),
       onSession: (l: (s: Session) => void) => { listener = l; return () => {}; },
+      subscribeAccount: () => () => {},
+      subscribeReach: () => () => {},
       myCharacters: async () => rows[account as keyof typeof rows].chars,
       wallet: async () => rows[account as keyof typeof rows].wallet,
       myCards: async () => [],
@@ -419,5 +428,296 @@ describe('a provider that starts from the first load\'s session', () => {
     act(() => { listener({ signedIn: false, account: null, bar: null, conductAccepted: true }); });
     await act(async () => { answer({ signedIn: true, account: 'acc-1', bar: null, conductAccepted: true }); });
     expect(screen.getByTestId('acting')).toHaveTextContent('');
+  });
+});
+
+describe('the HUD hears its own state', () => {
+  const SIGNED_OUT_SESSION: Session = { signedIn: false, account: null, bar: null, conductAccepted: true };
+  const fakeTimers = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  /* A stub whose two channels the test drives, and whose reads are counted by myCharacters. */
+  function heard(reading?: () => Promise<MyCharacter[]>) {
+    const account: { l: AccountListener | null } = { l: null };
+    const reach: { l: ReachListener | null } = { l: null };
+    let emit: (s: Session) => void = () => {};
+    const reads = vi.fn(reading ?? (async () => [char('a')]));
+    const { api } = stubApi({
+      myCharacters: reads,
+      onSession: (l) => { emit = l; return () => {}; },
+      subscribeAccount: (l) => { account.l = l; return () => { account.l = null; }; },
+      subscribeReach: (l) => { reach.l = l; return () => { reach.l = null; }; },
+    });
+    return { api, account, reach, reads, emit: (s: Session) => emit(s) };
+  }
+  const settle = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(0); }); };
+  const ms = async (n: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(n); }); };
+
+  test('a wallet move the player did not make moves the HUD with no action by the player', async () => {
+    fakeTimers();
+    const appeal = {
+      key: 'appeal', name: 'Appeal', alignment: 'sweet' as const, rarity: 'uncommon' as const, stack: 3,
+      drive: { lasts: { unit: 'day' as const, count: 7 }, gifts: ['driveGift1'], overhead: 'driveOverhead' },
+      playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
+      canApply: () => ({ ok: true as const, value: undefined }),
+    };
+    const drives = { ...testInstance, cards: [appeal], settings: { ...testInstance.settings, economy: { ...testInstance.settings.economy, driveGift1: 25, driveOverhead: 20 } } };
+    const fake = createFake({ instance: drives });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana', 'face');
+    const boFace = fake.seed.character(bo, 'Bo', 'face');
+    const { act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    const drive = fake.seed.card(boFace, opener, 'appeal');
+    fake.seed.wallet(ana, 100);
+    fake.seed.wallet(bo, 562);
+    /* The HUD is Bo's: every call the provider makes is answered as Bo, and the session never changes under it. Ana's gift is made beside it, as another player's tab would. */
+    /* signInAs(bo) runs before every call, so a provider read is never answered as Ana. */
+    const asBo = new Proxy(fake, {
+      get: (target, prop, receiver) => {
+        if (prop === 'onSession') return () => () => {};
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? (...a: unknown[]) => { target.signInAs(bo); return (v as (...x: unknown[]) => unknown).apply(target, a); } : v;
+      },
+    });
+    fake.signInAs(bo);
+    render(<PlayerProvider api={asBo}><Probe /></PlayerProvider>);
+    await settle();
+    expect(screen.getByTestId('wallet').textContent).toBe('562');
+    fake.signInAs(ana);
+    const given = await fake.donate(anaFace, drive, 25);
+    expect(given.ok).toBe(true);
+    fake.signInAs(bo);
+    await settle();
+    await ms(400);
+    expect((await fake.wallet()).balance, 'Bo\'s wallet holds the 25 Ana gave').toBe(582);
+    expect(screen.getByTestId('wallet').textContent).toBe('582');
+  });
+
+  test('three pokes inside the debounce run one read', async () => {
+    fakeTimers();
+    const w = heard();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    const before = w.reads.mock.calls.length;
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(100);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(100);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(50);
+    expect(w.reads.mock.calls.length).toBe(before);
+    await ms(400);
+    expect(w.reads.mock.calls.length).toBe(before + 1);
+  });
+
+  test('a poke whose read fails keeps the last good rows and shows no error; the player\'s own action\'s failing read does show it (#1240)', async () => {
+    fakeTimers();
+    let down = false;
+    const w = heard(async () => { if (down) throw new Error('down'); return [char('a')]; });
+    let answers: boolean[] = [];
+    function Rows() {
+      const p = usePlayer();
+      return <div><span data-testid="ids">{p.characters.map((c) => c.id).join(',')}</span><span data-testid="failed">{String(p.charactersFailed)}</span><button onClick={() => void p.refresh().then((ok) => { answers = [...answers, ok]; })}>mine</button></div>;
+    }
+    render(<PlayerProvider api={w.api}><Rows /></PlayerProvider>);
+    await settle();
+    expect(screen.getByTestId('ids').textContent).toBe('a');
+    down = true;
+    const before = w.reads.mock.calls.length;
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(400);
+    expect(w.reads.mock.calls.length, 'the poke read').toBe(before + 1);
+    expect(screen.getByTestId('ids').textContent, 'the last good rows stay').toBe('a');
+    expect(screen.getByTestId('failed').textContent, 'no error for a read nobody asked for').toBe('false');
+    act(() => { w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); });
+    await ms(REACH_SPREAD_MS);
+    expect(screen.getByTestId('failed').textContent).toBe('false');
+    await act(async () => { screen.getByText('mine').click(); });
+    await settle();
+    expect(answers).toEqual([false]);
+    expect(screen.getByTestId('failed').textContent, 'the player\'s own read reports failure as before').toBe('true');
+  });
+
+  function gatedRows() {
+    type Gate = { resolve: (rows: ReturnType<typeof char>[]) => void; reject: () => void };
+    const gates: Gate[] = [];
+    let gating = false;
+    const w = heard(async () => {
+      if (!gating) return [char('a')];
+      return new Promise<ReturnType<typeof char>[]>((resolve, reject) => { gates.push({ resolve, reject: () => reject(new Error('down')) }); });
+    });
+    function Rows() {
+      const p = usePlayer();
+      return <div><span data-testid="ids">{p.characters.map((c) => c.id).join(',')}</span><span data-testid="failed">{String(p.charactersFailed)}</span><button onClick={() => void p.refresh()}>mine</button></div>;
+    }
+    return { w, gates, Rows, gate: () => { gating = true; } };
+  }
+
+  test('a quiet read started during the player\'s own failing read does not hide its failure (#1240)', async () => {
+    fakeTimers();
+    const { w, gates, Rows, gate } = gatedRows();
+    render(<PlayerProvider api={w.api}><Rows /></PlayerProvider>);
+    await settle();
+    gate();
+    await act(async () => { screen.getByText('mine').click(); });
+    await settle();
+    expect(gates.length, 'the own read is out').toBe(1);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(400);
+    expect(gates.length, 'the poke read is out beside it').toBe(2);
+    await act(async () => { gates[0]!.reject(); gates[1]!.reject(); });
+    await settle();
+    expect(screen.getByTestId('ids').textContent).toBe('a');
+    expect(screen.getByTestId('failed').textContent, 'the own read\'s failure shows').toBe('true');
+  });
+
+  test('the player\'s own read fails but a later quiet read lands: its rows, no error (#1240)', async () => {
+    fakeTimers();
+    const { w, gates, Rows, gate } = gatedRows();
+    render(<PlayerProvider api={w.api}><Rows /></PlayerProvider>);
+    await settle();
+    gate();
+    await act(async () => { screen.getByText('mine').click(); });
+    await settle();
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(400);
+    expect(gates.length).toBe(2);
+    await act(async () => { gates[1]!.resolve([char('b')]); });
+    await settle();
+    await act(async () => { gates[0]!.reject(); });
+    await settle();
+    expect(screen.getByTestId('ids').textContent, 'the later read\'s rows').toBe('b');
+    expect(screen.getByTestId('failed').textContent).toBe('false');
+  });
+
+  test('a settled runs one read, at some moment within the spread', async () => {
+    fakeTimers();
+    const w = heard();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    const before = w.reads.mock.calls.length;
+    act(() => { w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); });
+    await ms(0);
+    expect(w.reads.mock.calls.length).toBe(before);
+    await ms(REACH_SPREAD_MS);
+    expect(w.reads.mock.calls.length).toBe(before + 1);
+  });
+
+  test('a settled pending (about 9 s out) and then a self: one read by the self\'s debounce, and none more by the end of the spread', async () => {
+    fakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const w = heard();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    const before = w.reads.mock.calls.length;
+    act(() => { w.reach.l?.onSettled?.({ id: '1', at: '2026-10-28T08:17:00Z' }); });
+    await ms(100);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(350);
+    expect(w.reads.mock.calls.length).toBe(before + 1);
+    await ms(REACH_SPREAD_MS);
+    expect(w.reads.mock.calls.length).toBe(before + 1);
+  });
+
+  test('signing out drops the channels and any timer: a poke after it reads nothing', async () => {
+    fakeTimers();
+    const w = heard();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    expect(w.account.l).not.toBeNull();
+    const before = w.reads.mock.calls.length;
+    const account = w.account.l;
+    act(() => { account?.onSelf?.(); w.reach.l?.onSettled?.({ id: '1', at: 'x' }); });
+    act(() => { w.emit(SIGNED_OUT_SESSION); });
+    await settle();
+    expect(w.account.l).toBeNull();
+    expect(w.reach.l).toBeNull();
+    act(() => { account?.onSelf?.(); });
+    await ms(REACH_SPREAD_MS * 2);
+    expect(w.reads.mock.calls.length).toBe(before);
+  });
+
+  test('a poke during a read in flight runs exactly one more after it, never two at once', async () => {
+    fakeTimers();
+    let open = 0;
+    let most = 0;
+    const releases: (() => void)[] = [];
+    const w = heard(() => new Promise<MyCharacter[]>((r) => {
+      open += 1; most = Math.max(most, open);
+      releases.push(() => { open -= 1; r([char('a')]); });
+    }));
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await settle();
+    await act(async () => { releases.shift()?.(); });
+    await settle();
+    const base = w.reads.mock.calls.length;
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(350);
+    expect(w.reads.mock.calls.length).toBe(base + 1);
+    /* two more pokes while that read is out */
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(350);
+    act(() => { w.account.l?.onSelf?.(); });
+    await ms(350);
+    expect(w.reads.mock.calls.length).toBe(base + 1);
+    await act(async () => { releases.shift()?.(); });
+    await settle();
+    expect(w.reads.mock.calls.length).toBe(base + 2);
+    await act(async () => { releases.shift()?.(); });
+    await settle();
+    await ms(1000);
+    expect(w.reads.mock.calls.length).toBe(base + 2);
+    expect(most).toBe(1);
+  });
+
+  test('a poke whose read is out when the account switches files nothing under the new account, and the new one reads once', async () => {
+    fakeTimers();
+    let account = 'acc-a';
+    let emit: (s: Session) => void = () => {};
+    const listeners: { l: AccountListener | null } = { l: null };
+    const outs: { for: string; release: () => void }[] = [];
+    const reads: string[] = [];
+    const { api } = stubApi({
+      session: async () => ({ signedIn: true, account, bar: null, conductAccepted: true }),
+      onSession: (l) => { emit = l; return () => {}; },
+      subscribeAccount: (l) => { listeners.l = l; return () => { listeners.l = null; }; },
+      myCharacters: () => new Promise<MyCharacter[]>((r) => {
+        const mine = account;
+        reads.push(mine);
+        outs.push({ for: mine, release: () => r([char(mine === 'acc-a' ? 'a' : 'z')]) });
+      }),
+    });
+    const commits: string[] = [];
+    function Record() {
+      const p = usePlayer();
+      useLayoutEffect(() => { commits.push(`${p.session.account}|${p.characters.map((c) => c.id).join(',')}`); });
+      return null;
+    }
+    render(<PlayerProvider api={api}><Record /></PlayerProvider>);
+    await settle();
+    await act(async () => { outs.splice(0).forEach((o) => o.release()); });
+    await settle();
+    /* A's poke starts a read for A, and it is held. */
+    act(() => { listeners.l?.onSelf?.(); });
+    await ms(400);
+    const aRead = outs.find((o) => o.for === 'acc-a');
+    expect(aRead, 'the poke started a read for A').toBeDefined();
+    /* The account switches to B before A's read resolves. */
+    account = 'acc-b';
+    act(() => { emit({ signedIn: true, account: 'acc-b', bar: null, conductAccepted: true }); });
+    await settle();
+    await act(async () => { outs.filter((o) => o.for === 'acc-b').forEach((o) => o.release()); });
+    await settle();
+    await act(async () => { aRead?.release(); });
+    await settle();
+    expect(commits.filter((c) => c.startsWith('acc-b|') && c.split('|')[1]!.split(',').includes('a'))).toEqual([]);
+    expect(commits.at(-1)).toBe('acc-b|z');
+    /* One poke on B runs exactly one read for B. */
+    const before = reads.filter((r) => r === 'acc-b').length;
+    act(() => { listeners.l?.onSelf?.(); });
+    await ms(400);
+    expect(reads.filter((r) => r === 'acc-b').length).toBe(before + 1);
+    await act(async () => { outs.filter((o) => o.for === 'acc-b').forEach((o) => o.release()); });
+    await ms(1000);
+    expect(reads.filter((r) => r === 'acc-b').length).toBe(before + 1);
   });
 });
