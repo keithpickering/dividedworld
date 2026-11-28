@@ -72,4 +72,31 @@ describe('readerMemory', () => {
     assert.equal(m.get(), null);
     assert.equal(store.data.has('kb-reader:play-e'), false);
   });
+  test('a storage that reads but refuses setItem: the newer value this page set wins over the older one stored', () => {
+    const store = mapStore();
+    store.data.set('kb-reader:play-f', '1');
+    install({ ...store, setItem: () => { throw new Error('full'); } });
+    const m = readerMemory('play-f', parseNum);
+    assert.equal(m.get(), 1);
+    m.set(2);
+    assert.equal(m.get(), 2);
+  });
+  test('a storage that reads but refuses removeItem: a cleared key stays null', () => {
+    const store = mapStore();
+    store.data.set('kb-reader:play-g', '1');
+    install({ ...store, removeItem: () => { throw new Error('refused'); } });
+    const m = readerMemory('play-g', parseNum);
+    assert.equal(m.get(), 1);
+    m.clear();
+    assert.equal(m.get(), null);
+  });
+  test('with no localStorage at all the page still keeps the value', () => {
+    Object.defineProperty(globalThis, 'localStorage', { value: undefined, configurable: true, writable: true });
+    const m = readerMemory('play-h', parseNum);
+    assert.equal(m.get(), null);
+    m.set(9);
+    assert.equal(m.get(), 9);
+    m.clear();
+    assert.equal(m.get(), null);
+  });
 });

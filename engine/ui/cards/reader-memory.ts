@@ -16,6 +16,9 @@ const PREFIX = 'kb-reader:';
 /** The page's own memory, for when storage throws or refuses what it holds. Shared by every `readerMemory` of the page, keyed as storage is. */
 const page = new Map<string, unknown>();
 
+/** Keys whose last write (a set or a clear) storage refused: for these the page's memory is the truth, and a stale stored value is never read over it. */
+const held = new Set<string>();
+
 export interface ReaderMemory<T> {
   /** What this reader kept for the play, or null where nothing is kept or what is kept fails `parse`. */
   get(): T | null;
@@ -28,6 +31,7 @@ export function readerMemory<T>(play: Id, parse: (raw: unknown) => T | null): Re
   const fromPage = (): T | null => (page.has(key) ? parse(page.get(key)) : null);
   return {
     get() {
+      if (held.has(key)) return fromPage();
       try {
         const text = localStorage.getItem(key);
         if (text !== null) {
@@ -43,7 +47,9 @@ export function readerMemory<T>(play: Id, parse: (raw: unknown) => T | null): Re
       page.set(key, value);
       try {
         localStorage.setItem(key, JSON.stringify(value));
+        held.delete(key);
       } catch {
+        held.add(key);
         /* the page's memory has it */
       }
     },
@@ -51,7 +57,9 @@ export function readerMemory<T>(play: Id, parse: (raw: unknown) => T | null): Re
       page.delete(key);
       try {
         localStorage.removeItem(key);
+        held.delete(key);
       } catch {
+        held.add(key);
         /* nothing more to remove */
       }
     },
