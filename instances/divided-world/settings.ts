@@ -266,8 +266,10 @@ export const defaults: Settings = deepFreeze<Settings>({
    * Laugh Track's audience: `line` is where a reader's line sits in the viewport (percent from the top),
    * `reachRem` how far a cue reaches from the line, `murmurMost` how much of a hit a murmur is (percent), `fadeMs` how long a sound fades
    * and `markMost` how much of its underline a cued place shows at its nearest (percent).
+   * Heads Will Roll's orbit: `overMass` is what an Overreaction head's count is multiplied by for its mass, `suns` how many of the heaviest heads are suns, `mostTurns`
+   * the most turns a second a head rolls, and the reel-in takes `reelBase` seconds plus `reelPerSpeed` for each of the head's own widths it moves a second.
    */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 1000, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'laughTrack.markMost': 100, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 1000, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'laughTrack.markMost': 100, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40, 'consoleSlog.rhythmMs': 450, 'consoleSlog.perStep': 5, 'consoleSlog.mostPerPress': 8, 'consoleSlog.drain': 12, 'consoleSlog.bands': 16, 'headsWillRoll.overMass': 2, 'headsWillRoll.suns': 2, 'headsWillRoll.mostTurns': 0.5, 'headsWillRoll.reelBase': 0.8, 'headsWillRoll.reelPerSpeed': 0.12 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */
@@ -301,6 +303,10 @@ export const defaults: Settings = deepFreeze<Settings>({
     'whoops.perLength': 25,
     'whoops.lengthStep': 500,
     'whoops.mostAdded': 200,
+    /** Console Slog is priced by length as Whoops! is: 0.25 per 500 characters of the target, at most 2.00 on top of its price at the machine. */
+    'consoleSlog.perLength': 25,
+    'consoleSlog.lengthStep': 500,
+    'consoleSlog.mostAdded': 200,
     /** Autocorrect, as in Minus World: playing it costs 0.25 per 50 characters it covers, at most 2.00 on top of its price at the machine. */
     'autocorrect.perVolume': 25,
     'autocorrect.volumeStep': 50,

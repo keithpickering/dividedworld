@@ -1,6 +1,6 @@
 /**
  * You Were Saying?'s effect on a post (docs/plans/2026-11-07-you-were-saying-design.md, sections 5, 6, 8 and 14; plan Task 8): the old voice's
- * words as terminal output bleeding in after the author's, in Courier on a green ground (tail.css), typed in with a block cursor each time
+ * words as terminal output bleeding in after the author's, in Verdana on a green ground (tail.css), typed in with a block cursor each time
  * the post comes into view, and erased by a hold.
  *
  * The post keeps its height while the tail types or erases. The whole text is laid out from the first frame: the characters showing, the

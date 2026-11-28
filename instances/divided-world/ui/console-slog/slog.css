@@ -1,0 +1,138 @@
+/*
+ * Console Slog's terminal (Effect.tsx; docs/plans/2026-11-27-season-two-cards-design.md, section 3.2; the look is docs/research/2026-11-28-console-slog/01-bench.html):
+ * black ground, green Courier, scanlines over the words, a prompt line and a block cursor. Its ground and its scanlines are two layers Effect.tsx places over
+ * the post's content area, border to border (`data-kb-bleed`: the ground under everything the body holds, as Feelin' Fab's foil is, the scanlines over the
+ * words and under what the engine lifts over a post's ink); the words are the terminal's own text, in the flow.
+ *
+ * A terminal is one black and one green on every board and every theme, switched by none: the ink and the ground are set together and read at better than 10:1
+ * (the phosphor #33ff66 on #050805). The cursor holds still under reduced motion, as You Were Saying?'s does; nothing else here moves.
+ */
+.dw-slog {
+  --dw-slog-ground: #050805;
+  --dw-slog-ink: #33ff66;
+  --dw-slog-bar: #9cffb5;
+  --dw-slog-link: #b6ffcb;
+  position: relative;
+  isolation: isolate;
+  background: var(--dw-slog-ground);
+  color: var(--dw-slog-ink);
+}
+.dw-slog[data-kb-bleed] {
+  isolation: auto;
+  background: none;
+}
+.dw-slog-ground,
+.dw-slog-scan {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.dw-slog-ground {
+  z-index: 0;
+  background: var(--dw-slog-ground);
+}
+.dw-slog[data-kb-bleed] > .dw-slog-ground {
+  z-index: -1;
+}
+.dw-slog-scan {
+  z-index: 1;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, 0.22) 2px 3px);
+}
+
+/* One control: no text selection, no long-press menu or tap flash, a finger's swipe is still the page's. */
+.dw-slog-term {
+  position: relative;
+  min-height: 6em;
+  padding: 0.4em 0.5em 0.6em;
+  font: 0.95em/1.5 'Courier New', Courier, 'Liberation Mono', monospace;
+  cursor: text;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.dw-slog-bar {
+  margin-bottom: 0.4em;
+  color: var(--dw-slog-bar);
+  opacity: 0.85;
+}
+.dw-slog-bar[role='button']:focus-visible {
+  outline: 2px solid #19e3ff;
+  outline-offset: 2px;
+}
+.dw-slog-out {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-shadow: 0 0 4px rgba(51, 255, 102, 0.55);
+}
+.dw-slog-link {
+  color: var(--dw-slog-link);
+}
+.dw-slog-dead {
+  text-decoration: none;
+}
+/* What has not been typed is laid out in its place, so the post has its height from the first press and no line breaks later than it will. */
+.dw-slog-rest {
+  visibility: hidden;
+}
+
+.dw-slog-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.05em;
+  vertical-align: -0.15em;
+  background: var(--dw-slog-ink);
+  animation: dw-slog-blink 1s steps(1) infinite;
+}
+.dw-slog-cursor[data-kb-still] {
+  animation: none;
+}
+@keyframes dw-slog-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .dw-slog-cursor {
+    animation: none;
+  }
+}
+:root[data-kb-motion='reduce'] .dw-slog-cursor {
+  animation: none;
+}
+
+/* An image loads in green phosphor, a band at a time: a CSS filter over the picture, and a mask that is the bands not yet out. Nothing reads a pixel of it. */
+.dw-slog-image {
+  display: block;
+  position: relative;
+  width: 320px;
+  max-width: 100%;
+  margin: 0.25em 0;
+  overflow: hidden;
+}
+.dw-slog-image img {
+  display: block;
+  width: 100%;
+  filter: grayscale(1) contrast(1.6) brightness(0.9) sepia(1) hue-rotate(70deg) saturate(4);
+  image-rendering: pixelated;
+}
+.dw-slog-mask {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--dw-slog-ground);
+}
+.dw-slog-image::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, 0.35) 2px 3px);
+  pointer-events: none;
+}
