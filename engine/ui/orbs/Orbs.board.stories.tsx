@@ -34,7 +34,7 @@ const ANATOMY = [
 /** The four states: the wallet each shows (hundredths), and the board's words under it. */
 const STATES = [
   { title: 'Settled', tone: 'settled', settled: 462, pending: 0, figure: '4.62', says: ' / 6.00. What you can spend at the Vending Machine right now.' },
-  { title: 'Ghost', tone: 'ghost', settled: 462, pending: 30, figure: '+0.30', says: ' estimated. Each favored reaction shows as up to +0.10, before the settlement's own adjustments.' },
+  { title: 'Ghost', tone: 'ghost', settled: 462, pending: 30, figure: '+0.30', says: " estimated. Each favored reaction shows as up to +0.10, before the settlement's own adjustments." },
   { title: 'Drained', tone: 'drained', settled: 462, pending: -40, figure: '−0.40', says: ' estimated. Hostile reactions turn solid fill pale until the settlement decides.' },
   { title: 'Past the cap', tone: 'over', settled: 600, pending: 40, figure: '+0.40', says: " past the cap. Spend some before the settlement, or it won't fit." },
 ] as const;
