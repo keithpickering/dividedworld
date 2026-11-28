@@ -19,7 +19,7 @@ export const ui: CardUi = {
   key: 'time-machine',
   Effect: TimeMachineEffect,
   art: { color: '#d24a2c', ink: '#0d0301', canvas: timeMachineCanvas, mark: timeMachineMark, credit: timeMachineArt.credit, tagline: 'Go back to better days.' },
-  summary: 'Played on a post. For 3 days it shows as it was at an earlier point you pick, and no card up to rare can be played on it.',
+  summary: `Played on a post. For ${spanWords(timeMachine.lasts!)} it shows as it was at an earlier point you pick, and no card up to ${timeMachine.rewind!.upTo} can be played on it.`,
   status: 'Showing an earlier version',
   hint: 'This post is showing an earlier version. Its History has the rest.',
   describe: () => `Played on a post. For ${spanWords(timeMachine.lasts!)} it shows as it was at an earlier point you pick, and no card up to ${timeMachine.rewind!.upTo} can be played on it.`,

@@ -24,5 +24,5 @@ export const ui: CardUi = {
   status: 'Ended a Gimmick early',
   summary: `Played on a post or a character. Ends one Gimmick there, up to ${upTo}. You choose which.`,
   describe: (_settings: Settings) =>
-    `A Salty card, ${buzzkill.rarity}, played on a post or a character. It ends one Gimmick there, up to ${upTo}, which you pick. The Gimmick isn't refunded, and what it did before it ended stands. A card that would turn a Salty card away still does, and on a post a card set face down there can still catch it. It is played face up, never set face down. If an admin ends it, the Gimmick comes back for the rest of its time.`,
+    `A Salty card, ${buzzkill.rarity}, played on a post or a character. It ends one Gimmick there, up to ${upTo}, which you pick. The Gimmick isn't refunded, and what it did before it ended stands. A card that would turn a Salty card away still does, and on a post a card set face down there can still catch it. It is played face up, never set face down.`,
 };

@@ -12,5 +12,5 @@ export const ui: CardUi = {
   status: 'Emptied a warn bar',
   hint: "A Super Happy Heart emptied a character's warn bar.",
   describe: () =>
-    `A Sweet card, ${superHappyHeart.rarity}, cast from any post by the character it lands on. It takes every point off that character's warn bar at once. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`,
+    `A Sweet card, ${superHappyHeart.rarity}, cast from any post by the character it lands on. It takes every point off that character's warn bar at once. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`,
 };

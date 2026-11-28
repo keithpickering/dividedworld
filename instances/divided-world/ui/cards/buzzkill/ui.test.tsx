@@ -21,7 +21,7 @@ describe('Buzzkill in plain words (the Buzzkill plan, Task 8)', () => {
   });
 
   test('its sheet is the rules in plain words', () => {
-    expect(ui!.describe(instance.settings)).toBe("A Salty card, rare, played on a post or a character. It ends one Gimmick there, up to rare, which you pick. The Gimmick isn't refunded, and what it did before it ended stands. A card that would turn a Salty card away still does, and on a post a card set face down there can still catch it. It is played face up, never set face down. If an admin ends it, the Gimmick comes back for the rest of its time.");
+    expect(ui!.describe(instance.settings)).toBe("A Salty card, rare, played on a post or a character. It ends one Gimmick there, up to rare, which you pick. The Gimmick isn't refunded, and what it did before it ended stands. A card that would turn a Salty card away still does, and on a post a card set face down there can still catch it. It is played face up, never set face down.");
     expect(buzzkill.rarity).toBe('rare');
     expect(buzzkill.cuts).toEqual({ upTo: 'rare' });
     expect(reachesOf(buzzkill)).toEqual(['post', 'character']);

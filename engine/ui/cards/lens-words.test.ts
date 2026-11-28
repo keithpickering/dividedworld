@@ -5,7 +5,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { viewProblems, wordsProblems, sprungWords, pierceWords, shortQuote, readCaughtFate, hiddenWords, pointWords, PRESENT_BACK, PRESENT_LABEL, PRESENT_TILE, REWIND_LEGEND, REWIND_NOTHING, STATUS_MAX_WORDS } from './lens-words.ts';
+import { viewProblems, wordsProblems, sprungWords, springConditions, pierceWords, shortQuote, readCaughtFate, hiddenWords, pointWords, PRESENT_BACK, PRESENT_LABEL, PRESENT_TILE, REWIND_LEGEND, REWIND_NOTHING, STATUS_MAX_WORDS } from './lens-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import type { CardView } from './types.ts';
 import { caughtWords, endsWords, keptEndedWords } from './marks.ts';
@@ -66,6 +66,10 @@ describe('sprungWords', () => {
   });
   test('what could not be read is left out, never guessed', () => {
     assert.equal(sprungWords({ setter: null, setAt: null, quoter: null, trigger: 'quote' }, 'UTC'), 'Set face down by someone; sprang when a post quoted it.');
+  });
+  test('a quote spring under Who anyone, which has no conditions to show, still names the quoter', () => {
+    /* An Anyone spring carries no `when`, so its conditions are all null; the quoter is named all the same. */
+    assert.equal(sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'quote', ...springConditions({}) }, 'UTC'), 'Set face down by Pipewrench on November 5; sprang when Spritey quoted it.');
   });
   test('a spring written before the face-down Moves: a reply names its post\'s character, a reaction names no one', () => {
     assert.equal(sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'reply' }, 'UTC'), 'Set face down by Pipewrench on November 5; sprang when Spritey replied to it.');
