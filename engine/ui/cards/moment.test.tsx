@@ -39,7 +39,8 @@ const scribey = rule('scribey', 'Scribey', { stack: 2, writes: { sampling: { tem
 const lifty = rule('lifty', 'Lifty', { stack: 2 });
 /* Slabby is a surface card (kept in a moment by its state, as a wall's washing is). */
 const strokesOk = (input: unknown) => ok({ strokes: [], payload: { input } });
-const slabby = rule('slabby', 'Slabby', { validateState: (s) => ok(s), surface: { limitKey: 'slabby.limit', mostLive: 48, validateDraw: strokesOk, validateWash: strokesOk } });
+const cutsOk = (input: unknown) => ok({ cuts: [], payload: { input } });
+const slabby = rule('slabby', 'Slabby', { validateState: (s) => ok(s), surface: { limitKey: 'slabby.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: strokesOk, validateWash: cutsOk } });
 const instance: Instance = { ...testInstance, cards: [smear, ripple, holdy, tagger, shieldy, trappy, sparkly, lifty, slabby, scribey], settings: { ...testInstance.settings, cardSettings: { 'slabby.limit': 40 }, setLasts: { unit: 'day', count: 7 } } };
 
 /* Each drawn card wraps the words in a box naming it, saying whether it was drawn still and what it was given. */

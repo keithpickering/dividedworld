@@ -19,8 +19,10 @@ import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 import type { Can, Cap } from '../../cards/graffiti.ts';
 
 const MINUTE = 60_000;
-/** The aspect the seeded strokes are drawn at (a body three times as wide as it is tall); the cells they cover are shares of the box, so any body reads the same figure. */
-const ASPECT = 3;
+/** The box the seeded strokes are drawn in, in ems (a body three times as wide as it is tall, at the board's 15px); the cells they cover are shares of the box, so any body reads the same figure. */
+const BOX = { w: 60, h: 20 } as const;
+/** Shares of that box (0 to 1, across and down) as ems from the box's center, a group's own units. */
+const ems = (points: [number, number][]): [number, number][] => points.map(([x, y]) => [Math.round((x - 0.5) * BOX.w * 100) / 100, Math.round((y - 0.5) * BOX.h * 100) / 100]);
 
 /** A wave across the body, `n` points from `x0` to `x1` about the height `y`: a stroke with no two points on a line. */
 function wave(y: number, x0: number, x1: number, amp: number, n = 24): [number, number][] {
@@ -31,12 +33,12 @@ function wave(y: number, x0: number, x1: number, amp: number, n = 24): [number, 
 }
 
 /** Five strokes that cover 3,140 of the grid's 10,000 cells, which the toolbar and the Lens say as "31%". */
-const TAG: readonly { can: Can; cap: Cap; aspect: number; points: [number, number][] }[] = [
-  { can: 'red', cap: 'fat', aspect: ASPECT, points: wave(0.3, 0.04, 0.7, 0.08) },
-  { can: 'orange', cap: 'fat', aspect: ASPECT, points: wave(0.62, 0.2, 0.9, 0.1) },
-  { can: 'pink', cap: 'stock', aspect: ASPECT, points: wave(0.82, 0.05, 0.6, 0.06) },
-  { can: 'lime', cap: 'fat', aspect: ASPECT, points: wave(0.12, 0.4, 0.95, 0.05) },
-  { can: 'purple', cap: 'fat', aspect: ASPECT, points: wave(0.45, 0.05, 0.54, 0.12) },
+const TAG: readonly { can: Can; cap: Cap; points: [number, number][] }[] = [
+  { can: 'red', cap: 'fat', points: ems(wave(0.3, 0.04, 0.7, 0.08)) },
+  { can: 'orange', cap: 'fat', points: ems(wave(0.62, 0.2, 0.9, 0.1)) },
+  { can: 'pink', cap: 'stock', points: ems(wave(0.82, 0.05, 0.6, 0.06)) },
+  { can: 'lime', cap: 'fat', points: ems(wave(0.12, 0.4, 0.95, 0.05)) },
+  { can: 'purple', cap: 'fat', points: ems(wave(0.45, 0.05, 0.26, 0.12)) },
 ];
 
 /** Hand post `post` a Graffiti wall, drawn on, then say the thread is ready to be read. */
@@ -57,7 +59,7 @@ function useSeeded(thread: string | null, post: number): boolean {
       if (!target || !caster || !drawer) throw new Error(`the boards fixture has no #${post}, or no author of #40 or #45`);
       fake.clock.advance(MINUTE);
       const play = fake.seed.card(caster, target.id, 'graffiti', { layer: 2 });
-      const drawn = await api.draw(play, drawer, { strokes: TAG });
+      const drawn = await api.draw(play, drawer, { box: BOX, groups: [{ at: [0.5, 0.5], anchor: { kind: 'box' }, unit: 'em', strokes: TAG }] });
       if (!drawn.ok) throw new Error(`the tag was refused: ${drawn.error}`);
       /* The story's name is its figure: a wall that is not 31% is a story that says what it is not. */
       const covered = (await api.surfaceActs(play))?.covered;

@@ -1,14 +1,33 @@
 import { lazy, useEffect } from 'react';
-import { act, screen, within } from '@testing-library/react';
+import { act, cleanup, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { applyAppearance } from '../appearance.ts';
+import { resetSound, setSoundPreference } from '../audio/sound.ts';
+import type { MixerDeps } from '../audio/mixer.ts';
 import type { EffectProps, CardUi } from '../cards/types.ts';
 import { ok, refuse, type CardRules } from '../../rules/cards.ts';
-import { cellsOf, count, union, type SurfaceStroke } from '../../rules/surface.ts';
+import { cellsOf, count, type SurfaceStroke } from '../../rules/surface.ts';
 import { KayfaProvider, useKayfa } from '../context.tsx';
 import type { FrontDoorPost } from '../types.ts';
 import { buildWorld, renderIn, renderInWorld, testInstance } from '../test-world.tsx';
 import { FrontDoor } from './FrontDoor.tsx';
+
+/** Every mixer the page's sound makes, so a test reads the game bus the door left it. */
+const mixers = vi.hoisted(() => ({ calls: [] as { bus: string; on: boolean }[] }));
+vi.mock('../audio/mixer.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../audio/mixer.ts')>();
+  return {
+    ...real,
+    createMixer: (deps: Parameters<typeof real.createMixer>[0]) => {
+      const mixer = real.createMixer(deps);
+      const setBus = mixer.setBus.bind(mixer);
+      return { ...mixer, setBus: (bus: 'game' | 'interface', s: { on: boolean; volume: number }) => { mixers.calls.push({ bus, on: s.on }); setBus(bus, s); } };
+    },
+  };
+});
+const gameBus = () => mixers.calls.filter((c) => c.bus === 'game').at(-1)?.on;
+const fakeDeps = { makeContext: () => { throw new Error('no audio in a test'); }, fetchBytes: async () => new ArrayBuffer(8) } as unknown as MixerDeps;
 
 /* A card of the test's own with an effect: it wraps the words, says one control, and reports what save and release answer. */
 let seen: EffectProps | null = null;
@@ -28,9 +47,10 @@ const test_card: CardUi = {
 const rulesOf = (key: string, extra: Partial<CardRules>): CardRules => ({ ...testInstance.cards[0]!, key, name: key, stack: 1, reaches: ['post' as const], ...extra } as CardRules);
 const stroke = (y: number): SurfaceStroke => ({ width: 0.1, aspect: 1, points: [[0.1, y], [0.9, y]] });
 const checkDraw = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
-  ? ok({ strokes: (input as { strokes: SurfaceStroke[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('strokes'));
+  ? ok({ strokes: (input as { strokes: SurfaceStroke[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes, ...((input as { groups?: unknown }).groups === undefined ? {} : { groups: (input as { groups: unknown }).groups }) } }) : refuse('strokes'));
 const noted = rulesOf('noted', { validateState: (s: unknown) => ok(s) });
-const slab = rulesOf('slab', { surface: { limitKey: 'slab.limit', mostLive: 48, validateDraw: checkDraw, validateWash: checkDraw } } as Partial<CardRules>);
+const noWash = () => refuse('a staged wall is never washed');
+const slab = rulesOf('slab', { surface: { limitKey: 'slab.limit', mostLive: 48, coats: { line: 20, most: 40 }, validateDraw: checkDraw, validateWash: noWash } });
 const doorInstance = { ...testInstance, cards: [...testInstance.cards, noted, slab], settings: { ...testInstance.settings, cardSettings: { 'slab.limit': 40 } } };
 let notedSeen: EffectProps | null = null;
 let wallSeen: EffectProps | null = null;
@@ -47,6 +67,107 @@ function WithDoor({ posts, after = [] }: { readonly posts?: readonly FrontDoorPo
 }
 const drawWith = (posts: readonly FrontDoorPost[]) => renderInWorld(<WithDoor posts={posts} />, { cards: [test_card, notedUi, slabUi], instance: doorInstance });
 const draw = () => renderInWorld(<FrontDoor />, { cards: [test_card] });
+const noisy: CardUi = { ...test_card, sounds: ['thud'] };
+const sounds = { slots: [{ key: 'thud', src: '/thud.mp3', bus: 'game' as const, caption: 'A thud' }] };
+const drawNoisy = () => renderInWorld(<FrontDoor />, { cards: [noisy], sounds });
+
+/** A `matchMedia` whose two queries the test flips, telling the listeners as a browser does. */
+function fakeMedia(initial: readonly string[] = []) {
+  const on = new Set(initial);
+  const listeners = new Map<string, Set<() => void>>();
+  window.matchMedia = ((q: string) => ({
+    get matches() { return on.has(q); }, media: q,
+    addEventListener: (_t: string, l: () => void) => { (listeners.get(q) ?? listeners.set(q, new Set()).get(q)!).add(l); },
+    removeEventListener: (_t: string, l: () => void) => { listeners.get(q)?.delete(l); },
+  })) as unknown as typeof window.matchMedia;
+  return (q: string, matches: boolean) => { if (matches) on.add(q); else on.delete(q); act(() => { listeners.get(q)?.forEach((l) => l()); }); };
+}
+const original = window.matchMedia;
+beforeEach(() => { mixers.calls.length = 0; resetSound(fakeDeps); });
+const themes = [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' as const, preview: {} }];
+const account = (effects: 'standard' | 'bright') => applyAppearance(document, { theme: 'default', motion: 'system', effects }, themes);
+afterEach(() => {
+  cleanup();
+  window.matchMedia = original; resetSound();
+  /* The account's own mark is module state a test may have set; with it standard, a stage a door leaked is the only thing that can be left. */
+  account('standard');
+  expect(document.documentElement.hasAttribute('data-kb-effects'), 'a mounted door left its effects staged').toBe(false);
+});
+
+describe('the front door\'s impact', () => {
+  test('mounting with a card that has sounds turns the game bus on, and unmounting puts it back to the preference', () => {
+    const { unmount } = drawNoisy();
+    expect(gameBus()).toBe(true);
+    unmount();
+    expect(gameBus()).toBe(false);
+  });
+
+  test('with no card that has sounds there is no toggle and the game bus is never turned on', () => {
+    const { unmount } = draw();
+    expect(screen.queryByRole('button', { name: /^Sound: (on|off)$/ })).toBeNull();
+    expect(mixers.calls.some((c) => c.bus === 'game' && c.on)).toBe(false);
+    expect(document.documentElement.getAttribute('data-kb-effects')).toBe('bright');
+    unmount();
+  });
+
+  test('the door stages bright effects, and the root loses them when it unmounts', () => {
+    fakeMedia();
+    const { unmount } = draw();
+    expect(document.documentElement.getAttribute('data-kb-effects')).toBe('bright');
+    unmount();
+    expect(document.documentElement.hasAttribute('data-kb-effects')).toBe(false);
+  });
+
+  test.each(['(prefers-contrast: more)', '(forced-colors: active)'])('with %s the door stages no bright effects, and a change moves it either way', (q) => {
+    const flip = fakeMedia([q]);
+    draw();
+    expect(document.documentElement.hasAttribute('data-kb-effects')).toBe(false);
+    flip(q, false);
+    expect(document.documentElement.getAttribute('data-kb-effects')).toBe('bright');
+    flip(q, true);
+    expect(document.documentElement.hasAttribute('data-kb-effects')).toBe(false);
+  });
+
+  test('the effects are on the root before a card\'s own effect reads them at mount', () => {
+    let seenAtMount: string | null = null;
+    const reader: CardUi = { ...test_card, Effect: (props) => { useEffect(() => { seenAtMount = document.documentElement.getAttribute('data-kb-effects'); }, []); return <div>{props.children}</div>; } };
+    renderInWorld(<FrontDoor />, { cards: [reader] });
+    expect(seenAtMount).toBe('bright');
+  });
+
+  test('an account\'s sound preference told while the door is mounted is what the bus is after it unmounts, whatever the toggle did', async () => {
+    const { unmount } = drawNoisy();
+    await userEvent.click(screen.getByRole('button', { name: /^Sound: (on|off)$/ }));
+    setSoundPreference({ gameSound: 'on', gameVolume: 80, interfaceSound: 'off', interfaceVolume: 80 });
+    expect(gameBus(), 'the toggle is off and the door holds the bus').toBe(false);
+    unmount();
+    expect(gameBus()).toBe(true);
+  });
+
+  test('an account\'s bright effects applied while the door stages standard are on after it unmounts', () => {
+    fakeMedia(['(prefers-contrast: more)']);
+    const { unmount } = draw();
+    account('bright');
+    expect(document.documentElement.hasAttribute('data-kb-effects')).toBe(false);
+    unmount();
+    expect(document.documentElement.getAttribute('data-kb-effects')).toBe('bright');
+  });
+
+  test('the toggle is named by its visible text, reads "Sound: on", and a press turns the game bus off and on', async () => {
+    drawNoisy();
+    const button = screen.getByRole('button', { name: /^Sound: (on|off)$/ });
+    expect(button).toHaveTextContent('Sound: on');
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(button, 'the visible text is its name').not.toHaveAttribute('aria-label');
+    await userEvent.click(button);
+    expect(button).toHaveTextContent('Sound: off');
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    expect(gameBus()).toBe(false);
+    await userEvent.click(button);
+    expect(button).toHaveTextContent('Sound: on');
+    expect(gameBus()).toBe(true);
+  });
+});
 
 describe('the front door', () => {
   test('each post is drawn like a thread\'s: one .kb-act-grid under the article holds the postbit, meta and main', () => {
@@ -172,7 +293,7 @@ describe('the front door', () => {
       for (const [key, value] of Object.entries(fake)) {
         if (typeof value === 'function' && key !== 'now') (fake as unknown as Record<string, unknown>)[key] = (...a: unknown[]) => { names.add(key); return (value as (...x: unknown[]) => unknown)(...a); };
       }
-      const { unmount } = renderIn(fake, element, { cards: [test_card, slabUi] });
+      const { unmount } = renderIn(fake, element, { cards: [noisy, slabUi], sounds });
       await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
       await use();
       await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
@@ -182,6 +303,7 @@ describe('the front door', () => {
     const baseline = await called(<p>nothing</p>);
     const withDoor = await called(<WithDoor after={[wallPost([stroke(0.2), stroke(0.6)])]} />, async () => {
       /* A reaction, a pick and an open Lens with a reaction to the play in it: none of them asks anyone. */
+      await userEvent.click(screen.getByRole('button', { name: /^Sound: (on|off)$/ }));
       await userEvent.click(screen.getByRole('button', { name: 'Fire, 2. React' }));
       await userEvent.click(screen.getAllByRole('button', { name: 'React' })[1]!);
       await userEvent.click(within(screen.getByRole('dialog', { name: /^React to Bo/ })).getByRole('button', { name: /^Tea, / }));
@@ -224,35 +346,49 @@ describe('the front door\'s saved states and surface draws', () => {
     expect(s.acts![0]!.character).toBe('front-door:ann');
     expect(s.acts![1]!.character).toBe('front-door:bo');
     expect(s.acts![0]!.payload).toEqual({ strokes: [stroke(0.2)] });
-    expect(s.covered).toBe(count(union(cellsOf([stroke(0.2)]), cellsOf([stroke(0.6)]))));
+    expect(s.covered).toBe(count(cellsOf([stroke(0.2)])) + count(cellsOf([stroke(0.6)])));
     expect(s.covered).toBeGreaterThan(0);
   });
 
-  test('overlapping draws each carry the cells they own, a later draw taking cells from an earlier one, and the shares sum to the cells covered', () => {
+  test('overlapping draws each carry the cells they paint (ink over ink is paid for again, as a thread\'s wall counts it), and the shares sum to the cells covered', () => {
     drawWith([wallPost([stroke(0.2), stroke(0.25), stroke(0.6)])]);
     const s = wallSeen!.surface!;
     const [a, b, c] = [cellsOf([stroke(0.2)]), cellsOf([stroke(0.25)]), cellsOf([stroke(0.6)])];
     const shares = s.acts!.map((x) => (x as { share: number }).share);
-    expect(count(a) + count(b)).toBeGreaterThan(count(union(a, b)));
-    expect(shares).toEqual([count(a) - (count(a) + count(b) - count(union(a, b))), count(b), count(c)]);
-    expect(shares[0]).toBeGreaterThan(0);
+    expect(shares).toEqual([count(a), count(b), count(c)]);
     expect(shares.reduce((x, y) => x + y, 0)).toBe(s.covered);
+    expect(s.acts!.map((x) => (x as { places?: unknown }).places)).toEqual([[], [], []]);
   });
 
-  test('a draw a later one paints over entirely owns nothing, so the wall does not list it, as a live thread\'s would not', () => {
+  test('a staged draw\'s groups are placed where they were drawn, as the server writes a draw on the post\'s current version (an empty list would drop every one to its box spot)', () => {
+    const text = { kind: 'text', version: 'front-door:0', at: 2, len: 3, dx: 1, dy: 0.5 };
+    const box = { kind: 'box' };
+    const grouped = (anchor: unknown) => ({ strokes: [stroke(0.2)], groups: [{ anchor }] });
+    drawWith([{ by: 'bo', body: 'A wall.', reactions: {}, plays: [{ card: 'slab', by: 'ann', config: {}, draws: [{ by: 'ann', draw: grouped(text) }, { by: 'bo', draw: grouped(box) }, { by: 'bo', draw: { strokes: [stroke(0.6)] } }] }] }]);
+    const places = wallSeen!.surface!.acts!.map((x) => (x as { places?: unknown }).places);
+    expect(places).toEqual([[{ grp: 0, place: text }], [], []]);
+  });
+
+  test('a draw painted over wholly by a later one stays live, as a thread\'s would: only a wash takes a tag off', () => {
     const wide: SurfaceStroke = { width: 0.4, aspect: 1, points: [[0.0, 0.2], [1.0, 0.2]] };
     drawWith([wallPost([stroke(0.2), wide])]);
     const s = wallSeen!.surface!;
+    expect(s.acts).toHaveLength(2);
+    expect(s.covered).toBe(count(cellsOf([stroke(0.2)])) + count(cellsOf([wide])));
+  });
+
+  test('a draw that paints nothing is not staged as a live Act, and costs the wall nothing', () => {
+    drawWith([wallPost([stroke(0.2)], [{ by: 'bo', draw: { strokes: [] } }])]);
+    const s = wallSeen!.surface!;
     expect(s.acts).toHaveLength(1);
-    expect(s.acts![0]!.character).toBe('front-door:bo');
-    expect((s.acts![0] as { share: number }).share).toBe(s.covered);
+    expect(s.covered).toBe(count(cellsOf([stroke(0.2)])));
   });
 
   test('a draw the card\'s rules refuse is not staged, and the others are', () => {
     drawWith([wallPost([stroke(0.2)], [{ by: 'bo', draw: 'not a draw' }, { by: 'bo', draw: { strokes: [stroke(0.6)] } }])]);
     const s = wallSeen!.surface!;
     expect(s.acts).toHaveLength(2);
-    expect(s.covered).toBe(count(union(cellsOf([stroke(0.2)]), cellsOf([stroke(0.6)]))));
+    expect(s.covered).toBe(count(cellsOf([stroke(0.2)])) + count(cellsOf([stroke(0.6)])));
   });
 });
 
@@ -270,6 +406,14 @@ describe('the front door with an effect that loads on first use', () => {
 });
 
 describe('the front door\'s pictures', () => {
+  test('a staged wall\'s mark on a root-relative picture names it by the address the page draws it from, and the other marks are as written', () => {
+    const anchor = { kind: 'image', version: 'front-door:0', n: 0, src: '/x/sheet.gif', nth: 0, x: 0.5, y: 0.5 };
+    const text = { kind: 'text', version: 'front-door:0', at: 0, len: 2, dx: 1, dy: 0 };
+    drawWith([{ by: 'ann', body: '[img]/x/sheet.gif[/img] Hi', reactions: {}, plays: [{ card: 'slab', by: 'ann', config: {}, draws: [{ by: 'ann', draw: { strokes: [stroke(0.2)], groups: [{ anchor }, { anchor: text }, { anchor: { kind: 'box' } }] } }] }] }]);
+    const groups = (wallSeen!.surface!.acts![0]!.payload as { groups: { anchor: unknown }[] }).groups;
+    expect(groups.map((g) => g.anchor)).toEqual([{ ...anchor, src: `${window.location.origin}/x/sheet.gif` }, text, { kind: 'box' }]);
+  });
+
   test('a root-relative picture in a staged post is drawn from the page\'s own origin', () => {
     drawWith([{ by: 'ann', body: '[img]/x/sheet.gif[/img]', reactions: {} }]);
     /* Over https it is an img; over http (this test's origin) the renderer shows the same address as a link. */

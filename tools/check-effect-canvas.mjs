@@ -68,7 +68,7 @@ export const CANVASES = {
   /* ---- wait: an effect not yet on the layer, with the step (design, section 7) that moves it ---- */
   'instances/divided-world/cards/graffiti/Compose.tsx': { count: 1, why: 'the wall\'s ink canvas while composing, laid over the post\'s whole area', until: 'step 2' },
   'instances/divided-world/cards/graffiti/Effect.tsx': { count: 2, why: 'the wall\'s ink and its suds, each laid over the post\'s whole area', until: 'step 2' },
-  'instances/divided-world/cards/graffiti/spray.ts': { count: 2, why: 'the overspray sprite, and the halo scratch canvas that step 2 deletes', until: 'step 2' },
+  'instances/divided-world/cards/graffiti/spray.ts': { count: 1, why: 'each painted group\'s cached bitmap for a pass (halo or dots), sized to the group\'s own field, redrawn only when a press or a cut changes it', until: 'step 2' },
   'instances/divided-world/cards/whoops/Effect.tsx': { count: 2, why: 'the ink bands (one canvas for each band and layer) and the suds, laid over the post\'s whole area', until: 'step 3' },
   'instances/divided-world/cards/whoops/paint.ts': { count: 1, why: 'the ink\'s canvas, sized to the post\'s box at a density the cap lowers', until: 'step 3' },
   'instances/divided-world/cards/whoops/suds.ts': { count: 1, why: 'the suds\' wet-layer canvases, sized to the post\'s box', until: 'step 3' },

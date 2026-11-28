@@ -13,11 +13,14 @@ import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/card
 import type { Act, SurfaceAct } from '../../../../engine/ui/data/api.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
+import { BbCode } from '../../../../engine/ui/bbcode/render.tsx';
 import { Effect as WhoopsEffect } from '../whoops/Effect.tsx';
 import { LayerInk } from '../whoops/scrub.ts';
 import { DESIGN, makeSplat } from '../whoops/splat.ts';
 import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, WASH_AFTER_MS } from './Effect.tsx';
 import * as spray from './spray.ts';
+import * as suds from '../whoops/suds.ts';
+import { COATS } from '../graffiti.ts';
 import { HOLD_MS } from '../wiping.ts';
 
 vi.mock('../whoops/suds.ts', () => ({ register: vi.fn(), unregister: vi.fn(), wash: vi.fn(), puff: vi.fn() }));
@@ -96,6 +99,7 @@ function mount(o: { readonly children?: ReactNode; readonly acts?: readonly Surf
   return { ...world, area: world.container.querySelector('.kb-origin-area') as HTMLElement, surface, shown, root, frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement };
 }
 
+const wallOf = (call: readonly unknown[]) => call[3] as spray.Wall;
 const px = (x: number, y: number): [number, number] => [x * BOX.w, y * BOX.h];
 const scrubbed = (root: HTMLElement) => Number(root.dataset.kbScrubbed);
 
@@ -132,7 +136,7 @@ describe('the ink layer', () => {
     expect([canvas.width, canvas.height]).toEqual([BOX.w, BOX.h]);
     expect(surface.near).toHaveBeenCalled();
     expect(spray.paintWall).toHaveBeenCalled();
-    expect(vi.mocked(spray.paintWall).mock.calls.at(-1)![3]).toEqual(MIDDLE);
+    expect(wallOf(vi.mocked(spray.paintWall).mock.calls.at(-1)!).groups).toHaveLength(1);
     see(false);
     expect(root.querySelector('canvas[data-kb-effect-ink]')).toBeNull();
   });
@@ -140,7 +144,7 @@ describe('the ink layer', () => {
   test('the post\'s words stay drawn, and a wall not yet read draws no strokes', () => {
     const { root } = mount({ acts: null });
     expect(root).toHaveTextContent('The post\'s words.');
-    expect(vi.mocked(spray.paintWall).mock.calls.every((c) => c[3].length === 0)).toBe(true);
+    expect(vi.mocked(spray.paintWall).mock.calls.every((c) => wallOf(c).groups.length === 0)).toBe(true);
   });
 });
 
@@ -153,10 +157,9 @@ describe('a reader\'s scrub', () => {
     act(() => { vi.advanceTimersByTime(60_000); });
     expect(surface.wash).not.toHaveBeenCalled();
     await act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
-    /* The scrub is a wash over the wall's own, drawn on this screen. */
-    const last = vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
-    expect(last).toHaveLength(MIDDLE.length + 1);
-    expect(last.at(-1)!.kind).toBe('wash');
+    /* The scrub thins the wall's own paint, on this screen. */
+    const field = wallOf(vi.mocked(spray.paintWall).mock.calls.at(-1)!).groups[0]!;
+    expect(field.coatsAt(0.4 * BOX.w, 0.5 * BOX.h)).toBeLessThan(COATS.line);
   });
 
   test('a press where there is no ink is left to the page: it is not caught and scrubs nothing', () => {
@@ -192,11 +195,14 @@ describe('the author\'s wash', () => {
     expect(surface.wash).toHaveBeenCalledTimes(1);
     const [play, input] = vi.mocked(surface.wash).mock.calls[0]!;
     expect(play).toBe(PLAY.id);
-    const strokes = (input as { strokes: { aspect: number; points: [number, number][] }[] }).strokes;
-    expect(strokes).toHaveLength(2);
-    expect(strokes[0]!.aspect).toBeCloseTo(1.5);
-    expect(Object.keys(strokes[0]!).sort()).toEqual(['aspect', 'points']);
-    expect(strokes[0]!.points.length).toBeGreaterThanOrEqual(2);
+    const cuts = (input as { cuts: { draw: string; group: number; presses: [number, number][] }[] }).cuts;
+    expect(Object.keys(input as object)).toEqual(['cuts']);
+    /* Both drags are the one draw's one group: one cut, its presses in the group's units (a draw from before groups is in shares of the box). */
+    expect(cuts).toHaveLength(1);
+    expect(Object.keys(cuts[0]!).sort()).toEqual(['draw', 'group', 'presses']);
+    expect([cuts[0]!.draw, cuts[0]!.group]).toEqual(['a1', 0]);
+    expect(cuts[0]!.presses.length).toBeGreaterThanOrEqual(4);
+    for (const [u, v] of cuts[0]!.presses) { expect(u).toBeGreaterThan(0.25); expect(u).toBeLessThan(0.95); expect(v).toBeCloseTo(0.5, 1); }
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(surface.wash).toHaveBeenCalledTimes(1);
   });
@@ -499,11 +505,11 @@ describe('draw mode on a wall that is there', () => {
     open();
     drag(surfaceOf2(root), [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]]);
     await frameOf();
-    const last = vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
-    expect(last).toHaveLength(MIDDLE.length + 1);
-    expect(last[0]).toEqual(MIDDLE[0]);
-    expect(last.at(-1)!.kind).toBe('draw');
-    expect((last.at(-1)!.payload as { strokes: unknown[] }).strokes).toHaveLength(1);
+    const last = vi.mocked(spray.paintWall).mock.calls.at(-1)!;
+    expect(wallOf(last).groups).toHaveLength(1);
+    const draft = last[4] as spray.WallAct;
+    expect(draft.kind).toBe('draw');
+    expect((draft.payload as { groups: { strokes: unknown[] }[] }).groups[0]!.strokes).toHaveLength(1);
   });
 
   test('a hit on the wall is not made by a drawing not yet tagged: only the wall\'s Acts are its ink', () => {
@@ -523,7 +529,8 @@ describe('draw mode on a wall that is there', () => {
     expect(surface.draw).toHaveBeenCalledTimes(1);
     const [play, as, input] = vi.mocked(surface.draw).mock.calls[0]!;
     expect([play, as]).toEqual(['play-g', 'c1']);
-    expect(input).toEqual({ strokes: [{ can: 'pink', cap: 'stock', aspect: 1.5, points: [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]] }] });
+    expect(input).toMatchObject({ box: { w: BOX.w / 16, h: BOX.h / 16 }, groups: [{ at: [0.5, 0.2], unit: 'em', strokes: [{ can: 'pink', cap: 'stock', points: [[-7.5, 0], [0, 0], [7.5, 0]] }] }] });
+    expect((input as { groups: unknown[] }).groups).toHaveLength(1);
     expect(root.dataset.kbDrawing).toBeUndefined();
     expect(screen.queryByRole('group', { name: 'Graffiti tools' })).toBeNull();
     expect(root.querySelector('[data-kb-can]')).toHaveAttribute('data-kb-can', 'pink');
@@ -554,7 +561,7 @@ describe('draw mode on a wall that is there', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Leave' })); });
     expect(root.dataset.kbDrawing).toBeUndefined();
     await frameOf();
-    expect(vi.mocked(spray.paintWall).mock.calls.at(-1)![3]).toEqual(MIDDLE);
+    expect(vi.mocked(spray.paintWall).mock.calls.at(-1)![4]).toBeNull();
   });
 });
 
@@ -607,40 +614,114 @@ describe('a hold, and the order of a scrub', () => {
     expect(scrubbed(root)).toBe(1);
   });
 
-  function hosted() {
+  let latest: NonNullable<EffectProps['surface']> | null = null;
+  const lastSurface = () => latest;
+  function hosted(o: { author?: boolean; wash?: NonNullable<EffectProps['surface']>['wash'] } = {}) {
     const ink = createClaims().at('post:graffiti', 0);
     let set: (acts: readonly SurfaceAct[]) => void = () => {};
     let bump: () => void = () => {};
+    const wash = vi.fn(o.wash ?? answered('w1'));
     function Host() {
       const [acts, setActs] = useState<readonly SurfaceAct[]>(MIDDLE);
       const [n, setN] = useState(0);
       set = setActs;
       bump = () => setN((v) => v + 1);
-      const surface = useMemo(() => surfaceOf(acts), [acts]);
-      return <div className="kb-act-main" data-kb-content-area><Effect {...propsOf({ surface, ink })}><p data-n={n}>The post&apos;s words.</p></Effect></div>;
+      const surface = useMemo(() => { latest = surfaceOf(acts, { wash }); return latest; }, [acts]);
+      return <div className="kb-act-main" data-kb-content-area><Effect {...propsOf({ surface, ink, ...(o.author ? { author: true } : {}) })}><p data-n={n}>The post&apos;s words.</p></Effect></div>;
     }
     const world = renderInWorld(<Host />);
     return { ...world, setActs: (a: readonly SurfaceAct[]) => act(() => set(a)), bump: () => act(() => bump()), frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement };
   }
-  const lastPaint = () => vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
+  const lastWall = () => wallOf(vi.mocked(spray.paintWall).mock.calls.at(-1)!);
 
-  test('a scrub whose Act has left the live list stays before the tags that came after it', () => {
+  test('a scrub is kept for the visit: a new tag arriving rebuilds the wall and the thinned paint stays thinned, and the tag is whole', () => {
     const { frame, setActs } = hosted();
     drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
-    setActs([draw('a2', 0.5)]);
-    const kinds = lastPaint().map((a) => a.kind);
-    expect(kinds).toEqual(['wash', 'draw']);
+    const thinned = lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h);
+    expect(thinned).toBeLessThan(COATS.line);
+    setActs([...MIDDLE, draw('a2', 0.2)]);
+    const wall = lastWall();
+    expect(wall.groups).toHaveLength(2);
+    expect(wall.groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h)).toBeCloseTo(thinned, 1);
+    expect(wall.groups[1]!.coatsAt(0.4 * BOX.w, 0.2 * BOX.h)).toBe(COATS.line);
   });
 
-  test('a scrub is one Act object for as long as it is unchanged, so the painter\'s cache holds', () => {
-    const { frame, setActs } = hosted();
+  test('a scrub is not made twice once the wall holds the wash that saved it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { frame, setActs } = hosted({ author: true });
     drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
-    setActs([...MIDDLE]);
-    const first = lastPaint()[1]!;
-    setActs([...MIDDLE]);
-    expect(lastPaint()[1]).toBe(first);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS + 10); });
+    const cuts = (vi.mocked(lastSurface()!.wash).mock.calls[0]![1] as { cuts: unknown[] }).cuts;
+    const saved: SurfaceAct = { id: 'w1', kind: 'wash', character: 'c', createdAt: '2026-10-29T21:09:00.000Z', payload: { cuts } } as unknown as SurfaceAct;
+    const before = lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h);
+    setActs([...MIDDLE, saved]);
+    expect(lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h)).toBeCloseTo(before, 1);
   });
 
+  test('a wash answered without an id keeps its presses until the acts hold a wash newer than they were sent, not at any change of the acts', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const noId = async () => ({ ok: true as const, value: { kind: 'wash' } as unknown as SurfaceAct });
+    const { frame, setActs } = hosted({ author: true, wash: noId });
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS + 10); });
+    const cuts = (vi.mocked(lastSurface()!.wash).mock.calls[0]![1] as { cuts: unknown[] }).cuts;
+    const at = () => lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h);
+    const thinned = at();
+    expect(thinned).toBeLessThan(COATS.line);
+    /* Another act arrives: it is not the wash that was sent, so the paint does not come back. */
+    setActs([...MIDDLE, draw('other', 0.8)]);
+    expect(at()).toBeCloseTo(thinned, 1);
+    /* The wash arrives: the presses are replayed from it, and the wall is the same. */
+    const saved: SurfaceAct = { id: 'w9', kind: 'wash', character: 'c', createdAt: '2026-10-29T21:09:00.000Z', payload: { cuts } } as unknown as SurfaceAct;
+    setActs([...MIDDLE, draw('other', 0.8), saved]);
+    expect(at()).toBeCloseTo(thinned, 1);
+  });
+
+  test('a wash that lands in the acts before an answer with no id is the wash that was sent, and its presses are not made twice', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let land: (cuts: unknown[]) => void = () => {};
+    const landsFirst = async (_id: string, body: unknown) => {
+      land((body as { cuts: unknown[] }).cuts);
+      /* The wall is painted from the acts that hold the wash, with the answer still on its way. */
+      await new Promise((done) => requestAnimationFrame(() => done(null)));
+      return { ok: true as const, value: { kind: 'wash' } as unknown as SurfaceAct };
+    };
+    const { frame, setActs } = hosted({ author: true, wash: landsFirst as never });
+    land = (cuts) => setActs([...MIDDLE, { id: 'w9', kind: 'wash', character: 'c', createdAt: '2026-10-29T21:09:00.000Z', payload: { cuts } } as unknown as SurfaceAct]);
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    const at = () => lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h);
+    await act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+    const thinned = at(), made = lastWall().groups[0]!.log.length;
+    expect(thinned).toBeLessThan(COATS.line);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS + 10); });
+    expect(vi.mocked(lastSurface()!.wash)).toHaveBeenCalledTimes(1);
+    /* Once the answer is in, the wall is the saved wash alone, as thin as the press made it and no thinner. */
+    await act(async () => { await vi.mocked(lastSurface()!.wash).mock.results[0]!.value; });
+    await act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+    expect(at()).toBeCloseTo(thinned, 1);
+    expect(lastWall().groups[0]!.log.length, 'the presses replayed once, from the saved wash').toBe(made);
+  });
+
+  test('a wash leaves the acts and a new one arrives: the answer had no id, and the new wash is not the old one', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const noId = async () => ({ ok: true as const, value: { kind: 'wash' } as unknown as SurfaceAct });
+    const wash = (id: string, cuts: unknown[]): SurfaceAct => ({ id, kind: 'wash', character: 'c', createdAt: '2026-10-29T21:09:00.000Z', payload: { cuts } } as unknown as SurfaceAct);
+    const { frame: body, setActs } = hosted({ author: true, wash: noId });
+    /* One wash is already in the acts as the scrub is sent. */
+    setActs([...MIDDLE, wash('w0', [])]);
+    drag(body, [[0.3, 0.5], [0.5, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS + 10); });
+    const cuts = (vi.mocked(lastSurface()!.wash).mock.calls[0]![1] as { cuts: unknown[] }).cuts;
+    const at = () => lastWall().groups[0]!.coatsAt(0.4 * BOX.w, 0.5 * BOX.h);
+    const thinned = at();
+    expect(thinned).toBeLessThan(COATS.line);
+    /* The old wash goes, which is no news of the one that was sent. */
+    setActs([...MIDDLE]);
+    expect(at()).toBeCloseTo(thinned, 1);
+    /* A new wash arrives, the one that was sent: the presses are replayed from it once, not on top of the kept ones. */
+    setActs([...MIDDLE, wash('w9', cuts)]);
+    expect(at()).toBeCloseTo(thinned, 1);
+  });
 });
 
 describe('draw mode and the wall it is drawn on', () => {
@@ -660,7 +741,7 @@ describe('draw mode and the wall it is drawn on', () => {
     return { ...world, root: world.container.querySelector('.kb-graffiti') as HTMLElement, setActs: (a: readonly SurfaceAct[]) => act(() => setActs(a)), setHas: (h: boolean) => act(() => setHas(h)) };
   }
   const open = () => { act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); }); };
-  const lastPaint = () => vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
+  const lastCall = () => vi.mocked(spray.paintWall).mock.calls.at(-1)!;
 
   test('where draw mode can no longer be drawn (the play is gone) it closes, and the tile is there when it can again', () => {
     const { root, setHas } = hosted();
@@ -679,12 +760,12 @@ describe('draw mode and the wall it is drawn on', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tag it' })); });
     expect(root.dataset.kbDrawing).toBeUndefined();
     await act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
-    expect(lastPaint()).toHaveLength(MIDDLE.length + 1);
-    expect(lastPaint().at(-1)!.kind).toBe('draw');
+    expect(wallOf(lastCall()).groups).toHaveLength(1);
+    expect((lastCall()[4] as spray.WallAct).kind).toBe('draw');
     const tagged = draw('d', 0.2);
     setActs([...MIDDLE, tagged]);
-    expect(lastPaint()).toEqual([...MIDDLE, tagged]);
-    expect(lastPaint()).toHaveLength(2);
+    expect(wallOf(lastCall()).groups).toHaveLength(2);
+    expect(lastCall()[4]).toBeNull();
   });
 
   test('a wall that changes some other way drops the held drawing too', async () => {
@@ -693,7 +774,8 @@ describe('draw mode and the wall it is drawn on', () => {
     drag(root.querySelector('[data-kb-draw-surface]') as HTMLElement, [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]]);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tag it' })); });
     setActs([...MIDDLE, draw('other', 0.8)]);
-    expect(lastPaint()).toHaveLength(2);
+    expect(wallOf(lastCall()).groups).toHaveLength(2);
+    expect(lastCall()[4]).toBeNull();
   });
 });
 
@@ -736,3 +818,202 @@ describe('the words under the paint', () => {
     expect(rule, "the tile does not take the box's break-anywhere").toMatch(/overflow-wrap:\s*normal/u);
   });
 });
+
+/** A draw in the groups' shape: one group of one stroke, a box attachment at the middle unless told. */
+const grouped = (id: string, points: [number, number][], over: Record<string, unknown> = {}): SurfaceAct => ({
+  id, kind: 'draw', character: 'drawer', createdAt: '2026-10-29T21:06:00.000Z',
+  payload: { box: { w: 37.5, h: 25 }, groups: [{ at: [0.5, 0.5], anchor: { kind: 'box' }, unit: 'em', strokes: [{ can: 'red', cap: 'stock', points }], ...over }] },
+} as unknown as SurfaceAct);
+const EM_PX = 16;
+
+describe('the wash is sent in the groups\' own units', () => {
+  test('a group scaled to half sends its presses at twice the px distance, keyed by draw and group', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wide = grouped('wide', [[-40, 0], [40, 0]]);
+    const { frame, surface } = mount({ author: true, acts: [wide] });
+    const field = () => wallOf(vi.mocked(spray.paintWall).mock.calls.at(-1)!).groups[0]!;
+    const scale = field().scale;
+    expect(scale).toBeGreaterThan(0.4);
+    expect(scale).toBeLessThan(0.5);
+    drag(frame, [[0.3, 0.5], [0.4, 0.5], [0.5, 0.5], [0.6, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS); });
+    expect(surface.wash).toHaveBeenCalledTimes(1);
+    const { cuts } = vi.mocked(surface.wash).mock.calls[0]![1] as { cuts: { draw: string; group: number; presses: [number, number][] }[] };
+    expect(cuts).toHaveLength(1);
+    expect([cuts[0]!.draw, cuts[0]!.group]).toEqual(['wide', 0]);
+    const presses = cuts[0]!.presses;
+    expect(presses.length).toBeGreaterThan(10);
+    /* A press every third of the sponge's radius (2 ems), px apart on the screen, and so px / (em * scale) in the group's units. */
+    const stepPx = (2 * EM_PX) / 3;
+    const du = presses[1]![0] - presses[0]![0];
+    expect(du).toBeCloseTo(stepPx / (EM_PX * scale), 1);
+    expect(du).toBeGreaterThan((stepPx / EM_PX) * 1.9);
+    expect(presses[0]![0]).toBeCloseTo((0.3 * BOX.w - 0.5 * BOX.w) / (EM_PX * scale), 1);
+    expect(presses[0]![1]).toBeCloseTo(0, 1);
+  });
+
+  test('a reader\'s scrub sends nothing, and still thins the group on their screen', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { frame, surface } = mount({ acts: [grouped('wide', [[-10, 0], [10, 0]])] });
+    drag(frame, [[0.3, 0.5], [0.4, 0.5], [0.5, 0.5], [0.6, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(surface.wash).not.toHaveBeenCalled();
+    expect(wallOf(vi.mocked(spray.paintWall).mock.calls.at(-1)!).groups[0]!.coatsAt(0.5 * BOX.w, 0.5 * BOX.h)).toBeLessThan(COATS.line);
+  });
+});
+
+describe('Hold to scrub', () => {
+  test('goes round only the bands that still have paint and stops once the fields are clean', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+    const { shown, root } = mount({ acts: [grouped('wide', [[-10, 0], [10, 0]])] });
+    const hold = shown.at(-1)!.controls.find((c) => c.label === 'Hold to scrub')!;
+    expect(hold.kind).toBe('hold');
+    const wall = () => wallOf(vi.mocked(spray.paintWall).mock.calls.at(-1)!);
+    expect(wall().anyPaint()).toBe(true);
+    act(() => { (hold as { start: () => void }).start(); });
+    for (let i = 0; i < 60 * 40 && wall().anyPaint(); i++) act(() => { vi.advanceTimersByTime(16); });
+    expect(wall().anyPaint()).toBe(false);
+    /* It has gone idle by itself: nothing more is scrubbed, however long the button is held. */
+    const strokes = scrubbed(root);
+    for (let i = 0; i < 120; i++) act(() => { vi.advanceTimersByTime(16); });
+    expect(scrubbed(root)).toBe(strokes);
+    act(() => { (hold as { stop: () => void }).stop(); });
+    /* A band with no paint was passed over: the stripe is one band's width, so a sweep of a 400 px box began and ended on it. */
+    expect(strokes).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('Hold to scrub: its pace and its bands', () => {
+  const fakeFrames = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+
+  test('goes at Whoops!\'s pace, 400 px a second on any box, not a share of the wall\'s width', () => {
+    fakeFrames();
+    const { shown } = mount({ acts: [grouped('wide', [[-10, 0], [10, 0]])] });
+    const hold = shown.at(-1)!.controls.find((c) => c.label === 'Hold to scrub')! as { start: () => void; stop: () => void };
+    act(() => { hold.start(); });
+    for (let i = 0; i < 30; i++) act(() => { vi.advanceTimersByTime(16); });
+    act(() => { hold.stop(); });
+    const steps = vi.mocked(suds.wash).mock.calls
+      .map((c) => [c[1], c[2]] as unknown as [{ x: number; y: number }, { x: number; y: number }])
+      .filter(([a, b]) => a.y === b.y && b.x > a.x)
+      .map(([a, b]) => b.x - a.x);
+    expect(steps.length).toBeGreaterThan(5);
+    const sorted = [...steps].sort((x, y) => x - y);
+    const middle = sorted[Math.floor(sorted.length / 2)]!;
+    expect(middle / 0.016, 'px a second').toBeGreaterThan(380);
+    expect(middle / 0.016).toBeLessThan(420);
+  });
+
+  test('ends on a legacy draw in a 340 px box where a scrap lies 10.75 px from the row centers, past the old press radius', () => {
+    fakeFrames();
+    const was = BOX.w;
+    BOX.w = 340;
+    try {
+      /* One skinny dot at a cell's center, between the first two bands (centers 11.25 and 33.75 px down): inside both bands, beyond 0.03 of the box's width from both. */
+      const dot: SurfaceAct = { id: 'dot', kind: 'draw', character: 'd', createdAt: '2026-10-29T21:06:00.000Z', payload: { strokes: [{ can: 'red', cap: 'skinny', aspect: BOX.w / BOX.h, points: [[171 / 340, 23 / 400], [171 / 340, 23 / 400]] }] } } as unknown as SurfaceAct;
+      const { shown, root } = mount({ acts: [dot] });
+      const hold = shown.at(-1)!.controls.find((c) => c.label === 'Hold to scrub')! as { start: () => void; stop: () => void };
+      const wall = () => wallOf(vi.mocked(spray.paintWall).mock.calls.at(-1)!);
+      expect(wall().anyPaint()).toBe(true);
+      expect(wall().spanOf(0, 22.5), 'the first band reports the scrap').not.toBeNull();
+      act(() => { hold.start(); });
+      for (let i = 0; i < 60 * 30 && wall().anyPaint(); i++) act(() => { vi.advanceTimersByTime(16); });
+      expect(wall().anyPaint(), 'the scrap is washed').toBe(false);
+      const n = scrubbed(root);
+      for (let i = 0; i < 60; i++) act(() => { vi.advanceTimersByTime(16); });
+      expect(scrubbed(root), 'and the hold has gone idle').toBe(n);
+      act(() => { hold.stop(); });
+    } finally {
+      BOX.w = was;
+    }
+  });
+});
+
+describe('where a text group is after a resize', () => {
+  test('is at its mark\'s new position, found again when the body resizes', async () => {
+    const marks = { left: 100, top: 60 };
+    const real = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.hasAttribute('data-kb-graffiti-mark')) return { left: marks.left, top: marks.top, right: marks.left, bottom: marks.top + 18, width: 0, height: 18, x: marks.left, y: marks.top, toJSON: () => ({}) } as DOMRect;
+      return real.call(this);
+    };
+    const watchers: (() => void)[] = [];
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { watchers.push(cb); } observe() {} unobserve() {} disconnect() {} });
+    try {
+      const anchor = { kind: 'text', version: 'v', at: 4, len: 4, dx: 2, dy: 1 };
+      const act1 = grouped('t', [[0, 0], [4, 0]], { at: [0.9, 0.9], anchor });
+      const { surface } = mount({ acts: [act1], children: <p><BbCode text="The post words go here." /></p> });
+      void surface;
+      const field = () => wallOf(vi.mocked(spray.paintWall).mock.calls.at(-1)!).groups[0]!;
+      expect([field().ox, field().oy]).toEqual([100 + 2 * EM_PX, 60 + EM_PX]);
+      marks.left = 30; marks.top = 140;
+      act(() => { watchers.forEach((w) => w()); });
+      await frame();
+      expect([field().ox, field().oy]).toEqual([30 + 2 * EM_PX, 140 + EM_PX]);
+    } finally {
+      Element.prototype.getBoundingClientRect = real;
+    }
+  });
+
+  /** A measuring that follows `marks` (by the mark's key), counting how often each is read. */
+  function marked(marks: Record<string, { left: number; top: number }>) {
+    const real = Element.prototype.getBoundingClientRect;
+    const reads: Record<string, number> = {};
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const key = this.getAttribute('data-kb-graffiti-mark');
+      if (key !== null) {
+        reads[key] = (reads[key] ?? 0) + 1;
+        const m = marks[key]!;
+        return { left: m.left, top: m.top, right: m.left, bottom: m.top + 18, width: 0, height: 18, x: m.left, y: m.top, toJSON: () => ({}) } as DOMRect;
+      }
+      return real.call(this);
+    };
+    const watchers: (() => void)[] = [];
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { watchers.push(cb); } observe() {} unobserve() {} disconnect() {} });
+    return { reads, fire: () => act(() => { watchers.forEach((w) => w()); }), restore: () => { Element.prototype.getBoundingClientRect = real; } };
+  }
+  const text = (at: number) => ({ kind: 'text', version: 'v', at, len: 4, dx: 0, dy: 0 });
+  const two = () => [grouped('t1', [[0, 0], [4, 0]], { at: [0.9, 0.9], anchor: text(4) }), grouped('t2', [[0, 0], [4, 0]], { at: [0.9, 0.9], anchor: text(14) })];
+  const words = <p><BbCode text="The post words go here and then some more words follow." /></p>;
+
+  test('a layout change that moves one group rebuilds only that group', async () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    const marks = { '0.0': { left: 100, top: 60 }, '1.0': { left: 300, top: 200 } };
+    const m = marked(marks);
+    try {
+      mount({ acts: two(), children: words });
+      const fields = () => wallOf(vi.mocked(spray.paintWall).mock.calls.at(-1)!).groups;
+      const before = [...fields()];
+      expect(before).toHaveLength(2);
+      const moved = (f: spray.Field) => [f.ox, f.oy];
+      expect(moved(before[1]!)).toEqual([300, 200]);
+      marks['1.0'] = { left: 330, top: 260 };
+      m.fire();
+      await frame();
+      const after = fields();
+      expect(after[0], 'the group that did not move is the same field').toBe(before[0]);
+      expect(after[1], 'the group that moved is built again').not.toBe(before[1]);
+      expect(moved(after[1]!)).toEqual([330, 260]);
+    } finally {
+      m.restore();
+    }
+  });
+
+  test('the observers ask for a measure at most once a frame', async () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    const m = marked({ '0.0': { left: 100, top: 60 }, '1.0': { left: 300, top: 200 } });
+    try {
+      mount({ acts: two(), children: words });
+      const before = m.reads['0.0']!;
+      for (let i = 0; i < 5; i++) m.fire();
+      expect(m.reads['0.0'], 'nothing is measured inside the frame the observers fired in').toBe(before);
+      await frame();
+      expect(m.reads['0.0'], 'five calls, one measure').toBe(before + 1);
+    } finally {
+      m.restore();
+    }
+  });
+});
+
+/** One animation frame, with the fake timers of the test or the real ones. */
+const frame = async () => { await act(async () => { if (vi.isFakeTimers()) vi.advanceTimersByTime(20); else await new Promise((done) => requestAnimationFrame(() => done(null))); }); };

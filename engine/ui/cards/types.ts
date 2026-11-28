@@ -546,7 +546,7 @@ export interface CardUi {
   readonly describeDraw?: (payload: Readonly<Record<string, unknown>>) => string;
   /**
    * For a card with `CardRules.surface`: the words the player's log and the Lens say a draw in. `verb` follows its drawer ("tagged": "You tagged Spritey's post #4 (6% of the
-   * wall)"), `noun` and `nouns` name one draw and several ("tag", "tags": "and 14 older tags, washed or painted over"), and `surface` names what a share is of ("the wall": "6% of the wall").
+   * wall)"), `noun` and `nouns` name one draw and several ("tag", "tags": "and 14 older tags, washed off"), and `surface` names what a share is of ("the wall": "6% of the wall").
    * The engine's own words, when a card gives none, are "drew on", "drawing", "drawings" and "the surface". Out of character and true.
    */
   readonly logDraw?: { readonly verb: string; readonly noun: string; readonly nouns: string; readonly surface: string };

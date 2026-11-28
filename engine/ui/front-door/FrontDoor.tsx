@@ -14,12 +14,19 @@
  * Quote, Spin, Edit, Report, permalink, Go to post or As it landed: a sample thread has nowhere for them to go.
  * A post wearing a card that folds the row (`CardUi.foldsRow`) folds it as a thread's does (`thread/fold.tsx`): a bar with the marks in it, the row behind,
  * the visitor's own press to open it. Its plays are live at the staged instant, since no clock is read.
+ *
+ * The door is also the first page's impact (docs/plans/2026-11-27-front-door-impact-design.md, section 1): for a visitor it stages bright effects
+ * (`stageEffects`, unless the device asks for more contrast or forced colors) and, when a staged play's card has sounds, the game bus
+ * (`stageSound`), both released when the door unmounts. The "Sound: on" toggle is the visitor's mute; its press is also the gesture that unlocks audio.
  */
-import { useCallback, useId, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { Attachment } from '../../rules/anchor.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
-import { BYTES, cellsOf, count, GRID, hasCell, union, type Cells } from '../../rules/surface.ts';
+import { coatsOf, paintedCount } from '../../rules/surface.ts';
 import { BbCode } from '../bbcode/render.tsx';
+import { stageEffects } from '../appearance.ts';
+import { stageSound } from '../audio/sound.ts';
 import { PostEffects, WriteLateNote } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
@@ -39,6 +46,7 @@ import type { FrontDoorCharacter } from '../types.ts';
 import { PersonaMark } from '../updates/Persona.tsx';
 import './front-door.css';
 import { frontDoorId, frontDoorPlayId } from './ids.ts';
+import { absolutePictures, absoluteSrc } from './pictures.ts';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 
@@ -47,16 +55,25 @@ const STAGED_AT = '2026-01-01T00:00:00.000Z';
 
 const idOf = frontDoorId;
 
+/** A staged draw's marks on a picture name it by the address the page draws it from (`./pictures.ts`), as the post's own words are filled, so a mark finds its picture. */
+function markedOnPictures(payload: Record<string, unknown>): Record<string, unknown> {
+  const groups: unknown = payload.groups;
+  if (!Array.isArray(groups)) return payload;
+  return { ...payload, groups: groups.map((g: { anchor?: { kind?: string; src?: string } } | null) => g?.anchor?.kind === 'image' && typeof g.anchor.src === 'string' ? { ...g, anchor: { ...g.anchor, src: absoluteSrc(g.anchor.src, window.location.origin) } } : g) };
+}
+
 /**
- * A staged wall's draws as a wall's live Acts, oldest first, each with the share of the wall it owns: a later draw owns the cells it covers
- * (`surfaceStep` in data/fake.ts prunes a draw left owning nothing, so a staged wall drops it too and shows what a live thread would).
+ * Where a staged draw's groups are, as `surface_acts` gives them for the post's current version: each group attached to the words or picture of a version is
+ * placed where it was drawn when that is the post's version (a made-up post has just the one), and has fallen (null) when it names another. A group on the box has no entry, and
+ * a draw with no groups (the old shape) has none. An empty list for a draw with attachments would drop every group to its spot in the box, whatever the screen shows.
  */
-function wallShares(draws: readonly Cells[]): readonly number[] {
-  const owners = new Uint16Array(GRID * GRID);
-  draws.forEach((cells, k) => { for (let i = 0; i < owners.length; i++) if (hasCell(cells, i)) owners[i] = k + 1; });
-  const owned = new Array<number>(draws.length).fill(0);
-  for (const o of owners) if (o !== 0) owned[o - 1]!++;
-  return owned;
+function placesOf(payload: Record<string, unknown>, version: string): { grp: number; place: Attachment | null }[] {
+  const groups: unknown = payload.groups;
+  if (!Array.isArray(groups)) return [];
+  return groups.flatMap((g: { anchor?: Attachment } | null, grp: number) => {
+    const at = g?.anchor;
+    return at === undefined || at.kind === 'box' ? [] : [{ grp, place: 'version' in at && at.version === version ? at : null }];
+  });
 }
 
 /** A made-up character is in the ladder's first rung, the one every new character starts in. */
@@ -102,6 +119,23 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
   );
 }
 
+const CONTRAST_QUERIES = ['(prefers-contrast: more)', '(forced-colors: active)'] as const;
+const mediaOf = (): MediaQueryList[] => (typeof window === 'undefined' ? [] : CONTRAST_QUERIES.flatMap((q) => window.matchMedia?.(q) ?? []));
+function subscribeContrast(onChange: () => void): () => void {
+  const queries = mediaOf();
+  for (const q of queries) q.addEventListener?.('change', onChange);
+  return () => { for (const q of queries) q.removeEventListener?.('change', onChange); };
+}
+/** Whether the device asks for more contrast or forced colors, kept current; without `matchMedia` it does not. */
+function useHighContrast(): boolean {
+  return useSyncExternalStore(subscribeContrast, () => mediaOf().some((q) => q.matches), () => false);
+}
+
+/** The visitor's own mute for the door's game sound; its press is the gesture that unlocks audio, so it needs no other code. */
+function SoundToggle({ on, set }: { readonly on: boolean; readonly set: (on: boolean) => void }) {
+  return <button type="button" className="kb-button" aria-pressed={on} onClick={() => set(!on)}>Sound: {on ? 'on' : 'off'}</button>;
+}
+
 export function FrontDoor() {
   const { instance, ui, settings } = useKayfa();
   const { path } = useLocation();
@@ -113,9 +147,8 @@ export function FrontDoor() {
   /* A post's picture must be an http(s) address (`safeImageSrc`), and a bundled file's address is root-relative, so a staged
      picture that starts with a single `/` is made absolute against the page's own origin. These words are the instance's
      committed content, never a player's; a protocol-relative or absolute address is left to the parser as anywhere. */
-  const fill = useCallback((text: string) => text
-    .replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH)
-    .replace(/\[img\](\/(?!\/)[^[]*)\[\/img\]/giu, (_m, src: string) => `[img]${new URL(src, window.location.origin).href}[/img]`), [settings]);
+  const fill = useCallback((text: string) => absolutePictures(text
+    .replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH), window.location.origin), [settings]);
 
   const cast = useMemo(() => new Map(door.cast.map((c) => {
     const rank = Math.min(Math.max(c.rank, 0), Math.max(instance.ranks.length - 1, 0));
@@ -159,21 +192,28 @@ export function FrontDoor() {
         if (p.state !== undefined) plays.setStates({ [id]: { state: p.state, savedAt: STAGED_AT } });
         const rules = instance.cards.find((c) => c.key === p.card);
         if (p.draws === undefined || !rules?.surface) return;
-        const kept: { readonly by: string; readonly payload: Record<string, unknown>; readonly cells: Cells }[] = [];
+        /* A wall's draws are each its own coats (the surface's `coats` rules): a draw owns the cells it paints, ink over another's ink is paid for again, and the wall covers the sum. A draw that paints nothing is no live Act, as a thread's would not be. */
+        const kept: { readonly by: string; readonly payload: Record<string, unknown>; readonly painted: number }[] = [];
         for (const d of p.draws) {
           const verdict = rules.surface.validateDraw(d.draw);
-          if (verdict.ok) kept.push({ by: d.by, payload: verdict.value.payload, cells: cellsOf(verdict.value.strokes) });
+          if (verdict.ok) kept.push({ by: d.by, payload: markedOnPictures(verdict.value.payload), painted: paintedCount(coatsOf(verdict.value.strokes, rules.surface.coats)) });
         }
-        const shares = wallShares(kept.map((k) => k.cells));
-        const wall: SurfaceAct[] = kept.flatMap((k, n) => shares[n] === 0 ? [] : [{
+        const wall: SurfaceAct[] = kept.flatMap((k, n) => k.painted === 0 ? [] : [{
           id: idOf(`draw:${i}:${j}:${n}`), character: idOf(k.by), kind: 'draw', thread: idOf('thread'), targetActId: id, seq: null, createdAt: STAGED_AT,
-          payload: k.payload, currentPayload: {}, editedAt: null, shownEditedAt: null, share: shares[n]!,
+          payload: k.payload, currentPayload: {}, editedAt: null, shownEditedAt: null, share: k.painted, places: placesOf(k.payload, idOf(String(i))),
         }]);
-        plays.setSurfaceActs(id, count(kept.reduce<Cells>((all, k) => union(all, k.cells), new Uint8Array(BYTES))), wall);
+        plays.setSurfaceActs(id, kept.reduce((n, k) => n + k.painted, 0), wall);
       });
     });
     return { plays, tallies, mine: createMine() };
   }, [door.posts, instance.cards]);
+
+  /* Whether a staged play's card has sounds: only then is there game sound to stage or to mute. */
+  const noisy = useMemo(() => door.posts.some((post) => (post.plays ?? []).some((p) => (ui.cards.find((c) => c.key === p.card)?.sounds?.length ?? 0) > 0)), [door.posts, ui.cards]);
+  const [soundOn, setSoundOn] = useState(true);
+  useEffect(() => (noisy ? stageSound({ gameSound: soundOn ? 'on' : 'off' }) : undefined), [noisy, soundOn]);
+  const highContrast = useHighContrast();
+  useLayoutEffect(() => stageEffects(highContrast ? 'standard' : 'bright'), [highContrast]);
 
   const note = useMemo(() => parse(door.note).filter((b) => b.t !== 'marker'), [door.note]);
   const noteFill: Fill = { settings, path, marker: () => null };
@@ -184,6 +224,7 @@ export function FrontDoor() {
         <div className="kb-front-door-top">
           <p className="kb-crumb">{ui.copy.siteName} » {door.title}</p>
           <span id={label} className="kb-front-door-label">{door.label}</span>
+          {noisy && <SoundToggle on={soundOn} set={setSoundOn} />}
         </div>
         <h1 className="kb-heading kb-thread-title">{door.title}</h1>
         <StagedCtx.Provider value={true}>

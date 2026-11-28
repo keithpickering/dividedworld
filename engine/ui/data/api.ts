@@ -16,6 +16,7 @@
  * Times are ISO 8601 strings as the server sends them, except an estimate line's `at`, which is
  * epoch milliseconds as the estimate function sends it.
  */
+import type { Attachment } from '../../rules/anchor.ts';
 import type { Quadrant, Span } from '../../rules/types.ts';
 import type { PronounSet } from '../../rules/pronouns.ts';
 import type { Piece } from '../../rules/cosmetics.ts';
@@ -487,11 +488,14 @@ export interface PollParts {
 }
 
 /**
- * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0317): the Act, whose payload holds its `strokes` and its `cells`
- * (a 10,000-character bit string). A draw read from the surface carries `share`, the cells of the layer it owns now (what a wash has not
- * taken and no later draw has painted over); a wash, and an Act just written, carry none.
+ * A draw or a wash on a surface, as every reader sees it (`surface_acts`): the Act, whose payload holds a draw's `box` and `groups` or a wash's `cuts`; the grid of coats and a wash's takes are the server's own and are never sent. A draw read from the
+ * surface carries `share`, the cells it holds painted now (2 tenths of a coat or more: what it costs the wall, and what the wash has not yet taken), and `places`, where each of its groups is attached in the post's current version (a group with no entry
+ * is at its box spot, and one whose place is null has fallen there); a wash, and an Act just written, carry neither.
  */
-export interface SurfaceAct extends Act { readonly share?: number }
+export interface SurfaceAct extends Act {
+  readonly share?: number;
+  readonly places?: readonly { readonly grp: number; readonly place: Attachment | null }[];
+}
 /** A draw or a wash just written (`draw_on_surface`, `wash_surface`): the Act and how the surface stands with it. */
 export interface SurfaceWritten extends SurfaceAct {
   /** The cells the layer covers now. */
@@ -566,6 +570,11 @@ export interface Act {
    */
   readonly payload: Readonly<Record<string, unknown>>;
   readonly currentPayload: Readonly<Record<string, unknown>>;
+  /**
+   * On a post the page's read gives (`thread_page`, 0456): the post's current version, the id of its latest edit (through `acts_public`, a hidden edit included) or its own id where it has none. Edits are public Acts, so it is
+   * the same for every reader and no private fact. A draw's tags name it (`anchor.version`); absent on an Act the page did not read as a post.
+   */
+  readonly version?: Id;
   readonly editedAt: string | null;
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;

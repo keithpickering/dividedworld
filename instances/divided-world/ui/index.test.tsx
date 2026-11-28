@@ -86,6 +86,21 @@ describe('Divided World\'s onboarding words', () => {
     }
     expect(instanceUiProblems(instanceUi, instance).filter((p) => /front door/u.test(p))).toEqual([]);
   });
+  test('the real Graffiti card\'s validateDraw runs through the front door check, which names a mark on another copy of its picture', () => {
+    const posts = instanceUi.frontDoor.posts.map((p) => ({
+      ...p,
+      plays: p.plays?.map((pl) => (pl.card !== 'graffiti' ? pl : {
+        ...pl,
+        draws: pl.draws?.map((d) => {
+          const draw = d.draw as { groups: { anchor: { kind: string; nth?: number } }[] };
+          return { ...d, draw: { ...draw, groups: draw.groups.map((g) => (g.anchor.kind === 'image' ? { ...g, anchor: { ...g.anchor, nth: 1 } } : g)) } };
+        }),
+      })),
+    }));
+    const problems = instanceUiProblems({ ...instanceUi, frontDoor: { ...instanceUi.frontDoor, posts } } as typeof instanceUi, instance).filter((p) => /front door/u.test(p));
+    expect(problems.length).toBeGreaterThan(0);
+    expect(problems.every((p) => /is copy 0$/u.test(p))).toBe(true);
+  });
   test('Snuckles\'s exit is hit by the three who argued, united: two folding chairs, then a fire extinguisher', () => {
     const exit = instanceUi.frontDoor.posts[9]!;
     expect(exit.by).toBe('snuckles');

@@ -29,7 +29,9 @@ import { fallsOn, inPrint, instant, RARITIES, type Rarity } from '../../rules/ca
 import { atOrBelow, giftProblem, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { pointAt, rewindConfig, rewindPointProblem } from '../../rules/rewind.ts';
-import { BYTES, GRID, count, fromBits, hasCell, minus, union, type Cells } from '../../rules/surface.ts';
+import { fromBits, fromCoatString, legacyCoats, minusCoats, paintedCount, PAINTED, type Coats } from '../../rules/surface.ts';
+import { contentOf, mapPlace, mapPlaces, type Attachment } from '../../rules/anchor.ts';
+import { frameProblem } from '../../rules/frame.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { ANONYMOUS_STAFF_KEY, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER } from '../../rules/instance.ts';
@@ -1021,6 +1023,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
       hidden: cur,
+      ...(isPost(a.kind) ? { version: edits(a).at(-1)?.id ?? a.id } : {}),
       ...(own ? { payloadHidden: true } : {}),
       ...(concealingActs.has(a.id) && !own ? { payloadConcealing: true } : {}),
       ...(concealingActs.has(latest?.id ?? a.id) && !cur ? { concealing: true } : {}),
@@ -2391,51 +2394,97 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
 
-  /* ------------------------------------------------------------------ surfaces (0317) ---- */
-  /** A surface as the database's `surfaces` row holds it: the cells covered, the live draw (1-based place in `live`, 0 for none) that last inked each, and the live list. */
-  interface SurfaceRec { cover: Cells; owners: Uint16Array; live: Id[]; readonly cells: Map<Id, Cells> }
+  /* ------------------------------------------------------------------ surfaces (0317, 0456) ---- */
+  /**
+   * A surface as the database's `surfaces` and `surface_coats` rows hold it (0456): each live draw's grid of coats in tenths (a cell is painted at 2 or more), the live list, and for each live wash the live draws it changed.
+   * A wall's `covered` is the sum of its live draws' painted cells.
+   */
+  interface SurfaceRec { readonly grids: Map<Id, Coats>; live: Id[]; readonly washes: Map<Id, Id[]> }
   const surfaceRecs = new Map<Id, SurfaceRec>();
-  const meets = (a: Cells, b: Cells): boolean => a.some((v, i) => (v & b[i]!) !== 0);
-  const inside = (a: Cells, b: Cells): boolean => a.every((v, i) => (v & ~b[i]! & 0xff) === 0);
+  /** Where each group of each draw is attached in each version of its post (`surface_places`, 0456): the attachment, or null once the group has fallen to its box spot. */
+  const surfacePlaces = new Map<Id, Map<Id, Map<number, Attachment | null>>>();
+  /** What a draw and a wash keep in their payloads that no reader is sent: the grid of coats (or the old cells) and a wash's takes. */
+  const SERVER_KEYS = ['coats', 'cells', 'takes'] as const;
+  /** The words `act` answers with when the version a draw names is none of its post's (supabase/functions/act/core.ts, NOT_THOSE_WORDS). */
+  const NOT_THOSE_WORDS = 'That post\'s words aren\'t the ones you drew on. Reload it and tag again.';
+  /** The words `act` answers with when a draw's declared frame is bigger than its post could be (core.ts, TOO_BIG_A_FRAME). */
+  const TOO_BIG_A_FRAME = 'That tag is drawn bigger than this post. Reload it and tag again.';
+  /** The line a draw of the old shape lays on each cell it set (0456: 2 coats). */
+  const LEGACY_LINE = 20;
+  const withoutKeys = <T extends Act>(a: T): T => {
+    const drop = (p: Readonly<Record<string, unknown>>) => Object.fromEntries(Object.entries(p).filter(([k]) => !(SERVER_KEYS as readonly string[]).includes(k)));
+    return { ...a, payload: drop(a.payload), currentPayload: drop(a.currentPayload) };
+  };
+  /** A draw's grid as the server lays it (surface_lay): its coats with a cell held below PAINTED (1 tenth) kept at 0, or for a draw of the old shape (no groups) 20 tenths on each cell it set (0456, surface_apply). */
+  const layDraw = (payload: Readonly<Record<string, unknown>>, coats: string): Coats =>
+    (Array.isArray(payload.groups) ? fromCoatString(coats).map((v) => (v < PAINTED ? 0 : v)) : legacyCoats(fromBits([...fromCoatString(coats)].map((v) => (v > 0 ? '1' : '0')).join('')), LEGACY_LINE));
+  /** A stored draw's grid: its coats, or for one of the old shape its cells laid at 20 tenths. */
+  const gridOfPayload = (payload: Readonly<Record<string, unknown>>): Coats => (typeof payload.coats === 'string' ? fromCoatString(payload.coats) : legacyCoats(fromBits(String(payload.cells)), LEGACY_LINE));
   /** The surface of a play of a card with one: opened with the play (open_surface), here the first time it is asked for. Null for any other Act. */
   function surfaceOf(play: Id): SurfaceRec | null {
     const p = playOf(play);
     if (!p || p.target === null || typeof p.payload.card !== 'string' || instance.cards.find((c) => c.key === p.payload.card)?.surface === undefined) return null;
     let s = surfaceRecs.get(play);
-    if (!s) { s = { cover: new Uint8Array(BYTES), owners: new Uint16Array(GRID * GRID), live: [], cells: new Map() }; surfaceRecs.set(play, s); }
+    if (!s) { s = { grids: new Map(), live: [], washes: new Map() }; surfaceRecs.set(play, s); }
     return s;
   }
+  const coveredOf = (s: SurfaceRec): number => { let n = 0; for (const g of s.grids.values()) n += paintedCount(g); return n; };
+  /** The id of a post's current version: its latest edit, or the post. */
+  const versionOf = (post: ActRec): ActRec => edits(post).at(-1) ?? post;
+  /** A version's words as the wall reads them: the text and the images the renderer draws, under the verdict that version holds. */
+  const contentAt = (v: ActRec) => (hiddenVersions.has(v.id) ? contentOf('', forgedSet(undefined)) : contentOf(String(v.payload.body ?? ''), forgedSet(forgedList(v.payload))));
   /**
-   * surface_step (0317): the one transition. A draw covers its cells and owns each; a wash uncovers them and leaves them owned by no one; the Act joins the
-   * live list unless it is a wash that uncovered nothing; then the list is pruned (a draw that owns no cell, a wash that uncovers nothing a kept draw
-   * inked or that a later wash covers whole) and renumbered.
+   * Where each group of a draw sits in the post's current version, as the act function works it out (core.ts, placesOfDraw): a group drawn on the current version is where it was drawn; one drawn on an older version is
+   * mapped through the words' diff, null where its words were touched; a box group has no row; a version the post never had is refused. A version an admin hid keeps its row with no words (surface_version_pair reads acts_public),
+   * so a group drawn on it, or on a post whose current version is hidden, is mapped against no words and its place is null, never refused.
    */
-  function surfaceStep(s: SurfaceRec, kind: 'draw' | 'wash', id: Id, cells: Cells): { cover: Cells; owners: Uint16Array; live: Id[] } {
-    const draw = kind === 'draw';
-    const index = s.live.length + 1;
-    const cover = draw ? union(s.cover, cells) : minus(s.cover, cells);
-    const owners = s.owners.map((o, i) => (!hasCell(cells, i) ? o : draw ? index : 0));
-    let live = draw || meets(s.cover, cells) ? [...s.live, id] : s.live;
-    const cellsOfLive = (at: Id): Cells => (at === id ? cells : s.cells.get(at)!);
-    const kindOf = (at: Id): 'draw' | 'wash' => (at === id ? kind : acts.get(at)!.kind as 'draw' | 'wash');
-    const owning = new Set(owners);
-    const kept = live.map((at, k) => {
-      const place = k + 1;
-      if (kindOf(at) === 'draw') return owning.has(place);
-      const mine = cellsOfLive(at);
-      const earlier = live.some((d, j) => j < k && kindOf(d) === 'draw' && owning.has(j + 1) && meets(cellsOfLive(d), mine));
-      const covered = live.some((w, j) => j > k && kindOf(w) === 'wash' && inside(mine, cellsOfLive(w)));
-      return earlier && !covered;
+  function placesOfDraw(post: ActRec, payload: Readonly<Record<string, unknown>>): Answer<Map<number, Attachment | null>> {
+    const groups = Array.isArray(payload.groups) ? payload.groups as unknown[] : [];
+    const current = versionOf(post);
+    const anchored: { grp: number; at: Attachment & { version: string } }[] = [];
+    groups.forEach((g, grp) => {
+      const at = typeof g === 'object' && g !== null ? (g as { anchor?: Attachment }).anchor : undefined;
+      if (at !== undefined && at.kind !== 'box') anchored.push({ grp, at });
     });
-    if (kept.some((k) => !k)) {
-      const remap = new Map<number, number>();
-      kept.forEach((k, j) => { if (k) remap.set(j + 1, remap.size + 1); });
-      for (let i = 0; i < owners.length; i++) if (owners[i] !== 0) owners[i] = remap.get(owners[i]!) ?? 0;
-      live = live.filter((_, j) => kept[j]);
+    const placed = new Map<number, Attachment | null>();
+    for (const { grp, at } of anchored) {
+      const drawn = at.version === post.id ? post : edits(post).find((e) => e.id === at.version);
+      if (!drawn) return refuse(NOT_THOSE_WORDS);
+      placed.set(grp, drawn.id === current.id ? at : mapPlace(contentAt(drawn), contentAt(current), at));
     }
-    return { cover, owners, live };
+    return ok(placed);
   }
-  /** draw_on_surface and wash_surface (0317), in the order they refuse: the character, the wall, the lock, then the limits; a draw alone is held to them. */
+  /**
+   * A draw's declared frame held to its post, as the act function holds it (core.ts, frameHeld; surface_frame_of, 0456): every version's words (a hidden one has none), the signature the post is shown with, its current poll
+   * and the instance's reactions. A box taller than that could lay out at its width, or an image group wider than its box, is refused in TOO_BIG_A_FRAME; a frame the card sets itself (a stencil) and a spun thread's opening Act are not held.
+   */
+  function frameHeldOn(rules: CardRules, post: ActRec, payload: Readonly<Record<string, unknown>>): Answer<null> {
+    const frame = rules.surface?.frameOf?.({ ...payload }) ?? null;
+    if (frame === null || post.kind === 'spin') return ok(null);
+    const versions = [post, ...edits(post)].map((v) => ({ body: hiddenVersions.has(v.id) ? '' : String(v.payload.body ?? ''), forged: forgedSet(forgedList(v.payload)) }));
+    const shown = shownAuthor(post, false);
+    const poll = currentPoll(post.id);
+    const problem = frameProblem({
+      versions, signature: shown === null ? '' : characters.get(shown)?.signature ?? '',
+      poll: poll ? { question: String(poll.payload.question ?? ''), options: (poll.payload.options as unknown[] ?? []).map(String) } : null,
+      reactions: instance.reactions.length,
+    }, frame);
+    return problem === null ? ok(null) : refuse(TOO_BIG_A_FRAME);
+  }
+  const placesNow = (draw: Id, post: ActRec): { grp: number; place: Attachment | null }[] =>
+    [...(surfacePlaces.get(draw)?.get(versionOf(post).id) ?? [])].map(([grp, place]) => ({ grp, place })).sort((x, y) => x.grp - y.grp);
+  /** surface_prune (0456): the live list once the draws with no grid have gone; a wash stays while a draw it changed is alive. */
+  function prune(s: SurfaceRec): void {
+    s.live = s.live.filter((id) => s.grids.has(id) || (s.washes.get(id) ?? []).some((d) => s.grids.has(d)));
+    for (const w of [...s.washes.keys()]) if (!s.live.includes(w)) s.washes.delete(w);
+  }
+  /** What the wash's `validateWash` is shown of the live draws: each one's payload, as `surface_acts` gives it. */
+  const liveDraws = (s: SurfaceRec): ReadonlyMap<Id, unknown> => new Map(s.live.filter((id) => s.grids.has(id)).map((id) => [id, withoutKeys(publicAct(acts.get(id)!)).payload]));
+  /**
+   * draw_on_surface and wash_surface (0456), in the order they refuse: the character, the wall, the lock, then the limits; a draw alone is held to them. A draw's grid is its coats (a draw of the old shape lays
+   * 20 tenths on each cell it set), costs its painted cells against the wall's limit and its place in the live count, and writes its groups' places against the post's current version. A wash takes each live draw
+   * it names down by its takes, and a draw left with nothing painted goes with its washes.
+   */
   function writeSurface(kind: 'draw' | 'wash', play: Id, character: Id, input: unknown): Answer<SurfaceWritten> {
     const account = me();
     if (!account) return refuse('sign in to act');
@@ -2458,45 +2507,78 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (kind === 'wash' && author !== character) return refuse('only the post\'s author washes what is on it');
     if (reversedPlays.has(play)) return refuse('an admin ended that card');
     if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
+    const post = acts.get(p.target!)!;
     const drawn = kind === 'draw' ? decideDraw(rules, settings, input) : null;
-    const decided = drawn ?? decideWash(rules, settings, input);
+    const washed = kind === 'wash' ? decideWash(rules, settings, input, liveDraws(s)) : null;
+    const decided = drawn ?? washed!;
     if (!decided.ok) return refuse(decided.why);
-    const cells = fromBits(decided.value.cells);
     const written = uuid();
-    const next = surfaceStep(s, kind, written, cells);
+    const sent = Object.fromEntries(Object.entries(decided.value.payload).filter(([k]) => !['cells', 'coats', 'takes', 'uncovered', 'cut'].includes(k)));
+    let payload: Record<string, unknown>;
+    let places = new Map<number, Attachment | null>();
+    let grid: Coats | null = null;
+    let kept: { draw: Id; takes: string }[] = [];
+    let cut: { draw: Id; took: number }[] = [];
     if (drawn?.ok) {
+      const legacy = !Array.isArray(sent.groups);
+      grid = layDraw(sent, drawn.value.coats);
+      const painted = paintedCount(grid);
+      const covered = coveredOf(s);
       const most = drawn.value.most;
-      const before = count(s.cover);
-      const after = count(next.cover);
-      if (after > most && after > before) {
-        return refuse(`this wall is ${Math.floor(before / 100)}% covered, and its limit is ${Math.floor(most / 100)}%; this tag would take it to ${Math.ceil(after / 100)}%`);
+      if (painted > 0 && covered + painted > most) {
+        return refuse(`this wall is ${Math.floor(covered / 100)}% covered, and its limit is ${Math.floor(most / 100)}%; this tag would take it to ${Math.ceil((covered + painted) / 100)}%`);
       }
       const mostLive = rules.surface!.mostLive;
-      if (new Set([...next.owners].filter((o) => o !== 0)).size > mostLive) return refuse(`this wall holds ${mostLive} tags; paint over one or wait for a wash`);
+      if (painted > 0 && s.grids.size + 1 > mostLive) return refuse(`This wall is full: it holds ${mostLive} tags. It has room again when its author washes one off.`);
+      const where = placesOfDraw(post, sent);
+      if (isRefusal(where)) return where;
+      const held = frameHeldOn(rules, post, sent);
+      if (isRefusal(held)) return held;
+      places = where.value;
+      payload = legacy ? { ...sent, cells: [...grid].map((v) => (v > 0 ? '1' : '0')).join('') } : { ...sent, coats: drawn.value.coats };
+    } else {
+      /* Each live draw a wash names, and the cells that went from painted to clean (surface_apply): what changes nothing is left out, and the Act keeps the takes that changed something. */
+      for (const t of washed!.ok ? washed!.value.takes : []) {
+        const had = s.grids.get(t.draw);
+        if (!had) continue;
+        const next = minusCoats(had, fromCoatString(t.takes));
+        if (next.every((v, i) => v === had[i])) continue;
+        kept.push(t);
+        const took = paintedCount(had) - paintedCount(next);
+        if (took > 0) cut.push({ draw: t.draw, took });
+      }
+      payload = { ...sent, takes: kept, uncovered: cut.reduce((n, c) => n + c.took, 0), cut };
     }
-    /* A wash records what it uncovered and the draws it cut, read from the owners before it (surface_apply, 0317): the server's own keys, which a payload that arrives with them loses. */
-    const cut = new Map<Id, number>();
-    if (kind === 'wash') for (let i = 0; i < s.owners.length; i++) if (s.owners[i] !== 0 && hasCell(cells, i)) { const d = s.live[s.owners[i]! - 1]!; cut.set(d, (cut.get(d) ?? 0) + 1); }
-    const { cut: _cut, uncovered: _uncovered, ...sent } = decided.value.payload as Record<string, unknown>;
-    const rec = write({ id: written, character, kind, thread: p.thread, target: play, payload: { ...sent, cells: decided.value.cells, ...(kind === 'wash' ? { uncovered: [...cut.values()].reduce((n, c) => n + c, 0), cut: [...cut].map(([draw, n]) => ({ draw, took: n })) } : {}) } });
-    s.cells.set(written, cells);
-    s.cover = next.cover; s.owners = next.owners; s.live = next.live;
+    const rec = write({ id: written, character, kind, thread: p.thread, target: play, payload });
+    if (kind === 'draw') {
+      if (grid !== null && paintedCount(grid) > 0) { s.grids.set(written, grid); s.live = [...s.live, written]; }
+      if (places.size > 0 || Array.isArray(sent.groups)) surfacePlaces.set(written, new Map([[versionOf(post).id, places]]));
+    } else {
+      const touched: Id[] = [];
+      for (const t of kept) {
+        const next = minusCoats(s.grids.get(t.draw)!, fromCoatString(t.takes));
+        touched.push(t.draw);
+        if (paintedCount(next) === 0) s.grids.delete(t.draw); else s.grids.set(t.draw, next);
+      }
+      if (touched.length > 0) { s.live = [...s.live, written]; s.washes.set(written, touched); }
+      prune(s);
+    }
     if (kind === 'draw') sendAlerts(rec);
-    const covered = count(next.cover);
+    const covered = coveredOf(s);
     send(`thread:${p.thread}`, 'surface', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onSurface?.(play, covered); });
-    return ok({ ...publicAct(rec), covered, live: [...next.live] });
+    return ok({ ...withoutKeys(publicAct(rec)), covered, live: [...s.live] });
   }
-  /** surface_acts (0317): a play's live draws and washes, oldest first, each draw with the cells it owns now; null where the play has no surface. */
+  /** surface_acts (0456): a play's live draws and washes, oldest first, each draw with its own painted cells and where its groups are in the post's current version; null where the play has no surface. */
   function surfaceActs(play: Id): SurfaceActs | null {
     const s = surfaceOf(play);
     if (!s) return null;
-    const owned = (place: number): number => { let n = 0; for (const o of s.owners) if (o === place) n++; return n; };
-    const shown = s.live.map((id, k): SurfaceAct => {
-      const a = publicAct(acts.get(id)!);
-      return a.kind === 'draw' ? { ...a, share: owned(k + 1) } : a;
+    const post = acts.get(playOf(play)!.target!)!;
+    const shown = s.live.map((id): SurfaceAct => {
+      const a = withoutKeys(publicAct(acts.get(id)!));
+      return a.kind === 'draw' ? { ...a, share: paintedCount(s.grids.get(id)!), places: placesNow(id, post) } : a;
     });
     const older = [...acts.values()].filter((a) => a.kind === 'draw' && a.target === play && !s.live.includes(a.id)).length;
-    return { covered: count(s.cover), acts: shown, older };
+    return { covered: coveredOf(s), acts: shown, older };
   }
   /**
    * `my_draws` and `my_walls_drawn_on` (0317) for an account, as the views read them: the account's characters' draws and the washes that cut them (not by the account's own washer), and the draws and washes on
@@ -2514,8 +2596,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const play = a.target!;
       const author = acts.get(playOf(play)!.target ?? '')?.character ?? null;
       if (a.kind === 'draw') {
-        if (owns(a.character)) draws.push(row(a, 'draw', play, a.character!, count(fromBits(String(a.payload.cells)))));
-        else if (owns(author)) walls.push(row(a, 'draw', play, author!, count(fromBits(String(a.payload.cells)))));
+        if (owns(a.character)) draws.push(row(a, 'draw', play, a.character!, paintedCount(gridOfPayload(a.payload))));
+        else if (owns(author)) walls.push(row(a, 'draw', play, author!, paintedCount(gridOfPayload(a.payload))));
         continue;
       }
       if (owns(author)) walls.push(row(a, 'wash', play, author!, typeof a.payload.uncovered === 'number' ? a.payload.uncovered : 0));
@@ -2531,7 +2613,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** thread_page's `surfaces`: for each surface play among the page's plays, its covered cells and its live Acts' ids, never a stroke or an owner. */
   const surfacesOn = (plays: readonly Act[]): Readonly<Record<Id, SurfaceNow>> => Object.fromEntries(plays.flatMap((a): [Id, SurfaceNow][] => {
     const s = a.kind === 'card' ? surfaceOf(a.id) : null;
-    return s ? [[a.id, { covered: count(s.cover), live: [...s.live] }]] : [];
+    return s ? [[a.id, { covered: coveredOf(s), live: [...s.live] }]] : [];
   }));
 
   /* The player's log: the settlements' ledger with its shares, every wallet event and the card ledger, each by account (0003, 0006, 0034). */
@@ -2900,7 +2982,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
     if (decided.value.draw) {
-      const tag = count(fromBits(decided.value.draw.cells));
+      /* Its frame is held to the post first, as the act function holds it before play_surface_card. */
+      const held = frameHeldOn(rules, on, decided.value.draw.payload);
+      if (isRefusal(held)) return refuse(held.error, 'first');
+      const tag = paintedCount(layDraw(decided.value.draw.payload, decided.value.draw.coats));
       if (tag > decided.value.draw.most) return refuse(`this wall is 0% covered, and its limit is ${Math.floor(decided.value.draw.most / 100)}%; this tag would take it to ${Math.ceil(tag / 100)}%`, 'first');
     }
     /* The giver's landing of a gift is not the opener's own play: the character is the box's, and nothing is bought (openGift). */
@@ -3476,6 +3561,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
+  /**
+   * An edit moves the walls on its post with its words (edit_post, 0456; the act function's placesOfEdit): each group of each live draw that is still placed at the version the edit replaces is mapped against the
+   * new words, under the verdict the new words hold (the edit's own `forged`, as quote_forged writes it), and its place is written against the edit's id. A group already fallen has no row for the edit and stays at its
+   * box spot. The version it replaces is read as surface_groups_on reads it, through acts_public: one an admin hid has no words there, so every group on it maps from nothing and falls to its box spot; the edit is not refused.
+   */
+  function moveWalls(post: ActRec, before: ActRec, edit: ActRec): void {
+    const old = hiddenVersions.has(before.id) ? contentOf('', forgedSet(forgedList(before.payload))) : contentAt(before);
+    const next = contentAt(edit);
+    for (const [play, s] of surfaceRecs) {
+      if (playOf(play)?.target !== post.id) continue;
+      for (const draw of s.grids.keys()) {
+        const here = surfacePlaces.get(draw)?.get(before.id);
+        if (!here) continue;
+        const alive = [...here].filter(([, place]) => place !== null);
+        const moved = mapPlaces(old, next, alive.map(([, place]) => place!));
+        surfacePlaces.get(draw)!.set(edit.id, new Map(alive.map(([grp], i) => [grp, moved[i] ?? null])));
+      }
+    }
+  }
+
   function edit(target: Id, character: Id, body: string, poll?: PollDraft | { readonly removed: true }): Answer<Act> {
     const bad = request({ action: 'edit', post: target, character, body, ...(poll ? { poll } : {}) });
     if (bad) return bad;
@@ -3489,7 +3594,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const had = poll ? currentPoll(target) : undefined;
     if (had !== undefined && ballotsOn(had.id).length > 0) return refuse('a poll cannot change once a ballot is cast; you can still close it');
     if (had !== undefined && now() >= pollEnd(had)) return refuse('a closed poll cannot change');
-    write({ character, kind: 'edit', thread: original.thread, target, payload: { body } });
+    const before = versionOf(original);
+    const written = write({ character, kind: 'edit', thread: original.thread, target, payload: { body } });
+    moveWalls(original, before, written);
     if (poll && 'removed' in poll) { if (had !== undefined) write({ character, kind: 'poll', thread: original.thread, target, payload: { removed: true } }); }
     else if (poll) writePoll(original, character, poll);
     sendAct(original);
@@ -6858,7 +6965,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     draw(character, wall, o) {
       const w = acts.get(wall);
       if (!w || w.kind !== 'card') throw new Error(`no such wall ${wall}`);
-      return write({ character, kind: 'draw', thread: w.thread, target: wall, at: o?.at, payload: { strokes: [{ width: 0.01, points: [[0.1, 0.1]] }], cells: '' } }).id;
+      return write({ character, kind: 'draw', thread: w.thread, target: wall, at: o?.at, payload: { strokes: [{ width: 0.01, points: [[0.1, 0.1]] }], cells: '0'.repeat(10_000) } }).id;
     },
     pollClose(poll, o) {
       const p = acts.get(poll);

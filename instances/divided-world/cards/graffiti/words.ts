@@ -3,6 +3,8 @@
  * words a drawing is described in for the Lens and the log. They are the glass's: out of character, true, in American English. A drawing is
  * described from its Act's public payload alone (the colors, and the stencil's key), never an owner or a class.
  *
+ * A stored draw is read in any of its shapes: `{ box, groups }`, with a stencil's key beside them, and the old `{ strokes }` and `{ strokes, cells }`.
+ *
  * `describeDraw` is `CardUi.describeDraw`: the Act's payload in, plain words out. `LOG_DRAW` and `LOG_WASH` are `CardUi.logDraw` and `logWash`.
  */
 import { CANS, CAPS, type Can } from '../graffiti.ts';
@@ -30,11 +32,13 @@ const listed = (items: readonly string[]): string => (items.length > 1 ? `${item
 /** What a draw's payload shows of the drawing: a stencil and its color, or the colors of its strokes, once each in the order first used; undefined where it shows neither. */
 function readDraw(payload: unknown): string | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined;
-  const { stencil, can, strokes } = payload as { stencil?: unknown; can?: unknown; strokes?: unknown };
+  const { stencil, can, strokes, groups } = payload as { stencil?: unknown; can?: unknown; strokes?: unknown; groups?: unknown };
   if (stencil !== undefined) return isStencil(stencil) && isCan(can) ? `${STENCIL_NOUNS[stencil]} in ${can}` : undefined;
-  if (!Array.isArray(strokes)) return undefined;
+  const all: unknown[] = Array.isArray(groups)
+    ? groups.flatMap((g) => (typeof g === 'object' && g !== null && Array.isArray((g as { strokes?: unknown }).strokes) ? (g as { strokes: unknown[] }).strokes : []))
+    : Array.isArray(strokes) ? strokes : [];
   const colors: string[] = [];
-  for (const s of strokes as unknown[]) {
+  for (const s of all) {
     const c = typeof s === 'object' && s !== null ? (s as { can?: unknown }).can : undefined;
     if (isCan(c) && !colors.includes(c)) colors.push(c);
   }
@@ -43,7 +47,7 @@ function readDraw(payload: unknown): string | undefined {
 
 /** A draw in the Lens's row: its colors, or its stencil ("pink and lime", "a crown in pink"); "a tag" where the payload shows neither. */
 export const describeDraw = (payload: unknown): string => readDraw(payload) ?? 'a tag';
-/** The words the log and the Lens say a draw in (`CardUi.logDraw`): "You tagged Spritey's post (6% of the wall)", "and 14 older tags, washed or painted over". */
+/** The words the log and the Lens say a draw in (`CardUi.logDraw`): "You tagged Spritey's post (6% of the wall)", "and 14 older tags, washed off". */
 export const LOG_DRAW = { verb: 'tagged', noun: 'tag', nouns: 'tags', surface: 'the wall' } as const;
 /** The verb of the post's own wash (`CardUi.logWash`): "You washed 9% of the wall off your post". */
 export const LOG_WASH = { verb: 'washed' } as const;
