@@ -273,7 +273,7 @@ export const instanceUi: InstanceUi = Object.freeze({
   glass,
   cards: cardsUi,
   /* The row's layers, outermost first (the fold is outside all of them): each task that adds a card that covers or fills the row adds its key here. */
-  rowOrder: Object.freeze(['its-curtains']),
+  rowOrder: Object.freeze(['its-curtains', 'hot-box']),
   packs: packsUi,
   /* The laugh track: the audience's sounds, each with its caption (sounds.ts). */
   sounds,

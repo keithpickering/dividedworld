@@ -8,10 +8,10 @@
  *
  * The post's author alone can air it out for good (docs/plans/2026-11-27-lasting-gags-design.md, section 2): where `reader.author` is true, no moment is shown and the
  * hold (`hotBox.holdHours` after the play landed, `hold.ts`) is over, the same held control reads "Air it out" and its sweep, at the same pace, starts at the first
- * row below the band already aired. The sweep covers the whole content area, as a canvas (rows at the words' lines, then rows one line tall over the empty canvas
- * below them, to the bottom border). Each row it finishes is saved through `save` as `{ aired }`, the share of the content area's height cleared from its top (a
+ * row below the band already aired. The sweep covers the whole box (the row's in a thread, the content area's elsewhere: see the container below), as a canvas (rows at the lines, then rows one line tall over the empty canvas
+ * below them, to the bottom border). Each row it finishes is saved through `save` as `{ aired }`, the share of the box's height cleared from its top (the row's height in a thread, as the design's section 7 revised it; a play's `{ aired }` saved before that is read as a share of the row, with no migration; a
  * ten-thousandth), and the row that reaches the bottom border as `{ clean: true }`, debounced and one on its way at a time as Whoops!'s strokes are; a refusal is shown as Whoops!'s is and the
- * band stays where the server holds it (`states`). The band is the content area's full width from its top border: no fog is painted in it, and the forced-colors
+ * band stays where the server holds it (`states`). The band is the box's full width from its top border: no fog is painted in it, and the forced-colors
  * mask starts below it. A play aired out clean draws nothing and says so. During the hold the author's control reads Wave the smoke, saves nothing, and a minute's
  * timer moves the countdown and flips the label with no reload. Whether the reader is the author is the screen's own fact (`reader.author`); nothing is sent for it.
  *
@@ -22,7 +22,13 @@
  * (`useAt` redraws when the soonest end passes, as Whodunnit?'s does). The newest play not over (an `ends` ahead, or none) whose saved state is not clean is the one drawn, so a
  * second Hot Box cast after the first ended or was aired out is the one that shows. With none, the words are drawn alone (a play aired out clean only says so).
  *
- * The container (the owner, 2026-11-15). The smoke fills the post's whole content area, border to border, as Feelin' Fab's foil and Whoops!'s ink do: the
+ * The row (docs/plans/2026-11-27-season-two-cards-design.md, sections 1.1 and 7; the owner, 2026-11-27: "I'd be fine making it one"). In a thread's post Hot Box fills the post's row (`CardUi.fillsRow`): the
+ * engine draws this effect in a layer over the post's `div.kb-act-grid`, with no words (`children` is null), so the smoke is the row's, postbit included, and the layer is the box. "Air it out" sweeps the row's lines
+ * (the postbit's and the words' together, `rowLines`), and its saved `{ aired }` is a share of the row's height. The layer takes no presses, so the pointer is read on the grid (which hears the postbit's and
+ * the words' moves alike) and a press on a postbit control under the smoke is its own. The words are the engine's: this effect finds the post's words box in the row and makes it inert (and, under forced colors,
+ * masks it) on the element, giving both up when it goes. Where a post has no row (the ORIGIN box, the front door, a moment, History) the effect wraps the words and fills the content area, as below.
+ *
+ * The container (the owner, 2026-11-15). Where there is no row the smoke fills the post's whole content area, border to border, as Feelin' Fab's foil and Whoops!'s ink do: the
  * post body (`.kb-act-main`) in the thread and the ORIGIN box's area (`.kb-origin-area`) in the box, found and measured with the engine's `bodyOf` and
  * `bodyBox` (engine/ui/cards/body.ts), and this effect's own element where there is none (Stick Around's view). Everything below that says "the box" means
  * that area: the fog's field, a clearing's radius, where a pointer clears. Only the words' own lines are the words': the held sweep travels them (offset
@@ -71,7 +77,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
-import { bodyBox, bodyOf, liftedOver, type BodyBox } from '../../../../engine/ui/cards/body.ts';
+import { bodyBox, bodyOf, liftedOver, wordsBoxOf, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { endsWords, markOf, spanMs } from '../../../../engine/ui/cards/marks.ts';
 import { TIMER_MOST, useAt } from '../../../../engine/ui/cards/plays.ts';
 import { makeTileLayer, type TileDraw, type TileLayer } from '../../../../engine/ui/cards/tiles.ts';
@@ -123,6 +129,8 @@ const SAVE_AFTER_MS = 800;
 /** A line's bottom within this many px of the saved band is inside it (a share is kept to a ten-thousandth). */
 const BAND_SLOP_PX = 0.5;
 const round4 = (n: number): number => Math.round(n * 10_000) / 10_000;
+/** Two lines' bottoms this close are one row of a row's sweep. */
+const ROW_MERGE_PX = 2;
 
 /** How far the words' offset or size may change mid-hold before the hold is let go, px. */
 const SHIFT_PX = 0.5;
@@ -136,9 +144,9 @@ const LIGHT_GRAY: readonly [number, number, number] = [211, 211, 211];
 /* -------------------------------------------------------------------------------- the model's state ---- */
 
 /**
- * A held sweep: where it began, the post's lines (in the content area's px: the words' lines, offset by where the words stand in the area) and their words,
- * and when the hold was let go (null while held). It travels the words' lines, so `x0` and `y0` are the words' corner in the area, `width` the words' width
- * and `height` their height, which a reflow is told by.
+ * A held sweep: where it began, the post's lines (in the smoke's box's px: the words' lines, offset by where the words stand in the box; in a row, the row's own lines)
+ * and their words, and when the hold was let go (null while held). Around the words it travels the words' lines, so `x0` and `y0` are the words' corner in the box,
+ * `width` the words' width and `height` their height, which a reflow is told by; in a row it travels the row's lines across the whole row, so they are the row's.
  */
 interface Sweep {
   /** The author's: each line it finishes is saved. */
@@ -153,6 +161,10 @@ interface Sweep {
   /** ms a line takes: the box's width at Whoops!'s pace. */
   readonly per: number;
   readonly releasedAt: number | null;
+  /** The sweep travels the row's lines (the postbit's and the words' together), across the whole row: `x0`, `y0`, `width` and `height` are then the row's box, not the words'. */
+  readonly row: boolean;
+  /** Where the words stood and how big they were when the lines were read: a reflow of them lets the hold go in a row too. */
+  readonly words: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 }
 /**
  * What this screen's reader has done to the smoke, in memory only: the mouse's clearing, the last touch's, the clearings left behind, the trail, the sweep,
@@ -286,12 +298,63 @@ function seedOf(id: string): number {
 }
 
 /**
- * The boxes the effect reads, in CSS px. The content area (`w`, `h`, placed at `top` and `left` from the effect's element) is the container: the fog's field
+ * The boxes the effect reads, in CSS px. The smoke's box (`w`, `h`, placed at `top` and `left` from the effect's element: the row in a row layer, else the content area) is the container: the fog's field
  * and a clearing's radius are its, and a clearing's coordinates are in it. The words stand in it at (`wx`, `wy`) and are `ww` by `wh`: the sweep's lines,
  * and the forced-colors mask's coordinates, are theirs.
  */
 interface Frame { readonly w: number; readonly h: number; readonly top: number; readonly left: number; readonly wx: number; readonly wy: number; readonly ww: number; readonly wh: number }
 const NO_FRAME: Frame = { w: 0, h: 0, top: 0, left: 0, wx: 0, wy: 0, ww: 0, wh: 0 };
+
+/**
+ * The row this effect fills, when the engine draws it in the row's layer (`CardUi.fillsRow`, engine/ui/thread/fill.tsx: a `div.kb-row-layer` inside the post's `div.kb-act-grid`);
+ * null where it is drawn around the words (the ORIGIN box, the front door, a moment, History, Stick Around's view). Found afresh each time, as the content area is.
+ */
+function rowOf(host: Element): HTMLElement | null {
+  return host.closest('.kb-row-layer') ? host.closest<HTMLElement>('.kb-act-grid') : null;
+}
+
+/** The post's own content area in its row (its body: the ORIGIN box inside it is another), or null. */
+function areaIn(grid: HTMLElement): HTMLElement | null {
+  return grid.querySelector<HTMLElement>(':scope > [data-kb-content-area]');
+}
+
+/** The post's words in its row: the engine's words box in the post's own content area, or the area itself where there is none. The engine gives a row's effect no words to wrap, so this is where they are found. */
+function rowWordsOf(grid: HTMLElement): HTMLElement | null {
+  const area = areaIn(grid);
+  return area ? wordsBoxOf(area) ?? area : null;
+}
+
+/**
+ * The row's lines for the sweep, in the host's px: every line of every part of the row (the postbit, the post's line, the words, the actions: the grid's children but the layers), each ended by its bottom, so a
+ * postbit's line and a words' line that end at different heights are different rows, and two that end together are one. A row runs from the last row's bottom (the first from the top border) to its bottom, and carries
+ * the words of the lines that end in it, in the order they end.
+ */
+function rowLines(host: HTMLElement, grid: HTMLElement): { top: number; bottom: number; text: string }[] {
+  const base = host.getBoundingClientRect().top;
+  const found: { bottom: number; text: string }[] = [];
+  for (const child of grid.children) {
+    if (!(child instanceof HTMLElement) || child.classList.contains('kb-row-layer') || child.classList.contains('kb-row-cover')) continue;
+    const r = child.getBoundingClientRect();
+    if (r.height <= 0 || r.width <= 0) continue;
+    for (const l of readLines(child, { w: r.width, h: r.height })) found.push({ bottom: px(l.bottom * r.height + r.top - base), text: l.text });
+  }
+  found.sort((a, b) => a.bottom - b.bottom);
+  const rows: { top: number; bottom: number; text: string }[] = [];
+  for (const l of found) {
+    const prev = rows[rows.length - 1];
+    if (prev && l.bottom - prev.bottom < ROW_MERGE_PX) prev.text = `${prev.text} ${l.text}`;
+    else rows.push({ top: prev ? prev.bottom : 0, bottom: l.bottom, text: l.text });
+  }
+  return rows;
+}
+
+const MASK_KEYS = ['maskImage', 'WebkitMaskImage', 'maskSize', 'WebkitMaskSize', 'maskPosition', 'WebkitMaskPosition', 'maskRepeat', 'WebkitMaskRepeat', 'maskComposite', 'WebkitMaskComposite'] as const;
+
+/** Lays the forced-colors mask on (or takes it off) words this effect does not draw: the engine's own words box in the row. */
+function maskWords(el: HTMLElement, mask: CSSProperties | undefined): void {
+  const style = el.style as unknown as Record<string, string>;
+  for (const key of MASK_KEYS) style[key] = (mask as Record<string, string> | undefined)?.[key] ?? '';
+}
 
 /**
  * The words' mask, forced colors only: the flat layer, a hard disc for each of the model's `hardDiscs`, a rectangle for each finished line; none while the
@@ -364,7 +427,10 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
   const reduced = useMotionReduced();
   const forced = useForcedColors();
   const hostRef = useRef<HTMLDivElement>(null);
-  const wordsRef = useRef<HTMLDivElement>(null);
+  /* The words this effect makes inert and measures: its own div around `children`, or, in a row (the engine gives a row's effect no words), the post's own words box, found in the row. */
+  const wordsRef = useRef<HTMLElement | null>(null);
+  const ownWords = children != null;
+  const setWords = useCallback((el: HTMLDivElement | null) => { wordsRef.current = el; }, []);
   const layerRef = useRef<TileLayer | null>(null);
   const model = useRef<Model>(emptyModel());
   const startedAt = useRef(api.now());
@@ -456,29 +522,34 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
    */
   const take = useCallback((b: BodyBox, found: HTMLElement | null) => {
     const words = wordsRef.current, host = hostRef.current;
-    if (!words || !host) return;
-    setAreaEl(found ?? host);
-    const w = words.getBoundingClientRect(), h = host.getBoundingClientRect();
-    /* The words' corner from the area's corner: both from the page's. */
-    const wx = w.left - (h.left + b.left), wy = w.top - (h.top + b.top);
-    setFrame((f) => (f.w === b.w && f.h === b.h && f.top === b.top && f.left === b.left && f.wx === wx && f.wy === wy && f.ww === w.width && f.wh === w.height
-      ? f : { w: b.w, h: b.h, top: b.top, left: b.left, wx, wy, ww: w.width, wh: w.height }));
+    if (!host) return;
+    const grid = rowOf(host);
+    if (!words && !grid) return;
+    /* In a row the pointer is read on the row (the layer takes none), which the box is: the post's grid. */
+    setAreaEl(found ?? grid ?? host);
+    const w = words?.getBoundingClientRect(), h = host.getBoundingClientRect();
+    /* The words' corner from the box's corner: both from the page's. */
+    const wx = w ? w.left - (h.left + b.left) : 0, wy = w ? w.top - (h.top + b.top) : 0, ww = w?.width ?? 0, wh = w?.height ?? 0;
+    setFrame((f) => (f.w === b.w && f.h === b.h && f.top === b.top && f.left === b.left && f.wx === wx && f.wy === wy && f.ww === ww && f.wh === wh
+      ? f : { w: b.w, h: b.h, top: b.top, left: b.left, wx, wy, ww, wh }));
   }, []);
   /* The layer is told too: a takeover can move the words with no change of size, and the layer re-places its tiles from what it measures. */
   const measure = useCallback(() => {
     const host = hostRef.current;
     if (!host) return;
+    const grid = rowOf(host);
+    if (grid && !ownWords) wordsRef.current = rowWordsOf(grid);
     const found = bodyOf(host);
     take(bodyBox(host, found), found);
     layerRef.current?.measure();
-  }, [take]);
+  }, [take, ownWords]);
   useLayoutEffect(() => {
     measure();
     const words = wordsRef.current, host = hostRef.current;
-    if (!words || !host || typeof ResizeObserver === 'undefined') return;
+    if (!host || typeof ResizeObserver === 'undefined') return;
     /* The host and the area too: the words can move in them with no change of their own size, and the area can change with none of the words'. */
     const watch = new ResizeObserver(measure);
-    watch.observe(words);
+    if (words) watch.observe(words);
     watch.observe(host);
     if (areaEl && areaEl !== host) watch.observe(areaEl);
     return () => watch.disconnect();
@@ -694,7 +765,10 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     lifted: (e) => {
       const words = wordsRef.current;
       if (words?.hasAttribute('inert') && e.target instanceof Node && words.contains(e.target)) return false;
-      return liftedOver(e.target, hostRef.current ? bodyOf(hostRef.current) : null);
+      const here = hostRef.current;
+      /* In a row the post's content area is its body in the row's grid (the host's own box is the row's, and holds the postbit too). */
+      const row = here ? rowOf(here) : null;
+      return liftedOver(e.target, here ? (row ? areaIn(row) : bodyOf(here)) : null);
     },
   });
 
@@ -745,13 +819,24 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
   const start = useCallback(() => {
     const m = model.current, L = latest.current;
     if ((m.sweep && m.sweep.releasedAt === null) || isWaved(m.wavedAt, api.now())) return;
-    const words = wordsRef.current;
-    const { wx, wy, ww: w, wh: h } = L.frame;
-    if (!words || w <= 0 || h <= 0) return;
-    /* The words' lines, read once: shares of the words' height, scaled to px and moved to where the words stand in the content area. A browser that cannot measure a range gives none, and the post is one block. */
-    const read = readLines(words, { w, h });
-    const all = (read.length > 0 ? read : [{ top: 0, bottom: 1, text: words.textContent ?? '' }]).map((l) => ({ top: px(l.top * h + wy), bottom: px(l.bottom * h + wy), text: l.text }));
-    /* The author's sweep covers the content area from the band already aired down to its bottom border, a row at a time: each text line below the band ends a
+    const words = wordsRef.current, host = hostRef.current;
+    const grid = host ? rowOf(host) : null;
+    const { wx, wy, ww, wh } = L.frame;
+    /* The sweep's box: in a row the row's whole box, which its lines cross; around the words, the words' own, offset into the content area. */
+    const box = grid ? { x: 0, y: 0, w: L.frame.w, h: L.frame.h } : { x: wx, y: wy, w: ww, h: wh };
+    if ((!words && !grid) || box.w <= 0 || box.h <= 0) return;
+    const w = box.w;
+    let all: { top: number; bottom: number; text: string }[];
+    if (grid && host) {
+      /* The row's lines, the postbit's and the words' together; a row of no readable line is one block. */
+      const lines = rowLines(host, grid);
+      all = lines.length > 0 ? lines : [{ top: 0, bottom: box.h, text: words?.textContent ?? '' }];
+    } else {
+      /* The words' lines, read once: shares of the words' height, scaled to px and moved to where the words stand in the content area. A browser that cannot measure a range gives none, and the post is one block. */
+      const read = readLines(words!, { w: ww, h: wh });
+      all = (read.length > 0 ? read : [{ top: 0, bottom: 1, text: words!.textContent ?? '' }]).map((l) => ({ top: px(l.top * wh + wy), bottom: px(l.bottom * wh + wy), text: l.text }));
+    }
+    /* The author's sweep covers the smoke's box (the row, or the content area) from the band already aired down to its bottom border, a row at a time: each text line below the band ends a
        row (the first starts at the band, so it takes in the padding above the first line), and below the last line rows one line tall go on until the last one
        ends exactly at the bottom border, so a short post in a tall area is cleared across all of it. A row that is empty canvas has no words to read out. */
     const rows = (() => {
@@ -768,7 +853,7 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
       }
       /* A canvas row is one line pitch tall, as a text row is (bottom to bottom), so a px of empty canvas costs the sweep what a px of text does: the distance between the last two lines' bottoms, else the words' line height, else the glyph height, else 16. */
       const last = all[all.length - 1], before = all[all.length - 2];
-      const css = parseFloat(getComputedStyle(words).lineHeight);
+      const css = parseFloat(getComputedStyle((words ?? host)!).lineHeight);
       const tall = last ? last.bottom - last.top : 0;
       const step = before && last && last.bottom - before.bottom > 0 ? last.bottom - before.bottom : css > 0 ? css : tall > 0 ? tall : 16;
       while (cursor < H - BAND_SLOP_PX) {
@@ -780,7 +865,8 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     })();
     m.sweep = {
       air: L.airing, startedAt: api.now(), lines: rows.map((l) => ({ top: l.top, bottom: l.bottom })), texts: rows.map((l) => l.text),
-      x0: wx, y0: wy, width: w, height: h, per: (w / SWEEP_PX_S) * 1000, releasedAt: null,
+      x0: box.x, y0: box.y, width: box.w, height: box.h, per: (w / SWEEP_PX_S) * 1000, releasedAt: null,
+      row: grid !== null, words: { x: wx, y: wy, w: ww, h: wh },
     };
     m.said = 0;
     setSpoken('');
@@ -824,8 +910,12 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
     const sw = model.current.sweep;
     /* Within half a px is the same layout (a float's rounding, a sign that re-wraps by a sliver), not a move. */
     const off = (a: number, b: number) => Math.abs(a - b) > SHIFT_PX;
-    if (sw && sw.releasedAt === null && (off(sw.width, frame.ww) || off(sw.height, frame.wh) || off(sw.x0, frame.wx) || off(sw.y0, frame.wy))) stop();
-  }, [frame.ww, frame.wh, frame.wx, frame.wy, stop]);
+    if (!sw || sw.releasedAt !== null) return;
+    /* A row's sweep is on the row's box (and on the words' too, where they stand in it); around the words it is the words'. */
+    const [bx, by, bw, bh] = sw.row ? [0, 0, frame.w, frame.h] : [frame.wx, frame.wy, frame.ww, frame.wh];
+    if (off(sw.width, bw) || off(sw.height, bh) || off(sw.x0, bx) || off(sw.y0, by)
+      || (sw.row && (off(sw.words.w, frame.ww) || off(sw.words.h, frame.wh) || off(sw.words.x, frame.wx) || off(sw.words.y, frame.wy)))) stop();
+  }, [frame.w, frame.h, frame.ww, frame.wh, frame.wx, frame.wy, stop]);
   /* The post has gone. The hold ends with the effect (nothing is drawn or timed after it), but the lines it finished since the last tick are settled first so their share is queued; then nothing more is set and nothing retried, and what waits on its debounce is sent at once. */
   useEffect(() => () => {
     const m = model.current, q = queue.current;
@@ -903,11 +993,36 @@ function Smoke({ place, play, states, reader, moment, save, show, met, covered, 
   /* The fog's color and alpha, for the stand-in of a band whose tile is not yet painted (hot-box.css): the same alpha the painter uses. */
   const standIn = forced ? undefined : { '--dw-hotbox-rgb': rgb.join(' '), '--dw-hotbox-fog': a4(fogAlpha(s) * (1 - g)) } as CSSProperties;
 
+  /*
+   * In a row the words are the engine's, outside this effect's tree, so what it does to them it does on the element: inert while the smoke stands, and under forced colors the mask. It is single-owner, as `markBrightInk` is,
+   * and given up when the effect goes or finds the words elsewhere. Nothing else of the post is touched: the postbit stays pressable under the smoke.
+   */
+  const lent = useRef<HTMLElement | null>(null);
+  const giveUp = useCallback(() => {
+    const el = lent.current;
+    lent.current = null;
+    if (!el) return;
+    el.removeAttribute('inert');
+    maskWords(el, undefined);
+  }, []);
+  useLayoutEffect(() => {
+    const here = hostRef.current, grid = here ? rowOf(here) : null;
+    if (ownWords || !grid) return;
+    const el = rowWordsOf(grid);
+    if (lent.current && lent.current !== el) giveUp();
+    wordsRef.current = el;
+    if (!el) return;
+    lent.current = el;
+    el.toggleAttribute('inert', !waved);
+    maskWords(el, mask);
+  });
+  useLayoutEffect(() => giveUp, [giveUp]);
+
   return (
     <div ref={hostRef} className="dw-hotbox" data-kb-hotbox data-dw-fog-level={forcedFogLevel() ?? 0} style={standIn}>
       {forced && <p className="dw-hotbox-sign"><strong>{state}.</strong> {endsText}</p>}
       {!waved && <p className="kb-visually-hidden dw-hotbox-way">{airedWords ? `${airedWords} ${smokedRestWay(control)}` : smokedWay(control)}</p>}
-      <div ref={wordsRef} className="dw-hotbox-words" inert={!waved} style={mask}>{children}</div>
+      {ownWords && <div ref={setWords} className="dw-hotbox-words" inert={!waved} style={mask}>{children}</div>}
       {forced && (
         <div className="dw-hotbox-frame" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>
           {discs.map((c, i) => (

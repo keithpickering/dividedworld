@@ -36,9 +36,10 @@ const { LINES, read, cost } = vi.hoisted(() => {
     { top: 0.4, bottom: 0.5, text: 'Second line.' },
     { top: 0.7, bottom: 0.8, text: 'Third line.' },
   ];
-  return { LINES, read: { lines: LINES as { top: number; bottom: number; text: string }[] }, cost: { ms: 0, perf: 0 } };
+  return { LINES, read: { lines: LINES as { top: number; bottom: number; text: string }[], postbit: [] as { top: number; bottom: number; text: string }[] }, cost: { ms: 0, perf: 0 } };
 });
-vi.mock('../../cards/whoops/lines.ts', () => ({ readLines: () => read.lines }));
+/* The postbit's own lines (a row's sweep reads them with the words'): none unless a test gives some. */
+vi.mock('../../cards/whoops/lines.ts', () => ({ readLines: (root: HTMLElement) => (root.classList.contains('kb-postbit') ? read.postbit : read.lines) }));
 /* The layer and the fog, each passed through and watched. */
 vi.mock('../../../../engine/ui/cards/tiles.ts', async (orig) => {
   const real = await orig<typeof import('../../../../engine/ui/cards/tiles.ts')>();
@@ -67,6 +68,8 @@ const ENDS = NOW + 3 * DAY;
 const iso = (t: number) => new Date(t).toISOString();
 const BOX = { left: 0, top: 100, width: 800, height: 600 };
 const HOST = { left: 0, top: 0, width: 800, height: 700 };
+/** The postbit beside the words in a row (the row's grid is the host's box). */
+const POSTBIT = { left: 0, top: 0, width: 200, height: 700 };
 /** Time for a sweep: a line is the box's width at Whoops!'s pace, 400 px a second. */
 const LINE_MS = 2000;
 const SWEEP_MS = 3 * LINE_MS;
@@ -155,7 +158,7 @@ function stubWindow() {
   })) as unknown as typeof window.matchMedia;
   globalThis.ResizeObserver = class { constructor(cb: () => void) { sizeWatchers.push(cb); } observe(el: Element) { observed.push(el); } unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
   HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-    const r = this.classList.contains('dw-hotbox-words') ? sizes : this.classList.contains('dw-hotbox') ? HOST : this.classList.contains('kb-act-main') ? (OUTER ?? AREA) : this.classList.contains('kb-origin-area') ? AREA : { left: 0, top: 0, width: 0, height: 0 };
+    const r = this.classList.contains('dw-hotbox-words') || this.classList.contains('kb-row-words') ? sizes : this.classList.contains('kb-act-grid') ? HOST : this.classList.contains('kb-postbit') ? POSTBIT : this.classList.contains('dw-hotbox') ? HOST : this.classList.contains('kb-act-main') ? (OUTER ?? AREA) : this.classList.contains('kb-origin-area') ? AREA : { left: 0, top: 0, width: 0, height: 0 };
     return { ...r, x: r.left, y: r.top, right: r.left + r.width, bottom: r.top + r.height, toJSON: () => r } as DOMRect;
   };
   /* The area's padding box, as the engine's `bodyBox` reads it. */
@@ -188,7 +191,7 @@ function Covering({ props }: { props: EffectProps }) {
   reword = setChildren;
   return <HotBoxEffect {...props} covered={covered} children={children} />;
 }
-function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, nested = false, inPost = false) {
+function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, nested = false, inPost = false, row = false) {
   const show = vi.fn<(view: CardView | null) => void>();
   const met = vi.fn();
   const save = vi.fn(async () => ({ ok: false as const, error: 'no' }));
@@ -200,12 +203,22 @@ function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, ne
     children: <p>The words of the post. <a href="https://example.com/">A link</a></p>, ...over,
   };
   const world = createFake({ instance: testInstance, now: () => Date.now() });
-  const effect = <Covering props={props} />;
+  /* In a row the engine draws the effect in the row's layer with no words (`children` null); the words stay in the post's body beside the postbit. */
+  const effect = <Covering props={row ? { ...props, children: null } : props} />;
   /* In the thread the effect sits inside the post's content area; `bare` is a post with none (the ORIGIN box), where the area is the effect's own element. */
-  const inArea = bare ? effect : nested
+  const inArea = row ? <></> : bare ? effect : nested
     ? <div className="kb-act-main" data-kb-content-area><div className="kb-origin" data-kb-over-ink=""><div className="kb-origin-area" data-kb-content-area><p data-kb-over-ink="" className="lifted">History</p>{effect}</div></div></div>
     : <div className="kb-act-main" data-kb-content-area>{effect}</div>;
-  const page = inPost
+  const rowPage = (
+    <article className="kb-act">
+      <div className="kb-act-grid">
+        <div className="kb-row-layer">{effect}</div>
+        <aside className="kb-postbit"><a className="postbit-link" href="https://example.com/spritey">Spritey</a></aside>
+        <div className="kb-act-main" data-kb-content-area><div className="kb-row-words" data-kb-words-box>{props.children}</div></div>
+      </div>
+    </article>
+  );
+  const page = row ? rowPage : inPost
     ? <div><article className="kb-act"><header><button type="button" className="kb-mark kb-meta-tile" data-kb-card="hot-box">Hot Box</button></header>{inArea}</article><button type="button" className="outside">Elsewhere</button></div>
     : inArea;
   const out = renderIn(world, strict ? <StrictMode>{page}</StrictMode> : page, { settings: { economy: { 'whoops.price': 100, 'hotBox.holdHours': HOLD_HOURS } } as never });
@@ -312,7 +325,7 @@ const rectLayers = (s: Setup) => layers(s).filter((l) => l.kind === 'rect');
 const flat = (s: Setup) => layers(s).find((l) => l.kind === 'flat');
 
 beforeEach(() => {
-  observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX; OUTER = null; HOLD_HOURS = 24;
+  observed = []; read.lines = LINES; read.postbit = []; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX; OUTER = null; HOLD_HOURS = 24;
   watch = undefined; bandsWatch = undefined; bandEls = []; margins = []; watched = [];
   cost.ms = 0; cost.perf = 0;
   /* The painter's cost is read from `performance.now`; here it moves only when a test moves it (`cost.perf`, which a call of the fog adds `cost.ms` to), never with how loaded the run is. */
@@ -2606,5 +2619,116 @@ describe('the author airs it out', () => {
     expect(rectLayers(s).some((r) => r.height === 150 && r.alpha === 1)).toBe(true);
     expect(words(s).style.maskPosition).toContain('0 -60px');
     expect(words(s).style.maskSize).toContain('100% 150px');
+  });
+});
+
+/*
+ * Over the row (docs/plans/2026-11-27-season-two-cards-design.md, section 1.1 and 7): in a thread the engine draws Hot Box in the row's layer (`div.kb-row-layer` in the post's
+ * `div.kb-act-grid`), with no words, so the smoke is the row's: the postbit and the words under one box. Where there is no row it is the content area's, as above. The layer takes
+ * no presses of its own (engine/ui/thread/fold.css), so what the effect hears of a pointer it hears on the row.
+ */
+describe('over the row', () => {
+  const rowWords = (s: Setup) => s.container.querySelector<HTMLElement>('.kb-row-words')!;
+  const postbitLink = (s: Setup) => s.container.querySelector<HTMLElement>('.postbit-link')!;
+  const grid = (s: Setup) => s.container.querySelector<HTMLElement>('.kb-act-grid')!;
+  const rowSetup = (over: Partial<EffectProps> = {}) => setup(over, false, false, false, false, true);
+  const HOUR = 3_600_000;
+  const AUTHOR = { author: true, caster: false };
+  const endless = (hoursAgo: number): CardPlay => ({ ...play({ playedAt: iso(NOW - hoursAgo * HOUR) }), ends: undefined });
+  const accepted = () => vi.fn(async () => ({ ok: true as const, value: { play: 'h1', savedAt: iso(Date.now()) } }));
+  const settled = () => act(async () => { await Promise.resolve(); });
+
+  test('in a thread the smoke is the row\'s box, postbit included, and in the ORIGIN box it is the content area\'s', () => {
+    const s = rowSetup();
+    expect(canvas(s)!.style).toMatchObject({ left: '0px', top: '0px', width: '800px', height: '512px' });
+    expect(tiles(s).map((c) => c.style.height)).toEqual(['512px', '188px']);
+    /* The postbit's corner, above the words' area (which starts 100 px down), is under smoke. */
+    expect(alphaAt(s, 10, 10)).toBe(whole());
+    s.unmount();
+    AREA = { left: 10, top: 40, width: 600, height: 300 };
+    const origin = setup({}, false, false, true);
+    expect(canvas(origin)!.style, 'the ORIGIN box has no row').toMatchObject({ left: '10px', top: '40px', width: '600px', height: '300px' });
+  });
+
+  test('the words are made inert by the effect where they stand, and the postbit never is', () => {
+    const s = rowSetup();
+    expect(rowWords(s).hasAttribute('inert')).toBe(true);
+    expect(s.container.querySelector('.kb-postbit')!.hasAttribute('inert')).toBe(false);
+    expect(s.container.querySelector('.dw-hotbox-words'), 'the effect draws no words of its own in the row').toBeNull();
+    s.unmount();
+    expect(rowWords(s) ?? null).toBeNull();
+  });
+
+  test('a reader\'s pointer over the postbit parts the smoke there, and leaving the row closes the clearing', () => {
+    const s = rowSetup();
+    pointer(postbitLink(s), 'pointermove', 100, 50);
+    settle();
+    expect(alphaAt(s, 100, 50), 'the clearing opens over the postbit').toBe(0);
+    pointer(grid(s), 'pointerleave', 0, 0);
+    pass(SMOKE.roll + 3 * SMOKE.wake, 50);
+    expect(alphaAt(s, 100, 50)).toBe(whole());
+  });
+
+  test('a press on a lifted thing inside the words\' content area opens no clearing, as in the post', () => {
+    const s = rowSetup();
+    const lifted = document.createElement('div');
+    lifted.setAttribute('data-kb-over-ink', '');
+    s.container.querySelector('.kb-act-main')!.appendChild(lifted);
+    pointer(lifted, 'pointerdown', 400, 300, 'touch');
+    pointer(lifted, 'pointermove', 400, 300);
+    settle();
+    expect(alphas(recOf(canvas(s)))).toEqual(new Set([whole()]));
+  });
+
+  test('a press on a postbit control under the smoke reaches it: nothing is stopped or prevented', () => {
+    const s = rowSetup();
+    const link = postbitLink(s);
+    const heard: string[] = [];
+    const clicks = vi.fn((e: Event) => e.preventDefault());
+    link.addEventListener('click', clicks);
+    for (const type of ['pointerdown', 'pointerup', 'click']) s.container.querySelector('article')!.addEventListener(type, () => heard.push(type));
+    expect(pointer(link, 'pointerdown', 100, 50)).toBe(false);
+    act(() => { link.dispatchEvent(new MouseEvent('pointerup', { bubbles: true })); });
+    act(() => { link.click(); });
+    expect(clicks).toHaveBeenCalledTimes(1);
+    expect(heard).toEqual(['pointerdown', 'pointerup', 'click']);
+  });
+
+  test('an author\'s sweep goes by the row\'s lines, the postbit\'s and the words\' together, and saves a share of the row\'s height', async () => {
+    /* The postbit's lines end at 140 and 420 of the row's 700; the words' (a 600 px area 100 px down) at 220, 400 and 580. Each distinct bottom ends a row. */
+    read.postbit = [{ top: 0.1, bottom: 0.2, text: 'Spritey' }, { top: 0.5, bottom: 0.6, text: 'Joined 2004' }];
+    const save = accepted();
+    const s = rowSetup({ reader: AUTHOR, plays: [endless(30)], save });
+    press(s);
+    expect(last(s).state).toBe('Airing it out');
+    pass(3000);
+    await settled();
+    expect(save.mock.calls, 'the first row is the postbit\'s first line: 140 of 700').toEqual([['h1', { aired: 0.2 }]]);
+    pass(2000);
+    await settled();
+    expect(save.mock.calls.at(-1), 'then the words\' first line: 220 of 700').toEqual(['h1', { aired: 0.3143 }]);
+    pass(2000);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { aired: 0.5714 }]);
+  });
+
+  test('a row\'s sweep reaches the bottom of the row, then saves clean', async () => {
+    read.postbit = [{ top: 0.1, bottom: 0.2, text: 'Spritey' }];
+    const save = accepted();
+    const s = rowSetup({ reader: AUTHOR, plays: [endless(30)], save });
+    press(s);
+    pass(8 * LINE_MS);
+    await settled();
+    expect(save.mock.calls.at(-1)).toEqual(['h1', { clean: true }]);
+    expect(save.mock.calls.slice(0, -1).every((c) => (c as unknown as [string, { aired: number }])[1].aired < 1)).toBe(true);
+  });
+
+  test('a saved { aired } on a play already up is read as a share of the row\'s height, with no migration', () => {
+    const kept = { h1: { state: { aired: 0.5 }, savedAt: iso(NOW) } };
+    const s = rowSetup({ states: kept, plays: [endless(30)] });
+    /* 0.5 of the row's 700 px: clear to 350, smoke below. */
+    expect(alphaAt(s, 100, 300)).toBe(0);
+    expect(alphaAt(s, 100, 400), 'smoke below the band').toBeGreaterThan(0);
+    expect(alphaAt(s, 100, 400)).toBe(alphaAt(s, 100, 650));
   });
 });

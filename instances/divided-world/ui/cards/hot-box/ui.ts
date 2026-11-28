@@ -18,7 +18,7 @@ import type { Settings } from '../../../../../engine/rules/types.ts';
 const HotBoxEffect = lazy(() => import('../../hot-box/Effect.tsx').then((m) => ({ default: m.HotBoxEffect })));
 
 /*
- * Hot Box (docs/plans/2026-11-15-wave-1-cards-design.md, section 2.2): Salty's smoke over a post's words, in the caster's color,
+ * Hot Box (docs/plans/2026-11-15-wave-1-cards-design.md, section 2.2): Salty's smoke over a post's row (its content area where there is no row), in the caster's color,
  * cleared by a reader on their own screen (ui/hot-box/Effect.tsx); the form picks the color (ui/hot-box/ConfigForm.tsx).
  */
 export const ui: CardUi = {
@@ -28,6 +28,8 @@ export const ui: CardUi = {
   status: 'Smoke on this post',
   hint: 'Point at the words to part the smoke.',
   Effect: HotBoxEffect,
+  /* In a thread's post the smoke is drawn over the post's whole row, postbit included (the engine's row layer); elsewhere it fills the content area. */
+  fillsRow: true,
   ConfigForm: HotBoxConfigForm,
   /* Each play's tag takes the color of its smoke, as the hex the effect draws (a Mod Bot's may be a color's name). */
   tag: (play) => {

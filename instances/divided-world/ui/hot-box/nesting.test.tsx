@@ -2,7 +2,7 @@
  * Cards on cards (docs/plans/2026-11-15-hot-box-fog-plan.md, Task 6; design section 4.4; issue #721): Hot Box nested with the two cards whose
  * controls it could have fought, rendered through the engine's `Effects` with the instance's real cards and real plays in both orders.
  *
- *  1. Whoops! around Hot Box (Hot Box played first): the smoke draws no button of its own, so there is nothing of Hot Box's for Whoops! to make
+ *  1. Whoops! and Hot Box where the post has no row (Hot Box fills the row, so it is outermost whatever the play order): the smoke draws no button of its own, so there is nothing of Hot Box's for Whoops! to make
  *     inert; its way to read is the Lens's hold, which is in its view and sweeps.
  *  2. Below the Fold inside Hot Box (the fold played first): while smoked the fold's bar is inside the inert words and so is its own Lens press,
  *     which works; after a finished sweep the bar is live and a click on it works.
@@ -158,19 +158,19 @@ afterEach(() => {
 
 /* ================================================================================================ the tests ==== */
 
-describe('Whoops! around Hot Box (Hot Box played first)', () => {
+describe('Whoops! and Hot Box where the post has no row (Hot Box fills the row, so it is outermost)', () => {
   test('the smoke draws no button for Whoops! to make inert: none in the smoke, none inert', async () => {
     const p = mount([HOT_BOX(1), WHOOPS(2)]);
-    await ready(p, '[data-kb-whoops-layout] .dw-hotbox');
-    /* The nesting is the one under test: Whoops! is outside, so the smoke stands inside whatever it lays out. */
-        expect(p.container.querySelectorAll('.dw-hotbox button')).toHaveLength(0);
+    await ready(p, '.dw-hotbox [data-kb-whoops-layout]');
+    /* The nesting is the one under test: a card that fills the row ranks outside the others (`InstanceUi.rowOrder`), and where there is no row it wraps them, so Whoops!'s layout stands inside the smoke. */
+    expect(p.container.querySelectorAll('.dw-hotbox button')).toHaveLength(0);
     expect(words(p)).toHaveAttribute('inert');
     expect(buttonsUnderInert(p)).toHaveLength(0);
   });
 
   test('Hot Box\'s hold is in its Lens view and sweeps; held to the end, the post is waved', async () => {
     const p = mount([HOT_BOX(1), WHOOPS(2)]);
-    await ready(p, '[data-kb-whoops-layout] .dw-hotbox');
+    await ready(p, '.dw-hotbox [data-kb-whoops-layout]');
     const view = hot(p) as CardView;
     expect(view.controls).toHaveLength(1);
     expect(view.controls[0]).toMatchObject({ kind: 'hold', label: 'Wave the smoke' });
