@@ -2,8 +2,8 @@
 --
 --   thread_row     the row of one thread exactly as board_page lists it (to_jsonb over thread_list's columns, 0448), or null for a thread thread_list does not list.
 --   board_summary  the entry of one board exactly as index_page builds it (0368), or null for a closed board.
---   acts_live_lists  after a statement that wrote an Act with a thread and a place number (a post, a spin, an unmask, an announcement: what bumps a thread in thread_list), queues `row` on `board:<board>`
---                    and `board` on `index`, each skipped when its projection is null. An edit, a card, a poll and a reaction have no place number and send nothing.
+--   acts_live_lists  after a statement that wrote an Act with a thread and a place number (a post, a spin, an unmask, an announcement: what bumps a thread in thread_list), records the threads in live_list_queue;
+--                    at commit live_lists_flush sends `row` on `board:<board>` and `board` on `index`, each skipped when its projection is null. An edit, a card, a poll and a reaction have no place number and send nothing.
 --                    The row carries no view count (views stay hourly batches), no reading position, and nothing about an owner, an account or a reactor: it is what any signed-in player reads in the list.
 --   masks_change   (0436) without its `thread` broadcast to the board: the thread it opens is a thread whose first Act fires the trigger above, so the one row is sent from there. Nothing else changes.
 --   the policy     "signed-in players hear the board" (0008) also lets a signed-in role hear `index`.
@@ -12,7 +12,7 @@
 -- They are volatile on purpose: a trigger reads the Act it fires on, which a stable function's older snapshot would not show.
 -- A way out: nothing here holds a player in a state; a missed event is read again by the page's own reload.
 
--- The one bulk limit (board_stubs' page size): a board that more threads than this change in one statement hears one `changed` {}, not a `row` for each. acts_live_lists and rebuild_thread_places (step 6) both read it here.
+-- The one bulk limit (board_stubs' page size): a board that more threads than this change in one transaction hears one `changed` {}, not a `row` for each. acts_live_lists and rebuild_thread_places (step 6) both read it here.
 create function live_bulk_threads() returns integer language sql immutable as $$ select 50 $$;
 revoke execute on function live_bulk_threads() from public, anon, authenticated;
 
@@ -95,11 +95,17 @@ declare
   boards uuid[] := '{}';
   bulk uuid[];
   b uuid;
+  drained bigint := 0;
 begin
-  for q in delete from live_list_queue d returning d.threads, d.boards loop
+  -- One firing for each queue row, but the first drains them all: a row at or below the highest id this transaction already drained has been sent, and returns at once, without reading the queue (a transaction of N
+  -- statements would otherwise scan the drain's dead rows N times). A row queued after a flush has a higher id, so it flushes. The setting is transaction-local, and a rolled-back savepoint takes it back with the rows.
+  if new.id <= coalesce(nullif(current_setting('kayfabb.live_flushed', true), ''), '0')::bigint then return null; end if;
+  for q in delete from live_list_queue d returning d.id, d.threads, d.boards loop
     ts := ts || q.threads;
     extra := extra || q.boards;
+    drained := greatest(drained, q.id);
   end loop;
+  perform set_config('kayfabb.live_flushed', greatest(drained, new.id)::text, true);
   if cardinality(ts) = 0 and cardinality(extra) = 0 then return null; end if;
   -- A board that more than live_bulk_threads() of its threads got a placed Act in, in this transaction, hears one `changed` and no per-thread `row` (5,000 rows to every reader, and 15 ms each to project).
   select coalesce(array_agg(x.board), array[]::uuid[]) into bulk from (
@@ -422,9 +428,9 @@ grant execute on function write_roster_entry(timestamptz, uuid[], text[], jsonb)
 --   thread_stub(thread, board)  the stub board_stubs (0326) lists for one thread on one board, key for key: id, title, moved_to, moved_to_slug, moved_to_name, moved_at. Null where that board lists none (the thread
 --                               never left it by a moveThread, the move was reversed or overturned, it is past movedStubDays, or it is back). It joins boards_now, closed boards included, so a closed board lists the stub as board_stubs does.
 --                               It has no 50-row cap: it answers for one thread, and board_stubs' limit bounds a page, which rebuild_thread_places keeps by sending a board of more than 50 moved threads one `changed`.
---   rebuild_thread_places       (0339) the one writer of threads.board (the guard trigger of 0339 refuses any other, and the import runs in replica role, which sends nothing), so the one place that hears a move. After its step 5 it queues,
---                               for the threads it moved: `row` (thread_row) on `board:<new>`; `moved` (thread_stub) on `board:<old>`, where that board lists a stub of it, else `gone` {id}; one `changed` {} instead of all of that on a board more than 50 moved threads leave or join; and `board` (board_summary) on `index` once for each board that
---                               gained or lost a thread. It is a statement of its own, after the move, so the projections read the state the page's next read would. It is no trigger on threads: a transition-table trigger cannot be limited to
+--   rebuild_thread_places       (0339) the one writer of threads.board (the guard trigger of 0339 refuses any other, and the import runs in replica role, which sends nothing), so the one place that hears a move. After its step 5 it sends,
+--                               for the threads it moved: `moved` (thread_stub) on `board:<old>`, where that board lists a stub of it, else `gone` {id}; one `changed` {} instead of all of that on a board more than 50 moved threads leave or join. It queues the moved threads and every old and new board in live_list_queue, and live_lists_flush at commit sends `row` (thread_row)
+--                               on `board:<new>` and `board` (board_summary) on `index` once for each board that gained or lost a thread, from the state the transaction ends in. It is no trigger on threads: a transition-table trigger cannot be limited to
 --                               a column (0339 measured what firing on every reply cost), and a row trigger would ask board_summary once for each thread of a merge of ten thousand.
 --   Nothing private: a thread, its boards, its title and the time it moved are what the page lists to every signed-in player. No owner, account, reader, class or view count is read.
 -- A way out: nothing here holds a player in a state; a missed event is read again by the page's own reload.

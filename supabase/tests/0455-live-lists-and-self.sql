@@ -733,6 +733,7 @@ begin
   insert into threads (board, title) values (one, 'Wandering list') returning id into t;
   perform tests.post(a, t, 'First post.');
   perform tests.post(a, t, 'Second post.');
+  perform pg_temp.flush();
   delete from broadcasts_due;
 
   -- M1. The move.
@@ -795,6 +796,7 @@ begin
   delete from broadcasts_due;
   update threads set title = title where id = t;
   update threads set last_at = last_at where id = t;
+  perform pg_temp.flush();
   if exists (select 1 from broadcasts_due where event in ('row', 'moved', 'board')) then
     raise exception 'an update of threads that moves nothing queued %', (select jsonb_agg(topic || ':' || event) from broadcasts_due);
   end if;
@@ -855,4 +857,35 @@ begin
      or has_function_privilege('public', 'thread_stub(uuid, uuid)', 'execute') then
     raise exception 'an API role can call thread_stub';
   end if;
+end $$;
+
+-- D3. The commit flush runs once for a transaction: one queue row for each statement means one deferred firing for each, and the firings after the first return at once, without reading the queue. 2,000 single-Act
+-- statements in one transaction flush with at most 3 reads of live_list_queue (the first firing's drain; the old code made one for each of the 2,000, which cost 10 s at 20,000 statements), and a row queued after
+-- the flush still flushes.
+do $$
+declare
+  ann uuid := tests.account('Flush Ann');
+  a uuid := tests.character(ann, 'Flush Ann', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Flush list');
+  i integer; reads_before bigint; reads_after bigint; 
+begin
+  perform tests.post(a, t, 'Seed.');
+  perform pg_temp.flush();
+  delete from broadcasts_due;
+  for i in 1..2000 loop
+    insert into acts (character, kind, thread, payload) values (a, 'post', t, jsonb_build_object('body', 'Statement ' || i));
+  end loop;
+  if (select count(*) from live_list_queue) is distinct from 2000 then raise exception 'expected 2000 queued rows, found %', (select count(*) from live_list_queue); end if;
+  reads_before := (select coalesce(sum(x.seq_scan + coalesce(x.idx_scan, 0)), 0) from pg_stat_xact_user_tables x where x.relname = 'live_list_queue');
+  perform pg_temp.flush();
+  reads_after := (select coalesce(sum(x.seq_scan + coalesce(x.idx_scan, 0)), 0) from pg_stat_xact_user_tables x where x.relname = 'live_list_queue');
+  -- Measured: 1 read; the old code read once for each of the 2,000 firings, so a bound of 3 fails it.
+  if reads_after - reads_before > 3 then raise exception '2,000 statements flushed with % reads of live_list_queue', reads_after - reads_before; end if;
+  if (select count(*) from broadcasts_due where event = 'row') is distinct from 1 then raise exception 'one thread, one row expected, queued %', (select count(*) from broadcasts_due where event = 'row'); end if;
+  -- A statement after the flush, in the same transaction, is flushed too.
+  delete from broadcasts_due;
+  insert into acts (character, kind, thread, payload) values (a, 'post', t, jsonb_build_object('body', 'After the flush.'));
+  perform pg_temp.flush();
+  if (select count(*) from broadcasts_due where event = 'row') is distinct from 1 then raise exception 'a post queued after a flush should flush its row, queued %', (select count(*) from broadcasts_due); end if;
+  raise notice 'D3: % reads of the queue', reads_after - reads_before;
 end $$;
