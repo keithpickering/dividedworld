@@ -30,7 +30,8 @@ import { Link } from '../router.tsx';
 import { Origin } from '../spin/Origin.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
-import { Reactions } from '../reactions/Reactions.tsx';
+import { ReactionRowScope, Reactions } from '../reactions/Reactions.tsx';
+import { useLooseReactions } from './loose.ts';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { lowerFirst } from '../copy-words.ts';
 import { cardNameOf } from '../../rules/card-names.ts';
@@ -44,6 +45,7 @@ import { pageOf, threadHref } from './pages.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 import { Poll } from '../polls/Poll.tsx';
 import { useRowCovering } from './cover.tsx';
+import { useRowFilling } from './fill.tsx';
 import { FoldedRow, useRowFolding } from './fold.tsx';
 
 export { ThreadCtx, type ThreadContext };
@@ -266,7 +268,12 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   const fold = useRowFolding({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, article: ref });
   const { folding } = fold;
   /* The row is covered while the post wears a live play, on its own reach, of a card that covers the row (`CardUi.coversRow`); the reader opens the covers one at a time. */
-  const cover = useRowCovering({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, grid: fold.grid, post: act.id });
+  const cover = useRowCovering({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, grid: fold.grid, post: act.id, order: ui.rowOrder });
+  /* A card that fills the row (`CardUi.fillsRow`) has its effect drawn in a layer over the row, in the instance's order; it is covered while a cover outside it is shut. */
+  const fill = useRowFilling({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, order: ui.rowOrder, covering: cover });
+  /* The row's one logic, held for the post: its tiles draw from it, and so does a card that draws the reactions (`CardUi.drawsReactions`), whose live play leaves the row one line. */
+  const ownerOf = useOwnerOf();
+  const loose = useLooseReactions({ plays, actId: act.id, eligible: (act.kind === 'post' || act.kind === 'spin') && !editing && act.hidden !== true && act.concealing !== true, cards: ui.cards });
   const { actingCharacters: acting } = usePlayer();
   const own = useMyHidden(act.id, act.character !== null && acting.some((c) => c.id === act.character), act.hidden === true);
   const canEdit = act.hidden !== true || own != null;
@@ -332,8 +339,9 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
       data-kb-arrived={slid ? 'slide' : undefined}
       data-kb-fold={folding ? (fold.folded ? 'open' : 'folded') : undefined}
     >
+    <ReactionRowScope on={act.kind === 'post' || act.kind === 'spin'} loose={loose} act={act.id} author={ownerOf(act)} authorName={spoken} tallies={tallies} mine={mine} plays={plays}>
     <FoldedRow
-      fold={fold} cover={cover} id={`post-${seq}-row`} bar={{ person, name, spoken, seq, marks }}
+      fold={fold} cover={cover} fill={fill} id={`post-${seq}-row`} bar={{ person, name, spoken, seq, marks }}
       before={<>
         <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {spoken}{cut && `, cut in under post ${cut.seq}`}</h2>
         {cut && <p className="kb-act-cutline kb-small">Cut in line under post {cut.seq}</p>}
@@ -353,6 +361,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
         </div>
         <Actions act={act} about={{ seq, name: spoken }} canEdit={canEdit} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
     </FoldedRow>
+    </ReactionRowScope>
     </article>
     </AppealCtx.Provider>
   );

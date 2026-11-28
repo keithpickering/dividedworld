@@ -278,8 +278,6 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
   const size = () => canvas.evaluate((c: HTMLCanvasElement) => `${c.width}x${c.height}`);
   /* The share of the canvas's ink, not the pixels: the view's canvas is wider than the thread's. */
   await expect.poll(inked).toBeGreaterThan(0.01);
-  const whole = await inked();
-  const inThread = await size();
   /*
    * The reader scrubs in the thread, before the hold has taken them over. A page opened with the post on screen arms the hold at
    * once, and it lifts the post when the reader's scroll has been quiet for its settle time, so the reader keeps the page from
@@ -303,6 +301,29 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
     };
     frame();
   }));
+  /*
+   * The ink is written onto the canvas over a few frames, so the first read past a trace of ink is part of it (a run on a loaded machine read
+   * 0.566 of a field that ends at 0.633, and a scrub that took the field to 0.572 was then not "less than 97%" of what was read). The whole
+   * is what the canvas holds once it has not changed for ten frames in a row, and the thread's size is read with it.
+   */
+  const whole = await canvas.evaluate((c: HTMLCanvasElement) => new Promise<number>((done) => {
+    const read = () => {
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 4) n += d[i]! / 255;
+      return n / (c.width * c.height);
+    };
+    let last = -1;
+    let still = 0;
+    const frame = () => {
+      const now = read();
+      still = now === last ? still + 1 : 0;
+      last = now;
+      if (still >= 10) done(now); else requestAnimationFrame(frame);
+    };
+    frame();
+  }));
+  const inThread = await size();
   const box = (await canvas.boundingBox())!;
   const y = Math.min(box.y + box.height / 2, 900);
   await page.mouse.move(box.x + box.width * 0.2, y);

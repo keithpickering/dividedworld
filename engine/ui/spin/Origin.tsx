@@ -26,6 +26,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { BbCode } from '../bbcode/render.tsx';
 import { billPost, drawnOf, type BillOver } from '../cards/billing.ts';
 import { PostEffects, WriteLateNote, momentParts } from '../cards/Effects.tsx';
+import { ReactionRowScope } from '../reactions/Reactions.tsx';
+import { useLooseReactions } from '../thread/loose.ts';
 import { useLensStore } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { MomentView } from '../cards/Moment.tsx';
@@ -230,6 +232,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const played = usePlays(plays, originId).plays;
   /* The live ORIGIN box rewinds as the post does in its thread (its words and plays are chosen in `PostEffects`); a moment box (a card play's, a spin's) is read once and never does. */
   const rewound = useRewound(plays, originId);
+  const looseReactions = useLooseReactions({ plays, actId: originId, eligible: act !== null && (act.kind === 'post' || act.kind === 'spin'), cards: ui.cards });
   /*
    * A spin from a card play itself shows the play as the box's one mark, kept under the post it landed on (the Act is not a
    * post of this thread, and its post is in another).
@@ -354,7 +357,10 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
       default:
         return (
           <>
-            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>
+            {/* A card that draws the reactions is given the origin post's row logic here too; the box has no row of its own to draw tiles in, so the row's logic runs here only while a card that draws the reactions is live, and draws nothing but that card's picker. */}
+            <ReactionRowScope on={looseReactions} loose={looseReactions} act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} plays={plays}>
+              <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>
+            </ReactionRowScope>
             <LastEdited act={rewound?.rewind.version ?? act} />
             {act.kind === 'post' && <p className="kb-small" data-kb-over-ink>{history.button}</p>}
             {/* Lifted always and empty until History opens: a wrapper with nothing in it draws and covers nothing, and its ground (spin.css) is on what it holds. */}

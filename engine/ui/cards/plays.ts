@@ -151,6 +151,9 @@ export function playOf(act: Act): CardPlay | null {
  */
 export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? play.post;
 
+/** Whether a play is up on its post's own reach: not a reach beyond the post, caught, ended, cut, untaken or face down. What `PostEffects` draws, and what `useRowFilling` lays a layer for. */
+export const actsOnPost = (p: CardPlay): boolean => !p.caught && !p.reversed && !p.cut && !p.untaken && !p.faceDown && !p.reach;
+
 /**
  * The plays in force: all but a play an admin ended (`reversed`: its layer is off), a play that did not take (`untaken`: its text never
  * arrived, and it was refunded), a play that is over when it lands (`instant`: a heart, an Unban), a fall a filing has spent (`spent`) and a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
@@ -356,8 +359,8 @@ function springOf(act: Act): { readonly set: Id; readonly card: string; readonly
 const takeBackOf = (act: Act): { readonly set: Id; readonly at: string } | null =>
   act.kind === 'take_back' && typeof act.payload.set === 'string' ? { set: act.payload.set, at: act.createdAt } : null;
 
-/** The play a `card_end` Act ends, or null for any other Act. */
-const endOf = (act: Act): Id | null => (act.kind === 'card_end' && typeof act.targetActId === 'string' ? act.targetActId : null);
+/** The play a `card_end` Act (or the `open_gift` that opens a box) ends, or null for any other Act. */
+const endOf = (act: Act): Id | null => ((act.kind === 'card_end' || act.kind === 'open_gift') && typeof act.targetActId === 'string' ? act.targetActId : null);
 
 /** Layer first, then when it was played, then its id: the order plays are laid over a post, the first innermost. */
 export const inPlayOrder = (a: CardPlay, b: CardPlay): number =>
@@ -869,6 +872,11 @@ export function useRewound(plays: Plays, post: Id): Rewound | null {
   return useMemo(() => rewoundOf(here, Math.max(now, api.now()), keeps), [here, now, api, keeps]);
 }
 
+/** The plays a live rewind does not let show on its post, or the rewind's own while "The present" is shown: not ended, only not drawn (`PostEffects`, and the row's fill layers). */
+export function hiddenByRewind(rewound: Rewound | null, presenting: boolean): ReadonlySet<Id> {
+  return new Set(presenting && rewound ? [rewound.rewind.play] : rewound?.hidden.map((p) => p.id));
+}
+
 /** A card's view on a post (`Plays.view`): what reads it is drawn again when it changes, and nothing else is. */
 export function useCardView(plays: Plays, post: Id, card: string): CardView | null {
   return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.view(post, card));
@@ -900,7 +908,7 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
   plays.setCounts(read.counts);
   await readEffects(api, plays, acts, cards);
   /* The plays' ends ride in the read for the store; they are no plays, so no tally, reaction or caster is read for one. */
-  return acts.filter((a) => a.kind !== 'card_end');
+  return acts.filter((a) => a.kind !== 'card_end' && a.kind !== 'open_gift');
 }
 
 /**
@@ -989,5 +997,5 @@ export async function readAbove(api: KayfaApi, plays: Plays, characters: readonl
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
  * effect, and so carry marks, are one list.
  */
-const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash', 'poll', 'ballot', 'poll_close']);
+const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash', 'poll', 'ballot', 'poll_close', 'open_gift']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);

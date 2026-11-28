@@ -13,6 +13,7 @@ import type { Settings } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
 import type { Act, Answer, Donated, DriveGift, EffectState, Id, SurfaceAct, Wallet } from '../data/api.ts';
 import type { CardFace } from './faces.ts';
+import type { ReactionDeck } from '../reactions/deck.ts';
 
 /**
  * A card played on a post, read from its card Act: the Act itself is the record, this is its payload
@@ -263,6 +264,12 @@ export interface EffectProps {
    * a card with `CardUi.coversRow`, on its post's own reach, and only in a thread's post: absent in the ORIGIN box, the front door, a moment and History, where the effect covers the content area itself.
    */
   readonly cover?: RowCover;
+  /**
+   * The post's reactions row, as logic: the chips, the reader's own and pending kinds, `press` (the row's grace and undo) and the picker (`picker.open(anchor, true)` offers only kinds not yet on the post).
+   * Given only to a card with `CardUi.drawsReactions`, on its post's own reach, in a thread's post and in the ORIGIN box; the row itself draws one line instead of tiles while the card is live.
+   * Absent in a moment and History.
+   */
+  readonly reactions?: ReactionDeck;
   /** True while any cover over this post is shut for this reader (`CoveredCtx`): an effect that starts on sight waits until it is false. Given to every effect. */
   readonly covered: boolean;
   /** The post's marks, drawn where the card's effect puts them (a takeover's only; null for every other card). */
@@ -460,11 +467,23 @@ export interface CardUi {
    */
   readonly foldsRow?: true;
   /**
+   * The card draws the post's reactions itself (design, section 1.3): while a live play of it is on a post, the post's row draws no tiles, only one line saying they are loose, and the
+   * card's `Effect` is given `EffectProps.reactions`. On the post's own author's screen the deck is plain: no press, no picker.
+   */
+  readonly drawsReactions?: true;
+  /**
    * A live play of this card on a post covers the post's whole row in a thread; the engine mounts `Cover` over the row and holds the reader's state (thread/cover.tsx);
    * where a post has no row, the card's `Effect` covers the content area itself. It must have both `Cover` and `Effect`, must not be a `takeover` and must not also set
    * `foldsRow` (`instanceUiProblems`).
    */
   readonly coversRow?: true;
+  /**
+   * A live play of this card on a post draws the card's `Effect` over the post's whole row (`div.kb-row-layer`, inside the row's grid as `kb-row-cover` is) instead of
+   * around the words, in a thread's post; where a post has no row (the ORIGIN box, the front door, a moment, History) it wraps the words as any effect does. It makes nothing
+   * inert, and the effect is given `covered` while a cover ranked outside it in `InstanceUi.rowOrder` is shut. A card is never both `coversRow` and `fillsRow`
+   * (`rowOrderProblems`).
+   */
+  readonly fillsRow?: true;
   /** What the engine mounts over a post's row while a play of this card is shut for this reader (`coversRow`); it is given the post's covering plays and the reader's state. */
   readonly Cover?: ComponentType<CoverProps>;
   /**

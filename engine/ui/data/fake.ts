@@ -26,7 +26,7 @@ import { countedBallots, lastsHours, pickRefusal, pollCounts, pollDraftProblems,
 import { isFixed, rollPack } from '../../rules/packs.ts';
 import { beltHolder, eventRarity as lineRarity, GEAR_VIEWS, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { fallsOn, inPrint, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
-import { atOrBelow, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { atOrBelow, giftProblem, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { pointAt, rewindConfig, rewindPointProblem } from '../../rules/rewind.ts';
 import { fromBits, fromCoatString, legacyCoats, minusCoats, paintedCount, PAINTED, type Coats } from '../../rules/surface.ts';
@@ -571,7 +571,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
 /** A `my_cosmetic_log` row with nothing said: each kind fills what it uses. */
 const NO_COSMETIC = { character: null, outcome: null, item: null, text: null, copies: null, trophy: null, name: null, by: null, byName: null, season: null, place: null, line: null, toName: null } as const;
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
-const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash', 'poll', 'ballot', 'poll_close']);
+const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash', 'poll', 'ballot', 'poll_close', 'open_gift']);
 
 /**
  * The api's writes: the one split `failNextRead` and `offline` share. Every method that answers an `Answer` is one, and `markRead` (a
@@ -580,7 +580,7 @@ const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 
 type WriteName = { [K in keyof KayfaApi]: KayfaApi[K] extends (...a: never[]) => Promise<infer R> ? (R extends Answer<unknown> ? K : never) : never }[keyof KayfaApi] | 'markRead' | 'signOut';
 const WRITES: ReadonlySet<string> = new Set(Object.keys({
   requestCode: true, verifyCode: true, verifyLink: true, openAccount: true, signOut: true, postUpdate: true, dismissHandoverTodo: true, setAdminContact: true,
-  holdMove: true, reverseMove: true, reverseCard: true, replaceSuccessor: true, replaceQueuedDescription: true, describeBoard: true, setSlot: true,
+  holdMove: true, reverseMove: true, reverseCard: true, openGift: true, replaceSuccessor: true, replaceQueuedDescription: true, describeBoard: true, setSlot: true,
   moveSlot: true, saveMachine: true, unpinStaffThread: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
   seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, castBallot: true, closePoll: true, closePollAsAdmin: true, pollBallots: true, spin: true,
@@ -905,7 +905,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The Act kinds the database pokes the owner's account about with `self` (`self_kinds()`, 0455), besides a `move` naming one of their characters. The wallet moves
    * (any kind but a settlement's), the card ledger rows and the ban lifts and warn reliefs poke too, where the fake writes them. One list, so a kind added to the SQL is added here.
    */
-  const SELF_KINDS: ReadonlySet<ActKind> = new Set<ActKind>(['appeal_ruling', 'ban', 'card_end', 'infraction', 'move', 'move_end', 'spring', 'unmask']);
+  const SELF_KINDS: ReadonlySet<ActKind> = new Set<ActKind>(['appeal_ruling', 'ban', 'card_end', 'open_gift', 'infraction', 'move', 'move_end', 'spring', 'unmask']);
   /** The kinds whose target Act is followed, up to two hops, to find what they change (`act_self_characters`'s chain). */
   const SELF_CHAIN: ReadonlySet<ActKind> = new Set<ActKind>(['move_end', 'card_end', 'appeal_ruling', 'appeal']);
   const sendSelf = (account: Id | null | undefined) => {
@@ -1671,7 +1671,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (list === undefined) placedIndex.set(rec.thread, [rec]); else list.push(rec);
       lastPlacedAt.set(rec.thread, Math.max(lastPlacedAt.get(rec.thread) ?? -Infinity, rec.at));
     }
-    if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
+    /* An open is the other way a box's play ends (open_gift): over for every reader of "in force", though it is no admin's end. */
+    if ((rec.kind === 'card_end' || rec.kind === 'open_gift') && rec.target !== null) reversedPlays.add(rec.target);
     /* The landed card Acts that name a Gimmick they cut, by that play, in the order written (acts_cut_play): what cutBy reads. */
     if (rec.kind === 'card' && rec.payload.caught === undefined && rec.payload.cut !== undefined) {
       const named = String((rec.payload.cut as { play?: unknown }).play);
@@ -2202,7 +2203,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const board = threads.get(post.thread)!.board;
     const wanted = new Set([first.id, ...snapshot.map((l) => l.layer)]);
     /* A play an admin had ended by the moment (a card_end at or before it) was not live then; one ended later was. */
-    const endedBy = (p: Id) => [...acts.values()].some((a) => a.kind === 'card_end' && a.target === p && a.at <= time);
+    const endedBy = (p: Id) => [...acts.values()].some((a) => (a.kind === 'card_end' || a.kind === 'open_gift') && a.target === p && a.at <= time);
     return {
       version: shownVersion(post, version),
       layers: [
@@ -2210,7 +2211,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...snapshot.map((l) => ({ rec: acts.get(l.layer)!, saved: l.saved })).sort((a, b) => byLanding(a.rec, b.rec))
           .map(({ rec, saved }) => ({ act: publicAct(rec), state: saved ? { state: saved.state, savedAt: iso(saved.at) } : null })),
         /* The card_end of the play or of one of its layers written at or before the moment (momentParts counts `<=` too), as 0092 gives. */
-        ...[...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target) && a.at <= time)
+        ...[...acts.values()].filter((a) => (a.kind === 'card_end' || a.kind === 'open_gift') && a.target !== null && wanted.has(a.target) && a.at <= time)
           .sort(byLanding).map((a) => ({ act: publicAct(a), state: null })),
       ],
       above: [...reachPlays].filter(([p, r]) => p !== first.id && r.endsAt > time && !endedBy(p) && acts.get(p)!.at < time
@@ -2341,7 +2342,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const sets = new Set(plays.filter((p) => p.kind === 'set').map((p) => p.id));
     const riders = [...acts.values()].filter((a) => (a.kind === 'spring' || a.kind === 'take_back') && typeof a.payload.set === 'string' && sets.has(a.payload.set)).sort(byDate);
     const named = new Set([...plays, ...riders].map((a) => a.id));
-    const ends = [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && named.has(a.target)).sort(byDate);
+    const ends = [...acts.values()].filter((a) => (a.kind === 'card_end' || a.kind === 'open_gift') && a.target !== null && named.has(a.target)).sort(byDate);
     return { riders, ends };
   };
   /**
@@ -2936,16 +2937,35 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return e?.card ?? undefined;
   }
   /**
+   * What an unopened present holds (`gift_box`, design 1.4): keyed by the box's play, the giver's account, the gift's card and its checked configuration.
+   * Read only by the giver's own calls (an open lands it as the giver's play or returns it to them, an admin's end hands it back); no Act, payload or answer names it before the open.
+   * An entry is cleared when the box is opened or ended.
+   */
+  const gifts = new Map<Id, { readonly account: Id; readonly card: string; readonly config: Readonly<Record<string, unknown>> }>();
+  /** Boxes whose open was written: an admin's end of one says so (reverseCard). */
+  const openedBoxes = new Set<Id>();
+  /** Boxes an admin ended unopened: an open of one says it is over, in the words of an open of any ended box. */
+  const endedBoxes = new Set<Id>();
+  /**
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
    */
-  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }, boardThread?: Id): Answer<Act> {
-    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}), ...(boardThread === undefined ? {} : { boardThread }), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...(reply.framing ? { framing: reply.framing } : {}) }) });
+  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }, boardThread?: Id, gift?: { readonly card: string; readonly config: Readonly<Record<string, unknown>> }, asGiver?: { readonly account: AccountRec }): Answer<Act> {
+    const bad = asGiver ? null : request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}), ...(boardThread === undefined ? {} : { boardThread }), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...(reply.framing ? { framing: reply.framing } : {}) }) });
     if (bad) return bad;
-    if (reach !== 'post') return playBeyond('cast', card, character, target, config, message, reach, fromPost, boardThread);
+    if (reach !== 'post') return gift === undefined ? playBeyond('cast', card, character, target, config, message, reach, fromPost, boardThread) : refuse('a present is left on a post', 'gift');
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
+    /* A card wrapped in another (design 1.4): a wrapper carries a gift and no other card does; the gift is one a present may hold, in giftProblem's words. */
+    if (rules.wraps === true && gift === undefined) return refuse(`${rules.name} holds a card: choose the card to wrap in it`, 'gift');
+    if (rules.wraps !== true && gift !== undefined) return refuse(`only a present holds a card, and ${rules.name} is not one`, 'gift');
+    const giftRules = gift === undefined ? undefined : instance.cards.find((c) => c.key === gift.card);
+    if (gift !== undefined) {
+      if (!giftRules) return refuse(`there is no card "${gift.card}"`, 'gift');
+      const problem = giftProblem(rules, giftRules, gift.config);
+      if (problem !== null) return refuse(problem, 'gift');
+    }
     /* A staff character casts no card that ends a Gimmick (place_cast, 0405), said before the Ward is asked; the fake's acting() turns a staff character away anyway, so this mirrors the server's guard. */
     if (rules.cuts !== undefined && characters.get(character)?.staff !== undefined) return refuse('a staff character casts no card that ends a Gimmick');
     /* A card that replies carries its reply; its words and their length are the act function's, above, and the rest of the reply's refusals are play_card's, below (0348). */
@@ -2957,7 +2977,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A card that cuts never spends, as its pierce, the very play it names (place_cast's pierce loop leaves the named play out). */
     const shot = pierceOf(character, rules.cuts === undefined ? undefined : (config as { play?: unknown } | null)?.play);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined, forgedNow), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, rulesOf, first, caster: character, ...(shot ? { pierce: shot.upTo, rarityOf: rarityUndef } : {}) });
+    const here = postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined, forgedNow);
+    const decided = decidePlay(rules, settings, here, effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, rulesOf, first, caster: character, ...(shot ? { pierce: shot.upTo, rarityOf: rarityUndef } : {}) });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
     if (decided.value.draw) {
@@ -2967,7 +2988,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const tag = paintedCount(layDraw(decided.value.draw.payload, decided.value.draw.coats));
       if (tag > decided.value.draw.most) return refuse(`this wall is 0% covered, and its limit is ${Math.floor(decided.value.draw.most / 100)}%; this tag would take it to ${Math.ceil(tag / 100)}%`, 'first');
     }
-    const c = acting(character);
+    /* The giver's landing of a gift is not the opener's own play: the character is the box's, and nothing is bought (openGift). */
+    const c = asGiver ? characters.get(character)! : acting(character);
     if (isRefusal(c)) return c;
     /* A fall is played on a player's post, never a staff character's (place_cast, 0361); a banned caster plays no discipline card (not_banned). */
     if (rules.discipline !== undefined) {
@@ -3000,12 +3022,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (carries && !/[\p{L}\p{N}]/u.test(reply?.body ?? '')) return refuse('write the reply this card carries', 'body');
     /* The reply is a post of the card's thread, and not on The System's board (write_reply). */
     if (carries && boards.find((b) => b.id === threads.get(on.thread)!.board)!.isSystem) return refuse(SYSTEM_BOARD);
-    const account = me()!;
+    const account = asGiver ? asGiver.account : me()!;
     settleBacks(account);
-    if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
-    const short = covers(account, decided.value.price);
+    if (!asGiver && (account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
+    /* A wrapped card is held too, and its own price on this post is charged with the box's (a gift's landing is already paid for). */
+    const giftConfig = giftRules === undefined ? undefined : giftRules.validateConfig(gift!.config);
+    const giftPrice = giftRules === undefined || !giftConfig?.ok ? 0 : Math.max(0, giftRules.playPrice(settings, here, giftConfig.value, effects));
+    if (gift !== undefined && (account.cards[gift.card] ?? 0) < 1) return refuse(`you hold no "${gift.card}" card to wrap; the Vending Machine sells them`, 'gift');
+    const short = asGiver ? null : covers(account, decided.value.price + giftPrice);
     if (short) return short;
-    account.cards[card]! -= 1;
+    if (!asGiver) account.cards[card]! -= 1;
     /* The layer counts every play that landed, a reversed one too (acts_card_layers refuses a reused layer); only the stack count drops it. */
     const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && a.payload.caught === undefined && onPost(a)).length + 1;
     /* A card that cuts is over when it lands: no layer, no end, no place in a stack; where it lands it names the Gimmick it ended (place_cast, 0405). */
@@ -3034,6 +3060,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A lockout back lets the cast land too, and the spring locks its character out of the thread; no card changes hands (spring_traps). */
     const locks = catches && outcome === 'lockout';
     const lands = !catches || rides || returns || locks;
+    /* A box a trap caught holds nothing: the gift stays in the hand and is not charged. */
+    const wrapped = gift !== undefined && giftConfig?.ok === true && lands;
+    const charged = asGiver ? 0 : decided.value.price + (wrapped ? giftPrice : 0);
+    if (wrapped) account.cards[gift!.card]! -= 1;
     /* A skim play carries its end, as a Use's does (place_cast, 0151). */
     const at = stamp ?? now();
     /* The play's id is chosen first, so the spring can name it and be written before it, as play_card writes them (each takes its moment then). */
@@ -3080,8 +3110,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       ? write({ id: replyId, character, kind: 'post', thread: on.thread, payload: { body: reply.body } }) : null;
     if (replied) underPlays.set(written.id, { parent: target, reply: replied.id });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
-    spend(account, decided.value.price, 'play', written.id);
-    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
+    spend(account, charged, 'play', written.id);
+    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: charged });
+    if (wrapped) gifts.set(written.id, { account: account.id, card: gift!.card, config: giftConfig!.ok ? (giftConfig!.value as Record<string, unknown>) : {} });
     sendAct(written);
     /* The reply is heard as `under`, after its card, and never as an act of its own: no screen draws it at the thread's tail first. */
     if (replied) {
@@ -3109,6 +3140,33 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       recordCard(account.id, written.at, { card, kind: 'returned', act: written.id, price: 0 });
     }
     return ok(publicAct(written));
+  }
+
+  /**
+   * `open_gift` (design 1.4): the post's author opens a box. The box's play is marked over first, so its slot is free, then the gift is tried on the post as a cast by the giver's
+   * character through playCard's own landing, at no price. A landing refused for any reason (a ward, a full post) hands the gift back to the giver's hand and says why. The open Act,
+   * an `open_gift` Act, is written once, after the landing is tried, with its outcome: `did` and the landed play or the refusal's words.
+   */
+  function openGift(boxId: Id): Answer<{ readonly box: Id; readonly did: 'landed' | 'returned'; readonly gift: Act | null; readonly why: string | null }> {
+    const account = me();
+    if (!account) return refuse('sign in to act');
+    const box = acts.get(boxId);
+    const held = gifts.get(boxId);
+    if (!box || box.kind !== 'card' || box.target === null || !(held || openedBoxes.has(boxId) || endedBoxes.has(boxId))) return refuse('there is no present to open');
+    const post = acts.get(box.target)!;
+    if (post.character === null || characters.get(post.character)?.owner !== account.id) return refuse("only this post's author can open it");
+    if (over(boxId) || !held) return refuse('this present was already opened or ended');
+    const giver = accounts.get(held.account)!;
+    reversedPlays.add(boxId);
+    const tried = playCard(held.card, box.character!, box.target, held.config, '', 'post', undefined, undefined, undefined, undefined, undefined, { account: giver });
+    const open = write({ character: post.character, kind: 'open_gift', thread: box.thread, target: boxId, payload: { box: boxId, did: tried.ok ? 'landed' : 'returned', gift: tried.ok ? tried.value.id : null, why: tried.ok ? null : tried.error } });
+    sendAct(open);
+    gifts.delete(boxId);
+    openedBoxes.add(boxId);
+    if (tried.ok) return ok({ box: boxId, did: 'landed', gift: tried.value, why: null });
+    giver.cards[held.card] = (giver.cards[held.card] ?? 0) + 1;
+    recordCard(giver.id, open.at, { card: held.card, kind: 'returned', act: open.id, price: 0 });
+    return ok({ box: boxId, did: 'returned', gift: null, why: tried.error });
   }
 
   /**
@@ -4351,7 +4409,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       snippet: searchSnippet(row, words),
       /* card and spring plays that reach the post and have no card_end, oldest first (the SQL's `cards`). */
       cards: [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'spring') && a.target === row.act && (a.payload.reach ?? 'post') === 'post' && typeof a.payload.card === 'string'
-        && ![...acts.values()].some((e) => e.kind === 'card_end' && e.target === a.id)).sort((x, y) => x.at - y.at || x.order - y.order).slice(0, SEARCH_CARDS_MAX).map((a) => String(a.payload.card)),
+        && ![...acts.values()].some((e) => (e.kind === 'card_end' || e.kind === 'open_gift') && e.target === a.id)).sort((x, y) => x.at - y.at || x.order - y.order).slice(0, SEARCH_CARDS_MAX).map((a) => String(a.payload.card)),
     };
   }
   /** Two same-length strings a letter apart, or two adjacent letters swapped. */
@@ -4752,6 +4810,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const ends = reachPlays.get(play)?.endsAt ?? (typeof p.payload.ends === 'string' ? Date.parse(p.payload.ends) : null);
       /* A play of a card that keeps can be ended after its time too: its level still counts on the posts it was up over, and an admin takes it off (reverse_card, 0348's page). */
       if (ends !== null && ends <= now() && instance.cards.find((c) => c.key === p.payload.card)?.keeps !== true) return refuse('that card has already worn off');
+      if (openedBoxes.has(play)) return refuse('that present was already opened');
       if (reversedPlays.has(play)) return refuse('an admin has already ended that card');
       if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
       /* A play that is over for another reason says so (reverse_card, 0405): a card that cut it names itself, any other (a spent Cheap Shot) is over. */
@@ -4760,6 +4819,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (spentPierces.has(play)) return refuse('that card is already over');
       const end = write({ character: null, kind: 'card_end', thread: p.thread, target: play, payload: { why: 'reversed', by: 'admin' } });
       sendAct(end);
+      /* An unopened present ended by an admin gives its gift back to the giver's hand (design 1.4). */
+      const kept = gifts.get(play);
+      if (kept !== undefined) { gifts.delete(play); endedBoxes.add(play); }
+      const giver = kept === undefined ? undefined : accounts.get(kept.account);
+      if (kept !== undefined && giver) { giver.cards[kept.card] = (giver.cards[kept.card] ?? 0) + 1; recordCard(giver.id, end.at, { card: kept.card, kind: 'returned', act: end.id, price: 0 }); }
       if (!onPost(p)) { const shown = publicAct(end); send('reach', 'effect', () => { for (const l of [...reachListeners]) l.onPlay?.(shown); }); }
       return ok({ act: end.id, play });
     },
@@ -4996,7 +5060,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     kindPlays: (post, card, before, size) => kindPage(post, card, before, size),
     cardEnds(targets) {
       const wanted = new Set(targets);
-      return [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).map(publicAct);
+      return [...acts.values()].filter((a) => (a.kind === 'card_end' || a.kind === 'open_gift') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).map(publicAct);
     },
     tails: (posts) => tails(posts),
     effectStates(plays) {
@@ -5191,7 +5255,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       [grid[at]!.position, other.position] = [other.position, grid[at]!.position];
       return ok({ slot, moved: true });
     },
-    playCard: (...a: Parameters<typeof playCard>) => {
+    openGift: lossy(openGift),
+    playCard: (...a: Parameters<KayfaApi['playCard']>) => {
       answeredUnder = null;
       const answer = lossy(playCard)(...a);
       const hear = answeredUnder as (() => void) | null;
@@ -5504,7 +5569,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (id === null || summary.firstAct === null || !shownActs.some((a) => a.id === summary.firstAct)) return null;
         const act = core.act(id);
         const read = postPlaysOf([id], now());
-        const shown = read.plays.filter((a) => a.kind !== 'card_end');
+        const shown = read.plays.filter((a) => a.kind !== 'card_end' && a.kind !== 'open_gift');
         const place = summary.origin;
         const play = place?.kind === 'play' ? place : null;
         const pressed = play !== null && play.on?.kind === 'character' && play.at !== null;
@@ -5526,7 +5591,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const spot = acts.get(post);
         return { ...origin, at: spot === undefined ? origin.at : { thread: spot.thread, seq: spot.seq! }, cast: [...origin.cast, ...core.characters(parts.cast.filter((c) => !origin.cast.some((k) => k.id === c)))].sort((x, y) => (x.id < y.id ? -1 : 1)), polls: parts.polls, voters: parts.voters, votersMore: parts.votersMore, myBallots: parts.myBallots };
       })();
-      const originPlays = origin === null ? [] : origin.plays.filter((a) => a.kind !== 'card_end');
+      const originPlays = origin === null ? [] : origin.plays.filter((a) => a.kind !== 'card_end' && a.kind !== 'open_gift');
       const wanted = [...played, ...originPlays].filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
       const ids = [...shownActs, ...under.map((u) => u.act), ...played, ...boardCards, ...(origin?.act ? [origin.act] : []), ...originPlays].map((a) => a.id);
       const pagePolls = pollParts(posts.map((a) => a.id));

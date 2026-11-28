@@ -20,16 +20,19 @@
  * Under Off (the player's Motion setting, or the device's reduced motion) nothing moves: the ring and the count are simply there, and
  * a pending tile shows the seconds left as text, for the same 5 seconds.
  */
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { createContext, memo, useMemo, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { blindPlaysOf, createPlays, localKindsOf, useAt, usePlays, type LocalKind, type Plays } from '../cards/plays.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { emojiOfKey } from '../../rules/emoji.ts';
 import { useKayfa } from '../context.tsx';
-import type { Id } from '../data/api.ts';
+import type { Id, MyCharacter, MyReaction } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useTally, type Tallies } from '../thread/tallies.ts';
 import { REACTION_GRACE_MS, useMine, usePending, type Mine, type Pending } from './mine.ts';
 import { Picker } from './Picker.tsx';
+import type { Chip, Landed, ReactionDeck } from './deck.ts';
+
+export type { Chip, Landed, ReactionDeck };
 import { useReactionSend, type Answered } from './send.ts';
 import { Tooltip } from '../glass/index.ts';
 import '../cards/kit.css';
@@ -80,11 +83,12 @@ const STAGED_READER = 'staged:reader';
 /** The seconds left on a pending kind, whole and rounded up, never under one: what its name and the reduced-motion text say. */
 const secondsLeft = (p: Pending): number => Math.max(1, Math.ceil((p.due - Date.now()) / 1000));
 
+/** What a post's row says where a card draws its reactions (`CardUi.drawsReactions`). */
+export const LOOSE_LINE = "This post's reactions are loose inside it.";
+
 /** The tab stop of the React tile; a kind's is its key. */
 const REACT_STOP = ' react'; /* a space: no reaction key has one */
 
-/** One chip of the row: the kind's key, its words, its emoji, its quadrant, its count (none where the totals are hidden from the reader), and whether a press can still count. */
-export interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly quadrant: Quadrant | null; readonly count: number | null; readonly open: boolean; readonly pending: Pending | null }
 
 /** The shards a stamp throws, one every 360/SHARDS degrees (reactions.css lays each by its index). */
 const SHARDS = 8;
@@ -94,8 +98,6 @@ const SHARDS = 8;
  */
 const STAMP_MS = 1400;
 
-/** The kind that just landed on this screen, and whether it waits for the picker to leave first. */
-interface Landed { readonly key: string; readonly after: boolean }
 
 /**
  * What a post's reactions row draws as chips, and the one line it says under them where a card hides the totals: the tally, the reader's own and pending kinds, and the blind plays' hiding. `Reactions` draws these
@@ -128,11 +130,11 @@ export function useReactionChips(act: Id, author: Id | null, tallies: Tallies, m
   const chipOf = (key: string, count: number | null): Chip | null => {
     const known = instance.reactions.find((r) => r.key === key);
     const pending = pendingOf(key);
-    if (known) return { key, name: readable(key), emoji: known.emoji, quadrant: known.quadrant, count, open: true, pending };
+    if (known) return { key, name: readable(key), emoji: known.emoji, quadrant: known.quadrant, count, open: true, pending, local: false };
     const emoji = emojiOfKey(key);
     if (emoji === null) return null;
     const kind = kindOf(key);
-    return { key, name: localName(emoji, label(kind)), emoji, quadrant: kind?.quadrant ?? null, count, open: kind?.ended !== true, pending };
+    return { key, name: localName(emoji, label(kind)), emoji, quadrant: kind?.quadrant ?? null, count, open: kind?.ended !== true, pending, local: true };
   };
   /* A pending kind is drawn as its tally's count and one more (its own press), and a kind with no chip yet gets one. */
   const counted = [...new Set([...Object.keys(tally).filter((k) => (tally[k] ?? 0) > 0), ...waiting.map((p) => p.kind)])];
@@ -144,37 +146,67 @@ export function useReactionChips(act: Id, author: Id | null, tallies: Tallies, m
   return { shown, line, kinds0, own, waiting } as const;
 }
 
-export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, pickerAt = 'row', plays = NO_PLAYS }: Props) {
-  const { ui, settings } = useKayfa();
+/** Everything a post's reactions row does, for `Reactions` to draw as tiles or for a card to draw its own way (`useReactionRow`). */
+export interface ReactionRow extends ReactionDeck {
+  readonly line: string | null;
+  readonly local: readonly LocalKind[];
+  readonly as: MyCharacter | null;
+  readonly busy: boolean;
+  /** The row's polite status words. */
+  readonly said: string;
+  readonly cap: number;
+  /** What counts as the player's own on this post: what was sent and what is pending. */
+  readonly kinds: ReadonlySet<string>;
+  readonly left: number;
+  /** A free kind starts its grace (the cap is read as it is now). */
+  readonly start: (kind: string) => 'held' | 'busy';
+  readonly clearRefusal: () => void;
+  readonly picker: ReactionDeck['picker'] & {
+    /** Open for the row: `back` is the element focus goes back to when the picker closes by itself. */
+    readonly openFor: (anchor: RefObject<HTMLElement | null>, back: RefObject<HTMLElement | null>) => void;
+    /** The picker's layer, drawn where the post wants it. */
+    readonly node: ReactNode;
+  };
+}
+
+interface RowArgs {
+  readonly act: Id;
+  readonly author: Id | null;
+  readonly authorName?: string;
+  readonly tallies: Tallies;
+  readonly mine: Mine;
+  readonly subject?: string;
+  readonly plays?: Plays;
+}
+
+/** What a picker is open for: where it opens, whether it offers only new kinds, and where focus goes back to. */
+interface PickerAt { readonly anchor: RefObject<HTMLElement | null>; readonly onlyNew: boolean; readonly back: RefObject<HTMLElement | null> | null }
+
+/**
+ * What a post's reactions row does: the chips, the reader's own and pending kinds, the grace and its undo, the cap and the one-of-a-kind rule, the send queue (one for the row and its picker), the
+ * refusal under the row, the stamp's landed kind and the picker's open state. `Reactions` draws it as tiles; a card that draws the reactions is given it as `EffectProps.reactions` (design, section 1.3).
+ */
+export function useReactionRow({ act, author, authorName = 'this character', tallies, mine, subject, plays = NO_PLAYS }: RowArgs): ReactionRow {
+  const { settings } = useKayfa();
   const player = usePlayer();
   const { shown, line, kinds0, own, waiting } = useReactionChips(act, author, tallies, mine, plays);
-  const [open, setOpen] = useState(false);
+  const [picking, setPicking] = useState<PickerAt | null>(null);
   /* The server's words for a reaction refused at its send: under the row until the next press on it. */
   const [rowRefusal, setRowRefusal] = useState<string | null>(null);
   const [said, setSaid] = useState('');
-  /* The row's one tab stop: the last tile focused, else React where there is one, else the first tile. */
-  const [stop, setStop] = useState<string | null>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  /* The tooltip of an own sent tile (one open at a time): the kind it stands on, the tile it stands by, and a count that restarts its 3 seconds. */
-  const [tipKind, setTipKind] = useState<string | null>(null);
-  const [tipOpen, setTipOpen] = useState(false);
-  const [tipRestart, setTipRestart] = useState(0);
-  const tipAt = useRef<HTMLElement | null>(null);
-  const row = useRef<HTMLDivElement>(null);
   const staged = useStaged();
   const theirs = author !== null && player.characters.some((c) => c.id === author);
   const as = staged ? null : player.hudCharacter;
   const canReact = !theirs && (staged || as !== null);
   /* One send for the row and its picker: one queue for the Act (send.ts). A staged page's is its own, below, and sends nothing. */
-  const reduced = useMotionReduced();
   const [landed, setLanded] = useState<Landed | null>(null);
   const stamped = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(stamped.current), []);
-  const openNow = useRef(open);
-  openNow.current = open;
+  const openNow = useRef(picking !== null);
+  openNow.current = picking !== null;
   /* A picker is for the character it was opened for: another character in the HUD closes it, and what was said of a reaction as the last one goes. */
   const asId = as?.id;
-  useEffect(() => { setOpen(false); setSaid(''); setTipOpen(false); }, [asId]);
+  useEffect(() => { setPicking(null); setSaid(''); }, [asId]);
   /* What an answer that comes back late is checked against: the HUD character and whether a press is possible now. */
   const live = useRef({ asId, canReact });
   live.current = { asId, canReact };
@@ -229,6 +261,128 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the latest cap and stores are read as it unmounts
   }, [mine, act]);
   const busy = staged ? false : sent.busy;
+  /* The seconds on a pending tile's name (and the reduced-motion text) are read at render: the row renders once a second while anything is pending. */
+  const [, tick] = useState(0);
+  const holding = waiting.length > 0;
+  useEffect(() => {
+    if (!holding) return;
+    const every = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(every);
+  }, [holding]);
+
+  const kinds = new Set([...own.map((o) => o.kind), ...waiting.map((p) => p.kind)]);
+  const left = Math.max(0, cap - kinds.size);
+  /* A free kind starts its grace. The cap is read from `mine` as it is now, not as the last render drew it: two presses in one tick are each decided on what the one before left. */
+  const start = (key: string): 'held' | 'busy' => {
+    if (!canReact) return 'busy';
+    if (mine.get(act).length + mine.pending(act).length >= cap) return 'busy';
+    const r = staged ? stagedPress(key) : sent.press(key);
+    if (r === 'held') setSaid(`Reacting with ${readable(key)}${as ? ` as ${as.name}` : ''} in ${REACTION_GRACE_MS / 1000} seconds`);
+    return r;
+  };
+  /* A pending kind's press is its undo: it sends nothing, ever. */
+  const undo = (key: string): void => {
+    setRowRefusal(null);
+    if (staged ? stagedUndo(key) : sent.undo(key)) setSaid(`${readable(key)} undone`);
+  };
+  const press = (key: string): 'held' | 'busy' | 'undone' | 'kept' => {
+    if (!canReact) return 'busy';
+    setRowRefusal(null);
+    if (mine.pending(act).some((p) => p.kind === key)) { undo(key); return 'undone'; }
+    if (mine.get(act).some((o) => o.kind === key)) return 'kept';
+    return start(key);
+  };
+  const openAt = (anchor: HTMLElement | RefObject<HTMLElement | null>, onlyNew: boolean, back: RefObject<HTMLElement | null> | null) => {
+    if (!canReact) return;
+    setRowRefusal(null);
+    setPicking({ anchor: anchor instanceof HTMLElement ? { current: anchor } : anchor, onlyNew, back });
+  };
+  const node = (
+    <Layers>
+      {picking !== null && canReact && (
+        <Picker
+          subject={subject ?? `${authorName}'s post`} as={as} own={own} pending={waiting} local={kinds0} press={(k) => { setRowRefusal(null); return start(k); }} undo={undo} anchor={picking.anchor}
+          {...(picking.onlyNew ? { onlyNew: true as const, onPost: shown.map((c) => c.key) } : {})}
+          onClose={(refocus) => { setPicking(null); if (refocus) picking.back?.current?.focus(); }}
+        />
+      )}
+    </Layers>
+  );
+  return {
+    chips: shown, line, local: kinds0, own, pending: waiting, canReact, as, busy, said, cap, kinds, left, press, start, undo, clearRefusal: () => setRowRefusal(null), refusal: rowRefusal, landed,
+    picker: { isOpen: picking !== null, open: (anchor, onlyNew) => openAt(anchor, onlyNew === true, null), openFor: (anchor, back) => openAt(anchor, false, back), close: () => setPicking(null), node },
+  };
+}
+
+/** What a post gives the reactions row it holds: `row` is null while the scope is off, and until the row's first report. */
+interface Held { readonly act: Id; readonly author: Id | null; readonly on: boolean; readonly row: ReactionRow | null; readonly loose: boolean }
+const RowCtx = createContext<Held | null>(null);
+/** The deck, set only while a card that draws the reactions is live on the post: a post's effects read this one, so a tally or a pending tick draws them again only where a card uses the deck. */
+const DeckCtx = createContext<ReactionDeck | undefined>(undefined);
+
+/** The deck a post gives its effects, where a card that draws the reactions is live on it; undefined everywhere else. */
+export const useReactionDeck = (): ReactionDeck | undefined => useContext(DeckCtx);
+
+/** Only the deck's own fields: an effect is never handed the row's drawing or the picker's layer. */
+const deckOf = ({ chips, own, pending, canReact, press, undo, refusal, landed, picker }: ReactionRow): ReactionDeck =>
+  ({ chips, own, pending, canReact, press, undo, refusal, landed, picker: { isOpen: picker.isOpen, open: picker.open, close: picker.close } });
+
+/**
+ * One reaction row for a post, held above the post's words and its row so that both the row's tiles and a card's effect draw from the same one (a second would be a second send queue
+ * for the Act). `loose` is whether a card that draws the reactions is live on the post: the row then draws its bar with one line, and the picker is drawn here, where no tile opens it.
+ * The children stand in one place in the tree whether `on` or not: the row's hook runs in a sibling that draws nothing and reports the row up, so a scope turning on or off never remounts the words.
+ */
+export function ReactionRowScope({ on, loose, children, ...args }: RowArgs & { readonly on: boolean; readonly loose: boolean; readonly children: ReactNode }) {
+  const [row, setRow] = useState<ReactionRow | null>(null);
+  const live = on ? row : null;
+  const isLoose = loose && on;
+  const held = useMemo<Held>(() => ({ act: args.act, author: args.author, on, row: live, loose: isLoose }), [args.act, args.author, on, live, isLoose]);
+  const deck = useMemo(() => (isLoose && live !== null ? deckOf(live) : undefined), [isLoose, live]);
+  return (
+    <RowCtx.Provider value={held}>
+      <DeckCtx.Provider value={deck}>
+        {children}
+        {on && <RowHost {...args} report={setRow} />}
+        {isLoose && live?.picker.node}
+      </DeckCtx.Provider>
+    </RowCtx.Provider>
+  );
+}
+/** Runs the row's hook and says the row to its scope before the screen is painted; memoized, so the scope's own renders leave it alone. */
+const RowHost = memo(function RowHost({ report, ...args }: RowArgs & { readonly report: (row: ReactionRow) => void }) {
+  const row = useReactionRow(args);
+  useLayoutEffect(() => { report(row); });
+  return null;
+});
+
+/** The row drawn as tiles, from one's own `useReactionRow`, or the post's, where its scope holds the row for this Act and author. */
+export function Reactions(props: Props) {
+  const held = useContext(RowCtx);
+  if (held !== null && held.on && held.act === props.act && held.author === props.author) return held.row === null ? null : <RowView {...props} row={held.row} loose={held.loose} />;
+  return <OwnRow {...props} />;
+}
+function OwnRow(props: Props) {
+  const row = useReactionRow({ act: props.act, author: props.author, ...(props.authorName === undefined ? {} : { authorName: props.authorName }), tallies: props.tallies, mine: props.mine, ...(props.subject === undefined ? {} : { subject: props.subject }), ...(props.plays === undefined ? {} : { plays: props.plays }) });
+  return <RowView {...props} row={row} loose={false} />;
+}
+
+function RowView({ pickerAt = 'row', row, loose }: Props & { readonly row: ReactionRow; readonly loose: boolean }) {
+  const { ui } = useKayfa();
+  const player = usePlayer();
+  const { chips: shown, line, canReact, as, busy, said, cap, kinds, left, landed, refusal: rowRefusal } = row;
+  const waiting = row.pending;
+  /* The row's one tab stop: the last tile focused, else React where there is one, else the first tile. */
+  const [stop, setStop] = useState<string | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  /* The tooltip of an own sent tile (one open at a time): the kind it stands on, the tile it stands by, and a count that restarts its 3 seconds. */
+  const [tipKind, setTipKind] = useState<string | null>(null);
+  const [tipOpen, setTipOpen] = useState(false);
+  const [tipRestart, setTipRestart] = useState(0);
+  const tipAt = useRef<HTMLElement | null>(null);
+  const rowEl = useRef<HTMLDivElement>(null);
+  const reduced = useMotionReduced();
+  const asId = as?.id;
+  useEffect(() => { setTipOpen(false); }, [asId]);
   /*
    * What was left of a pending kind's grace when this row first drew it, kept for as long as the kind is pending. The ring's animation-delay is
    * made from it (reactions.css), and a running animation keeps its start when its delay changes, so a delay recomputed at each of the
@@ -243,49 +397,34 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
     firstLefts.current.set(p, left);
     return left;
   };
-  /* The seconds on a pending tile's name (and the reduced-motion text) are read at render: the row renders once a second while anything is pending. */
-  const [, tick] = useState(0);
-  const holding = waiting.length > 0;
-  useEffect(() => {
-    if (!holding) return;
-    const every = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(every);
-  }, [holding]);
+  /* A card that draws the reactions has them loose in the post: the row keeps its bar and says where they went. */
+  if (loose) {
+    return (
+      <div className="kb-reactions" data-kb-over-ink="" data-kb-loose="" aria-busy={busy || undefined}>
+        <p className="kb-reactions-line kb-small">{LOOSE_LINE}</p>
+        {canReact && <span role="status" className="kb-visually-hidden" data-kb-row-status="">{said}</span>}
+      </div>
+    );
+  }
   if (shown.length === 0 && !canReact && line === null) return null;
-
-  /* What counts as the player's own on this post: what was sent and what is pending. */
-  const kinds = new Set([...own.map((o) => o.kind), ...waiting.map((p) => p.kind)]);
-  const left = Math.max(0, cap - kinds.size);
   const stops = [...(canReact ? shown.filter((r) => r.open).map((r) => r.key) : []), ...(canReact ? [REACT_STOP] : [])];
   const current = stop !== null && stops.includes(stop) ? stop : (stops.includes(REACT_STOP) ? REACT_STOP : stops[0]);
 
-  /* A free kind starts its grace. The cap is read from `mine` as it is now, not as the last render drew it: two presses in one tick are each decided on what the one before left. */
-  const start = (key: string): 'held' | 'busy' => {
-    if (mine.get(act).length + mine.pending(act).length >= cap) return 'busy';
-    const r = staged ? stagedPress(key) : sent.press(key);
-    if (r === 'held') setSaid(`Reacting with ${readable(key)}${as ? ` as ${as.name}` : ''} in ${REACTION_GRACE_MS / 1000} seconds`);
-    return r;
-  };
-  /* A pending kind's press is its undo: it sends nothing, ever. */
-  const undoKind = (key: string): void => {
-    setRowRefusal(null);
-    if (staged ? stagedUndo(key) : sent.undo(key)) setSaid(`${readable(key)} undone`);
-  };
   const pressed = (key: string, el: HTMLElement) => {
-    setRowRefusal(null);
-    if (mine.pending(act).some((p) => p.kind === key)) { undoKind(key); return; }
+    row.clearRefusal();
+    if (waiting.some((p) => p.kind === key)) { row.undo(key); return; }
     /* Your own sent kind: it can't be taken back, and the tooltip says so; a press while it is open gives it a fresh 3 seconds. */
-    if (mine.get(act).some((o) => o.kind === key)) {
+    if (row.own.some((o) => o.kind === key)) {
       tipAt.current = el;
       if (tipOpen && tipKind === key) setTipRestart((n) => n + 1); else { setTipKind(key); setTipOpen(true); }
       return;
     }
-    start(key);
+    row.start(key);
   };
 
   /* Left and Right along the row's buttons (no wrap), Home and End to the ends; only its own buttons answer, not the picker's, whose events pass through here. */
   const move = (e: KeyboardEvent) => {
-    const all = [...(row.current?.querySelectorAll<HTMLElement>('[data-kb-stop]') ?? [])];
+    const all = [...(rowEl.current?.querySelectorAll<HTMLElement>('[data-kb-stop]') ?? [])];
     const at = all.indexOf(e.target as HTMLElement);
     if (at < 0) return;
     let to: number;
@@ -300,7 +439,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
 
   return (
     <div
-      ref={row} className="kb-reactions" data-kb-over-ink="" aria-busy={busy || undefined}
+      ref={rowEl} className="kb-reactions" data-kb-over-ink="" aria-busy={busy || undefined}
       onKeyDown={move} onFocus={(e) => { const s = (e.target as HTMLElement).dataset['kbStop']; if (s !== undefined) setStop(s); }}
     >
       {shown.length > 0 && (
@@ -372,8 +511,8 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
       )}
       {canReact && (
         <button
-          ref={button} type="button" className="kb-meta-tile kb-reaction kb-react-button" aria-haspopup="dialog" aria-expanded={open}
-          data-kb-stop={REACT_STOP} tabIndex={current === REACT_STOP ? 0 : -1} onClick={() => { setRowRefusal(null); setOpen(!open); }}
+          ref={button} type="button" className="kb-meta-tile kb-reaction kb-react-button" aria-haspopup="dialog" aria-expanded={row.picker.isOpen}
+          data-kb-stop={REACT_STOP} tabIndex={current === REACT_STOP ? 0 : -1} onClick={() => { row.clearRefusal(); if (row.picker.isOpen) row.picker.close(); else row.picker.openFor(pickerAt === 'button' ? button : rowEl, button); }}
         >
           <span className="kb-meta-tile-in"><span aria-hidden="true">+ </span>React</span>
         </button>
@@ -383,14 +522,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
       {rowRefusal !== null && <p className="kb-notice kb-reactions-refusal" data-kb-tone="refusal" role="alert">{rowRefusal}</p>}
       {line !== null && <p className="kb-reactions-line kb-small">{line}</p>}
       {canReact && <span role="status" className="kb-visually-hidden" data-kb-row-status="">{said}</span>}
-      <Layers>
-      {open && canReact && (
-        <Picker
-          subject={subject ?? `${authorName}'s post`} as={as} own={own} pending={waiting} local={kinds0} press={(k) => { setRowRefusal(null); return start(k); }} undo={undoKind} anchor={pickerAt === 'button' ? button : row}
-          onClose={(refocus) => { setOpen(false); if (refocus) button.current?.focus(); }}
-        />
-      )}
-      </Layers>
+      {row.picker.node}
     </div>
   );
 }

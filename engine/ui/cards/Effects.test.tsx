@@ -17,7 +17,7 @@ import type { Act } from '../data/api.ts';
 import { PlayerProvider } from '../player.tsx';
 import { buildWorld, testGlass, testInstance } from '../test-world.tsx';
 import { createClaims } from './claims.ts';
-import { PostEffects, VersionEffects } from './Effects.tsx';
+import { nestOrder, PostEffects, VersionEffects } from './Effects.tsx';
 import { CoveredCtx, RowCoverCtx, type RowCover } from '../thread/cover.tsx';
 import { RowFoldCtx } from '../thread/fold.tsx';
 import { PlayProvider, usePlay, type PlayTarget } from './play.tsx';
@@ -58,8 +58,8 @@ const tails = (key: string) => ({ children }: EffectProps): ReactNode => <>{chil
 const writer = (key: string, extra: Partial<CardUi> = {}): CardUi => ui(key, { Effect: tails(key), ...extra });
 
 /** The cards' wraps from the outside in, as the page nests them. */
-function nesting(cards: CardUi[], played: string[]): string[] {
-  const kayfa = { api: buildWorld({}, instance), instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
+function nesting(cards: CardUi[], played: string[], rowOrder?: readonly string[]): string[] {
+  const kayfa = { api: buildWorld({}, instance), instance, ui: { cards, glass: {}, ...(rowOrder ? { rowOrder } : {}) }, settings: {} } as unknown as Kayfa;
   const store = createPlays();
   store.add(played.map((c, i) => play(c, i + 1)));
   const { container } = render(<KayfaProvider value={kayfa}><PlayerProvider api={kayfa.api}><PostEffects plays={store} post={words} place="thread" nameOf={() => 'x'}><span data-kb-words>hi</span></PostEffects></PlayerProvider></KayfaProvider>);
@@ -91,6 +91,40 @@ describe('how effects nest', () => {
 
   test('a card that covers the row is outside a takeover and outside a card played after it', () => {
     expect(nesting([ui('one', { coversRow: true }), ui('two'), ui('three', { takeover: true })], ['one', 'two', 'three'])).toEqual(['one', 'three', 'two']);
+  });
+});
+
+describe('the row\'s layers nest in the instance\'s order (InstanceUi.rowOrder)', () => {
+  /* Ranked outermost first: a cover, a fill, a cover inside it. */
+  const layers = [ui('one', { coversRow: true }), ui('two', { fillsRow: true }), ui('three', { coversRow: true }), ui('plain')];
+  const order = ['one', 'two', 'three'];
+  const KEY = new Set<string>();
+
+  test('nestOrder returns them by rank (innermost first, as they are wrapped), however they were played', () => {
+    const played = [{ key: 'two' }, { key: 'three' }, { key: 'plain' }, { key: 'one' }];
+    expect(nestOrder(played, layers, KEY, order).covers.map((c) => c.key)).toEqual(['three', 'two', 'one']);
+    expect(nestOrder([...played].reverse(), layers, KEY, order).covers.map((c) => c.key)).toEqual(['three', 'two', 'one']);
+  });
+
+  test('a fill is a row layer whatever else it is: neither the rest nor the takeovers hold it', () => {
+    const got = nestOrder([{ key: 'two' }, { key: 'plain' }], [ui('two', { fillsRow: true, takeover: true }), ui('plain')], KEY, ['two']);
+    expect(got.covers.map((c) => c.key)).toEqual(['two']);
+    expect(got.takeovers).toEqual([]);
+    expect(got.rest.map((c) => c.key)).toEqual(['plain']);
+  });
+
+  test('two plays of one cover stay latest outermost', () => {
+    const plays = [{ key: 'one', n: 1 }, { key: 'three', n: 1 }, { key: 'one', n: 2 }];
+    expect(nestOrder(plays, layers, KEY, order).covers.map((c) => `${c.key}${c.n}`)).toEqual(['three1', 'one1', 'one2']);
+  });
+
+  test('a card the order does not list is outermost, as a latest play was before the order', () => {
+    expect(nestOrder([{ key: 'one' }, { key: 'three' }], layers, KEY, ['three']).covers.map((c) => c.key)).toEqual(['three', 'one']);
+    expect(nestOrder([{ key: 'three' }, { key: 'one' }], layers, KEY, ['three']).covers.map((c) => c.key)).toEqual(['three', 'one']);
+  });
+
+  test('the page nests them by rank where a post has no row: a fill wraps the words as any effect does', () => {
+    expect(nesting(layers, ['two', 'three', 'plain', 'one'], order)).toEqual(['one', 'two', 'three', 'plain']);
   });
 });
 

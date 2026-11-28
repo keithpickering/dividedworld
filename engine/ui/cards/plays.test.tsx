@@ -159,7 +159,7 @@ test('only the cards the instance draws an effect for have a state to read', () 
 
 describe('the kinds of Act that hold a card\'s effect', () => {
   test('are the ones drawn as words: not a card, an unmask, an announcement, a tally, a reveal, a move, the end of one, a Boss keeping one, a card back, a take-back, a spring or an update', () => {
-    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false, donation: false, draw: false, wash: false, poll: false, ballot: false, poll_close: false };
+    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false, donation: false, draw: false, wash: false, poll: false, ballot: false, poll_close: false, open_gift: false };
     for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
   });
 });
@@ -470,6 +470,19 @@ describe('a play an admin ended', () => {
     expect(got.billed.map((p) => [p.id, p.reversed])).toEqual([['k2', undefined], ['k1', true]]);
     expect(heard).toHaveBeenCalledTimes(1);
     expect(livePlays(got.plays, Date.now()).map((p) => p.id)).toEqual(['k2']);
+  });
+
+  test('an open_gift ends its box as a card_end does: the box is not live, and one that comes first is held', () => {
+    const open = (box: string) => act(`open-${box}`, 'open_gift', { box, did: 'landed', gift: 'g1', why: null }, box);
+    const plays = createPlays();
+    plays.add([act('k1', 'card', { card: 'present' })]);
+    expect(plays.add([open('k1')])).toBe(true);
+    expect(plays.get('p1').plays.map((p) => p.reversed)).toEqual([true]);
+    expect(livePlays(plays.get('p1').plays, Date.now())).toEqual([]);
+    const early = createPlays();
+    early.add([open('k2')]);
+    early.add([act('k2', 'card', { card: 'present' })]);
+    expect(early.get('p1').plays.map((p) => p.reversed)).toEqual([true]);
   });
 
   test('a card_end that arrives before its play is held, and the play arrives reversed', () => {

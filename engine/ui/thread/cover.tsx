@@ -10,6 +10,12 @@ import type { CardUi, CoverProps, RowCover } from '../cards/types.ts';
 
 export type { CoverProps, RowCover };
 
+/**
+ * A card's place among the row's layers, outermost first (`InstanceUi.rowOrder`): its index, and -1 for a card the order does not list (the build refuses that, so it only
+ * happens in a test), which sorts outside every listed one, as the latest play did before the order existed.
+ */
+export const rowRank = (order: readonly string[] | undefined, key: string): number => order?.indexOf(key) ?? -1;
+
 export const RowCoverCtx = createContext<RowCover | null>(null);
 
 /** The post's covers for this reader; null where a post is drawn with no row of its own. */
@@ -25,23 +31,31 @@ export interface RowCovering {
   readonly covering: boolean;
   readonly shut: number;
   readonly rowCover: RowCover | null;
+  /** The cards whose covers are still shut for this reader, outermost first, one entry for each shut play: what a layer inside them is `covered` by (thread/fill.tsx). */
+  readonly shutCards: readonly string[];
   /** The `div.kb-row-cover` holding the card's `Cover`, to be drawn first inside the grid; null while none is shut. */
   readonly host: ReactNode;
 }
 
+/** The stacking of a row layer, the outermost highest, within the band above the post's own cells (5 and up) that fold.css gives a cover and a fill: a layer ranked outside another draws over it. */
+export const rowZ = (order: readonly string[] | undefined, key: string): number => 5 + (order?.length ?? 0) - rowRank(order, key);
+
 /**
  * Whether a post covers its row and the reader's state of it, for a thread's post. It covers while the post wears a live play, on its own reach, of a card that covers the row;
- * an admin's ending of one lowers `total` when the post next renders. The state is the set of play ids this reader has opened, in the page's memory: a play is shut until its id is
- * in it, so a play ended after it was opened leaves nothing shut, and a play landing later (outermost, since covers run latest first) is shut however many the reader has opened. The
+ * an admin's ending of one lowers `total` when the post next renders. The covers run outermost first in the instance's order (`InstanceUi.rowOrder`, `rowRank`), the latest play first
+ * among plays of one card. The state is the set of play ids this reader has opened, in the page's memory: a play is shut until its id is in it, so a play ended after it was opened
+ * leaves nothing shut, and a play landing later is shut however many the reader has opened. The
  * drawn cover is the latest play not yet opened; `open` adds its id and `encore` clears the set. While the host draws a Cover, every child of the grid but the host is made `inert`,
  * so nothing under it can be focused or pressed; only what the effect marked is lifted again.
  */
-export function useRowCovering({ plays, actId, eligible, now, cards, grid, post }: {
+export function useRowCovering({ plays, actId, eligible, now, cards, grid, post, order }: {
   readonly plays: Plays; readonly actId: string; readonly eligible: boolean; readonly now: number; readonly cards: readonly CardUi[]; readonly grid: RefObject<HTMLElement | null>; readonly post: string;
+  /** `InstanceUi.rowOrder`. */
+  readonly order?: readonly string[] | undefined;
 }): RowCovering {
   const own = usePlays(plays, actId).plays;
-  /* Latest first: the outermost cover is the latest play. */
-  const covering = eligible ? livePlays(own, now).filter((p) => !p.reach && cards.find((c) => c.key === p.card)?.coversRow === true).reverse() : [];
+  /* Outermost first: by the instance's rank, and the latest play first among the plays of one card (the sort is stable, and the plays run latest first before it). */
+  const covering = eligible ? livePlays(own, now).filter((p) => !p.reach && cards.find((c) => c.key === p.card)?.coversRow === true).reverse().sort((a, b) => rowRank(order, a.card) - rowRank(order, b.card)) : [];
   const total = covering.length;
   /* Ids of plays gone from `covering` are harmless: they are never looked up. */
   const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
@@ -60,9 +74,9 @@ export function useRowCovering({ plays, actId, eligible, now, cards, grid, post 
     const g = grid.current;
     if (!g) return;
     const marked: Element[] = [];
-    if (drawn) for (const el of g.children) if (!el.classList.contains('kb-row-cover') && !el.hasAttribute('inert')) { el.setAttribute('inert', ''); marked.push(el); }
+    if (drawn) for (const el of g.children) if (!el.classList.contains('kb-row-cover') && !(el.classList.contains('kb-row-layer') && el.getAttribute('data-kb-covered') !== 'true') && !el.hasAttribute('inert')) { el.setAttribute('inert', ''); marked.push(el); }
     return () => { for (const el of marked) el.removeAttribute('inert'); };
   });
-  const host = drawn && Cover && rowCover ? <div className="kb-row-cover"><Cover plays={same} cover={rowCover} post={post} /></div> : null;
-  return { covering: total > 0, shut, rowCover, host };
+  const host = drawn && Cover && rowCover ? <div className="kb-row-cover" style={{ zIndex: rowZ(order, next!.card) }}><Cover plays={same} cover={rowCover} post={post} /></div> : null;
+  return { covering: total > 0, shut, shutCards: stillShut.map((p) => p.card), rowCover, host };
 }
