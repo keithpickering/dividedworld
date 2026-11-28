@@ -1,0 +1,243 @@
+<!doctype html>
+<!--
+  Record, written 2026-11-28. The Console Slog bench: the design session's mockup for
+  docs/plans/2026-11-27-season-two-cards-design.md (Console Slog), made so the owner can feel the mash. The post is an empty
+  command prompt; each key press in it (held keys' repeats ignored), tap or click types out the next characters. A press
+  starts at 1 character; presses in a steady rhythm build a streak that makes each worth more, up to a cap, and a pause
+  drains it. Quotes print with "> ", a link prints its address in brackets and works once its characters are out, and an
+  image loads in green phosphor, a scanline band at a time. Progress is kept in this browser, as the card keeps it.
+  A standalone page: open it in a browser. It is a reference for how the slog feels, not code to copy.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Console Slog Bench</title>
+<style>
+:root { --paper: #fff; --ink: #000; --muted: #555; --rule: #000; --font: Verdana, Geneva, sans-serif; --mono: "Courier New", Courier, monospace; --neon: #19e3ff; --phosphor: #33ff66; color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--font); padding: 20px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 .3em; }
+.head, .notes { max-width: 988px; margin: 0 auto 16px; }
+.head p { color: var(--muted); font-size: 13.75px; max-width: 76ch; }
+:focus-visible { outline: 2px solid var(--neon); outline-offset: 2px; }
+.bench { max-width: 988px; margin: 0 auto 16px; border: 1px solid var(--rule); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.bench fieldset { border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 -1px -1px 0; padding: 10px 12px 12px; display: grid; gap: 6px; align-content: start; font-size: 12.5px; min-width: 0; }
+.bench legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold; letter-spacing: .06em; text-transform: uppercase; }
+.bench label { display: flex; gap: 6px; align-items: center; min-height: 24px; flex-wrap: wrap; }
+.bench input[type=range] { flex: 1; min-width: 90px; }
+.bench output { font: 12px var(--mono); min-width: 4.5ch; text-align: right; }
+.bench button { font: 12px var(--font); padding: 3px 8px; border: 1px solid var(--rule); background: #eee; cursor: pointer; }
+.stage { display: flex; justify-content: center; }
+.window { width: 988px; max-width: 100%; border: 1px solid var(--rule); }
+.board { --b-bg: #fff; --b-fg: #000; --b-head: #e6e6e6; --b-rule: #000; --b-muted: #555; background: var(--b-bg); color: var(--b-fg); font: 13px/1.5 var(--font); padding: 14px; }
+.window.dark .board { --b-bg: #0b0b0b; --b-fg: #f2f2f2; --b-head: #1d1d1d; --b-rule: #f2f2f2; --b-muted: #b4b4b4; }
+.crumbs { font-size: 11px; color: var(--b-muted); margin-bottom: 8px; }
+.post { border: 1px solid var(--b-rule); display: grid; grid-template-columns: 150px 1fr; }
+.postbit { border-right: 1px solid var(--b-rule); padding: 8px; font-size: 11px; background: var(--b-head); }
+.postbit b { font-size: 12px; display: block; }
+@media (max-width: 600px) { .post { grid-template-columns: 1fr; } .postbit { border-right: 0; border-bottom: 1px solid var(--b-rule); } }
+.main { display: grid; grid-template-rows: 1fr auto; min-width: 0; }
+.foot { border-top: 1px solid var(--b-rule); padding: 6px 10px; font-size: 11px; color: var(--b-muted); }
+
+/* The content area is the terminal, border to border. */
+.term { position: relative; min-height: 220px; background: #050805; color: var(--phosphor); font: 14px/1.5 var(--mono); padding: 12px 14px 16px; cursor: text; outline-offset: -3px; user-select: none; -webkit-user-select: none; touch-action: manipulation; overflow: hidden; }
+.term::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 2px 3px); }
+.term .bar { color: #9cffb5; opacity: .75; margin-bottom: 6px; }
+.term pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; text-shadow: 0 0 4px rgba(51,255,102,.55); }
+.term a { color: #b6ffcb; }
+.term a.dead { color: var(--phosphor); text-decoration: none; pointer-events: none; }
+.cursor { display: inline-block; width: .6em; height: 1.05em; vertical-align: -.15em; background: var(--phosphor); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+.phos { display: block; position: relative; margin: 4px 0; max-width: 100%; width: 320px; overflow: hidden; }
+.phos img { display: block; width: 100%; filter: grayscale(1) contrast(1.6) brightness(.9) sepia(1) hue-rotate(70deg) saturate(4); image-rendering: pixelated; }
+.phos .mask { position: absolute; left: 0; right: 0; bottom: 0; background: #050805; }
+.phos::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.35) 2px 3px); pointer-events: none; }
+.meter { position: absolute; right: 10px; top: 8px; font: 11px var(--mono); color: #9cffb5; opacity: .8; text-align: right; }
+.meter i { display: block; height: 3px; background: var(--phosphor); margin-top: 2px; width: 0; margin-left: auto; }
+.stats { max-width: 988px; margin: 10px auto 0; font: 12.5px var(--mono); }
+.notes { font-size: 13.75px; }
+.notes li { margin-bottom: .4em; }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>Console Slog bench</h1>
+  <p>Click the terminal (or tab to it) and mash keys, or tap it. Holding a key does nothing: only fresh presses count. A press starts at 1 character; keep a steady rhythm and each press grows, up to the cap; stop and the streak drains. Your place is kept in this browser: reload and you pick up where you left off.</p>
+</div>
+
+<form class="bench" onsubmit="return false">
+  <fieldset>
+    <legend>Momentum</legend>
+    <label>Rhythm window ms <input type="range" id="win" min="150" max="1200" step="25" value="450"><output for="win"></output></label>
+    <label>Presses per step <input type="range" id="every" min="1" max="20" step="1" value="5"><output for="every"></output></label>
+    <label>Most per press <input type="range" id="cap" min="1" max="24" step="1" value="8"><output for="cap"></output></label>
+    <label>Drain per idle second <input type="range" id="drain" min="1" max="60" step="1" value="12"><output for="drain"></output></label>
+  </fieldset>
+  <fieldset>
+    <legend>Images</legend>
+    <label>Bands per image <input type="range" id="bands" min="4" max="40" step="1" value="16"><output for="bands"></output></label>
+    <label>Bands per press: the press's size <input type="checkbox" id="bandsize" checked></label>
+  </fieldset>
+  <fieldset>
+    <legend>Post</legend>
+    <label><input type="radio" name="len" value="short"> Short (about 200 chars)</label>
+    <label><input type="radio" name="len" value="long" checked> Long (about 1,400 chars, a quote, a link, an image)</label>
+    <label>Keep my place <input type="checkbox" id="keep" checked></label>
+    <button type="button" id="reset">Start this post over</button>
+  </fieldset>
+  <fieldset>
+    <legend>Window</legend>
+    <label><input type="radio" name="board" value="light" checked> Light</label>
+    <label><input type="radio" name="board" value="dark"> Dark</label>
+    <label>Show the streak meter <input type="checkbox" id="meter" checked></label>
+  </fieldset>
+</form>
+
+<div class="stage">
+  <div class="window" id="window">
+    <div class="board">
+      <div class="crumbs">Divided World » The Pipe » Ranking every Mario Party board, correctly</div>
+      <div class="post">
+        <div class="postbit"><b>Mrs. Hooligan</b>Board Certified<br>Posts: 1,207</div>
+        <div class="main">
+          <div class="term" id="term" tabindex="0" role="button" aria-label="Console Slog. Press any key or tap to type out this post.">
+            <div class="bar">C:\DW\POSTS&gt; type 4471.txt</div>
+            <pre id="out"></pre>
+            <div class="meter" id="m" aria-hidden="true"><span id="mt">×1</span><i id="mi"></i></div>
+          </div>
+          <div class="foot">Console Slog · played by Pipewrench</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="stats" id="stats" role="status"></p>
+
+<ul class="notes">
+  <li>The terminal is the content area, border to border; its scanlines are over the words.</li>
+  <li>A key press counts once, however long it is held (the browser's repeats are ignored), so the accessible path is the same mash: a key, a tap or a switch press each reveal the same.</li>
+  <li>An image is <code>[IMG] name</code>, then its picture in green phosphor, revealed a band at a time; no pixel of it is read.</li>
+</ul>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const knobs = ['win','every','cap','drain','bands'];
+  const K = {};
+  const read = () => { for (const k of knobs) { K[k] = parseFloat($(k).value); const o = document.querySelector(`output[for=${k}]`); if (o) o.textContent = $(k).value; } };
+  knobs.forEach((k) => $(k).addEventListener('input', read)); read();
+
+  // A sample picture, drawn here so nothing is fetched: a pipe and a sun.
+  const PIC = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#6cf"/><circle cx="260" cy="45" r="26" fill="#fd3"/><rect y="140" width="320" height="40" fill="#a63"/><rect x="40" y="70" width="70" height="70" fill="#2a2"/><rect x="30" y="58" width="90" height="22" fill="#3c3"/><rect x="170" y="100" width="40" height="40" fill="#c84"/><rect x="214" y="100" width="40" height="40" fill="#c84"/></svg>');
+  const POSTS = {
+    short: [{ t: 'Tier list is final. Space Land is S tier and anyone who disagrees has never stolen a star with a Boo Bell. Fight me in the replies, I have time.' }],
+    long: [
+      { t: 'Okay. I have been asked, repeatedly, to "stop doing this in the Rankings thread", so here it is in its own thread, where it belongs, permanently.\n\n' },
+      { q: 'Gloomba wrote:\nPeach\'s Birthday Cake is a top three board and I will not be taking questions.' },
+      { t: '\nGloomba, I love you, but the Piranha Plant on that board has ended more friendships than the router incident. It is a board where one bad roll means you spend twelve turns paying a plant to exist.\n\nTIER S: Space Land. Yoshi\'s Tropical Island. The original Bowser\'s Magma Mountain, for the drama.\nTIER A: Horror Land, because the day and night thing is the only time the game understood mood.\nTIER F: Anything with a Chance Time that can take a star away from a person in last place. That is not a mechanic, that is bullying.\n\nPhoto of the only good board (I made it in Paint):\n' },
+      { img: PIC, name: 'only_good_board.png' },
+      { t: '\nThe full spreadsheet is here: ' }, { a: 'https://example.com/mp-tiers', text: 'the definitive tiers' },
+      { t: '. Comments are disabled. I am the comments.' },
+    ],
+  };
+  let post = 'long', units = [];
+  function compile(name) {
+    // One unit per character a press can reveal; an image is one unit per band; a link's characters carry its index.
+    units = [];
+    let li = 0;
+    for (const seg of POSTS[name]) {
+      if (seg.t) for (const ch of seg.t) units.push({ ch });
+      if (seg.q) for (const line of seg.q.split('\n')) { for (const ch of '> ' + line + '\n') units.push({ ch }); }
+      if (seg.a) { const i = li++; for (const ch of seg.text) units.push({ ch, link: i, href: seg.a }); for (const ch of ` [${seg.a}]`) units.push({ ch, link: i, href: seg.a, addr: true }); }
+      if (seg.img) { for (const ch of `[IMG] ${seg.name}\n`) units.push({ ch }); for (let b = 0; b < K.bands; b++) units.push({ img: seg.img, band: b }); }
+    }
+  }
+
+  const KEY = () => `console-slog-bench:${post}`;
+  let shown = 0, streak = 0, last = 0, presses = 0, startAt = null;
+  const load = () => { try { shown = $('keep').checked ? (parseInt(localStorage.getItem(KEY()) ?? '0', 10) || 0) : 0; } catch { shown = 0; } };
+  const save = () => { try { if ($('keep').checked) localStorage.setItem(KEY(), String(shown)); } catch {} };
+
+  function render() {
+    const out = $('out'); out.textContent = '';
+    let i = 0, pre = '';
+    const flush = () => { if (pre) { out.appendChild(document.createTextNode(pre)); pre = ''; } };
+    while (i < Math.min(shown, units.length)) {
+      const u = units[i];
+      if (u.link !== undefined) {
+        flush();
+        // A link's characters come out one by one; it works once all of them (its text and its address) are out.
+        const all = units.filter((x) => x.link === u.link), out_ = all.filter((x) => units.indexOf(x) < shown);
+        const done = out_.length === all.length;
+        const text = out_.filter((x) => !x.addr).map((x) => x.ch).join(''), addr = out_.filter((x) => x.addr).map((x) => x.ch).join('');
+        const a = document.createElement('a'); a.href = u.href; a.textContent = text; a.rel = 'noopener noreferrer'; a.target = '_blank'; if (!done) a.className = 'dead';
+        out.appendChild(a); if (addr) out.appendChild(document.createTextNode(addr));
+        i += out_.length; continue;
+      }
+      if (u.img) {
+        flush();
+        const bandsOut = units.filter((x, j) => x.img === u.img && j < shown).length, total = units.filter((x) => x.img === u.img).length;
+        const box = document.createElement('span'); box.className = 'phos';
+        const img = document.createElement('img'); img.src = u.img; img.alt = ''; box.appendChild(img);
+        const mask = document.createElement('span'); mask.className = 'mask'; mask.style.top = (bandsOut / total * 100) + '%'; box.appendChild(mask);
+        out.appendChild(box);
+        i += bandsOut; continue;
+      }
+      pre += u.ch; i++;
+    }
+    flush();
+    const c = document.createElement('span'); c.className = 'cursor'; c.setAttribute('aria-hidden', 'true'); out.appendChild(c);
+  }
+
+  const per = () => Math.min(K.cap, 1 + Math.floor(streak / K.every));
+  function press() {
+    const now = performance.now();
+    if (startAt === null) startAt = now;
+    streak = now - last <= K.win ? streak + 1 : Math.max(0, streak - K.every);
+    last = now; presses++;
+    let n = per();
+    // An image takes a band a press, or as many bands as the press is worth.
+    while (n > 0 && shown < units.length) {
+      const u = units[shown];
+      if (u.img && !$('bandsize').checked) { shown++; break; }
+      shown++; n--;
+    }
+    save(); render(); stats();
+  }
+  function stats() {
+    const secs = startAt === null ? 0 : (performance.now() - startAt) / 1000;
+    $('stats').textContent = `${Math.min(shown, units.length)} of ${units.length} out · ${presses} presses · ${secs.toFixed(1)} s · now ${per()} a press${shown >= units.length ? ' · done: it stays this way for you' : ''}`;
+  }
+
+  const term = $('term');
+  term.addEventListener('keydown', (e) => {
+    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'Tab' || e.key === 'Escape') return;
+    // A revealed link takes Enter as a link does; every other key is a press.
+    if (e.target.tagName === 'A') return;
+    e.preventDefault(); press();
+  });
+  term.addEventListener('pointerdown', (e) => { if (e.target.closest('a:not(.dead)')) return; e.preventDefault(); term.focus(); press(); });
+
+  // The streak drains while idle; the meter shows it.
+  let prev = performance.now();
+  (function tick(now) {
+    const dt = (now - prev) / 1000; prev = now;
+    if (now - last > K.win) streak = Math.max(0, streak - K.drain * dt);
+    $('m').style.display = $('meter').checked ? '' : 'none';
+    $('mt').textContent = '×' + per(); $('mi').style.width = Math.min(60, per() / K.cap * 60) + 'px';
+    requestAnimationFrame(tick);
+  })(prev);
+
+  const start = () => { compile(post); load(); render(); stats(); };
+  document.querySelectorAll('input[name=len]').forEach((r) => r.addEventListener('change', () => { post = r.value; start(); }));
+  document.querySelectorAll('input[name=board]').forEach((r) => r.addEventListener('change', () => $('window').classList.toggle('dark', r.value === 'dark' && r.checked)));
+  $('bands').addEventListener('change', start);
+  $('reset').addEventListener('click', () => { shown = 0; streak = 0; presses = 0; startAt = null; save(); render(); stats(); });
+  start();
+})();
+</script>
+</body>
+</html>
