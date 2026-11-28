@@ -756,3 +756,57 @@ for (const width of [1024, 1280, 1600]) {
     }
   });
 }
+
+/*
+ * A tag's frame is held to its post (issue #1259; engine/rules/frame.ts): the fake refuses, as the act function does, a box taller than the post could lay out and an
+ * image group wider than its box. A real tag made through the Draw tile, on the demo's short post and on a long one, at a phone's width and a wide desktop's, at the
+ * smallest and the largest text size Settings offers, lands, and the box it was counted in is the body's own box as Compose measured it.
+ */
+const LONG_WORDS = Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1}. ` + 'The quick brown fox jumps over the lazy dog while everyone on the board argues about whether the sprite sheet is any good at all. '.repeat(3)).join('\n\n');
+for (const width of [320, 1600]) for (const size of [100, 200] as const) for (const [what, body] of [['the demo post', null], ['a long post', LONG_WORDS]] as const) {
+  test.describe(`an honest tag lands, ${width}px at ${size}% text, on ${what}`, () => {
+    test.use({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+    test('its frame is held to the post and passes', async ({ page }) => {
+      await world(page, SMALL, 'hooligan', body);
+      await openThread(page);
+      await expect.poll(() => inked(page)).toBeGreaterThan(100);
+      if (size !== 100) await page.evaluate((s) => document.documentElement.setAttribute('data-kb-text-size', String(s)), size);
+      const measured = await post(page).locator('.kb-act-main').evaluate((el) => {
+        const px = parseFloat(getComputedStyle(el).fontSize);
+        return { w: el.clientWidth / px, h: el.clientHeight / px };
+      });
+      const draws = () => page.evaluate(async () => { const w = globalThis as E2eWindow; return (await w.__kbFake.surfaceActs(await w.__kbWall!))!.acts.filter((a) => a.kind === 'draw'); });
+      const before = (await draws()).length;
+      await post(page).getByRole('button', { name: 'Draw' }).click();
+      await dock(page).getByRole('radio', { name: 'Fat' }).click();
+      /* One stroke over the words near the top and one lower down, within the window (the surface is brought to its top, and a long post's runs far below it). */
+      const tall = (await surface(page).boundingBox())!.height;
+      await stroke(page, 40 / tall, 0.1, 0.9);
+      await stroke(page, Math.min(0.85, 500 / tall), 0.1, 0.9);
+      await dock(page).getByRole('button', { name: 'Tag it' }).click();
+      await expect(dock(page)).toBeHidden();
+      const after = await draws();
+      expect(after.length, 'the tag landed').toBe(before + 1);
+      const box = (after.at(-1)!.payload as { box: { w: number; h: number } }).box;
+      expect(box.w).toBeCloseTo(measured.w, 1);
+      expect(box.h).toBeCloseTo(measured.h, 1);
+    });
+  });
+}
+
+test.describe('a crafted frame, wide', () => {
+  test.use({ viewport: { width: 1280, height: 1100 }, reducedMotion: 'reduce' });
+  test('a box far taller than the post, sent to the data directly, is refused in the words that say to reload, and nothing lands', async ({ page }) => {
+    await world(page, SMALL);
+    await openThread(page);
+    const answer = await page.evaluate(async () => {
+      const w = globalThis as E2eWindow;
+      const strokes = Array.from({ length: 10 }, (_, i) => ({ can: 'black', cap: 'fat', points: [[-29, -18 + i * 4], [29, -18 + i * 4]] }));
+      const before = (await w.__kbFake.surfaceActs(await w.__kbWall!))!.acts.length;
+      const drawn = await w.__kbFake.draw(await w.__kbWall!, w.__kbDemo.characters.hooligan, { box: { w: 200, h: 2000 }, groups: [{ at: [0.5, 0.01], anchor: { kind: 'box' }, unit: 'em', strokes }] });
+      return { drawn, same: (await w.__kbFake.surfaceActs(await w.__kbWall!))!.acts.length === before };
+    });
+    expect(answer.drawn).toMatchObject({ ok: false, error: "That post's words aren't the ones you drew on. Reload it and tag again." });
+    expect(answer.same).toBe(true);
+  });
+});

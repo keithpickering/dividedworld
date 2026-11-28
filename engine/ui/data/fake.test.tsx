@@ -6074,6 +6074,37 @@ describe('a surface, as the server keeps it', () => {
       expect(await placesOf(fake, play)).toEqual([[{ grp: 0, place: text(post) }], [{ grp: 0, place: text(post, THE) }]]);
     });
   });
+
+  /* A draw's declared frame is held to its post, as the act function holds it (core.ts frameHeld, issue #1259): a card that names the frame its drawer declared (`frameOf`). */
+  describe('a declared frame, held to the post', () => {
+    const framed: CardRules<unknown> = {
+      ...slab, key: 'frame-slab',
+      surface: {
+        ...slab.surface!,
+        validateDraw: (input) => {
+          const i = input as { strokes?: unknown; box?: { w: number; h: number } };
+          if (typeof input !== 'object' || input === null || !isList(i.strokes) || i.box === undefined) return refuse('a drawing holds its strokes and its box');
+          return ok({ strokes: i.strokes as never[], payload: { box: i.box, groups: [], strokes: i.strokes } });
+        },
+        frameOf: (p) => ({ box: p.box as { w: number; h: number }, imageEms: [] }),
+      },
+    };
+    const on: Instance = { ...instance, cards: [framed as unknown as CardRules], settings: { ...settings, cardSettings: { 'slab.limit': 40 } } };
+    const WORDS = "That post's words aren't the ones you drew on. Reload it and tag again.";
+    test('a draw whose box is far taller than its post is refused in the words that say to reload; an honest one lands', async () => {
+      const { fake, play, anaHeel } = wall(on, 'frame-slab');
+      expect(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], box: { w: 200, h: 2000 } })).toEqual(refused(WORDS));
+      expect((await fake.surfaceActs(play))!.acts).toHaveLength(0);
+      must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], box: { w: 60, h: 23.5 } }));
+    });
+    test('a play\'s first draw is held too, and refused on `first`', async () => {
+      const { fake, ana, anaFace, thread } = wall(on, 'frame-slab');
+      const post = fake.seed.post(thread, anaFace, 'a clean post');
+      fake.seed.cards(ana, { 'frame-slab': 2 });
+      expect(await fake.playCard('frame-slab', anaFace, post, {}, '', undefined, undefined, { strokes: [dab(0.5)], box: { w: 200, h: 2000 } })).toEqual({ ok: false, error: WORDS, field: 'first' });
+      expect(await fake.playCard('frame-slab', anaFace, post, {}, '', undefined, undefined, { strokes: [dab(0.5)], box: { w: 60, h: 23.5 } })).toMatchObject({ ok: true });
+    });
+  });
 });
 
 /* No quote and a cast earn (card notes part 4, Tasks 3 and 4), as the fake mirrors them; the cards are this test's own. */

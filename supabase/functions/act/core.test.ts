@@ -1370,6 +1370,89 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: `draw ${d1} is not one of the draws given` } });
     assert.ok(!calls.some((c) => c.includes('wash_surface:')), calls.join('\n'));
   });
+
+  // A draw's declared frame is held to its post (issue #1259; engine/rules/frame.ts): a card whose drawer declares the box names it (`frameOf`), and the fixture keeps the box and groups it is sent.
+  const keepsFrame = (i: unknown) => (typeof i === 'object' && i !== null && Array.isArray((i as { strokes?: unknown }).strokes)
+    ? { ok: true as const, value: { strokes: (i as { strokes: never[] }).strokes, payload: { ...(i as Record<string, unknown>) } } } : { ok: false as const, why: 'draw some strokes' });
+  const frameOf = (p: Record<string, unknown>) => {
+    if (p.stencil !== undefined) return null;
+    const box = p.box as { w: number; h: number };
+    return { box, imageEms: ((p.groups ?? []) as { unit?: string; em?: number }[]).flatMap((g) => (g.unit === 'image' ? [g.em!] : [])) };
+  };
+  const framing = { ...wall, key: 'frame-wall', surface: { ...wall.surface, validateDraw: keepsFrame, frameOf } };
+  const framedOn = { ...walled, cards: [...walled.cards, framing] };
+  const frameRows = (limit: number) => ({ economy: instance.settings.economy, cardSettings: { ...rows(limit).cardSettings, 'wall.limit': limit } });
+  // A whole desktop post of words (the long text the frame tests measured: 65.8 by 59.4 ems at 1600px).
+  const LONG = Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1}. ` + 'The quick brown fox jumps over the lazy dog while everyone on the board argues about whether the sprite sheet is any good at all. '.repeat(3)).join('\n\n');
+  const frameRead = { kind: 'post', versions: [{ body: LONG, forged: [] }], signature: '', poll: null };
+  const boxOnly = (box: { w: number; h: number }, groups: unknown[] = [{ anchor: { kind: 'box' }, unit: 'em' }]) => ({ strokes: dab.strokes, box, groups });
+  const POISON = boxOnly({ w: 200, h: 2000 });
+  const HONEST = boxOnly({ w: 65.8, h: 59.4 });
+
+  test('a draw whose box is far taller than its post could lay out is refused before the RPC, in the words that say to reload', async () => {
+    const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: frameRead, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input: POISON });
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: NOT_THOSE_WORDS } });
+    assert.deepEqual(argsOf(calls, 'surface_frame_of'), { p_post: post });
+    assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
+  });
+
+  test('an honest draw on the same post lands, its box-only frame read and held, and the wall\'s post is read once for its places and its frame', async () => {
+    for (const input of [HONEST, boxOnly({ w: 65.8, h: 59.4 }, [{ anchor: textAt(v2, 4, 5), unit: 'em' }, { anchor: { kind: 'box' }, unit: 'em' }])]) {
+      const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: frameRead,
+        surface_version_pair: { current: { version: v2, body: LONG, forged: [] }, drawn: { version: v2, body: LONG, forged: [] } }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+      const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input });
+      assert.equal(out.status, 200, JSON.stringify(out.body));
+      assert.deepEqual(sentTo(calls, 'draw_on_surface').payload, input);
+      assert.equal(calls.filter((c) => c.includes(':surface_post_of:')).length, 1, calls.join('\n'));
+      assert.equal(calls.filter((c) => c.includes(':surface_frame_of:')).length, 1, calls.join('\n'));
+    }
+  });
+
+  test('an image group wider than its box is refused in the same words; one as wide as its box lands', async () => {
+    const image = { kind: 'image', version: v2, n: 0, src: 'https://i.example/a.png', nth: 0, x: 0.5, y: 0.5 };
+    const read = { ...frameRead, versions: [{ body: `Look [img]${image.src}[/img]`, forged: [] }] };
+    for (const [em, status] of [[80, 400], [65.8, 200]] as const) {
+      const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: read,
+        surface_version_pair: { current: { version: v2, body: read.versions[0]!.body, forged: [] }, drawn: { version: v2, body: read.versions[0]!.body, forged: [] } }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+      const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input: boxOnly({ w: 65.8, h: 40 }, [{ anchor: image, unit: 'image', em }]) });
+      assert.equal(out.status, status, `em ${em}: ${JSON.stringify(out.body)}`);
+      if (status === 400) {
+        assert.deepEqual(out.body, { field: 'input', error: NOT_THOSE_WORDS });
+        assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
+      }
+    }
+  });
+
+  test('a play\'s first draw is held to the post it is played on: the poison is refused on `first` before play_surface_card, and an honest first draw lands', async () => {
+    for (const [first, status] of [[POISON, 400], [HONEST, 200]] as const) {
+      const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: LONG.length, body: LONG, effects: [] }, surface_frame_of: frameRead,
+        play_surface_card: { id: 'k', kind: 'card', thread, draw: { id: 'd', thread, covered: 1, live: ['d'] } } });
+      const out = await runAction(dbs, framedOn, { action: 'playCard', card: 'frame-wall', character: id, target, config: { color: 'red' }, message: '', first });
+      assert.equal(out.status, status, JSON.stringify(out.body));
+      assert.deepEqual(argsOf(calls, 'surface_frame_of'), { p_post: target });
+      if (status === 400) {
+        assert.deepEqual(out.body, { field: 'first', error: NOT_THOSE_WORDS });
+        assert.ok(!calls.some((c) => c.includes('play_surface_card:')), calls.join('\n'));
+      } else assert.deepEqual(sentTo(calls, 'play_surface_card').first, HONEST);
+    }
+  });
+
+  test('a draw whose frame the card sets (a stencil) reads no frame and lands; a spun thread\'s opening Act is not held; a post the read cannot find is refused', async () => {
+    const stencil = { strokes: dab.strokes, stencil: 'x', box: { w: 65.9, h: 46.7 }, groups: [{ anchor: { kind: 'box' }, unit: 'em' }] };
+    const one = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    assert.equal((await runAction(one.dbs, framedOn, { action: 'draw', character: id, play: target, input: stencil })).status, 200);
+    assert.ok(!one.calls.some((c) => c.includes('surface_frame_of') || c.includes('surface_post_of')), one.calls.join('\n'));
+    const spin = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: { ...frameRead, kind: 'spin' }, draw_on_surface: { id: 'd', thread, covered: 1 } });
+    assert.equal((await runAction(spin.dbs, framedOn, { action: 'draw', character: id, play: target, input: POISON })).status, 200);
+    for (const read of [null, {}]) {
+      const none = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: read, draw_on_surface: { id: 'd', thread, covered: 1 } });
+      const out = await runAction(none.dbs, framedOn, { action: 'draw', character: id, play: target, input: HONEST });
+      assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: NOT_THOSE_WORDS } }, JSON.stringify(read));
+      assert.ok(!none.calls.some((c) => c.includes('draw_on_surface:')));
+    }
+    assert.equal(SAFE_TO_REPEAT('surface_frame_of'), true);
+  });
 }
 
 test('a no-quote card is refused before SQL on a post whose read holds a live back, and in its own words', async () => {

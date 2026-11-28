@@ -17,6 +17,8 @@
  * - **What the engine gets** is the strokes framed in the drawer's box: each point is `at + point * scale` (1 / box.w across and 1 / box.h down for
  *   ems; em / box.w and em / box.h for image widths), placed in the box for the count only (`placementOf`: a group larger than the box is shrunk evenly, one hanging off an edge is moved in), and each width is `CAPS_EM[cap] / box.w` times the group's shrink. The payload keeps the
  *   points as drawn.
+ * - **The frame is held to the post** (issue #1259): the server refuses a box taller than its post could lay out at its width, and an image group whose `em`
+ *   is wider than its box (`declaredFrame`, engine/rules/frame.ts), so a declared box can never make a tag count less than it covers. A stencil's box is the card's.
  * - **A wash** is `{ cuts: { draw, group, presses }[] }`: each cut names a live draw and one of its groups, and the presses are in that group's units,
  *   at most 3,000 in all. It is framed as a draw's points are and names the draw's radius (`SPONGE_EM / 2 / box.w`) and aspect.
  * - **A stored draw or wash of the old shape** (`{ strokes }`, `{ strokes, cells }`) is read where a payload is read (the painter, `describeDraw`) and is
@@ -28,6 +30,7 @@
 import { landsOn, ok, refuse, type CardRules, type Verdict } from '../../../engine/rules/cards.ts';
 import type { SurfaceStroke } from '../../../engine/rules/surface.ts';
 import type { Attachment } from '../../../engine/rules/anchor.ts';
+import type { DrawFrame } from '../../../engine/rules/frame.ts';
 import { STENCILS, STENCIL_KEYS, type StencilKey } from './graffiti/stencils.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
 import { capital, field, who } from './seen-words.ts';
@@ -255,6 +258,19 @@ function validateDraw(input: unknown): Verdict<{ readonly strokes: readonly Surf
   return ok({ strokes: engine(drawing.value), payload });
 }
 
+/**
+ * The frame a kept draw declared (issue #1259): its box and each image group's `em`, which the server holds to the post (engine/rules/frame.ts). A stencil's
+ * box is the card's own (`STENCIL_BOX`), never its drawer's, so a stencil has none to hold.
+ */
+function declaredFrame(payload: Record<string, unknown>): DrawFrame | null {
+  if (payload.stencil !== undefined || !record(payload.box) || !Array.isArray(payload.groups)) return null;
+  const { w, h } = payload.box;
+  return {
+    box: { w: Number(w), h: Number(h) },
+    imageEms: (payload.groups as unknown[]).flatMap((g) => (record(g) && g.unit === 'image' ? [Number(g.em)] : [])),
+  };
+}
+
 /** What a live draw gives a wash to cut: its box and its groups' frames, in the draw's own payload, whatever its shape. */
 type Frame = { readonly at: readonly [number, number]; readonly unit: Unit; readonly em?: number; readonly place: Placement };
 function frameOf(draw: unknown): { box: Box; radius: number; aspect: number; groups: readonly Frame[]; old: boolean } | null {
@@ -325,7 +341,7 @@ export const graffiti: CardRules<GraffitiConfig> = {
   rarity: 'rare',
   stack: 1,
   screenReads: [{ key: 'graffiti.limit', whole: true, min: 1, max: 100 }],
-  surface: { limitKey: 'graffiti.limit', mostLive: BOUNDS.mostLive, coats: COATS, validateDraw, validateWash },
+  surface: { limitKey: 'graffiti.limit', mostLive: BOUNDS.mostLive, coats: COATS, validateDraw, frameOf: declaredFrame, validateWash },
   seen: (p) => {
     const stencil = field(p.config, 'stencil'), can = field(p.config, 'can');
     const mark = typeof stencil === 'string' && typeof can === 'string' ? `${STENCIL_NOUNS[stencil as StencilKey] ?? 'a drawing'} in ${can} spray paint` : null;

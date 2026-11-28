@@ -10,6 +10,7 @@ import { LOG_DRAW, describeDraw } from './graffiti/words.ts';
 import { SURFACE_WORDS, olderWords } from '../../../engine/ui/cards/lens-words.ts';
 import { GRID, cellsOf, count, type Cells } from '../../../engine/rules/surface.ts';
 import { decideDraw, decideWash } from '../../../engine/rules/cards.ts';
+import { frameProblem } from '../../../engine/rules/frame.ts';
 import { seenOf, surf } from './test-kit.ts';
 
 /* Graffiti (docs/plans/2026-11-11-graffiti-plan.md, Task 7; the draw's new shape is docs/plans/2026-11-27-graffiti-everywhere-plan.md, Task 3). */
@@ -406,3 +407,32 @@ test('Graffiti: a draw is counted and validated where the browser has no Node Bu
 });
 // UTF-8 length by hand (1, 2, 3 or 4 bytes a code point), so the expectation needs no Node global either.
 const Buffer_free_count = (s: string) => [...s].reduce((n, c) => n + (c.codePointAt(0)! < 0x80 ? 1 : c.codePointAt(0)! < 0x800 ? 2 : c.codePointAt(0)! < 0x10000 ? 3 : 4), 0);
+
+// Issue #1259: the count is framed in the box the draw declares, and the server holds that box to the post (engine/rules/frame.ts) through the frame the card names.
+test('Graffiti: the reviewer\'s poison, ten Fat strokes over a whole 60 by 40 post sent in a 200 by 2,000 box, counts under 1% of its paint, and its frame is refused against the post', () => {
+  const fat = Array.from({ length: 10 }, (_, i) => stroke({ cap: 'fat', points: zigzag(24, 58, 3.6).map(([x, y]): [number, number] => [x, y - 18 + i * 4]) }));
+  const poison = drawn([group({ anchor: { kind: 'box' }, strokes: fat })], { w: 200, h: 2000 });
+  const honest = cellsFor(group({ anchor: { kind: 'box' }, strokes: fat }), box);
+  const declared = cellsFor(group({ anchor: { kind: 'box' }, strokes: fat }), poison.box);
+  assert.ok(declared * 50 < honest, `the count alone is fooled: ${declared} cells in the declared box against ${honest} in the honest one`);
+  // A post whose words fill a desktop body (the honest box is 60 by 40): the honest frame is accepted, the poison's is not.
+  const post = { versions: [{ body: 'A whole post of words about the sprite sheet and its fingers. '.repeat(40) }], reactions: 16 };
+  const kept = draw(poison);
+  assert.equal(kept.ok, true, why(kept));
+  const frame = surf.frameOf!(kept.ok ? kept.value.payload : {});
+  assert.deepEqual(frame, { box: { w: 200, h: 2000 }, imageEms: [] });
+  assert.equal(frameProblem(post, frame!), 'tall');
+  const fair = draw(drawn([group({ anchor: { kind: 'box' }, strokes: fat })]));
+  assert.equal(frameProblem(post, surf.frameOf!(fair.ok ? fair.value.payload : {})!), null);
+});
+
+test('Graffiti: the frame names each image group\'s em, so one wider than its box is refused; a stencil\'s frame is the card\'s own and names none', () => {
+  const kept = draw(drawn([group(), group({ anchor: image, unit: 'image', em: 12.5, strokes: [stroke({ points: [[0, 0], [0.2, 0.1]] })] }), group({ anchor: image, unit: 'image', em: 61, strokes: [stroke({ points: [[0, 0]] })] })]));
+  assert.equal(kept.ok, true, why(kept));
+  const frame = surf.frameOf!(kept.ok ? kept.value.payload : {})!;
+  assert.deepEqual(frame, { box, imageEms: [12.5, 61] });
+  assert.equal(frameProblem({ versions: [{ body: `[img]${image.src}[/img]` }], reactions: 16 }, frame), 'image');
+  const stencil = draw({ stencil: 'x', can: 'red', spot: 4 });
+  assert.equal(stencil.ok, true, why(stencil));
+  assert.equal(surf.frameOf!(stencil.ok ? stencil.value.payload : {}), null);
+});

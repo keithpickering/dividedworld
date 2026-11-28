@@ -31,6 +31,7 @@ import { sameName } from '../../rules/names.ts';
 import { pointAt, rewindConfig, rewindPointProblem } from '../../rules/rewind.ts';
 import { fromBits, fromCoatString, legacyCoats, minusCoats, paintedCount, PAINTED, type Coats } from '../../rules/surface.ts';
 import { contentOf, mapPlace, mapPlaces, type Attachment } from '../../rules/anchor.ts';
+import { frameProblem } from '../../rules/frame.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { ANONYMOUS_STAFF_KEY, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER } from '../../rules/instance.ts';
@@ -2366,6 +2367,23 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return ok(placed);
   }
+  /**
+   * A draw's declared frame held to its post, as the act function holds it (core.ts, frameHeld; surface_frame_of, 0457): every version's words (a hidden one has none), the signature the post is shown with, its current poll
+   * and the instance's reactions. A box taller than that could lay out at its width, or an image group wider than its box, is refused in NOT_THOSE_WORDS; a frame the card sets itself (a stencil) and a spun thread's opening Act are not held.
+   */
+  function frameHeldOn(rules: CardRules, post: ActRec, payload: Readonly<Record<string, unknown>>): Answer<null> {
+    const frame = rules.surface?.frameOf?.({ ...payload }) ?? null;
+    if (frame === null || post.kind === 'spin') return ok(null);
+    const versions = [post, ...edits(post)].map((v) => ({ body: hiddenVersions.has(v.id) ? '' : String(v.payload.body ?? ''), forged: forgedSet(forgedList(v.payload)) }));
+    const shown = shownAuthor(post, false);
+    const poll = currentPoll(post.id);
+    const problem = frameProblem({
+      versions, signature: shown === null ? '' : characters.get(shown)?.signature ?? '',
+      poll: poll ? { question: String(poll.payload.question ?? ''), options: (poll.payload.options as unknown[] ?? []).map(String) } : null,
+      reactions: instance.reactions.length,
+    }, frame);
+    return problem === null ? ok(null) : refuse(NOT_THOSE_WORDS);
+  }
   const placesNow = (draw: Id, post: ActRec): { grp: number; place: Attachment | null }[] =>
     [...(surfacePlaces.get(draw)?.get(versionOf(post).id) ?? [])].map(([grp, place]) => ({ grp, place })).sort((x, y) => x.grp - y.grp);
   /** surface_prune (0456): the live list once the draws with no grid have gone; a wash stays while a draw it changed is alive. */
@@ -2427,6 +2445,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (painted > 0 && s.grids.size + 1 > mostLive) return refuse(`This wall is full: it holds ${mostLive} tags. It has room again when its author washes one off.`);
       const where = placesOfDraw(post, sent);
       if (isRefusal(where)) return where;
+      const held = frameHeldOn(rules, post, sent);
+      if (isRefusal(held)) return held;
       places = where.value;
       payload = legacy ? { ...sent, cells: [...grid].map((v) => (v > 0 ? '1' : '0')).join('') } : { ...sent, coats: drawn.value.coats };
     } else {
@@ -2855,6 +2875,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
     if (decided.value.draw) {
+      /* Its frame is held to the post first, as the act function holds it before play_surface_card. */
+      const held = frameHeldOn(rules, on, decided.value.draw.payload);
+      if (isRefusal(held)) return refuse(NOT_THOSE_WORDS, 'first');
       const tag = paintedCount(layDraw(decided.value.draw.payload, decided.value.draw.coats));
       if (tag > decided.value.draw.most) return refuse(`this wall is 0% covered, and its limit is ${Math.floor(decided.value.draw.most / 100)}%; this tag would take it to ${Math.ceil(tag / 100)}%`, 'first');
     }

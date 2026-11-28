@@ -14,6 +14,7 @@ import { parse, safeColor } from '../bbcode/parse.ts';
 import { visibleWalk, type Stretch } from '../bbcode/visible.ts';
 import { phraseIn } from '../bbcode/phrase.ts';
 import { GRID, coatsOf, takesOf, toCoatString, type SurfaceStroke } from './surface.ts';
+import type { DrawFrame } from './frame.ts';
 
 /**
  * Where a card can land (the card mechanic's design, section 7): a post, a character, a thread or a
@@ -550,6 +551,13 @@ export interface CardRules<Config = unknown> {
     /** The paint's depth in tenths of a coat: what one stroke lays where its core is, and the most a cell holds (docs/plans/2026-11-27-graffiti-everywhere-design.md, section 5). */
     readonly coats: { readonly line: number; readonly most: number };
     validateDraw(input: unknown): Verdict<{ readonly strokes: readonly SurfaceStroke[]; readonly payload: Record<string, unknown> }>;
+    /**
+     * The frame a kept draw (`validateDraw`'s payload) is counted in, where its drawer's screen declared it: its box in ems of the post's text, and
+     * each image group's `em`. The server holds it to the post the draw is on (frame.ts, `frameProblem`), so a declared frame can never make a tag
+     * count less than it covers. Null for a draw whose frame the card sets itself (a stencil, counted in a fixed box). A card whose count is framed
+     * by a box its drawer sends gives this; one without it is counted in a frame it does not take from the drawer.
+     */
+    frameOf?(payload: Record<string, unknown>): DrawFrame | null;
     /**
      * Given the live draws it cuts (payloads as stored), so it can place a group's presses in its drawer's frame. Each cut names the draw, the presses in that
      * draw's own frame (shares of its drawer's box), and the sponge's `radius` (a share of that box's width) and the box's `aspect`.
