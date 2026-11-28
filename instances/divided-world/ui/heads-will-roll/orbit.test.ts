@@ -224,3 +224,23 @@ test('a count that changes a sun\'s reach moves nobody more than 4 px across the
   assert.ok(worst <= 4, `a head moved ${worst.toFixed(1)} px in one step (seed ${worstSeed})`);
   assert.ok(worstOut <= 0.001, `a head ended ${worstOut.toFixed(2)} px past a border`);
 });
+
+test('a body\'s pace is the speed step() moves it at, a satellite\'s about its sun, within 5%', () => {
+  for (const box of BOXES.slice(0, 2)) {
+    const o = createOrbit(box, { seed: 5 });
+    o.setHeads([{ id: 'a', count: 9 }, { id: 'b', count: 5 }, { id: 'c', count: 2 }, { id: 'd', count: 1 }]);
+    run(o, SECONDS, () => {});
+    const before = o.bodies();
+    const dt = 0.02;
+    o.step(dt);
+    const after = o.bodies();
+    for (const b of after) {
+      const was = before.find((x) => x.id === b.id)!;
+      const sunNow = b.sun === null ? null : after.find((x) => x.id === b.sun)!, sunWas = b.sun === null ? null : before.find((x) => x.id === b.sun)!;
+      const d = Math.hypot(b.X - (sunNow?.X ?? 0) - (was.X - (sunWas?.X ?? 0)), b.Y - (sunNow?.Y ?? 0) - (was.Y - (sunWas?.Y ?? 0)), b.Z - (sunNow?.Z ?? 0) - (was.Z - (sunWas?.Z ?? 0)));
+      const sunMoved = b.sun === null ? Math.hypot(b.X - was.X, b.Y - was.Y, b.Z - was.Z) : d;
+      const measured = sunMoved / dt;
+      assert.ok(Math.abs(measured / b.pace - 1) <= 0.05, `${box.width} px ${b.id}: pace ${b.pace.toFixed(2)} but it moved ${measured.toFixed(2)} px/s`);
+    }
+  }
+});

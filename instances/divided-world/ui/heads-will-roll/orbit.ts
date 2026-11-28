@@ -112,6 +112,8 @@ export interface Body {
   readonly sun: string | null;
   /** Its fitted ring's radius in the space (0 for a sun). */
   readonly ring: number;
+  /** How fast it moves as `step()` moves it, in px a second in the space: a sun's drift, a satellite's travel along its ring about its sun. */
+  readonly pace: number;
 }
 
 export interface Orbit {
@@ -387,6 +389,14 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     });
   }
 
+  /** A body's pace in px a second in the space, by the same rules `step` moves it by. */
+  function paceOf(s: Sim): number {
+    const u = s.sun;
+    if (!u || s.fitR <= 0) return ORBIT.drift;
+    const w = ORBIT.pace * Math.sqrt(Math.max(1, u.mass) * 4e4 / Math.pow(s.ring.r, 3));
+    return Math.min(w, ORBIT.mostRingSpeed / s.fitR) * Math.max(0, s.base + s.dr);
+  }
+
   function setHeads(heads: readonly HeadSpec[]): void {
     const was = new Map(sims.map((s) => [s.id, s]));
     sims = heads.map((h) => {
@@ -407,6 +417,6 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     setSettings(next) { settings = { ...settings, ...next }; for (const s of sims) { s.mass = headMass({ id: s.id, count: s.count, local: s.local, react: s.react }, settings); s.size = headSize(s.mass, s.react, box.width); } layout(); },
     step,
     project: () => tabOrder().map((s) => ({ id: s.id, mass: s.mass, react: s.react, local: s.local, size: s.size, x: s.sx, y: s.sy, scale: s.scale, depth: s.depth, rank: s.rank, angle: s.angle, speed: s.speed })),
-    bodies: () => tabOrder().map((s) => ({ id: s.id, mass: s.mass, size: s.size, X: s.X, Y: s.Y, Z: s.Z, sun: s.sun?.id ?? null, ring: s.fitR })),
+    bodies: () => tabOrder().map((s) => ({ id: s.id, mass: s.mass, size: s.size, X: s.X, Y: s.Y, Z: s.Z, sun: s.sun?.id ?? null, ring: s.fitR, pace: paceOf(s) })),
   };
 }

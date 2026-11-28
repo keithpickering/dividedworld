@@ -14,13 +14,14 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { reelSeconds } from './orbit.ts';
 
 /* The orbit is the real one; its steps are counted. */
-const steps = vi.hoisted(() => ({ n: 0 }));
+const steps = vi.hoisted(() => ({ n: 0, orbit: null as null | { bodies: () => readonly { id: string; size: number; sun: string | null; pace: number }[] } }));
 vi.mock('./orbit.ts', async (original) => {
   const actual = await original<typeof import('./orbit.ts')>();
   return {
     ...actual,
     createOrbit: (...args: Parameters<typeof actual.createOrbit>) => {
       const orbit = actual.createOrbit(...args);
+      steps.orbit = orbit;
       return { ...orbit, step: (dt: number) => { steps.n++; orbit.step(dt); } };
     },
   };
@@ -156,17 +157,42 @@ describe('Heads Will Roll: the heads', () => {
     expect(press).toHaveBeenCalledWith('fire');
   });
 
-  test('under still the heads stand still and a pointer press reels in too, for the same time', () => {
+  test('under still the heads stand still and a pointer press reels in too, for the time the moving head would take', () => {
     const { deck, press } = deckOf();
     mount(deck, { still: true });
     see(true);
     expect(queue.size).toBe(0);
-    fireEvent.pointerDown(heads()[0]!, { button: 0, pointerType: 'mouse' });
-    fireEvent.click(heads()[0]!);
-    expect(press).not.toHaveBeenCalled();
-    act(() => { vi.advanceTimersByTime(reelSeconds(0, { reelBase: 0.8, reelPerSpeed: 0.12 }) * 1000 + 1); });
-    expect(press).toHaveBeenCalledTimes(1);
+    const bodies = steps.orbit!.bodies();
+    const secondsOf = (id: string) => {
+      const b = bodies.find((x) => x.id === id)!;
+      return reelSeconds(b.pace / b.size, { reelBase: 0.8, reelPerSpeed: 0.12 });
+    };
+    const sunId = bodies.find((b) => b.sun === null && b.id !== 'react')!.id;
+    const satId = bodies.find((b) => b.sun !== null && b.id !== 'react')!.id;
+    for (const id of [sunId, satId]) {
+      const button = document.querySelector<HTMLElement>(`[data-head="${id}"]`)!;
+      const key = id.slice(2);
+      press.mockClear();
+      fireEvent.pointerDown(button, { button: 0, pointerType: 'mouse' });
+      fireEvent.click(button);
+      const ms = secondsOf(id) * 1000;
+      expect(ms).toBeGreaterThan(800);
+      act(() => { vi.advanceTimersByTime(ms - 2); });
+      expect(press).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(4); });
+      expect(press).toHaveBeenCalledWith(key);
+    }
     expect(steps.n).toBe(0);
+  });
+
+  test('a press that left without a click does not swallow a switch click that follows', () => {
+    const { deck, press } = deckOf();
+    mount(deck);
+    fireEvent.pointerDown(heads()[0]!, { button: 0, pointerType: 'touch' });
+    expect(press).toHaveBeenCalledTimes(1);
+    fireEvent.pointerCancel(heads()[0]!);
+    act(() => { fireEvent.click(heads()[0]!); });
+    expect(document.querySelector('.dw-hwr-reel')).not.toBeNull();
   });
 
   test('the React head opens the picker with only the new kinds, and a press on it needs no reel', () => {

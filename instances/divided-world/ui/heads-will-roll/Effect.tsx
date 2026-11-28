@@ -15,7 +15,7 @@
  *
  * Catching. A pointer press is the deck's `press` at once. The reel-in is the way through for keys, switches and every input under reduced motion, which cost the same as a catch: Enter or Space
  * on a head, or a click the browser reports with no pointer press before it (a switch), locks onto the head and the reaction lands after `reelSeconds(speed)`, the head's own speed at the press
- * (design 2.3), drawn as a thin bar under it; pressing again cancels. One head is reeled at a time. Under reduced motion a pointer press reels in too, for the same time, the speed being none.
+ * (design 2.3), drawn as a thin bar under it; pressing again cancels. One head is reeled at a time. Under reduced motion a pointer press reels in too, for the same time: the speed is the one the head would have had moving (`movingSpeedOf`, the orbit's `pace` over its size).
  * The React head opens the deck's picker with only the kinds not yet on the post, at once on any input, since a picker is no catch.
  *
  * The author's screen (`canReact` false): the heads still orbit but are plain. Each is an image labeled with its emoji and count (and "an Overreaction" for a local kind), takes no press, and has no
@@ -174,12 +174,17 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
   const deckNow = useRef(deck);
   deckNow.current = deck;
   const speedOf = (id: string): number => orbit.project().find((p: ProjectedHead) => p.id === id)?.speed ?? 0;
+  /* The speed a still head would have had moving, in its own widths a second: the orbit's own pace for it (px a second in the space) over its size, so a reel-in costs what a catch does. */
+  const movingSpeedOf = (id: string): number => {
+    const b = orbit.bodies().find((x) => x.id === id);
+    return b && b.size > 0 ? b.pace / b.size : 0;
+  };
 
   /* A reel-in on a kind's head: the reaction lands after the time a pointer catch of this head would take; again, it lets go. */
   function reelIn(id: string, key: string): void {
     if (reeling?.id === id) { cancelReel(); return; }
     cancelReel();
-    const seconds = reelSeconds(calm ? 0 : speedOf(id), reel);
+    const seconds = reelSeconds(calm ? movingSpeedOf(id) : speedOf(id), reel);
     setReeling({ id, seconds });
     timer.current = setTimeout(() => {
       timer.current = null;
@@ -200,6 +205,8 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
     lastPointer.current = Date.now();
     activate(id, key, true, e.currentTarget);
   };
+  /* A press that ended without a click (a touch dragged off, a cancel) is over: it must not swallow a switch's click that follows. */
+  const onPointerEnd = (): void => { lastPointer.current = 0; };
   const onClick = (e: { currentTarget: HTMLElement }, id: string, key: string | null): void => {
     /* The press that made this click was already handled; a click with none before it is a switch or a screen reader's. */
     if (lastPointer.current !== 0 && Date.now() - lastPointer.current < SAME_GESTURE_MS) { lastPointer.current = 0; return; }
@@ -257,6 +264,8 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
               {...(chip?.pending ? { 'data-pending': '' } : {})}
               aria-label={chip ? headLabel(chip.emoji, Math.max(1, chip.count ?? 1), { local: chip.local, mine, pending: chip.pending !== null, plain: false }) : 'React, press to pick a new reaction'}
               onPointerDown={(e) => onPointerDown(e, p.id, key)}
+              onPointerCancel={onPointerEnd}
+              onPointerLeave={onPointerEnd}
               onClick={(e) => onClick(e, p.id, key)}
               onKeyDown={(e) => onKeyDown(e, p.id, key)}
               onKeyUp={onKeyUp}
