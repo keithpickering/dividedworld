@@ -1386,13 +1386,15 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
   const LONG = Array.from({ length: 8 }, (_, i) => `Paragraph ${i + 1}. ` + 'The quick brown fox jumps over the lazy dog while everyone on the board argues about whether the sprite sheet is any good at all. '.repeat(3)).join('\n\n');
   const frameRead = { kind: 'post', versions: [{ body: LONG, forged: [] }], signature: '', poll: null };
   const boxOnly = (box: { w: number; h: number }, groups: unknown[] = [{ anchor: { kind: 'box' }, unit: 'em' }]) => ({ strokes: dab.strokes, box, groups });
+  /** What a player reads when a draw's frame is bigger than the post it is on (the owner's words on #1237). */
+  const TOO_BIG = 'That tag is drawn bigger than this post. Reload it and tag again.';
   const POISON = boxOnly({ w: 200, h: 2000 });
   const HONEST = boxOnly({ w: 65.8, h: 59.4 });
 
-  test('a draw whose box is far taller than its post could lay out is refused before the RPC, in the words that say to reload', async () => {
+  test('a draw whose box is far taller than its post could lay out is refused before the RPC, in the words that say it is bigger than the post', async () => {
     const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: frameRead, draw_on_surface: { id: 'd', thread, covered: 1 } });
     const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input: POISON });
-    assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: NOT_THOSE_WORDS } });
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: TOO_BIG } });
     assert.deepEqual(argsOf(calls, 'surface_frame_of'), { p_post: post });
     assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
   });
@@ -1404,7 +1406,7 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
       const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input: boxOnly(box) });
       assert.equal(out.status, status, JSON.stringify(out.body));
       if (status === 400) {
-        assert.deepEqual(out.body, { field: 'input', error: NOT_THOSE_WORDS });
+        assert.deepEqual(out.body, { field: 'input', error: TOO_BIG });
         assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
       }
     }
@@ -1431,7 +1433,7 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
       const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input: boxOnly({ w: 65.8, h: 40 }, [{ anchor: image, unit: 'image', em }]) });
       assert.equal(out.status, status, `em ${em}: ${JSON.stringify(out.body)}`);
       if (status === 400) {
-        assert.deepEqual(out.body, { field: 'input', error: NOT_THOSE_WORDS });
+        assert.deepEqual(out.body, { field: 'input', error: TOO_BIG });
         assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
       }
     }
@@ -1445,7 +1447,7 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
       assert.equal(out.status, status, JSON.stringify(out.body));
       assert.deepEqual(argsOf(calls, 'surface_frame_of'), { p_post: target });
       if (status === 400) {
-        assert.deepEqual(out.body, { field: 'first', error: NOT_THOSE_WORDS });
+        assert.deepEqual(out.body, { field: 'first', error: TOO_BIG });
         assert.ok(!calls.some((c) => c.includes('play_surface_card:')), calls.join('\n'));
       } else assert.deepEqual(sentTo(calls, 'play_surface_card').first, HONEST);
     }

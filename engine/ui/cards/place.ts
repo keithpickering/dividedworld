@@ -7,7 +7,10 @@
  *    image's shares. A group whose attachment is not on this screen (the measure is null: the words are gone, the image has not loaded) is at its spot in the box
  *    (`at`, a share of the box), the fallback of section 6.
  * 2. Its unit in px: an em on this screen, or the image's width (a fallen image group keeps the ems an image width was when it was drawn, `em`).
- * 3. Shrunk evenly about its origin to fit the box's width if it is wider (`min(1, box.w / width)`), never enlarged, and never shrunk for height.
+ * 3. Shrunk evenly about its origin to fit the box's width if it is wider (`min(1, box.w / width)`), never enlarged, and never shrunk for height. An image
+ *    group is also shrunk about its origin to be no wider a share of this box than `IMAGE_SLACK` times its counted share of its drawer's (`imageCap`,
+ *    issue #1261), so an `em` declared smaller than the image cannot cover many times what it counts. The painter, `hitAt` and a wash's presses all
+ *    read this scale, so a press is in the group's own units where its paint is drawn.
  * 4. Pulled into the box: back from the right and the bottom, then from the left and the top, so a group taller than the box has its top in view.
  * 5. Nudged, within one drawing (the groups with the same `drawing`, earlier ones first): a group that overlaps an earlier group of its drawing, when the
  *    drawer's own screen (`frame`, the drawing's box in ems, placing each group at its `at`) showed the two clear, moves down in steps of one em until it is clear,
@@ -41,6 +44,13 @@ export interface PlaceGroup {
 /** The most ems a group is nudged down, and then up, looking for clear room: a box that is huge or an em that is tiny costs this much and no more. */
 export const NUDGE_STEPS = 400;
 
+/**
+ * How many times its counted share of the box an image group may be drawn at, at most (issue #1261; the owner chose option 1). An image group's
+ * points are in image widths and its count is in the `em` its drawer declared, which no server can check against a hotlinked image; the same
+ * image is a different share of the box on a phone than on a wide screen, by up to about 4.5 times, so honest tags are held only by a slack.
+ */
+export const IMAGE_SLACK = 5;
+
 /** Where a group's origin goes, in px, and how much it is shrunk about it. */
 export interface Placed { readonly x: number; readonly y: number; readonly scale: number }
 
@@ -62,6 +72,20 @@ const overlapOf = (a: Rect, b: Rect): number => Math.max(0, Math.min(a.x1, b.x1)
 const positive = (n: number): boolean => Number.isFinite(n) && n > 0;
 const finite = (...n: number[]): boolean => n.every(Number.isFinite);
 
+/**
+ * The most an image group's scale may be on this screen (issue #1261): what holds its drawn width, as a share of this screen's box, to `IMAGE_SLACK`
+ * times its counted width, as a share of its drawer's box. Its counted width is its extent at the `em` it declared, shrunk as the count shrinks a
+ * group larger than its box (instances' `placementOf`), over the frame's width; its drawn width is its extent at `unit` px a unit, over `boxW`.
+ * The extent is on both sides, so the cap is a unit of at most `IMAGE_SLACK * em * k * boxW / frame.w` px. A text group, and a group whose
+ * figures are not positive, is not capped (1).
+ */
+function imageCap(g: PlaceGroup, b: Rect, unit: number, boxW: number): number {
+  const em = g.em ?? 1, [ew, eh] = [b.x1 - b.x0, b.y1 - b.y0];
+  if (g.unit !== 'image' || !positive(em) || !positive(unit) || !positive(boxW) || !positive(g.frame.w) || !positive(g.frame.h) || !positive(ew)) return 1;
+  const k = Math.min(1, g.frame.w / (ew * em), eh > 0 ? g.frame.h / (eh * em) : 1);
+  return Math.min(1, (IMAGE_SLACK * em * k * boxW) / g.frame.w / unit);
+}
+
 export function placeGroups(groups: readonly PlaceGroup[], measured: readonly (Measured | null)[], box: { readonly w: number; readonly h: number }, emPx: number): Placed[] {
   const out: Placed[] = [];
   /** The groups placed so far, by drawing: each one's frame on its drawer's screen and its rect on this one. */
@@ -80,9 +104,9 @@ export function placeGroups(groups: readonly PlaceGroup[], measured: readonly (M
     if (m !== null && a.kind === 'text' && m.kind === 'point' && finite(m.x, m.y)) [x, y] = [m.x + a.dx * emPx, m.y + a.dy * emPx];
     else if (m !== null && a.kind === 'image' && m.kind === 'rect' && finite(m.x, m.y, m.w, m.h)) [x, y, unit] = [m.x + a.x * m.w, m.y + a.y * m.h, m.w];
     const b = reach(g);
-    // Step 3.
+    // Step 3, and an image group's cap.
     const wide = (b.x1 - b.x0) * unit;
-    const scale = wide > box.w ? box.w / wide : 1;
+    const scale = Math.min(wide > box.w ? box.w / wide : 1, imageCap(g, b, unit, box.w));
     const px = unit * scale;
     // Step 4.
     const rect = (ox: number, oy: number): Rect => ({ x0: ox + b.x0 * px, y0: oy + b.y0 * px, x1: ox + b.x1 * px, y1: oy + b.y1 * px });

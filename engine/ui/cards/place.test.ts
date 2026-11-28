@@ -4,7 +4,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NUDGE_STEPS, placeGroups, type PlaceGroup, type Measured } from './place.ts';
+import { IMAGE_SLACK, NUDGE_STEPS, placeGroups, type PlaceGroup, type Measured } from './place.ts';
 
 const EM = 15;
 /** A group of one horizontal stroke `wide` units long, centered on its origin, with a brush of radius `r` units; its drawer's box is 24 by 40 ems. */
@@ -161,6 +161,56 @@ describe('placing groups on a screen', () => {
       const [, pb] = placeGroups([a, b], at, bx, em);
       assert.equal(pb!.y, 104, JSON.stringify([bx, em]));
     }
+  });
+
+  describe('an image group is never drawn larger than IMAGE_SLACK times its counted share of the box (issue #1261)', () => {
+    /* The drawer's box: 65.8 ems, 987 px at 15 px. The image on the drawer's screen is 30 ems, 450 px, wide. */
+    const frame = { w: 65.8, h: 40 };
+    const image = { kind: 'image', version: 'v1', n: 0, src: 'https://a.example/i.png', nth: 0, x: 0.5, y: 0.5 } as const;
+    const wideBox = { w: frame.w * EM, h: 600 };
+    const imageGroup = (em: number, half: number, r: number): PlaceGroup => ({ drawing: 'd1', at: [0.5, 0.5], anchor: image, unit: 'image', em, frame, strokes: [{ points: [[-half, 0], [half, 0]], r }] });
+    /** The group's width in its own units, its strokes' bounds plus its widest brush's radius. */
+    const extent = (g: PlaceGroup) => 2 * (g.strokes[0]!.points[1]![0] + g.strokes[0]!.r);
+    /** Its counted share of the box: its extent in ems of the drawer's frame over the frame's width. */
+    const counted = (g: PlaceGroup) => (extent(g) * g.em!) / g.frame.w;
+    /** Its drawn share of this screen's box: its extent at the image's width, scaled, over the box's width. */
+    const drawn = (g: PlaceGroup, p: { scale: number }, imagePx: number, boxPx: number) => (extent(g) * imagePx * p.scale) / boxPx;
+
+    test('the slack is 5', () => assert.equal(IMAGE_SLACK, 5));
+
+    test('a 30-em image declared 0.5 em, its strokes out to 3 image widths, is drawn at most 5 times its counted share, about its anchor', () => {
+      // A brush of a 1-em cap is half an em, which is one image width at 0.5 em a width.
+      const g = imageGroup(0.5, 3, 1);
+      const rect: Measured = { kind: 'rect', x: 100, y: 50, w: 30 * EM, h: 300 };
+      const [p] = placeGroups([g], [rect], wideBox, EM);
+      const share = drawn(g, p!, rect.w, wideBox.w);
+      assert.ok(share <= IMAGE_SLACK * counted(g) + 1e-9, `drawn ${share} of the box, counted ${counted(g)}`);
+      assert.ok(Math.abs(share - IMAGE_SLACK * counted(g)) < 1e-9, `capped to the slack, not further: ${share}`);
+      const at = bounds(g, p!, rect.w);
+      assert.ok(at.x0 >= 0 && at.y0 >= 0 && at.x1 <= wideBox.w && at.y1 <= wideBox.h, JSON.stringify(at));
+      // Scaled about its anchor, which is the image's middle, and so not moved.
+      assert.deepEqual([p!.x, p!.y], [100 + 0.5 * rect.w, 50 + 0.5 * rect.h]);
+      // On a phone, where the image is shown at the text's width, it is held the same.
+      const phone = { w: 360, h: 900 };
+      const [q] = placeGroups([g], [{ kind: 'rect', x: 10, y: 50, w: 338, h: 225 }], phone, EM);
+      assert.ok(drawn(g, q!, 338, phone.w) <= IMAGE_SLACK * counted(g) + 1e-9, `phone: drawn ${drawn(g, q!, 338, phone.w)}`);
+    });
+
+    test('an honest image tag, its em the image\'s width in ems on the drawer\'s screen, is drawn exactly as before, there and on a phone where the image is smaller', () => {
+      const g = imageGroup(30, 0.4, 0.05);
+      const rect: Measured = { kind: 'rect', x: 100, y: 50, w: 30 * EM, h: 300 };
+      assert.deepEqual(placeGroups([g], [rect], wideBox, EM), [{ x: 100 + 0.5 * rect.w, y: 50 + 0.5 * rect.h, scale: 1 }]);
+      // A phone 360 px wide: the image at its most, the text's width, 338 px; the same image a fifth of that.
+      const phone = { w: 360, h: 900 };
+      for (const w of [338, 338 / 5]) {
+        assert.deepEqual(placeGroups([g], [{ kind: 'rect', x: 10, y: 50, w, h: w * 0.6 }], phone, EM), [{ x: 10 + 0.5 * w, y: 50 + 0.3 * w, scale: 1 }], `${w}px`);
+      }
+    });
+
+    test('a text group is never capped: its count is in ems of the text, as it is drawn', () => {
+      const g = group({ anchor: textAt(), wide: 20, frame: { w: 65.8, h: 40 } });
+      assert.equal(placeGroups([g], [{ kind: 'point', x: 50, y: 50 }], { w: 360, h: 600 }, EM)[0]!.scale, 1);
+    });
   });
 
   test('a measured point or rect that is not finite is no measure: the group goes to its `at`', () => {

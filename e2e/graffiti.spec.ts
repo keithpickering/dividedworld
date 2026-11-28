@@ -796,7 +796,7 @@ for (const width of [320, 1600]) for (const size of [100, 200] as const) for (co
 
 test.describe('a crafted frame, wide', () => {
   test.use({ viewport: { width: 1280, height: 1100 }, reducedMotion: 'reduce' });
-  test('a box far taller than the post, sent to the data directly, is refused in the words that say to reload, and nothing lands', async ({ page }) => {
+  test('a box far taller than the post, sent to the data directly, is refused in the words that say it is bigger than the post, and nothing lands', async ({ page }) => {
     await world(page, SMALL);
     await openThread(page);
     const answer = await page.evaluate(async () => {
@@ -806,7 +806,7 @@ test.describe('a crafted frame, wide', () => {
       const drawn = await w.__kbFake.draw(await w.__kbWall!, w.__kbDemo.characters.hooligan, { box: { w: 200, h: 2000 }, groups: [{ at: [0.5, 0.01], anchor: { kind: 'box' }, unit: 'em', strokes }] });
       return { drawn, same: (await w.__kbFake.surfaceActs(await w.__kbWall!))!.acts.length === before };
     });
-    expect(answer.drawn).toMatchObject({ ok: false, error: "That post's words aren't the ones you drew on. Reload it and tag again." });
+    expect(answer.drawn).toMatchObject({ ok: false, error: 'That tag is drawn bigger than this post. Reload it and tag again.' });
     expect(answer.same).toBe(true);
   });
 });

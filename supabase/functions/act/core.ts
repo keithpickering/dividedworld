@@ -181,6 +181,8 @@ const refused = (field: string, why: string): ActionAnswer => ({ status: 400, bo
 
 /** What a draw says when the version it was drawn on is not one of the post's. */
 export const NOT_THOSE_WORDS = "That post's words aren't the ones you drew on. Reload it and tag again.";
+/** What a draw says when its declared frame is bigger than its post could be (frameHeld; the owner's words on #1237). */
+export const TOO_BIG_A_FRAME = 'That tag is drawn bigger than this post. Reload it and tag again.';
 
 /** A post's version as the wall reads it: its id, its words and its forged verdict (the list, as `forgedList` reads a payload's). */
 interface Version { readonly version: string; readonly body: string; readonly forged?: unknown }
@@ -221,9 +223,9 @@ async function placesOfDraw(service: Db, postOf: () => Promise<string | null>, p
 }
 
 /**
- * A draw's declared frame held to the post it is drawn on (issue #1259; engine/rules/frame.ts): refused, in NOT_THOSE_WORDS, when its box is taller than the post's words, images, signature, poll and
+ * A draw's declared frame held to the post it is drawn on (issue #1259; engine/rules/frame.ts): refused, in TOO_BIG_A_FRAME, when its box is taller than the post's words, images, signature, poll and
  * reactions could lay out at its width, or an image group is wider than its box. A box that does not fit its post is, for an honest screen, a layout read before the post changed, so the words say to
- * reload. A card that names no frame for the draw (a stencil's box is the card's own) is not held. The post is read once (surface_frame_of, 0456), retried on a transport failure.
+ * reload. A post the read cannot find is refused in NOT_THOSE_WORDS, as a version that is none of the post's is. A card that names no frame for the draw (a stencil's box is the card's own) is not held. The post is read once (surface_frame_of, 0456), retried on a transport failure.
  *
  * A spun thread's opening Act is not held: its content area also holds the ORIGIN box, another Act drawn live or as it was, which this read does not lay out.
  * A wall in an ORIGIN box is on the post that box shows (kind post, or a spin that was itself spun from), not on the opening Act: a post is laid out as in its own thread, and the box is no wider or taller than its content area there.
@@ -242,7 +244,7 @@ async function frameHeld(service: Db, rules: CardRules, instance: Instance, post
     poll: read.poll && Array.isArray(read.poll.options) ? { question: String(read.poll.question ?? ''), options: read.poll.options.map(String) } : null,
     reactions: instance.reactions.length,
   }, frame);
-  return problem === null ? { ok: true } : { ok: false, why: NOT_THOSE_WORDS };
+  return problem === null ? { ok: true } : { ok: false, why: TOO_BIG_A_FRAME };
 }
 
 /** One read for each caller: the first call's promise, kept. */

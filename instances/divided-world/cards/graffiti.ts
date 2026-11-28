@@ -19,6 +19,8 @@
  *   points as drawn.
  * - **The frame is held to the post** (issue #1259): the server refuses a box taller than its post could lay out at its width, and an image group whose `em`
  *   is wider than its box (`declaredFrame`, engine/rules/frame.ts), so a declared box can never make a tag count less than it covers. A stencil's box is the card's.
+ *   An image group's `em` no server can check (images are hotlinked), so every screen draws one at most `IMAGE_SLACK` times its counted share of the
+ *   box (engine/ui/cards/place.ts, issue #1261): one declared smaller than its image covers at most that many times what it counts.
  * - **A wash** is `{ cuts: { draw, group, presses }[] }`: each cut names a live draw and one of its groups, and the presses are in that group's units,
  *   at most 3,000 in all. It is framed as a draw's points are and names the draw's radius (`SPONGE_EM / 2 / box.w`) and aspect.
  * - **A stored draw or wash of the old shape** (`{ strokes }`, `{ strokes, cells }`) is read where a payload is read (the painter, `describeDraw`) and is

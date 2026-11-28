@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { takesOf, GRID } from '../../../../engine/rules/surface.ts';
-import { CAPS, CAPS_EM, COATS, SPONGE, SPONGE_EM } from '../graffiti.ts';
+import { CAPS, CAPS_EM, COATS, SPONGE, SPONGE_EM, graffiti } from '../graffiti.ts';
 import { Wall, hitAt, paintWall, wallDensity, type GroupSrc, type Press, type WallAct, type Walker } from './spray.ts';
 import { MAX_CANVAS_PX } from '../whoops/paint.ts';
 import { ROW_PX } from '../whoops/scrub.ts';
@@ -300,6 +300,32 @@ describe('where a group lands', () => {
     const narrow = wallOf([draw('a', g)], { measured: () => ({ kind: 'rect' as const, x: 50, y: 50, w: 100, h: 50 }) });
     expect(narrow.hitAt(100 + 40, 75)).toBe(false);
     expect(narrow.hitAt(100 + 20, 75)).toBe(true);
+  });
+
+  test('a wash on an image group capped to its counted share (issue #1261) takes from where its paint is drawn, and the server frames the same takes on its coats', () => {
+    /* A 30-em image, 450 px here, declared 0.5 em, its stroke out to 3 widths: uncapped it would be shrunk to the box and cover it; capped, a width is at most
+       IMAGE_SLACK * 0.5 / 40 of the 600 px box, 37.5 px, so the paint is the stroke's 6 widths and its brush either side of the image's middle, (225, 200). */
+    const image = { kind: 'image', version: 'v', n: 0, src: 'x.png', nth: 0, x: 0.5, y: 0.5 };
+    const act = draw('a', group([[-3, 0], [3, 0]], { anchor: image, unit: 'image', em: 0.5 }));
+    const wall = wallOf([act], { measured: () => ({ kind: 'rect' as const, x: 0, y: 50, w: 450, h: 300 }) });
+    const f = wall.groups[0]!;
+    expect([f.ox, f.oy, f.sx]).toEqual([225, 200, 37.5]);
+    expect(wall.hitAt(225 + 100, 200)).toBe(true);
+    /* Where the uncapped group's paint would have been, there is none to take. */
+    expect(wall.hitAt(520, 200)).toBe(false);
+    expect(wall.press(520, 200)).toBeNull();
+    const made = pass(wall, 200, 130, 320);
+    expect(made.length).toBeGreaterThan(0);
+    expect(coats(wall, 0, 225, 200)).toBeLessThan(COATS.line);
+    /* Each take is in the group's own units, on its stroke: across within its 3 widths and brush, and down on its line. */
+    const r = CAPS_EM.stock / 2 / 0.5;
+    for (const p of made) { expect(Math.abs(p.u)).toBeLessThanOrEqual(3 + r); expect(Math.abs(p.v)).toBeLessThanOrEqual(r); }
+    /* The server frames those takes in the drawer's box as it framed the coats: across the stroke's span about its `at`, 0.5 +- 3 * 0.5 / 40 and the brush. */
+    const cut = graffiti.surface!.validateWash({ cuts: [{ draw: 'a', group: 0, presses: made.map((p) => [p.u, p.v]) }] }, new Map([['a', act.payload]]));
+    expect(cut.ok).toBe(true);
+    if (!cut.ok) return;
+    const reachX = ((3 + r) * 0.5) / 40;
+    for (const [x, y] of cut.value.cuts[0]!.presses) { expect(Math.abs(x - 0.5)).toBeLessThanOrEqual(reachX + 1e-4); expect(Math.abs(y - 0.5)).toBeLessThanOrEqual((r * 0.5) / 26.7 + 1e-4); }
   });
 
   test('a group 900 px wide in a 360 px box is shrunk to fit and is inside it', () => {

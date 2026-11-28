@@ -2406,6 +2406,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const SERVER_KEYS = ['coats', 'cells', 'takes'] as const;
   /** The words `act` answers with when the version a draw names is none of its post's (supabase/functions/act/core.ts, NOT_THOSE_WORDS). */
   const NOT_THOSE_WORDS = 'That post\'s words aren\'t the ones you drew on. Reload it and tag again.';
+  /** The words `act` answers with when a draw's declared frame is bigger than its post could be (core.ts, TOO_BIG_A_FRAME). */
+  const TOO_BIG_A_FRAME = 'That tag is drawn bigger than this post. Reload it and tag again.';
   /** The line a draw of the old shape lays on each cell it set (0456: 2 coats). */
   const LEGACY_LINE = 20;
   const withoutKeys = <T extends Act>(a: T): T => {
@@ -2453,7 +2455,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /**
    * A draw's declared frame held to its post, as the act function holds it (core.ts, frameHeld; surface_frame_of, 0456): every version's words (a hidden one has none), the signature the post is shown with, its current poll
-   * and the instance's reactions. A box taller than that could lay out at its width, or an image group wider than its box, is refused in NOT_THOSE_WORDS; a frame the card sets itself (a stencil) and a spun thread's opening Act are not held.
+   * and the instance's reactions. A box taller than that could lay out at its width, or an image group wider than its box, is refused in TOO_BIG_A_FRAME; a frame the card sets itself (a stencil) and a spun thread's opening Act are not held.
    */
   function frameHeldOn(rules: CardRules, post: ActRec, payload: Readonly<Record<string, unknown>>): Answer<null> {
     const frame = rules.surface?.frameOf?.({ ...payload }) ?? null;
@@ -2466,7 +2468,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       poll: poll ? { question: String(poll.payload.question ?? ''), options: (poll.payload.options as unknown[] ?? []).map(String) } : null,
       reactions: instance.reactions.length,
     }, frame);
-    return problem === null ? ok(null) : refuse(NOT_THOSE_WORDS);
+    return problem === null ? ok(null) : refuse(TOO_BIG_A_FRAME);
   }
   const placesNow = (draw: Id, post: ActRec): { grp: number; place: Attachment | null }[] =>
     [...(surfacePlaces.get(draw)?.get(versionOf(post).id) ?? [])].map(([grp, place]) => ({ grp, place })).sort((x, y) => x.grp - y.grp);
@@ -2961,7 +2963,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (decided.value.draw) {
       /* Its frame is held to the post first, as the act function holds it before play_surface_card. */
       const held = frameHeldOn(rules, on, decided.value.draw.payload);
-      if (isRefusal(held)) return refuse(NOT_THOSE_WORDS, 'first');
+      if (isRefusal(held)) return refuse(held.error, 'first');
       const tag = paintedCount(layDraw(decided.value.draw.payload, decided.value.draw.coats));
       if (tag > decided.value.draw.most) return refuse(`this wall is 0% covered, and its limit is ${Math.floor(decided.value.draw.most / 100)}%; this tag would take it to ${Math.ceil(tag / 100)}%`, 'first');
     }

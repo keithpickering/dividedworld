@@ -6248,8 +6248,8 @@ describe('a surface, as the server keeps it', () => {
       },
     };
     const on: Instance = { ...instance, cards: [framed as unknown as CardRules], settings: { ...settings, cardSettings: { 'slab.limit': 40 } } };
-    const WORDS = "That post's words aren't the ones you drew on. Reload it and tag again.";
-    test('a draw whose box is far taller than its post is refused in the words that say to reload; an honest one lands', async () => {
+    const WORDS = 'That tag is drawn bigger than this post. Reload it and tag again.';
+    test('a draw whose box is far taller than its post is refused in the words that say it is bigger than the post; an honest one lands', async () => {
       const { fake, play, anaHeel } = wall(on, 'frame-slab');
       expect(await fake.draw(play, anaHeel, { strokes: [dab(0.5)], box: { w: 200, h: 2000 } })).toEqual(refused(WORDS));
       expect((await fake.surfaceActs(play))!.acts).toHaveLength(0);
