@@ -169,6 +169,7 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(run([cover, fill], ['curtain']), ['the card "ads" covers or fills the row and is missing from rowOrder']);
     assert.deepEqual(run([cover], ['curtain', 'ghost']), ['rowOrder lists "ghost", which is no card']);
     assert.deepEqual(run([cover, { key: 'plain', status: 'Plain', Effect }], ['curtain', 'plain']), ['rowOrder lists "plain", which neither covers nor fills the row']);
+    assert.deepEqual(run([fill, { key: 'lent', status: 'Lent', drawnBy: 'ads' }], ['ads']), ['the card "lent" is drawnBy "ads", which fills the row; its effect is drawn in a layer of its own, and a lent play would not reach it']);
     assert.deepEqual(run([cover], ['curtain', 'curtain']), ['rowOrder lists "curtain" twice']);
     assert.deepEqual(run([{ ...cover, fillsRow: true }], ['curtain']), ['the card "curtain" both covers and fills the row; a card does one or the other']);
   });

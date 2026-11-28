@@ -173,7 +173,7 @@
   z-index: 6;
 }
 
-/* A fill's layer (fill.tsx): the card's effect drawn over the whole row, postbit included, under any cover's host. It makes nothing inert and takes no presses of its own: what the effect draws that a reader presses sets `pointer-events: auto` itself. */
+/* A fill's layer (fill.tsx): the card's effect drawn over the whole row, postbit included, stacked by its rank among the row's layers (`rowZ`, set inline, so a cover ranked outside it is over it). It makes nothing inert. The layer takes no presses of its own, so the row under it stays pressable; what the effect draws that a reader presses gets `pointer-events: auto` from the rule below. */
 .kb-act-grid:has(> .kb-row-layer) {
   position: relative;
 }
@@ -184,4 +184,8 @@
   inset: 0;
   z-index: 5;
   pointer-events: none;
+}
+
+.kb-row-layer :is(button, a, input, select, textarea, [role='button'], [role='slider'], [role='dialog'], [tabindex]) {
+  pointer-events: auto;
 }

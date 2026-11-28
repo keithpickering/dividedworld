@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { CardUi, CoverProps, EffectProps } from '../cards/types.ts';
+import { useThread } from './context.ts';
 import { LoadedThread } from '../loaded.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 
@@ -37,7 +38,7 @@ const Curtain = ({ cover, covered, children }: EffectProps) => (
   </div>
 );
 const Probe = ({ covered, children }: EffectProps) => <div data-testid="fx-probe" data-covered={String(covered)}>{children}</div>;
-const Fill = ({ covered, children }: EffectProps) => <div data-testid="fx-fill" data-covered={String(covered)}>{children}</div>;
+const Fill = ({ covered, children }: EffectProps) => <div data-testid="fx-fill" data-covered={String(covered)} data-thread={useThread().thread}>{children}</div>;
 const Fold = ({ children }: EffectProps) => <div data-testid="fx-folder">{children}</div>;
 const art = { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' };
 const cards: CardUi[] = [
@@ -311,5 +312,37 @@ describe('the row\'s layers are in the instance\'s order (InstanceUi.rowOrder)',
     const again = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
     await waitFor(() => expect(layer(again)).not.toBeNull());
     expect(z(layer(again))).toBeLessThan(z(covers(again)[0]!));
+  });
+
+  test('a fill\'s play ending removes its layer', async () => {
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const a = w.fake.seed.card(w.spritey, w.ids[1]!, 'filler');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await waitFor(() => expect(within(second).getByTestId('fx-fill')).toBeInTheDocument());
+    await act(async () => { expect((await w.fake.reverseCard(a)).ok).toBe(true); });
+    await waitFor(() => expect(layer(second)).toBeNull());
+    expect(within(second).queryByTestId('fx-fill')).toBeNull();
+  });
+
+  test('a layer appearing does not remount the words', async () => {
+    const w = world();
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    const words = second.querySelector('[data-kb-words-box]')!;
+    w.fake.seed.cards(w.me, { filler: 1 });
+    await act(async () => { expect((await w.fake.playCard('filler', w.pipe, w.ids[1]!, {}, '')).ok).toBe(true); });
+    await waitFor(() => expect(layer(second)).not.toBeNull());
+    expect(second.querySelector('[data-kb-words-box]')).toBe(words);
+    expect(words.isConnected).toBe(true);
+  });
+
+  test('the effect in a layer reads the contexts the post provides', async () => {
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'filler');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await waitFor(() => expect(within(second).getByTestId('fx-fill')).toHaveAttribute('data-thread', w.thread));
   });
 });

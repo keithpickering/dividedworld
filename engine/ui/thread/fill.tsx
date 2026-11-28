@@ -9,7 +9,9 @@
  * moment, History) there is no `RowFillCtx` and the effect wraps the words as any other.
  */
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import { actsOnPost, livePlays, usePlays, type Plays } from '../cards/plays.ts';
+import { actsOnPost, hiddenByRewind, livePlays, useRewound, usePlays, type Plays } from '../cards/plays.ts';
+import { useLensStore } from '../cards/Lens.tsx';
+import { useShownPresent } from '../cards/Moment.tsx';
 import type { CardUi } from '../cards/types.ts';
 import { rowRank, rowZ, type RowCovering } from './cover.tsx';
 
@@ -40,7 +42,11 @@ export function useRowFilling({ plays, actId, eligible, now, cards, order, cover
   readonly order: readonly string[] | undefined; readonly covering: RowCovering;
 }): RowFilling {
   const own = usePlays(plays, actId).plays;
-  const filling = eligible ? livePlays(own, now).filter((p) => actsOnPost(p) && cards.find((c) => c.key === p.card)?.fillsRow === true) : [];
+  /* A play a live rewind hides is not drawn, as `PostEffects` leaves it out (`hiddenByRewind`). */
+  const rewound = useRewound(plays, actId);
+  const shownPresent = useShownPresent(useLensStore());
+  const hidden = hiddenByRewind(rewound, rewound !== null && shownPresent === rewound.rewind.play);
+  const filling = eligible ? livePlays(own, now).filter((p) => actsOnPost(p) && !hidden.has(p.id) && cards.find((c) => c.key === p.card)?.fillsRow === true) : [];
   /* Outermost first, one entry for each card. */
   const keys = [...new Set(filling.map((p) => p.card))].sort((a, b) => rowRank(order, a) - rowRank(order, b));
   const [hosts, setHosts] = useState<ReadonlyMap<string, HTMLElement>>(() => new Map());

@@ -145,7 +145,7 @@ export function FoldedRow({ fold, cover, fill, id, bar, before, children }: {
   readonly fold: RowFolding;
   /** The post's covers (thread/cover.tsx), where it has them: their host is drawn over the grid and the grid's context carries them. The fold's bar stays outside the grid, so it is outermost. */
   readonly cover?: RowCovering;
-  /** The post's fills (thread/fill.tsx), where it has them: their layers are drawn in the grid under the cover's host, and the grid's context carries them to the post's effects. */
+  /** The post's fills (thread/fill.tsx), where it has them: their layers are drawn in the grid, stacked with the cover's host by rank (`rowZ`), and the grid's context carries them to the post's effects. */
   readonly fill?: RowFilling;
   /** The row's element id, which the bar's press controls: unique on the page. */
   readonly id: string;

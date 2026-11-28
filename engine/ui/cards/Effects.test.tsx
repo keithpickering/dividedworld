@@ -119,7 +119,8 @@ describe('the row\'s layers nest in the instance\'s order (InstanceUi.rowOrder)'
   });
 
   test('a card the order does not list is outermost, as a latest play was before the order', () => {
-    expect(nestOrder([{ key: 'one' }, { key: 'three' }], layers, KEY).covers.map((c) => c.key)).toEqual(['one', 'three']);
+    expect(nestOrder([{ key: 'one' }, { key: 'three' }], layers, KEY, ['three']).covers.map((c) => c.key)).toEqual(['three', 'one']);
+    expect(nestOrder([{ key: 'three' }, { key: 'one' }], layers, KEY, ['three']).covers.map((c) => c.key)).toEqual(['three', 'one']);
   });
 
   test('the page nests them by rank where a post has no row: a fill wraps the words as any effect does', () => {

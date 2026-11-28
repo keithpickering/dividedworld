@@ -111,6 +111,7 @@ function drawnByProblems(card: CardUi, cards: readonly CardUi[]): string[] {
   const named = cards.find((c) => c.key === card.drawnBy);
   if (named === undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which has no CardUi`);
   else if (named.drawnBy !== undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which is itself drawn by "${named.drawnBy}"; a chain is refused`);
+  else if (named.fillsRow !== undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which fills the row; its effect is drawn in a layer of its own, and a lent play would not reach it`);
   else if (named.Effect === undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which has no Effect to draw it`);
   return out;
 }
