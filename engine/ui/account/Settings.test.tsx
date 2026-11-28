@@ -98,6 +98,13 @@ describe('Settings, as board 11 draws it', () => {
     expect(offered('Smoke')).toEqual(['Full', 'Low', 'Off']);
     expect(offered('Contrast')).toEqual(['Standard', 'High']);
     expect(offered('Text size')).toEqual(['100%', '125%', '150%', '200%']);
+    /* The sentences under the choices, in the words the copy pass settled. */
+    expect(screen.getByText('How much cloud sits behind the glass. Text is readable at every setting.')).toBeInTheDocument();
+    expect(screen.queryByText(/Off leaves plain black/u)).toBeNull();
+    expect(screen.getByText('High puts solid black behind every line of text on the glass and lifts it all to at least 7:1.')).toBeInTheDocument();
+    expect(screen.queryByText(/The smoke stays at the edges/u)).toBeNull();
+    expect(screen.getByText('Applies to the board and the glass together, and nothing is cut off at any size.')).toBeInTheDocument();
+    expect(screen.queryByText(/Past 150% the glass folds/u)).toBeNull();
     expect(offered('Brighter effects')).toEqual(['Off', 'On']);
     expect(screen.getByText('Let card effects on posts use their full colors, even below the usual contrast standard. Some posts may be harder to read.')).toBeInTheDocument();
     /* The board's look is its own section now (Settings › The board), not a row here. */
@@ -222,7 +229,7 @@ describe('Settings, as board 11 draws it', () => {
     expect(says).toMatch(/Off hides every tip and card note\./u);
     expect(says).toMatch(/On shows the ones you have not read yet\./u);
     expect(says).toMatch(/Show tips again also brings back the ones you have read/u);
-    expect(says).toMatch(/Replay the HUD tour shows the three steps of the tour again/u);
+    expect(says).toMatch(/Replay the HUD tour shows the tour again and turns tips on/u);
   });
 
   test('the switch off skips the tips, on resumes them without forgetting, and the screen says it saved', async () => {
@@ -734,7 +741,7 @@ describe('Settings › Accessibility › Tilt', () => {
     device(ask);
     localStorage.setItem('kb-tilt-device', 'denied');
     const { sw } = await opened('on');
-    expect(says(sw)).toBe('Your browser said no, so shiny cards follow your scrolling instead. To change that, allow motion and orientation access for this site in your browser\'s settings, then turn this on again.');
+    expect(says(sw)).toBe('Your browser said no. To change that, allow motion and orientation access for this site in your browser\'s settings, then turn this on again.');
     expect(ask).not.toHaveBeenCalled();
     /* Turning it off and on again is two taps, and the second asks. */
     await userEvent.click(sw);
@@ -748,15 +755,21 @@ describe('Settings › Accessibility › Tilt', () => {
     try {
       const { sw } = await opened('on');
       await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
-      expect(says(sw)).toBe('This device doesn\'t report tilt, so shiny cards follow your scrolling and your pointer instead.');
+      expect(says(sw)).toBe('This device doesn\'t report tilt.');
     } finally { vi.useRealTimers(); }
+  });
+
+  test('off: the switch says so in one word', async () => {
+    device();
+    const { sw } = await opened('off');
+    expect(says(sw)).toBe('Off.');
   });
 
   test('held while motion is reduced', async () => {
     device();
     root.setAttribute('data-kb-motion', 'reduce');
     const { sw } = await opened('on');
-    expect(says(sw)).toBe('Off while motion is reduced. Shiny cards hold their light still.');
+    expect(says(sw)).toBe('Off while motion is reduced.');
     expect(tiltState('on')).toBe('held');
   });
 
@@ -910,7 +923,7 @@ describe('Settings › Sound', () => {
       expect(within(group(g)).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(['Off', 'On']);
       expect(radio(g, 'Off')).toBeChecked();
     }
-    expect(screen.getByText('Sounds that cards and other game effects make on the board. Every one is also shown as a caption at the bottom of the screen.')).toBeInTheDocument();
+    expect(screen.getByText('Sounds that cards and other game effects make on the board. Every one is also shown as a caption.')).toBeInTheDocument();
     expect(screen.getByText('Sounds the board itself makes, apart from the game.')).toBeInTheDocument();
     expect(screen.queryByText(/This forum has none yet/u)).toBeNull();
     expect(screen.queryByRole('slider')).toBeNull();

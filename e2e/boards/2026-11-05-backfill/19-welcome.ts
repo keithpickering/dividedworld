@@ -64,7 +64,7 @@ const manifest: BoardManifest = {
     { id: 'motion', role: 'heading', name: 'MOTION', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
     { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
     { id: 'size', role: 'heading', name: 'TEXT SIZE', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
-    { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
+    { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together, and nothing is cut off at any size.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
     { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'p4', originEdge: 'bottom' },
     { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'p4', originEdge: 'bottom' },
   ],

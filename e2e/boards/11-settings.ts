@@ -86,11 +86,11 @@ const manifest: BoardManifest = {
 
     ...row('motion', 'Motion', 'Motion', ['Follow my device', 'Off', 'Smooth', 'Snappy'],
       'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.'),
-    ...row('smoke', 'Smoke', 'Smoke', ['Full', 'Low', 'Off'], 'How much cloud sits behind the glass. Off leaves plain black. Text is readable at every setting.'),
+    ...row('smoke', 'Smoke', 'Smoke', ['Full', 'Low', 'Off'], 'How much cloud sits behind the glass. Text is readable at every setting.'),
     ...row('contrast', 'Contrast', 'Contrast', ['Standard', 'High'],
-      'High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen.'),
+      'High puts solid black behind every line of text on the glass and lifts it all to at least 7:1.'),
     ...row('text-size', 'Text size', 'Text size', ['100%', '125%', '150%', '200%'],
-      'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.'),
+      'Applies to the board and the glass together, and nothing is cut off at any size.'),
     /* The board's Board colors row is not here: the board look made it Settings › The board, a section of its own (the board look design's section 9), held by board 19 of that folder. */
 
     /* The build's Accessibility sections carry a row the board does not (Tips: its switch, Show tips again and Replay the HUD tour, the onboarding plan's Task 9), so this line stands lower than the board's: held by its words and type alone. */
