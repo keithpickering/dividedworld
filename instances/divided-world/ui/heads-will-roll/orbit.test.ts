@@ -198,3 +198,29 @@ test('a count that changes who is a sun moves nobody more than 4 px on the next 
   const off = Math.max(...o.bodies().filter((b) => b.sun !== null).map((s) => { const sun = o.bodies().find((x) => x.id === s.sun)!; return Math.abs(Math.hypot(s.X - sun.X, s.Y - sun.Y, s.Z - sun.Z) / s.ring - 1); }));
   assert.ok(off <= ORBIT.ringTolerance, `a satellite is still ${(off * 100).toFixed(1)}% off its ring after 2 s`);
 });
+
+test('a count that changes a sun\'s reach moves nobody more than 4 px across the change (bar a head growing against a wall) and crosses no border, over 39 seeds', () => {
+  const heads = (c: number): HeadSpec[] => [{ id: 'a', count: 9 }, { id: 'b', count: 6 }, { id: 'c', count: c }, { id: 'd', count: 2 }, { id: 'react', count: 0, react: true }];
+  let worst = 0, worstOut = 0, worstSeed = 0;
+  for (let seed = 1; seed <= 39; seed++) {
+    const o = createOrbit({ width: 300, height: 300 }, { seed });
+    o.setHeads(heads(1));
+    let was = new Map(o.project().map((h) => [h.id, h]));
+    const note = () => {
+      for (const h of o.project()) {
+        // A head whose own size grows against a wall is moved in by the growth of its half, at once: the border outranks the easing (the one jump allowed).
+        const w = was.get(h.id)!, e = edges(h), jump = Math.hypot(h.x - w.x, h.y - w.y) - Math.max(0, (h.size - w.size) / 2 * h.scale);
+        if (jump > worst) { worst = jump; worstSeed = seed; }
+        worstOut = Math.max(worstOut, -e.left, e.right - 300, -e.top, e.bottom - 300);
+      }
+      was = new Map(o.project().map((h) => [h.id, h]));
+    };
+    for (let sec = 0; sec < 12; sec++) {
+      o.setHeads(heads(sec % 2 === 0 ? 7 : 1));
+      note();
+      run(o, 1, note);
+    }
+  }
+  assert.ok(worst <= 4, `a head moved ${worst.toFixed(1)} px in one step (seed ${worstSeed})`);
+  assert.ok(worstOut <= 0.001, `a head ended ${worstOut.toFixed(2)} px past a border`);
+});

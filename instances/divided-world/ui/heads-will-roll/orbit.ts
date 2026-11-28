@@ -144,10 +144,12 @@ function mulberry32(seed: number): () => number {
 interface Ring { r: number; phase: number; tiltA: number; tiltB: number }
 /** How fast a satellite that has just joined a ring eases onto it, px a second in the space (radius and height together), so a change of role is never a jump. */
 const EASE = 160;
+/** How fast a sun's room for its system (its reach) opens after a count grows it, px a second: the sun is eased in from the wall and its rings drawn out as it goes, never moved in a step. */
+const EASE_REACH = 40;
 interface Sim {
   id: string; react: boolean; local: boolean; count: number; mass: number; size: number;
   X: number; Y: number; Z: number; vx: number; vy: number; vz: number;
-  sun: Sim | null; ring: Ring; fitR: number; dr: number; dy: number; fresh: boolean; reach: number; reachY: number;
+  sun: Sim | null; ring: Ring; fitR: number; base: number; dr: number; dy: number; fresh: boolean; reach: number; reachY: number; rc: number;
   sx: number; sy: number; scale: number; depth: number; rank: number;
   angle: number; omega: number; speed: number;
 }
@@ -200,7 +202,7 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
       id: h.id, react: h.react === true, local: h.local === true, count: h.count, mass, size,
       X: (rand() - 0.5) * Math.max(0, B.w - size) * 0.8, Y: (rand() - 0.5) * Math.max(0, B.h - size) * 0.5, Z: (rand() - 0.5) * Math.max(0, B.d - size) * 0.8,
       vx: dir.x / len, vy: dir.y / len, vz: dir.z / len,
-      sun: null, ring: { r: 0, phase: rand() * Math.PI * 2, tiltA: (rand() - 0.5) * 2, tiltB: rand() * Math.PI * 2 }, fitR: 0, dr: 0, dy: 0, fresh: true, reach: size / 2, reachY: size / 2,
+      sun: null, ring: { r: 0, phase: rand() * Math.PI * 2, tiltA: (rand() - 0.5) * 2, tiltB: rand() * Math.PI * 2 }, fitR: 0, base: 0, dr: 0, dy: 0, fresh: true, reach: size / 2, reachY: size / 2, rc: size / 2,
       sx: 0, sy: 0, scale: 1, depth: 0, rank: 0, angle: 0, omega: 0, speed: 0,
     };
   }
@@ -208,8 +210,9 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
   const byMass = (a: Sim, b: Sim) => (a.react ? 1 : 0) - (b.react ? 1 : 0) || b.mass - a.mass || (a.id < b.id ? -1 : 1);
 
   /** Who is a sun and who orbits whom, the rings' radii and how far they must be drawn in to fit; then every head is put where it belongs. */
-  function layout(): void {
+  function layout(resized = false): void {
     const B = space();
+    const wasSun = new Set(sims.filter((s) => s.sun === null && !s.fresh));
     sims.sort(byMass);
     const kinds = sims.filter((s) => !s.react);
     const sunCount = Math.min(Math.max(1, Math.round(settings.suns)), kinds.length);
@@ -247,7 +250,14 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
       }
       sun.reach = Math.min(sun.reach, Math.max(limit, sun.size / 2));
     }
-    for (const s of suns) { s.sun = null; s.fitR = 0; }
+    for (const s of suns) {
+      s.sun = null; s.fitR = 0;
+      // The room a sun's system takes. A sun that was one keeps what it had and opens it at `EASE_REACH` (so a count that grows its rings never clamps it in one step);
+      // a head new to the post, or a resize, takes the whole of it at once, and a satellite made a sun starts with only its own half.
+      s.rc = resized || s.fresh ? s.reach : wasSun.has(s) ? Math.min(s.rc, s.reach) : s.size / 2;
+      s.rc = Math.min(s.reach, Math.max(s.rc, s.size / 2));
+    }
+    for (const s of suns) shape(s);
     walls(suns);
     // A head that was somewhere stays there: a satellite joins its ring at the phase it has about its sun and eases its radius and height onto the ring over
     // the next steps (`dr`, `dy`), so a change of role or of ring order is never a jump. A head new to the post starts on its ring.
@@ -257,7 +267,7 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
       if (!s.fresh) {
         const ox = s.X - u.X, oz = s.Z - u.Z, rr = Math.hypot(ox, oz);
         if (rr > 1e-6) s.ring.phase = Math.atan2(oz, ox);
-        s.dr = rr - s.fitR;
+        s.dr = rr - s.base;
         s.dy = s.Y - (u.Y + Math.sin(s.ring.phase + s.ring.tiltB) * WOBBLE * s.ring.tiltA * rr);
       } else { s.dr = 0; s.dy = 0; }
       s.fresh = false;
@@ -267,6 +277,16 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     refresh();
   }
 
+  /** What of a sun's rings fits in the room it has now (`rc`): each satellite's radius is capped to it, and the height the system reaches follows. */
+  function shape(sun: Sim): void {
+    sun.reachY = sun.size / 2;
+    for (const s of sims) {
+      if (s.sun !== sun) continue;
+      s.base = Math.min(s.fitR, Math.max(0, sun.rc - s.size / 2));
+      sun.reachY = Math.max(sun.reachY, s.base * WOBBLE + s.size / 2);
+    }
+  }
+
   const sunsNow = () => sims.filter((s) => s.sun === null);
 
   /** Each wall turns a sun back toward the middle; the room is never negative, so a sun that cannot fit is parked and never flipped from side to side. */
@@ -274,7 +294,7 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     const B = space();
     const room = (half: number, r: number) => Math.max(0, half - r);
     for (const s of list) {
-      const rx = room(B.w / 2, s.reach), ry = room(B.h / 2, s.reachY), rz = room(B.d / 2, s.reach);
+      const rx = room(B.w / 2, s.rc), ry = room(B.h / 2, s.reachY), rz = room(B.d / 2, s.rc);
       if (s.X > rx) { s.X = rx; s.vx = -Math.abs(s.vx); } else if (s.X < -rx) { s.X = -rx; s.vx = Math.abs(s.vx); }
       if (s.Y > ry) { s.Y = ry; s.vy = -Math.abs(s.vy); } else if (s.Y < -ry) { s.Y = -ry; s.vy = Math.abs(s.vy); }
       if (s.Z > rz) { s.Z = rz; s.vz = -Math.abs(s.vz); } else if (s.Z < -rz) { s.Z = -rz; s.vz = Math.abs(s.vz); }
@@ -287,7 +307,7 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     for (const s of sims) {
       const u = s.sun;
       if (!u) continue;
-      const R = Math.max(0, s.fitR + s.dr);
+      const R = Math.max(0, s.base + s.dr);
       const wob = WOBBLE * s.ring.tiltA;
       const yRoom = Math.max(0, B.h / 2 - s.size / 2);
       s.X = u.X + Math.cos(s.ring.phase) * R;
@@ -313,13 +333,14 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     if (dt === 0) return;
     const B = space();
     const ss = sunsNow();
+    for (const a of ss) if (a.rc < a.reach) { a.rc = Math.min(a.reach, a.rc + EASE_REACH * dt); shape(a); }
     // Suns steer toward the middle (more the farther out they are) and away from each other (more the closer their masses); their speed stays the drift.
     for (const a of ss) {
       let ax = -a.X / (B.w / 2) * ORBIT.home, ay = -a.Y / (B.h / 2) * ORBIT.home, az = -a.Z / (B.d / 2) * ORBIT.home;
       for (const b of ss) {
         if (a === b) continue;
         const similar = Math.min(a.mass, b.mass) / Math.max(1, a.mass, b.mass);
-        const range = (a.reach + b.reach) * (1 + similar);
+        const range = (a.rc + b.rc) * (1 + similar);
         const dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z, d = Math.hypot(dx, dy, dz) || 0.01;
         if (d < range) { const k = (range - d) / range * 6 * (0.2 + 0.8 * similar); ax += dx / d * k; ay += dy / d * k; az += dz / d * k; }
       }
@@ -382,7 +403,7 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
 
   return {
     setHeads,
-    setBox(next) { box = next; for (const s of sims) s.size = headSize(s.mass, s.react, box.width); layout(); },
+    setBox(next) { box = next; for (const s of sims) s.size = headSize(s.mass, s.react, box.width); layout(true); },
     setSettings(next) { settings = { ...settings, ...next }; for (const s of sims) { s.mass = headMass({ id: s.id, count: s.count, local: s.local, react: s.react }, settings); s.size = headSize(s.mass, s.react, box.width); } layout(); },
     step,
     project: () => tabOrder().map((s) => ({ id: s.id, mass: s.mass, react: s.react, local: s.local, size: s.size, x: s.sx, y: s.sy, scale: s.scale, depth: s.depth, rank: s.rank, angle: s.angle, speed: s.speed })),
