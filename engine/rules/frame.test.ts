@@ -55,9 +55,22 @@ test('every honest box measured in the app is accepted, with room to spare, at t
 test('the reviewer\'s poison is refused: the same post declared 200 by 2,000 ems, or just under the 4,000 limit', () => {
   // A whole desktop post: the long text at 1600px, 65.8 by 59.4 ems. The poison's box is wider and far taller than any screen lays it out.
   const post = postOf(LONG);
-  for (const box of [{ w: 200, h: 2000 }, { w: 200, h: 3999 }, { w: 65.8, h: 2000 }, { w: 5, h: 3999 }]) {
+  for (const box of [{ w: 65.8, h: 2000 }, { w: 5, h: 3999 }]) {
     assert.equal(frameProblem(post, { box, imageEms: [] }), 'tall', JSON.stringify(box));
   }
+  for (const box of [{ w: 200, h: 2000 }, { w: 200, h: 3999 }]) {
+    assert.equal(frameProblem(post, { box, imageEms: [] }), 'wide', JSON.stringify(box));
+  }
+});
+
+test('a box wider than any content area is refused, however short: declaring 200 ems on a short post would count its tag about five times over', () => {
+  // The widest honest box is the widest page at the smallest text size: base.css's `.kb-page` is 80rem at most, so at 100% text (15px a post em) a body is 65.8 ems, measured at 1280px and every width above; the front door's is 65.9.
+  const short = postOf('hi');
+  assert.equal(frameProblem(short, { box: { w: 200, h: 23.5 }, imageEms: [] }), 'wide');
+  assert.equal(frameProblem(short, { box: { w: 200, h: 23.5 }, imageEms: [150] }), 'wide');
+  assert.equal(frameProblem(short, { box: { w: FRAME.widestEm + 0.5, h: 23.5 }, imageEms: [] }), 'wide');
+  for (const w of [65.8, 65.9, FRAME.widestEm]) assert.equal(frameProblem(short, { box: { w, h: 23.53 }, imageEms: [w] }), null, `${w} ems is honest`);
+  assert.ok(FRAME.widestEm >= 65.9 && FRAME.widestEm <= 75, `the widest honest box with a small margin: ${FRAME.widestEm}`);
 });
 
 test('a box three times as tall as a post of words is refused, for a short post and a long one, at a phone\'s width and a desktop\'s', () => {

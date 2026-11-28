@@ -1397,6 +1397,19 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
   });
 
+  test('a box wider than any content area is refused on a short post, in the same words, and the widest honest box lands', async () => {
+    const short = { kind: 'post', versions: [{ body: 'hi', forged: [] }], signature: '', poll: null };
+    for (const [box, status] of [[{ w: 200, h: 23.5 }, 400], [{ w: 65.8, h: 23.53 }, 200]] as const) {
+      const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: short, draw_on_surface: { id: 'd', thread, covered: 1 } });
+      const out = await runAction(dbs, framedOn, { action: 'draw', character: id, play: target, input: boxOnly(box) });
+      assert.equal(out.status, status, JSON.stringify(out.body));
+      if (status === 400) {
+        assert.deepEqual(out.body, { field: 'input', error: NOT_THOSE_WORDS });
+        assert.ok(!calls.some((c) => c.includes('draw_on_surface:')), calls.join('\n'));
+      }
+    }
+  });
+
   test('an honest draw on the same post lands, its box-only frame read and held, and the wall\'s post is read once for its places and its frame', async () => {
     for (const input of [HONEST, boxOnly({ w: 65.8, h: 59.4 }, [{ anchor: textAt(v2, 4, 5), unit: 'em' }, { anchor: { kind: 'box' }, unit: 'em' }])]) {
       const { dbs, calls } = pair({ instance_settings: frameRows(30), whoami, card_of_play: 'frame-wall', surface_post_of: post, surface_frame_of: frameRead,

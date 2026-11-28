@@ -159,7 +159,7 @@ const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_
   'act_window_counts', 'fire_hint',
   // A wall's reads (0456): the live draws, the post a wall is on, and a post's versions and groups. Each reads Acts and the post's words, never an owner.
   'surface_acts', 'surface_post_of', 'surface_version_pair', 'surface_groups_on',
-  // What a post shows in its content area (0457), which a draw's frame is held to: a read of the post's versions, its signature and its poll, never an owner.
+  // What a post shows in its content area (0456), which a draw's frame is held to: a read of the post's versions, its signature and its poll, never an owner.
   'surface_frame_of',
   // The forged-quote verdict of a body (0393): a read of the posts' versions as they stand, which an edit's new words are mapped against.
   'quote_forged']);
@@ -223,9 +223,10 @@ async function placesOfDraw(service: Db, postOf: () => Promise<string | null>, p
 /**
  * A draw's declared frame held to the post it is drawn on (issue #1259; engine/rules/frame.ts): refused, in NOT_THOSE_WORDS, when its box is taller than the post's words, images, signature, poll and
  * reactions could lay out at its width, or an image group is wider than its box. A box that does not fit its post is, for an honest screen, a layout read before the post changed, so the words say to
- * reload. A card that names no frame for the draw (a stencil's box is the card's own) is not held. The post is read once (surface_frame_of, 0457), retried on a transport failure.
+ * reload. A card that names no frame for the draw (a stencil's box is the card's own) is not held. The post is read once (surface_frame_of, 0456), retried on a transport failure.
  *
  * A spun thread's opening Act is not held: its content area also holds the ORIGIN box, another Act drawn live or as it was, which this read does not lay out.
+ * A wall in an ORIGIN box is on the post that box shows (kind post, or a spin that was itself spun from), not on the opening Act: a post is laid out as in its own thread, and the box is no wider or taller than its content area there.
  */
 async function frameHeld(service: Db, rules: CardRules, instance: Instance, postOf: () => Promise<string | null>, payload: Record<string, unknown>): Promise<{ ok: true } | { ok: false; why: string }> {
   const frame = rules.surface?.frameOf?.(payload) ?? null;

@@ -68,6 +68,12 @@ export const FRAME = {
   pollMostEm: 34, pollRowEm: 2.6, pollEm: 9,
   /** The reactions row wraps (reactions.css): a chip with its count is under 4.5em wide and its row 2.4em tall; a card may add its own chips and a line under the row. */
   chipEm: 4.5, chipRowEm: 2.4, chipsMore: 8, reactionsEm: 4,
+  /**
+   * The widest a content area can be, in ems of the post's text: the page is at most 80rem (engine/ui/base.css `.kb-page`), the postbit takes 14em of it, and the text is smallest at 100%
+   * (appearanceRows.tsx TEXT_SIZE), where a post em is 15px. Measured in the app at every width from 1280px to 3840px: 65.8 ems (the front door's own figure is 65.9), and narrower below. A declared
+   * `box.w` over this is no screen's: a short post declared 200 ems wide counts its tag about five times over. About 9% of margin, for a font that sets a little narrower.
+   */
+  widestEm: 72,
   /** What is left over, on top of the estimate: a share of it and a number of ems. */
   slackShare: 0.25, slackEm: 10,
   /** How far an image group's `em` may pass its box's width: the two are rounded to hundredths apart. */
@@ -140,9 +146,10 @@ export function tallestBox(post: PostFrame, w: number): number {
   return estimate * (1 + FRAME.slackShare) + FRAME.slackEm;
 }
 
-/** Which bound a declared frame passes, if any: `box.h` taller than the post could lay out at `box.w`, or an image group wider than its box. */
-export function frameProblem(post: PostFrame, frame: DrawFrame): 'tall' | 'image' | null {
+/** Which bound a declared frame passes, if any: `box.w` wider than any content area (`FRAME.widestEm`), `box.h` taller than the post could lay out at `box.w`, or an image group wider than its box. */
+export function frameProblem(post: PostFrame, frame: DrawFrame): 'wide' | 'tall' | 'image' | null {
   if (frame.imageEms.some((em) => !(em <= frame.box.w + FRAME.imageEpsilon))) return 'image';
+  if (!(frame.box.w <= FRAME.widestEm)) return 'wide';
   if (!(frame.box.h <= tallestBox(post, frame.box.w))) return 'tall';
   return null;
 }

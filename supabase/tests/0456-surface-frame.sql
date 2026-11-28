@@ -1,4 +1,4 @@
--- What a post shows in its content area, for the act function to hold a draw's frame to (supabase/migrations/0457_surface_frame.sql; issue #1259): every version of the post's words, oldest first, the signature it is shown
+-- What a post shows in its content area, for the act function to hold a draw's frame to (supabase/migrations/0456_surface_coats.sql; issue #1259): every version of the post's words, oldest first, the signature it is shown
 -- with, its current poll (null once removed), and null for an Act that is no post. The service role's alone.
 
 select tests.unbecome();

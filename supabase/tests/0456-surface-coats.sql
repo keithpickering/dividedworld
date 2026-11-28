@@ -422,6 +422,38 @@ begin
   if pg_temp.as_val(null, format('select surface_groups_on(%L)::text', gen_random_uuid())) is not null then raise exception 'a post that is not one gives nothing'; end if;
 end $$;
 
+-- ---- 8b. A spun thread's opening Act is a post for every card (0374), so a wall on it is read as a wall on a post: a tag attached to its words is not refused for them ----
+do $$
+declare
+  ann uuid := tests.account('cw-8b-ann'); bob uuid := tests.account('cw-8b-bob');
+  a uuid := tests.character(ann, 'Cw 8b Ann'); b uuid := tests.character(bob, 'Cw 8b Bob');
+  t uuid := tests.thread('Cw 8b origin'); origin uuid := tests.post(b, t, 'The post that is spun.');
+  made jsonb; open uuid; play uuid; d uuid; got jsonb;
+  text_place jsonb := '{"kind": "text", "version": "x", "at": 4, "len": 5, "dx": 1, "dy": 2}';
+begin
+  perform tests.become(ann);
+  made := spin(origin => origin, through => a, title => 'Cw 8b spun', body => 'The opening post.', at_post => null);
+  perform tests.unbecome();
+  open := (made -> 'act' ->> 'id')::uuid;
+  if (select kind from acts where id = open) is distinct from 'spin' then raise exception '8b: the fixture is a spin'; end if;
+  play := tests.act(a, 'card', (select thread from acts where id = open), jsonb_build_object('card', 'cwwall', 'message', '', 'config', '{}'::jsonb, 'layer', 1), open);
+  perform open_surface(play);
+  perform tests.become_service();
+  got := surface_version_pair(open, open);
+  perform tests.unbecome();
+  if got -> 'current' ->> 'version' is distinct from open::text or got -> 'current' ->> 'body' is distinct from 'The opening post.' or got -> 'drawn' ->> 'version' is distinct from open::text then
+    raise exception '8b: a spin''s version pair is its own words, as a post''s is: %', got;
+  end if;
+  -- The tag the Edge Function sends once that read holds: a group attached to the opening post's words lands with its place.
+  d := (pg_temp.draw(bob, b, play, pg_temp.coats(0, 100), 4000, jsonb_build_array(jsonb_build_object('grp', 0, 'version', open, 'place', text_place)))::jsonb ->> 'id')::uuid;
+  perform tests.become_service();
+  got := surface_groups_on(open);
+  perform tests.unbecome();
+  if got ->> 'version' is distinct from open::text or got ->> 'body' is distinct from 'The opening post.' or jsonb_array_length(got -> 'groups') is distinct from 1 or got -> 'groups' -> 0 ->> 'draw' is distinct from d::text then
+    raise exception '8b: a spin''s walls are read as a post''s are: %', got;
+  end if;
+end $$;
+
 -- ---- 9. Every redefined reader still answers covered ----
 do $$
 declare

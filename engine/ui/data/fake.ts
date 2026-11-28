@@ -2368,7 +2368,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(placed);
   }
   /**
-   * A draw's declared frame held to its post, as the act function holds it (core.ts, frameHeld; surface_frame_of, 0457): every version's words (a hidden one has none), the signature the post is shown with, its current poll
+   * A draw's declared frame held to its post, as the act function holds it (core.ts, frameHeld; surface_frame_of, 0456): every version's words (a hidden one has none), the signature the post is shown with, its current poll
    * and the instance's reactions. A box taller than that could lay out at its width, or an image group wider than its box, is refused in NOT_THOSE_WORDS; a frame the card sets itself (a stencil) and a spun thread's opening Act are not held.
    */
   function frameHeldOn(rules: CardRules, post: ActRec, payload: Readonly<Record<string, unknown>>): Answer<null> {

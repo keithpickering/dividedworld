@@ -753,7 +753,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   where a.target_act_id = surface_marks_of.play and a.kind in ('draw', 'wash')
 $$;
 
--- surface_groups_on(post): a post's walls as an edit needs them. `version` is the post's current version (its latest edit by created_at, id, or the post's own Act), `body` and `forged` that version's words and verdict, and
+-- surface_groups_on(post): a post's walls as an edit needs them (a post is a `post` or a spun thread's opening `spin`, post_kind of 0374: a card lands on either, so a wall can be on either). `version` is the post's current version (its latest edit by created_at, id, or the post's own Act), `body` and `forged` that version's words and verdict, and
 -- `groups` each group of each live draw on each surface on the post that has a surface_places row for that version ({draw, grp, place}, place JSON null once the group has fallen to its box spot): a draw with no places (a box-only
 -- drawing) is left out. Service role only; the Edge Function reads it before an edit and maps each group against the new words. The words are read through acts_public, so a version an admin hid has no body here (conduct plan: a
 -- hidden version is given to no one): every text group on it then falls to its box spot, which is the place the post's own words would not have given it either.
@@ -765,7 +765,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
                         where s.post = p_post), '[]'::jsonb))
   from (select a.id, a.payload from acts_public a
         where a.id = post_version(p_post)
-          and exists (select 1 from acts_public q where q.id = p_post and q.kind = 'post')) v
+          and exists (select 1 from acts_public q where q.id = p_post and post_kind(q.kind))) v
 $$;
 revoke execute on function surface_groups_on(uuid) from public, anon, authenticated;
 grant execute on function surface_groups_on(uuid) to service_role;
@@ -779,7 +779,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
                 from acts_public a where a.id = post_version(p_post)),
     'drawn', (select jsonb_build_object('version', a.id, 'body', coalesce(a.payload ->> 'body', ''), 'forged', coalesce(a.payload -> 'forged', '[]'::jsonb))
               from acts_public a where a.id = p_version and (a.id = p_post or (a.kind = 'edit' and a.target_act_id = p_post))))
-  where exists (select 1 from acts_public q where q.id = p_post and q.kind = 'post')
+  where exists (select 1 from acts_public q where q.id = p_post and post_kind(q.kind))
 $$;
 revoke execute on function surface_version_pair(uuid, uuid) from public, anon, authenticated;
 grant execute on function surface_version_pair(uuid, uuid) to service_role;
@@ -1879,3 +1879,29 @@ select surface_store(s.play) from surfaces s order by s.play;
 
 alter table surfaces drop column cover;
 alter table surfaces drop column owners;
+
+-- What a post shows in its content area, for the server function to hold a draw's declared frame to (issue #1259; the owner's answer, option 1: "the server bounds the declared box against the post"). A tag is counted in the
+-- box its drawer's screen declares (above), while every reader's screen draws it rigid in ems or in image widths, so a box declared taller than its post makes a tag count less than it covers. The act function lays the post out
+-- from what this read gives (engine/rules/frame.ts, `tallestBox`) and refuses a box taller than that before any write.
+--
+-- surface_frame_of(post): {kind, versions: [{body, forged}], signature, poll: {question, options} | null}, or null for an Act that is no post_kind (a post or a spun thread's opening Act). Every version of the post is given, oldest first,
+-- because a live rewind shows an older one in place of the current words (0413), and the tallest of them is what the box may honestly be. The signature is the one the post is shown with: its character's as acts_public
+-- projects the post (a veil's stand-in, where a veil is up, never the hidden author's). The poll is the post's current one (latest_poll, 0395), null when there is none or it was removed. Words are read through acts_public,
+-- so a version an admin hid has an empty body, as surface_version_pair reads it (above).
+--
+-- Masks ("A response never proves a private fact"): every field is what any reader of the post's page is shown. It reads no owner and is the same for every caller. Service role only, as the reads above.
+-- Cost: one read of the post's versions (the post and its edits, by acts' target index), one profile row and one poll; a draw is a player's own act, never a page's.
+
+create function surface_frame_of(p_post uuid) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'kind', q.kind,
+    'versions', coalesce((select jsonb_agg(jsonb_build_object('body', coalesce(v.payload ->> 'body', ''), 'forged', coalesce(v.payload -> 'forged', '[]'::jsonb)) order by v.created_at, v.id)
+                          from acts_public v where v.id = q.id or (v.kind = 'edit' and v.target_act_id = q.id)), '[]'::jsonb),
+    'signature', coalesce((select p.signature from character_profiles p where p."character" = q.character), ''),
+    'poll', (select case when l.payload ? 'removed' then null else jsonb_build_object('question', coalesce(l.payload ->> 'question', ''), 'options', coalesce(l.payload -> 'options', '[]'::jsonb)) end
+             from acts_public l where l.id = latest_poll(q.id)))
+  from acts_public q where q.id = p_post and post_kind(q.kind)
+$$;
+revoke execute on function surface_frame_of(uuid) from public, anon, authenticated;
+grant execute on function surface_frame_of(uuid) to service_role;
