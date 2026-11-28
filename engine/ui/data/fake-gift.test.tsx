@@ -123,4 +123,33 @@ describe('a card wrapped in another, as the server holds it (season two design, 
     expect(await held(fake)).toEqual({ present: 1, blot: 2 });
     expect(await fake.openGift(wrapped.id)).toMatchObject({ ok: false });
   });
+  test('an open is its own Act, and no feed of an admin\'s ended cards reads it as one', async () => {
+    const { fake, ana, bo, boFace, anaFace, opener } = setup();
+    const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    fake.signInAs(bo);
+    const opened = must(await fake.openGift(wrapped.id));
+    const act = (await fake.characterActs(boFace, ['open_gift'], { offset: 0, limit: 5 }))[0];
+    expect(act).toMatchObject({ kind: 'open_gift', targetActId: wrapped.id, payload: { box: wrapped.id, did: 'landed', gift: opened.gift!.id, why: null } });
+    expect((await fake.cardEnds([wrapped.id])).filter((a) => a.kind === 'card_end')).toEqual([]);
+    const boss = fake.seed.account('boss', { admin: true });
+    fake.signInAs(boss);
+    expect((await fake.adminQueue()).ended).toEqual([]);
+    for (const who of [ana, bo]) {
+      fake.signInAs(who);
+      expect((await fake.log(null)).ended).toEqual([]);
+    }
+  });
+
+  test('a returned open says why in its Act, and an ended box cannot be ended again by an admin: it was opened', async () => {
+    const { fake, bo, boFace, anaFace, opener } = setup();
+    const wrapped = must(await fake.playCard('present', anaFace, opener, {}, '', 'post', undefined, undefined, undefined, undefined, gift));
+    fake.signInAs(bo);
+    must(await fake.useCard('shield', boFace, opener, {}, ''));
+    const returned = must(await fake.openGift(wrapped.id));
+    const act = (await fake.characterActs(boFace, ['open_gift'], { offset: 0, limit: 5 }))[0];
+    expect(act?.payload).toMatchObject({ box: wrapped.id, did: 'returned', gift: null, why: returned.why });
+    const boss = fake.seed.account('boss', { admin: true });
+    fake.signInAs(boss);
+    expect(await fake.reverseCard(wrapped.id)).toEqual(refused('that present was already opened'));
+  });
 });

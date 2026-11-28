@@ -381,7 +381,9 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   /* A surface's layer (0317): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
   | 'draw' | 'wash'
   /* A poll (0395): a poll on a post, a ballot on a poll, and a close of a poll. Acts of the post's thread, no place in the thread (`seq` null). */
-  | 'poll' | 'ballot' | 'poll_close';
+  | 'poll' | 'ballot' | 'poll_close'
+  /* The post's author opening a present (design 1.4): an Act of the box's thread on the box, no place in the thread (`seq` null). It ends the box's play; its payload is `{ box, did, gift, why }`. */
+  | 'open_gift';
 
 /** A poll as the page draws it (`thread_page`'s `polls`, 0396): the poll's Act, its counts for each option, how many characters voted, when it ends, whether it has, and its close (an Act of kind `poll_close`) if one was written. */
 export interface Poll {
@@ -3368,7 +3370,6 @@ export interface KayfaApi {
    * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql). A surface card's play carries
    * its first draw (`first`, the card's own shape): a play without one is refused ("draw your tag first"), the refusal on the field `first`.
    * A card that replies carries `reply`, the caster's post written with the play: it lands under the target while the play is in force, and a play without one is refused ("write the reply this card carries"). A cast that is caught writes none.
-   * A card that wraps another (design 1.4) carries `gift`, the card from the caster's hand it holds and the configuration of it, sent apart from `config` so it never joins the box's payload; any other card is refused one, and a wrapper without one is refused. The caster pays the box's price and the gift's own on the post, both at the wrap.
    * A card that wraps another (design 1.4) carries `gift`, the card from the caster's hand it holds and the configuration of it, sent apart from `config` so it never joins the box's payload; any other card is refused one, and a wrapper without one is refused. The caster pays the box's price and the gift's own on the post, both at the wrap.
    */
   playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }, boardThread?: Id, gift?: { readonly card: string; readonly config: Readonly<Record<string, unknown>> }): Promise<Answer<Act>>;

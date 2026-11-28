@@ -1123,3 +1123,11 @@ test('giftProblem holds a Move cast on a post, and says in plain words why a car
   assert.equal(giftProblem(present, inky, { ink: 'blue' }), 'the ink is red', 'the gift\'s own validator speaks');
   assert.equal(giftProblem(plain, plain, {}), 'Test plain holds no card', 'only a wrapper holds a gift');
 });
+
+test('giftProblem refuses a gift an open with no words could never land, in true words', () => {
+  const words = "a present can't hold a card that needs words of its own";
+  assert.equal(giftProblem(present, { ...plain, needsMessage: 'say why' }, {}), words);
+  assert.equal(giftProblem(present, { ...plain, replies: true }, {}), words);
+  assert.equal(giftProblem(present, { ...plain, surface: {} as never }, {}), words);
+  assert.equal(giftProblem(present, plain, {}), null);
+});

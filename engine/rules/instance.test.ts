@@ -2191,6 +2191,7 @@ test('a card that wraps another stacks one and reaches a post alone', () => {
   assert.deepEqual(instanceProblems(withCards({ wraps: true })), [], 'a well-formed wrapper');
   assert.deepEqual(instanceProblems(withCards({ wraps: true, stack: 1, reaches: ['post'] })), []);
   assert.match(bad({ stack: 2 }), /card "splat" wraps a card, and a present stacks at most 1/);
+  assert.match(bad({ lasts: { unit: 'day', count: 1 } }), /card "splat" wraps a card, and a present has no time up: nothing returns the gift from a box that wears off/);
   assert.match(bad({ reaches: ['post', 'thread'] }), /card "splat" wraps a card, and a card that wraps reaches a post alone/);
   assert.match(bad({ reaches: ['character'] }), /card "splat" wraps a card, and a card that wraps reaches a post alone/);
 });

@@ -1256,6 +1256,7 @@ function wrapsProblems(c: CardRules): string[] {
   const out: string[] = [];
   if (c.wraps !== true) out.push(`card "${c.key}" wraps ${JSON.stringify(c.wraps)}; wraps is true or left out`);
   if (c.stack !== undefined && c.stack !== 1) out.push(`${who}, and a present stacks at most 1`);
+  if (c.lasts !== undefined) out.push(`${who}, and a present has no time up: nothing returns the gift from a box that wears off`);
   const reaches = Array.isArray(c.reaches) ? c.reaches : ['post'];
   if (reaches.length !== 1 || reaches[0] !== 'post') out.push(`${who}, and a card that wraps reaches a post alone`);
   return out;

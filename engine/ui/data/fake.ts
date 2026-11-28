@@ -569,7 +569,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
 /** A `my_cosmetic_log` row with nothing said: each kind fills what it uses. */
 const NO_COSMETIC = { character: null, outcome: null, item: null, text: null, copies: null, trophy: null, name: null, by: null, byName: null, season: null, place: null, line: null, toName: null } as const;
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
-const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash', 'poll', 'ballot', 'poll_close']);
+const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash', 'poll', 'ballot', 'poll_close', 'open_gift']);
 
 /**
  * The api's writes: the one split `failNextRead` and `offline` share. Every method that answers an `Answer` is one, and `markRead` (a
@@ -806,8 +806,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* An admin ended a card: the alert is the caster's own player's, about the card_end (reverse_card's write_alert; none for a staff
        caster), and the side it landed on's (onYours), none for the caster's own. */
     if (a.kind === 'card_end') {
-      /* The author opening a present (openGift) ends the box's play and tells nobody a card was ended: it is the game's own turn, not an admin's. */
-      if (a.payload.why === 'opened') return [];
       const play = a.target === null ? undefined : acts.get(a.target);
       const caster = play?.character;
       const out: { account: Id; kind: 'cardEnded'; sub: 'onYours' | null; character: Id }[] = [];
@@ -905,7 +903,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The Act kinds the database pokes the owner's account about with `self` (`self_kinds()`, 0455), besides a `move` naming one of their characters. The wallet moves
    * (any kind but a settlement's), the card ledger rows and the ban lifts and warn reliefs poke too, where the fake writes them. One list, so a kind added to the SQL is added here.
    */
-  const SELF_KINDS: ReadonlySet<ActKind> = new Set<ActKind>(['appeal_ruling', 'ban', 'card_end', 'infraction', 'move', 'move_end', 'spring', 'unmask']);
+  const SELF_KINDS: ReadonlySet<ActKind> = new Set<ActKind>(['appeal_ruling', 'ban', 'card_end', 'open_gift', 'infraction', 'move', 'move_end', 'spring', 'unmask']);
   /** The kinds whose target Act is followed, up to two hops, to find what they change (`act_self_characters`'s chain). */
   const SELF_CHAIN: ReadonlySet<ActKind> = new Set<ActKind>(['move_end', 'card_end', 'appeal_ruling', 'appeal']);
   const sendSelf = (account: Id | null | undefined) => {
@@ -1670,7 +1668,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (list === undefined) placedIndex.set(rec.thread, [rec]); else list.push(rec);
       lastPlacedAt.set(rec.thread, Math.max(lastPlacedAt.get(rec.thread) ?? -Infinity, rec.at));
     }
-    if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
+    /* An open is the other way a box's play ends (open_gift): over for every reader of "in force", though it is no admin's end. */
+    if ((rec.kind === 'card_end' || rec.kind === 'open_gift') && rec.target !== null) reversedPlays.add(rec.target);
     /* The landed card Acts that name a Gimmick they cut, by that play, in the order written (acts_cut_play): what cutBy reads. */
     if (rec.kind === 'card' && rec.payload.caught === undefined && rec.payload.cut !== undefined) {
       const named = String((rec.payload.cut as { play?: unknown }).play);
@@ -2201,7 +2200,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const board = threads.get(post.thread)!.board;
     const wanted = new Set([first.id, ...snapshot.map((l) => l.layer)]);
     /* A play an admin had ended by the moment (a card_end at or before it) was not live then; one ended later was. */
-    const endedBy = (p: Id) => [...acts.values()].some((a) => a.kind === 'card_end' && a.target === p && a.at <= time);
+    const endedBy = (p: Id) => [...acts.values()].some((a) => (a.kind === 'card_end' || a.kind === 'open_gift') && a.target === p && a.at <= time);
     return {
       version: shownVersion(post, version),
       layers: [
@@ -2209,7 +2208,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...snapshot.map((l) => ({ rec: acts.get(l.layer)!, saved: l.saved })).sort((a, b) => byLanding(a.rec, b.rec))
           .map(({ rec, saved }) => ({ act: publicAct(rec), state: saved ? { state: saved.state, savedAt: iso(saved.at) } : null })),
         /* The card_end of the play or of one of its layers written at or before the moment (momentParts counts `<=` too), as 0092 gives. */
-        ...[...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target) && a.at <= time)
+        ...[...acts.values()].filter((a) => (a.kind === 'card_end' || a.kind === 'open_gift') && a.target !== null && wanted.has(a.target) && a.at <= time)
           .sort(byLanding).map((a) => ({ act: publicAct(a), state: null })),
       ],
       above: [...reachPlays].filter(([p, r]) => p !== first.id && r.endsAt > time && !endedBy(p) && acts.get(p)!.at < time
@@ -2859,6 +2858,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * What a present holds (`gift_box`, design 1.4): keyed by the box's play, the giver's account, the gift's card and its checked configuration, and the gift's own price at the wrap.
    * Read only by the giver's own calls (an open lands it as the giver's play or returns it to them, an admin's end hands it back); no Act, payload or answer names it before the open.
    */
+  /** Boxes whose open was written: an admin's end of one says so (reverseCard). */
+  const openedBoxes = new Set<Id>();
   const gifts = new Map<Id, { readonly account: Id; readonly card: string; readonly config: Readonly<Record<string, unknown>>; readonly paid: number }>();
   /**
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
@@ -3056,7 +3057,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /**
    * `open_gift` (design 1.4): the post's author opens a box. The box's play is marked over first, so its slot is free, then the gift is tried on the post as a cast by the giver's
    * character through playCard's own landing, at no price. A landing refused for any reason (a ward, a full post) hands the gift back to the giver's hand and says why. The open Act,
-   * a `card_end` that says the author did it, is written once, after the landing is tried, with its outcome: `did` and the landed play or the refusal's words.
+   * an `open_gift` Act, is written once, after the landing is tried, with its outcome: `did` and the landed play or the refusal's words.
    */
   function openGift(boxId: Id): Answer<{ readonly box: Id; readonly did: 'landed' | 'returned'; readonly gift: Act | null; readonly why: string | null }> {
     const account = me();
@@ -3070,8 +3071,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const giver = accounts.get(held.account)!;
     reversedPlays.add(boxId);
     const tried = playCard(held.card, box.character!, box.target, held.config, '', 'post', undefined, undefined, undefined, undefined, undefined, { account: giver });
-    const open = write({ character: post.character, kind: 'card_end', thread: box.thread, target: boxId, payload: { why: 'opened', by: 'author', gift: held.card, did: tried.ok ? 'landed' : 'returned', ...(tried.ok ? { landed: tried.value.id } : { because: tried.error }) } });
+    const open = write({ character: post.character, kind: 'open_gift', thread: box.thread, target: boxId, payload: { box: boxId, did: tried.ok ? 'landed' : 'returned', gift: tried.ok ? tried.value.id : null, why: tried.ok ? null : tried.error } });
     sendAct(open);
+    gifts.delete(boxId);
+    openedBoxes.add(boxId);
     if (tried.ok) return ok({ box: boxId, did: 'landed', gift: tried.value, why: null });
     giver.cards[held.card] = (giver.cards[held.card] ?? 0) + 1;
     recordCard(giver.id, open.at, { card: held.card, kind: 'returned', act: open.id, price: 0 });
@@ -4296,7 +4299,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       snippet: searchSnippet(row, words),
       /* card and spring plays that reach the post and have no card_end, oldest first (the SQL's `cards`). */
       cards: [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'spring') && a.target === row.act && (a.payload.reach ?? 'post') === 'post' && typeof a.payload.card === 'string'
-        && ![...acts.values()].some((e) => e.kind === 'card_end' && e.target === a.id)).sort((x, y) => x.at - y.at || x.order - y.order).slice(0, SEARCH_CARDS_MAX).map((a) => String(a.payload.card)),
+        && ![...acts.values()].some((e) => (e.kind === 'card_end' || e.kind === 'open_gift') && e.target === a.id)).sort((x, y) => x.at - y.at || x.order - y.order).slice(0, SEARCH_CARDS_MAX).map((a) => String(a.payload.card)),
     };
   }
   /** Two same-length strings a letter apart, or two adjacent letters swapped. */
@@ -4697,6 +4700,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const ends = reachPlays.get(play)?.endsAt ?? (typeof p.payload.ends === 'string' ? Date.parse(p.payload.ends) : null);
       /* A play of a card that keeps can be ended after its time too: its level still counts on the posts it was up over, and an admin takes it off (reverse_card, 0348's page). */
       if (ends !== null && ends <= now() && instance.cards.find((c) => c.key === p.payload.card)?.keeps !== true) return refuse('that card has already worn off');
+      if (openedBoxes.has(play)) return refuse('that present was already opened');
       if (reversedPlays.has(play)) return refuse('an admin has already ended that card');
       if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
       /* A play that is over for another reason says so (reverse_card, 0405): a card that cut it names itself, any other (a spent Cheap Shot) is over. */
