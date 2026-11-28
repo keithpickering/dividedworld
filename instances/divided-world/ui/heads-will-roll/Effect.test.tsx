@@ -304,6 +304,16 @@ function mountLive(first: readonly Chip[]) {
 }
 const reelFirst = () => act(() => { fireEvent.keyDown(heads()[0]!, { key: 'Enter' }); });
 
+describe('Heads Will Roll: the render order', () => {
+  test("a mixed deck (an Overreaction kind and the React head) is drawn in the order the orbit projects", () => {
+    const chips = [chip('a', 'A', 3), chip('b', 'B', 2, { local: true }), chip('c', 'C', 7), chip('d', 'D', 4, { local: true }), chip('e', 'E', 1)];
+    mount(deckOf({ chips }).deck);
+    const projected = steps.orbit!.bodies().map((b) => b.id);
+    expect(heads().map((b) => b.getAttribute('data-head'))).toEqual(projected);
+    expect(projected.at(-1)).toBe('react');
+  });
+});
+
 describe('Heads Will Roll: what lets a reel go, and where focus stays', () => {
   test('unmounting clears the reel timer', () => {
     const m = mountLive(CHIPS);

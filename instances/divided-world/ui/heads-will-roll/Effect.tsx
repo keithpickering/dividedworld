@@ -33,7 +33,7 @@ import type { CardView, EffectProps } from '../../../../engine/ui/cards/types.ts
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { seeded } from '../seeded.ts';
-import { createOrbit, headMass, ORBIT, reelSeconds, type HeadSpec, type Orbit, type ProjectedHead } from './orbit.ts';
+import { byMass, createOrbit, headMass, ORBIT, reelSeconds, type HeadSpec, type Orbit, type ProjectedHead } from './orbit.ts';
 import './heads-will-roll.css';
 
 /** The React head's id; a kind's head is `k:<key>`, so the two never meet. */
@@ -94,7 +94,7 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
   const projected = useRef<readonly ProjectedHead[] | null>(null);
   const projection = useCallback((): readonly ProjectedHead[] => (projected.current ??= orbit.project()), [orbit]);
   /* The heads in tab order, heaviest first and the React head last: the orbit's own order, worked out from the specs alone so the render needs no orbit step. */
-  const order = useMemo(() => [...specs].sort((a, b) => (a.react ? 1 : 0) - (b.react ? 1 : 0) || headMass(b, orbitSettings) - headMass(a, orbitSettings) || (a.id < b.id ? -1 : 1)), [specs, orbitSettings]);
+  const order = useMemo(() => specs.map((h) => ({ ...h, react: h.react === true, mass: headMass(h, orbitSettings) })).sort(byMass), [specs, orbitSettings]);
 
   /* The orbit takes the heads and the card's settings in a layout effect (so it is safe to run twice), before the box is measured and the heads are painted. */
   useLayoutEffect(() => {

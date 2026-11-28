@@ -100,6 +100,11 @@ export interface ProjectedHead {
   readonly speed: number;
 }
 
+/** The tab order: the React head last, then the heaviest first, ties by id. The orbit sorts by it and so does the screen's render, so there is one rule. */
+export function byMass(a: { readonly id: string; readonly react: boolean; readonly mass: number }, b: { readonly id: string; readonly react: boolean; readonly mass: number }): number {
+  return (a.react ? 1 : 0) - (b.react ? 1 : 0) || b.mass - a.mass || (a.id < b.id ? -1 : 1);
+}
+
 /** A head in the space, for the tests and for anything that wants the orbit's own geometry. */
 export interface Body {
   readonly id: string;
@@ -209,7 +214,6 @@ export function createOrbit(initial: AreaBox, options: { readonly seed?: number;
     };
   }
 
-  const byMass = (a: Sim, b: Sim) => (a.react ? 1 : 0) - (b.react ? 1 : 0) || b.mass - a.mass || (a.id < b.id ? -1 : 1);
 
   /** Who is a sun and who orbits whom, the rings' radii and how far they must be drawn in to fit; then every head is put where it belongs. */
   function layout(resized = false): void {
