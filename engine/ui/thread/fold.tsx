@@ -9,6 +9,7 @@ import type { CardUi } from '../cards/types.ts';
 import { useFeel } from '../glass/motion.ts';
 import type { PostbitPerson } from '../postbit/Postbit.tsx';
 import { CoveredCtx, RowCoverCtx, type RowCovering } from './cover.tsx';
+import { RowFillCtx, type RowFilling } from './fill.tsx';
 import { FoldBar } from './FoldBar.tsx';
 
 export interface RowFold { readonly open: boolean; readonly toggle: () => void }
@@ -140,10 +141,12 @@ export function useRowFolding({ plays, actId, eligible, now, cards, article }: {
  * A post's row under the fold's context: the bar while it folds, then the grid, hidden until the reader opens it. `id` names the row for the bar's press;
  * `before` is drawn ahead of the bar and is not part of the row.
  */
-export function FoldedRow({ fold, cover, id, bar, before, children }: {
+export function FoldedRow({ fold, cover, fill, id, bar, before, children }: {
   readonly fold: RowFolding;
   /** The post's covers (thread/cover.tsx), where it has them: their host is drawn over the grid and the grid's context carries them. The fold's bar stays outside the grid, so it is outermost. */
   readonly cover?: RowCovering;
+  /** The post's fills (thread/fill.tsx), where it has them: their layers are drawn in the grid under the cover's host, and the grid's context carries them to the post's effects. */
+  readonly fill?: RowFilling;
   /** The row's element id, which the bar's press controls: unique on the page. */
   readonly id: string;
   readonly bar: { readonly person: PostbitPerson | undefined; readonly name: string; readonly spoken: string; readonly seq: number; readonly marks: ReactNode };
@@ -156,7 +159,9 @@ export function FoldedRow({ fold, cover, id, bar, before, children }: {
       {fold.folding && <FoldBar {...bar} open={fold.folded} toggle={fold.toggle} controls={id} />}
       <RowCoverCtx.Provider value={cover?.rowCover ?? null}>
         <CoveredCtx.Provider value={(cover?.shut ?? 0) > 0}>
-          <div ref={fold.grid} className="kb-act-grid" {...(fold.folding ? { id, hidden: !fold.folded } : {})}>{cover?.host}{children}</div>
+          <RowFillCtx.Provider value={fill?.value ?? null}>
+            <div ref={fold.grid} className="kb-act-grid" {...(fold.folding ? { id, hidden: !fold.folded } : {})}>{cover?.host}{fill?.layers}{children}</div>
+          </RowFillCtx.Provider>
         </CoveredCtx.Provider>
       </RowCoverCtx.Provider>
     </RowFoldCtx.Provider>

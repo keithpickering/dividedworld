@@ -56,7 +56,8 @@ import type { PostPlays } from './plays.ts';
 import type { CardPlay, CardUi, CardView, Drive, EffectPlace, EffectProps, Written } from './types.ts';
 import { glassInk } from './ink.ts';
 import { useOwnerOf } from '../thread/context.ts';
-import { useCovered, useRowCover } from '../thread/cover.tsx';
+import { CoveredCtx, rowRank, useCovered, useRowCover } from '../thread/cover.tsx';
+import { useRowFill } from '../thread/fill.tsx';
 import { useRowFold } from '../thread/fold.tsx';
 import { LateNote } from '../jobs/LateNote.tsx';
 
@@ -264,10 +265,14 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const firsts = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key): Wrap => ({ reach: l.reach, key, mine: l.acting.filter((p) => p.card === key), of: l.of })));
   /* A card drawn by another gives its plays to that card's wrap before the wraps are ordered, so the post draws one effect of the named card (`handedOn`). */
   const wraps = handedOn(firsts, here, ui.cards);
-  const { writing: within, rest, takeovers, covers } = nestOrder(wraps, ui.cards, writing);
+  const { writing: within, rest, takeovers, covers } = nestOrder(wraps, ui.cards, writing, ui.rowOrder);
   const rowFold = useRowFold();
   const rowCover = useRowCover();
-  const wrapIn = (node: ReactNode, list: readonly Wrap[], from: number): ReactNode => {
+  const rowFill = useRowFill();
+  /* The fill layers' portals, drawn beside the post's own tree so that a layer coming or going never remounts the words. */
+  const filled: ReactNode[] = [];
+  /* `inRow`: a card that fills the row is drawn in its layer over the row (thread/fill.tsx), not around the words; a shown moment and a present have no row to fill. */
+  const wrapIn = (node: ReactNode, list: readonly Wrap[], from: number, inRow = false): ReactNode => {
     let wrapped = node;
     for (const [i, { key, reach, mine, of }] of list.entries()) {
       const card = ui.cards.find((c) => c.key === key);
@@ -275,7 +280,10 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       const Effect = card.Effect;
       /* Every play here is beyond the post and over: the effect draws what the post keeps of it (`kept`), not a live effect. */
       const kept = mine.length > 0 && mine.every((p) => p.reach !== undefined && p.ends !== undefined && Date.parse(p.ends) <= now);
-      wrapped = (
+      const layer = inRow && rowFill !== null && place === 'thread' && reach === 'post' && card.fillsRow === true;
+      const hosted = layer ? rowFill.host(key) : null;
+      if (layer && hosted === null) continue;
+      const bound = (
         <BoundEffect
           key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach} cardKey={key}
           post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
@@ -288,9 +296,11 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
           {...(rowCover !== null && reach === 'post' && card.coversRow ? { cover: rowCover } : {})}
           ink={claims.at(`${reach}:${key}`, from + i)} {...(reach === 'post' ? { surface: surfaceOf(key, mine, of) } : {})}
         >
-          {wrapped}
+          {layer ? null : wrapped}
         </BoundEffect>
       );
+      if (hosted !== null) filled.push(createPortal(<CoveredCtx.Provider key={`${reach}:${key}`} value={rowFill!.covered(key)}>{bound}</CoveredCtx.Provider>, hosted, `${reach}:${key}`));
+      else wrapped = bound;
     }
     return wrapped;
   };
@@ -318,8 +328,8 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
     return <>{slot(wrapIn(wrapIn(shown, takeovers, 0), covers, takeovers.length))}</>;
   }
   /* The effects of the cards that write wrap the words first, so a tail is their next sibling under every other card; a compose's body holds both. */
-  const wrapped = wrapIn(wrapIn(wrapIn(plain(wrapIn(words, within, 0)), rest, within.length), takeovers, within.length + rest.length), covers, within.length + rest.length + takeovers.length);
-  return <>{slot(wrapped)}</>;
+  const wrapped = wrapIn(wrapIn(wrapIn(plain(wrapIn(words, within, 0)), rest, within.length), takeovers, within.length + rest.length), covers, within.length + rest.length + takeovers.length, true);
+  return <>{slot(wrapped)}{filled}</>;
 }
 
 /**
@@ -438,18 +448,19 @@ function afterSurface(plays: Plays, api: KayfaApi, play: Id, covered: number, li
  * who owns a character.
  */
 export function nestOrder<T extends { readonly key: string; readonly reach?: Reach }>(
-  cards: readonly T[], ui: readonly CardUi[], writing: ReadonlySet<string>,
+  cards: readonly T[], ui: readonly CardUi[], writing: ReadonlySet<string>, order?: readonly string[],
 ): { readonly writing: readonly T[]; readonly rest: readonly T[]; readonly takeovers: readonly T[]; readonly covers: readonly T[] } {
-  const cover = (key: string) => ui.find((c) => c.key === key)?.coversRow === true;
+  const layer = (key: string) => { const c = ui.find((u) => u.key === key); return c?.coversRow === true || c?.fillsRow === true; };
   const take = (key: string) => ui.find((c) => c.key === key)?.takeover === true;
   const under = (key: string) => ui.find((c) => c.key === key)?.beneath === true;
-  const inside = (c: T) => !cover(c.key) && !take(c.key) && writing.has(c.key) && (c.reach === undefined || c.reach === 'post');
+  const inside = (c: T) => !layer(c.key) && !take(c.key) && writing.has(c.key) && (c.reach === undefined || c.reach === 'post');
   const others = cards.filter((c) => !inside(c));
   return {
     writing: cards.filter(inside),
-    rest: [...others.filter((c) => !cover(c.key) && !take(c.key) && under(c.key)), ...others.filter((c) => !cover(c.key) && !take(c.key) && !under(c.key))],
-    takeovers: others.filter((c) => !cover(c.key) && take(c.key)),
-    covers: others.filter((c) => cover(c.key)),
+    rest: [...others.filter((c) => !layer(c.key) && !take(c.key) && under(c.key)), ...others.filter((c) => !layer(c.key) && !take(c.key) && !under(c.key))],
+    takeovers: others.filter((c) => !layer(c.key) && take(c.key)),
+    /* Innermost first, as every list here is wrapped: the later in `order` the nearer the words, and a card the order does not list outermost. The sort is stable, so the plays of one card keep the order given. */
+    covers: others.filter((c) => layer(c.key)).sort((a, b) => rowRank(order, b.key) - rowRank(order, a.key)),
   };
 }
 
@@ -696,7 +707,7 @@ export function MomentEffects({ moment, place, nameOf, onView, children }: {
       ...(parts.above ? [{ key: parts.above.card, reach: 'character' as const, mine: [parts.above] }] : []),
       ...[...new Set(counted.map((p) => p.card))].map((key) => ({ key, reach: 'post' as const, mine: counted.filter((p) => p.card === key) })),
     ];
-    const nested = nestOrder(wraps, ui.cards, writing);
+    const nested = nestOrder(wraps, ui.cards, writing, ui.rowOrder);
     const list = [...nested.writing, ...nested.rest, ...nested.takeovers, ...nested.covers].map((w) => ({ ...w, written: w.reach === 'post' ? writtenOf(written, w.mine, writing) : NOTHING_WRITTEN }));
     return { list, inside: nested.writing.length };
   }, [counted, parts.above, ui.cards, writing, written]);
@@ -747,7 +758,7 @@ export function VersionEffects({ post, version, plays, written, nameOf = () => '
   const { ui, instance } = useKayfa();
   const writing = useMemo(() => writingKeys(instance.cards), [instance.cards]);
   const has = plays.filter((p) => written.has(p.id));
-  const order = nestOrder([...new Set(has.map((p) => p.card))].filter((k) => ui.cards.find((c) => c.key === k)?.Effect).map((key) => ({ key })), ui.cards, writing);
+  const order = nestOrder([...new Set(has.map((p) => p.card))].filter((k) => ui.cards.find((c) => c.key === k)?.Effect).map((key) => ({ key })), ui.cards, writing, ui.rowOrder);
   let wrapped = children;
   for (const { key } of [...order.writing, ...order.rest, ...order.takeovers, ...order.covers]) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;

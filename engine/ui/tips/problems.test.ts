@@ -149,13 +149,28 @@ describe('instanceUiProblems', () => {
   test('refuses a card that covers the row and has no Cover or no Effect, is a takeover, or also folds (CardUi.coversRow)', () => {
     const Effect = () => null;
     const Cover = () => null;
-    const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
+    const withCards = (list: unknown[]) => ({ ...ui(good), rowOrder: ['above'], cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
     const covers = { key: 'above', status: 'Covered', coversRow: true as const };
     assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Effect, Cover }]), rules), [], 'a well-formed covering card');
     assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Effect }]), rules), ['the card "above" covers the row and has no Cover to draw over it']);
     assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Cover }]), rules), ['the card "above" covers the row and has no Effect to cover the content area where a post has no row']);
     assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Effect, Cover, takeover: true }]), rules), ['the card "above" covers the row and is a takeover, which lifts the post out of the row the cover hides']);
     assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Effect, Cover, foldsRow: true }]), rules), ['the card "above" covers the row and also folds it; a card does one or the other']);
+  });
+  test('holds the row layers\' order to the cards that cover or fill the row (InstanceUi.rowOrder)', () => {
+    const Effect = () => null;
+    const Cover = () => null;
+    const cover = { key: 'curtain', status: 'Covered', coversRow: true as const, Effect, Cover };
+    const fill = { key: 'ads', status: 'Filled', fillsRow: true as const, Effect };
+    const run = (list: unknown[], rowOrder?: readonly string[]) => instanceUiProblems({ ...ui(good), ...(rowOrder === undefined ? {} : { rowOrder }), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] }, rules);
+    assert.deepEqual(run([cover, fill], ['curtain', 'ads']), [], 'a clean order');
+    assert.deepEqual(run([{ key: 'plain', status: 'Plain', Effect }]), [], 'no layers and no order');
+    assert.deepEqual(run([cover, fill], ['ads']), ['the card "curtain" covers or fills the row and is missing from rowOrder']);
+    assert.deepEqual(run([cover, fill], ['curtain']), ['the card "ads" covers or fills the row and is missing from rowOrder']);
+    assert.deepEqual(run([cover], ['curtain', 'ghost']), ['rowOrder lists "ghost", which is no card']);
+    assert.deepEqual(run([cover, { key: 'plain', status: 'Plain', Effect }], ['curtain', 'plain']), ['rowOrder lists "plain", which neither covers nor fills the row']);
+    assert.deepEqual(run([cover], ['curtain', 'curtain']), ['rowOrder lists "curtain" twice']);
+    assert.deepEqual(run([{ ...cover, fillsRow: true }], ['curtain']), ['the card "curtain" both covers and fills the row; a card does one or the other']);
   });
   test('refuses a card drawn by another that names no card with an Effect, has an Effect itself, or names a card that is itself drawn by another (CardUi.drawnBy)', () => {
     const Effect = () => null;

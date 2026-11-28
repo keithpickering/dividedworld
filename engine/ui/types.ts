@@ -476,6 +476,11 @@ export interface InstanceUi {
    * them. A quadrant the instance gives no class is drawn in the glass's own text.
    */
   readonly quadrantClasses?: Readonly<Partial<Record<Quadrant, string>>>;
+  /**
+   * The keys of every card that covers the row (`CardUi.coversRow`) or fills it (`CardUi.fillsRow`), outermost first: the one order the row's layers nest in, whatever the
+   * order they were played in (a stack of one card is latest outermost). The fold (`foldsRow`) is outside all of them and is not listed. `rowOrderProblems` holds it to the cards.
+   */
+  readonly rowOrder?: readonly string[];
   /** Each class's look, by the class's key. */
   readonly classLooks: Readonly<Record<string, ClassLook>>;
   /**

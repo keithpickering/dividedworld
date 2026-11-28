@@ -272,6 +272,8 @@ export const instanceUi: InstanceUi = Object.freeze({
   staffAvatars: Object.freeze({ fangame: Object.freeze({ square: fangameSquare, portrait: fangamePortrait }) }),
   glass,
   cards: cardsUi,
+  /* The row's layers, outermost first (the fold is outside all of them): each task that adds a card that covers or fills the row adds its key here. */
+  rowOrder: Object.freeze(['its-curtains']),
   packs: packsUi,
   /* The laugh track: the audience's sounds, each with its caption (sounds.ts). */
   sounds,

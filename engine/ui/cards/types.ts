@@ -465,6 +465,13 @@ export interface CardUi {
    * `foldsRow` (`instanceUiProblems`).
    */
   readonly coversRow?: true;
+  /**
+   * A live play of this card on a post draws the card's `Effect` over the post's whole row (`div.kb-row-layer`, inside the row's grid as `kb-row-cover` is) instead of
+   * around the words, in a thread's post; where a post has no row (the ORIGIN box, the front door, a moment, History) it wraps the words as any effect does. It makes nothing
+   * inert, and the effect is given `covered` while a cover ranked outside it in `InstanceUi.rowOrder` is shut. A card is never both `coversRow` and `fillsRow`
+   * (`rowOrderProblems`).
+   */
+  readonly fillsRow?: true;
   /** What the engine mounts over a post's row while a play of this card is shut for this reader (`coversRow`); it is given the post's covering plays and the reader's state. */
   readonly Cover?: ComponentType<CoverProps>;
   /**

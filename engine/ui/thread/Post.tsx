@@ -44,6 +44,7 @@ import { pageOf, threadHref } from './pages.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 import { Poll } from '../polls/Poll.tsx';
 import { useRowCovering } from './cover.tsx';
+import { useRowFilling } from './fill.tsx';
 import { FoldedRow, useRowFolding } from './fold.tsx';
 
 export { ThreadCtx, type ThreadContext };
@@ -266,7 +267,9 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   const fold = useRowFolding({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, article: ref });
   const { folding } = fold;
   /* The row is covered while the post wears a live play, on its own reach, of a card that covers the row (`CardUi.coversRow`); the reader opens the covers one at a time. */
-  const cover = useRowCovering({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, grid: fold.grid, post: act.id });
+  const cover = useRowCovering({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, grid: fold.grid, post: act.id, order: ui.rowOrder });
+  /* A card that fills the row (`CardUi.fillsRow`) has its effect drawn in a layer over the row, in the instance's order; it is covered while a cover outside it is shut. */
+  const fill = useRowFilling({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, order: ui.rowOrder, covering: cover });
   const { actingCharacters: acting } = usePlayer();
   const own = useMyHidden(act.id, act.character !== null && acting.some((c) => c.id === act.character), act.hidden === true);
   const canEdit = act.hidden !== true || own != null;
@@ -333,7 +336,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
       data-kb-fold={folding ? (fold.folded ? 'open' : 'folded') : undefined}
     >
     <FoldedRow
-      fold={fold} cover={cover} id={`post-${seq}-row`} bar={{ person, name, spoken, seq, marks }}
+      fold={fold} cover={cover} fill={fill} id={`post-${seq}-row`} bar={{ person, name, spoken, seq, marks }}
       before={<>
         <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {spoken}{cut && `, cut in under post ${cut.seq}`}</h2>
         {cut && <p className="kb-act-cutline kb-small">Cut in line under post {cut.seq}</p>}
