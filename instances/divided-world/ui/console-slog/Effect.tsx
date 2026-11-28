@@ -11,7 +11,7 @@
  * post has its height from the first press: what has not been typed is laid out hidden after the cursor, so no line breaks later than it will when it has typed.
  *
  * The mash. A press is a fresh key press (the browser's repeats of a held key are ignored), a tap or a click on the terminal, or an assistive technology's
- * activation of the button. Modifier keys, shortcuts and Tab (the way out of it) are not presses. A steady rhythm makes each press worth more (slog.ts). The
+ * activation of the button. Only typing keys press (a character, Enter, Backspace): modifiers, shortcuts, function keys, arrows, paging, Escape, Tab (the way out of it) and a composing key are left alone. A steady rhythm makes each press worth more (slog.ts). The
  * same for every reader, the post's author and the caster among them: "An accessible path costs what the obstacle costs", so the accessible path is the same
  * mash (a key, a tap or a switch press each reveal the same), and reduced motion changes only the cursor, which holds still, and never what a press costs.
  *
@@ -37,8 +37,6 @@ import './slog.css';
 const DEFAULTS: SlogSettings = { rhythmMs: 450, perStep: 5, mostPerPress: 8, drain: 12, bands: 16 };
 const NAME = 'Console Slog: press any key or tap to type out this post';
 const ENDS = 'Ends when you type out the whole post.';
-/** Keys that are no press: the modifiers alone, and the ones that leave the terminal. */
-const NOT_PRESSES = new Set(['Tab', 'Escape', 'Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'OS', 'CapsLock', 'ContextMenu', 'Dead']);
 
 /** What a reader keeps for a play: how many of its units are out. */
 const kept = (raw: unknown): { readonly shown: number } | null => {
@@ -208,7 +206,9 @@ export function ConsoleSlogEffect({ post, plays, released, reader, still, moment
   if (free || total === 0) return <>{children}</>;
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
-    if (still || e.repeat || e.metaKey || e.ctrlKey || e.altKey || NOT_PRESSES.has(e.key)) return;
+    if (still || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.nativeEvent.isComposing || e.key === 'Process') return;
+    /* Only typing keys press: a character (Space among them), Enter and Backspace. Function keys, arrows, paging, Escape and Tab keep doing what they do. */
+    if (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace') return;
     /* A live link is a link: Enter follows it. */
     if (e.target instanceof Element && e.target.closest('a') !== null) return;
     e.preventDefault();

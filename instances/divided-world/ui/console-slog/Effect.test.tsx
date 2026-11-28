@@ -30,9 +30,9 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-interface Options { readonly body?: string; readonly released?: boolean; readonly still?: boolean; readonly bands?: number; readonly reader?: { author: boolean; caster: boolean } }
+interface Options { readonly releaseWith?: () => Promise<{ ok: boolean }>; readonly body?: string; readonly released?: boolean; readonly still?: boolean; readonly bands?: number; readonly reader?: { author: boolean; caster: boolean } }
 function mount(o: Options = {}) {
-  const release = vi.fn(async (id: string) => ({ ok: true as const, value: { play: id, releasedAt: '2026-11-28T12:00:00.000Z' } }));
+  const release = vi.fn(async (id: string) => (o.releaseWith ? o.releaseWith() : { ok: true as const, value: { play: id, releasedAt: '2026-11-28T12:00:00.000Z' } }));
   const show = vi.fn<(view: CardView | null) => void>();
   const props = (body: string, released: boolean): EffectProps => ({
     covered: false, post: postOf(body), plays: [play], states: {}, released: released ? new Set([play.id]) : new Set(), written: new Map(), reader: o.reader ?? { author: false, caster: false }, place: 'thread', reach: 'post',
@@ -84,10 +84,63 @@ describe('Console Slog', () => {
     expect(typed()).toBe('ab');
   });
 
-  test('a modifier on its own, a shortcut and Tab are not presses', () => {
+  test('only typing keys press: a shortcut, a modifier, Tab, function keys, arrows, paging, Escape and a composing key are left alone', () => {
     mount();
-    for (const init of [{ key: 'Shift' }, { key: 'Control' }, { key: 'Tab' }, { key: 'c', ctrlKey: true }, { key: 'r', metaKey: true }]) fireEvent.keyDown(region(), init);
+    const left = [{ key: 'Shift' }, { key: 'Control' }, { key: 'Tab' }, { key: 'Escape' }, { key: 'F5' }, { key: 'ArrowDown' }, { key: 'PageDown' }, { key: 'Home' }, { key: 'End' },
+      { key: 'c', ctrlKey: true }, { key: 'r', metaKey: true }, { key: 'a', isComposing: true }, { key: 'Process' }];
+    for (const init of left) {
+      const notPrevented = fireEvent.keyDown(region(), init);
+      expect(notPrevented, `${init.key} is not prevented`).toBe(true);
+    }
     expect(typed()).toBe('');
+    for (const key of [' ', 'Enter', 'Backspace', 'é']) {
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(fireEvent.keyDown(region(), { key }), `${key} is a press and is prevented`).toBe(false);
+    }
+    expect(typed().length).toBe(4);
+  });
+
+  test('a real tap (pointer down, then its click) reveals once, and a click with no pointer reveals once', () => {
+    mount();
+    act(() => { vi.advanceTimersByTime(1000); });
+    fireEvent.pointerDown(region());
+    fireEvent.click(region(), { detail: 1 });
+    expect(typed()).toBe('a');
+    act(() => { vi.advanceTimersByTime(1000); });
+    fireEvent.click(region(), { detail: 0 });
+    expect(typed()).toBe('ab');
+  });
+
+  test('a release that did not land (refused, or rejected) is tried again on the next press, once', async () => {
+    for (const fail of [async () => ({ ok: false }), async () => { throw new Error('offline'); }]) {
+      let calls = 0;
+      const { release, unmount } = mount({ body: 'abc', releaseWith: async () => (calls++ === 0 ? fail() : { ok: true }) });
+      slow(3);
+      await act(async () => {});
+      expect(release).toHaveBeenCalledTimes(1);
+      slow(1);
+      await act(async () => {});
+      expect(release).toHaveBeenCalledTimes(2);
+      slow(2);
+      await act(async () => {});
+      expect(release, 'once it landed it is not asked again').toHaveBeenCalledTimes(2);
+      unmount();
+      play = { ...play, id: `${play.id}-f` };
+    }
+  });
+
+  test('what is stored under a reader\'s key that is no count reads as a fresh start, and a count past the post is clamped', () => {
+    for (const stored of ['{"shown":-3}', '{"shown":"4"}', '{"shown":null}', '{"shown":1.5}', 'NaN', 'not json', '[]']) {
+      play = { ...play, id: `${play.id}-g` };
+      localStorage.setItem(`kb-reader:${play.id}`, stored);
+      const { unmount } = mount();
+      expect(typed(), stored).toBe('');
+      unmount();
+    }
+    play = { ...play, id: `${play.id}-h` };
+    localStorage.setItem(`kb-reader:${play.id}`, '{"shown":9999}');
+    mount();
+    expect(typed().length).toBe(SIXTY.length);
   });
 
   test('a tap or a click reveals the same, and a click that is no pointer (an assistive press) too', () => {
