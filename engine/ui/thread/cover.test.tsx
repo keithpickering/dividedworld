@@ -296,4 +296,20 @@ describe('the row\'s layers are in the instance\'s order (InstanceUi.rowOrder)',
     expect(within(second).getByTestId('fx-fill')).toHaveAttribute('data-covered', 'false');
     expect(layer(second)).not.toHaveAttribute('inert');
   });
+
+  const z = (el: Element | null) => Number((el as HTMLElement).style.zIndex);
+  test('the stacking follows rank: a fill ranked outside a cover is drawn over it, and one inside it under it', async () => {
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'filler');
+    const first = open(w, ['filler', 'cover-card']);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await waitFor(() => expect(layer(second)).not.toBeNull());
+    expect(z(layer(second))).toBeGreaterThan(z(covers(second)[0]!));
+    first.unmount();
+    open(w, ['cover-card', 'filler']);
+    const again = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await waitFor(() => expect(layer(again)).not.toBeNull());
+    expect(z(layer(again))).toBeLessThan(z(covers(again)[0]!));
+  });
 });

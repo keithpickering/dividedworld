@@ -151,6 +151,9 @@ export function playOf(act: Act): CardPlay | null {
  */
 export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? play.post;
 
+/** Whether a play is up on its post's own reach: not a reach beyond the post, caught, ended, cut, untaken or face down. What `PostEffects` draws, and what `useRowFilling` lays a layer for. */
+export const actsOnPost = (p: CardPlay): boolean => !p.caught && !p.reversed && !p.cut && !p.untaken && !p.faceDown && !p.reach;
+
 /**
  * The plays in force: all but a play an admin ended (`reversed`: its layer is off), a play that did not take (`untaken`: its text never
  * arrived, and it was refunded), a play that is over when it lands (`instant`: a heart, an Unban), a fall a filing has spent (`spent`) and a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers

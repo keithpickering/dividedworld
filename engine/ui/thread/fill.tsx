@@ -9,9 +9,9 @@
  * moment, History) there is no `RowFillCtx` and the effect wraps the words as any other.
  */
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import { livePlays, usePlays, type Plays } from '../cards/plays.ts';
+import { actsOnPost, livePlays, usePlays, type Plays } from '../cards/plays.ts';
 import type { CardUi } from '../cards/types.ts';
-import { rowRank, type RowCovering } from './cover.tsx';
+import { rowRank, rowZ, type RowCovering } from './cover.tsx';
 
 /** What a post's effects are given of the row's layers: the element a card's effect is drawn into, and whether a shut cover is outside it. */
 export interface RowFill {
@@ -33,9 +33,6 @@ export interface RowFilling {
   readonly layers: ReactNode;
 }
 
-/** Whether a play is up on the post's own reach, as `PostEffects` counts it. */
-const acting = (p: ReturnType<typeof livePlays>[number]): boolean => !p.reach && !p.caught && !p.untaken && !p.faceDown;
-
 /** The post's fill layers for a thread's post: one for each card that fills the row and has a live play on the post's own reach, in `order`'s ranks. */
 export function useRowFilling({ plays, actId, eligible, now, cards, order, covering }: {
   readonly plays: Plays; readonly actId: string; readonly eligible: boolean; readonly now: number; readonly cards: readonly CardUi[];
@@ -43,7 +40,7 @@ export function useRowFilling({ plays, actId, eligible, now, cards, order, cover
   readonly order: readonly string[] | undefined; readonly covering: RowCovering;
 }): RowFilling {
   const own = usePlays(plays, actId).plays;
-  const filling = eligible ? livePlays(own, now).filter((p) => acting(p) && cards.find((c) => c.key === p.card)?.fillsRow === true) : [];
+  const filling = eligible ? livePlays(own, now).filter((p) => actsOnPost(p) && cards.find((c) => c.key === p.card)?.fillsRow === true) : [];
   /* Outermost first, one entry for each card. */
   const keys = [...new Set(filling.map((p) => p.card))].sort((a, b) => rowRank(order, a) - rowRank(order, b));
   const [hosts, setHosts] = useState<ReadonlyMap<string, HTMLElement>>(() => new Map());
@@ -67,7 +64,7 @@ export function useRowFilling({ plays, actId, eligible, now, cards, order, cover
   const live = keys.join('\n');
   const value = useMemo<RowFill>(() => ({ host: (card) => (live.split('\n').includes(card) ? hosts.get(card) ?? null : null), covered: coveredBy }), [hosts, coveredBy, live]);
   const layers = keys.length === 0 ? null : [...keys].reverse().map((key) => (
-    <div key={key} ref={ref(key)} className="kb-row-layer" data-kb-card={key} data-kb-covered={coveredBy(key) ? 'true' : undefined} />
+    <div key={key} ref={ref(key)} className="kb-row-layer" style={{ zIndex: rowZ(order, key) }} data-kb-card={key} data-kb-covered={coveredBy(key) ? 'true' : undefined} />
   ));
   return { value, layers };
 }

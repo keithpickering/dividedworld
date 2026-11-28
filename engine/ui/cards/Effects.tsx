@@ -47,7 +47,7 @@ import { MomentFrame, MomentView, useShownMoment, useShownPresent } from './Mome
 import { backoff, REPEAT_TRIES, tailStore, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, useRewound, withHandedOut, type Plays } from './plays.ts';
+import { actsOnPost, createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, useRewound, withHandedOut, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
 import { WORDS_BOX } from './body.ts';
 import { surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
@@ -242,7 +242,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const counted = useMemo(() => withHandedOut(here.plays), [here.plays]);
   const layers = [
     ...above.map((l) => ({ reach: l.reach as Reach, acting: (l.reach === 'thread' || l.reach === 'character' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now)).filter((p) => rewound === null || presenting || rewound.shows(p)), of: l.of })),
-    { reach: 'post' as Reach, acting: counted.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken && !p.faceDown && !p.reach && !hidden.has(p.id)), of: here },
+    { reach: 'post' as Reach, acting: counted.filter((p) => actsOnPost(p) && !hidden.has(p.id)), of: here },
   ];
   /*
    * A play's moment shown here (As it landed): it replaces the post's words and every effect inside the takeovers, which keep wrapping

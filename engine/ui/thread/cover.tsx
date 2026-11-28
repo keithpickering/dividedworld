@@ -37,6 +37,9 @@ export interface RowCovering {
   readonly host: ReactNode;
 }
 
+/** The stacking of a row layer, the outermost highest, within the band above the post's own cells (5 and up) that fold.css gives a cover and a fill: a layer ranked outside another draws over it. */
+export const rowZ = (order: readonly string[] | undefined, key: string): number => 5 + (order?.length ?? 0) - rowRank(order, key);
+
 /**
  * Whether a post covers its row and the reader's state of it, for a thread's post. It covers while the post wears a live play, on its own reach, of a card that covers the row;
  * an admin's ending of one lowers `total` when the post next renders. The covers run outermost first in the instance's order (`InstanceUi.rowOrder`, `rowRank`), the latest play first
@@ -74,6 +77,6 @@ export function useRowCovering({ plays, actId, eligible, now, cards, grid, post,
     if (drawn) for (const el of g.children) if (!el.classList.contains('kb-row-cover') && !(el.classList.contains('kb-row-layer') && el.getAttribute('data-kb-covered') !== 'true') && !el.hasAttribute('inert')) { el.setAttribute('inert', ''); marked.push(el); }
     return () => { for (const el of marked) el.removeAttribute('inert'); };
   });
-  const host = drawn && Cover && rowCover ? <div className="kb-row-cover"><Cover plays={same} cover={rowCover} post={post} /></div> : null;
+  const host = drawn && Cover && rowCover ? <div className="kb-row-cover" style={{ zIndex: rowZ(order, next!.card) }}><Cover plays={same} cover={rowCover} post={post} /></div> : null;
   return { covering: total > 0, shut, shutCards: stillShut.map((p) => p.card), rowCover, host };
 }
