@@ -155,7 +155,7 @@ function Versions({ post, about }: { readonly post: Id; readonly about: PostAbou
                 <>
                   <ReportLink post={post} version={v.id} kicker={`${named}, ${last ? 'current version' : which.toLowerCase()}`} className="kb-report-row-link kb-small" ariaLabel={`Report to admins: ${about?.seq == null ? '' : `post #${about.seq}, `}${which.toLowerCase()}`} />
                   {tails && written && written.size > 0
-                    ? <VersionEffects post={versions[0]!} version={v.id} plays={tails.plays} written={written} {...(nameOf ? { nameOf } : {})}>{words}</VersionEffects>
+                    ? <VersionEffects post={versions[0]!} version={v.id} {...(typeof v.currentPayload.body === 'string' ? { body: v.currentPayload.body } : {})} plays={tails.plays} written={written} {...(nameOf ? { nameOf } : {})}>{words}</VersionEffects>
                     : words}
                 </>
               )}

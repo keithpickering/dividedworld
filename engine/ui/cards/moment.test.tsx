@@ -92,6 +92,20 @@ describe('a moment hands a play its count of casts that named it (the refund out
   });
 });
 
+describe('a moment gives each effect the moment\'s version\'s body (EffectProps.body)', () => {
+  test('the body is the BBCode source of the version the moment draws, not anything newer', () => {
+    const got: (string | undefined)[] = [];
+    const Spy = ({ body, children }: EffectProps) => { got.push(body); return <>{children}</>; };
+    const earlier: Act = { ...version, payload: { body: '[b]then[/b]' }, currentPayload: { body: '[b]then[/b]' } };
+    const m: PlayMoment = { ...moment([{ act: card('k1', 'smear', 1), state: null }]), version: earlier };
+    const api = buildWorld({}, instance);
+    const kayfa = { api, instance, ui: { cards: [ui('smear', { Effect: Spy })], glass: {} }, settings: {} } as unknown as Kayfa;
+    render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentEffects moment={m} place="thread" nameOf={() => ''} onView={() => {}}><span>then</span></MomentEffects></CalloutProvider></KayfaProvider>);
+    expect(got.length).toBeGreaterThan(0);
+    expect(new Set(got)).toEqual(new Set(['[b]then[/b]']));
+  });
+});
+
 describe('a card with a surface or a drive in a moment', () => {
   test('a surface card is named and never drawn, and so is a card with a drive (issue #774 gives them the read of the past)', () => {
     const drivey = rule('drivey', 'Drivey', { drive: { lasts: { unit: 'day', count: 1 }, gifts: [], overhead: '' } });

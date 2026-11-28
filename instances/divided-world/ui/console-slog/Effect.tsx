@@ -112,7 +112,7 @@ function drawRest(units: readonly Unit[], from: number): ReactNode[] {
   return out;
 }
 
-export function ConsoleSlogEffect({ post, rewound, plays, released, reader, moment, show, met, release, children }: EffectProps) {
+export function ConsoleSlogEffect({ post, body: drawnBody, plays, released, reader, moment, show, met, release, children }: EffectProps) {
   const { settings } = useKayfa();
   const slog: SlogSettings = {
     rhythmMs: settings.cardSettings['consoleSlog.rhythmMs'] ?? DEFAULTS.rhythmMs,
@@ -122,8 +122,8 @@ export function ConsoleSlogEffect({ post, rewound, plays, released, reader, mome
     bands: settings.cardSettings['consoleSlog.bands'] ?? DEFAULTS.bands,
   };
   const playId = plays[0]?.id ?? '';
-  /* The words the reader would see now: the rewound version's under a live rewind (the one the BBCode renderer draws, `EffectProps.rewound`), the post's own otherwise. */
-  const words = (rewound ?? post).currentPayload.body;
+  /* The words the reader would see now: the rewound version's under a live rewind (the one the BBCode renderer draws, `EffectProps.body`), the post's own otherwise. */
+  const words = drawnBody ?? post.currentPayload.body;
   const body = typeof words === 'string' ? words : '';
   const units = useMemo(() => unitsOf(parse(body), slog.bands), [body, slog.bands]);
   const total = units.length;

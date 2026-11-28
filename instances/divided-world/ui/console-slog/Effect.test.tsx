@@ -37,7 +37,7 @@ function mount(o: Options = {}) {
   const props = (body: string, released: boolean, rewound: string | null): EffectProps => ({
     covered: false, post: postOf(body), plays: [play], states: {}, released: released ? new Set([play.id]) : new Set(), written: new Map(), reader: o.reader ?? { author: false, caster: false }, place: 'thread', reach: 'post',
     still: o.still ?? false, moment: null, show, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: release as unknown as EffectProps['release'],
-    nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, ...(rewound !== null ? { rewound: postOf(rewound) } : {}), children: <p data-words>{rewound ?? 'As the author wrote it.'}</p>,
+    nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, ...(rewound !== null ? { body: rewound } : {}), children: <p data-words>{rewound ?? 'As the author wrote it.'}</p>,
   });
   const settings = { cardSettings: { 'consoleSlog.rhythmMs': 450, 'consoleSlog.perStep': 5, 'consoleSlog.mostPerPress': 8, 'consoleSlog.drain': 12, 'consoleSlog.bands': o.bands ?? 16 } };
   /* The post is edited, and the play released, from outside: a host holds both, as the engine does. */
