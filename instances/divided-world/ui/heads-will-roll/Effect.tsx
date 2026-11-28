@@ -18,6 +18,9 @@
  * (design 2.3), drawn as a thin bar under it; pressing again cancels. One head is reeled at a time. Under reduced motion a pointer press reels in too, for the same time: the speed is the one the head would have had moving (`movingSpeedOf`, the orbit's `pace` over its size).
  * The React head opens the deck's picker with only the kinds not yet on the post, at once on any input, since a picker is no catch.
  *
+ * A reel lets go when the post is covered (`covered` turns true), when its head's kind leaves the post, and when the post goes; going off screen does not cancel it.
+ * Focus. The heads are drawn in tab order, so a change of counts reorders them. A browser drops focus from a node that is moved, and React puts it back on the focused node when it commits (its own selection restore), so a keyboard reader stays on their head; a test holds it.
+ *
  * The author's screen (`canReact` false): the heads still orbit but are plain. Each is an image labeled with its emoji and count (and "an Overreaction" for a local kind), takes no press, and has no
  * React head, so a reader's keys have nothing to land on and nothing says to press.
  *
@@ -30,7 +33,7 @@ import type { CardView, EffectProps } from '../../../../engine/ui/cards/types.ts
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { seeded } from '../seeded.ts';
-import { createOrbit, ORBIT, reelSeconds, type HeadSpec, type Orbit, type ProjectedHead } from './orbit.ts';
+import { createOrbit, headMass, ORBIT, reelSeconds, type HeadSpec, type Orbit, type ProjectedHead } from './orbit.ts';
 import './heads-will-roll.css';
 
 /** The React head's id; a kind's head is `k:<key>`, so the two never meet. */
@@ -87,14 +90,22 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
   const orbitRef = useRef<Orbit | null>(null);
   orbitRef.current ??= createOrbit({ width: 0, height: 0 }, { seed: Math.floor(seeded(post.id)() * 2147483647), settings: orbitSettings });
   const orbit = orbitRef.current;
-  orbit.setSettings(orbitSettings);
-  orbit.setHeads(specs);
-  /* The heads in tab order, as the orbit projects them. */
-  const order = orbit.project();
+  /* The projection, kept for the step it was made in so a paint and a speed read share one sort. */
+  const projected = useRef<readonly ProjectedHead[] | null>(null);
+  const projection = useCallback((): readonly ProjectedHead[] => (projected.current ??= orbit.project()), [orbit]);
+  /* The heads in tab order, heaviest first and the React head last: the orbit's own order, worked out from the specs alone so the render needs no orbit step. */
+  const order = useMemo(() => [...specs].sort((a, b) => (a.react ? 1 : 0) - (b.react ? 1 : 0) || headMass(b, orbitSettings) - headMass(a, orbitSettings) || (a.id < b.id ? -1 : 1)), [specs, orbitSettings]);
+
+  /* The orbit takes the heads and the card's settings in a layout effect (so it is safe to run twice), before the box is measured and the heads are painted. */
+  useLayoutEffect(() => {
+    orbit.setSettings(orbitSettings);
+    orbit.setHeads(specs);
+    projected.current = null;
+  }, [orbit, orbitSettings, specs]);
 
   /* Write the heads where the orbit has them: transform on the head, the roll on its ball, a size only when it changed, a rank only when it changed. */
   const paint = useCallback((): void => {
-    for (const p of orbit.project()) {
+    for (const p of projection()) {
       const el = nodes.current.get(p.id);
       if (!el) continue;
       if (sizes.current.get(p.id) !== p.size) {
@@ -108,7 +119,7 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
       const ball = el.firstElementChild as HTMLElement | null;
       if (ball) ball.style.transform = `rotate(${p.angle}rad)`;
     }
-  }, [orbit]);
+  }, [projection]);
 
   /* The box: the content area's, found again at each measure, placed over from the host. */
   useLayoutEffect(() => {
@@ -131,6 +142,7 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
       placeLayer(back!, box);
       placeLayer(front!, box);
       orbit.setBox({ width: box.w, height: box.h });
+      projected.current = null;
       paint();
     }
     resize?.observe(el);
@@ -139,7 +151,8 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
   }, [orbit, paint]);
 
   /* The heads change (a kind joined, a count moved): they are put where the orbit has them before the browser paints. */
-  useLayoutEffect(() => { paint(); }, [paint, specs, orbitSettings]);
+  useLayoutEffect(() => { projected.current = null; paint(); }, [paint, specs, orbitSettings]);
+
 
   useEffect(() => {
     const el = host.current;
@@ -155,6 +168,7 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
     let last: number | null = null;
     const tick = (t: number): void => {
       orbit.step(last === null ? 0 : Math.min(ORBIT.mostStep, Math.max(0, (t - last) / 1000)));
+      projected.current = null;
       last = t;
       paint();
       raf = requestAnimationFrame(tick);
@@ -168,12 +182,14 @@ export function HeadsWillRollEffect({ post, reactions: deck, still, covered, sho
     setReeling(null);
   }, []);
   useEffect(() => cancelReel, [cancelReel]);
+  /* A cover over the post lets a reel go: nothing is caught under it (going off screen does not). */
+  useEffect(() => { if (covered) cancelReel(); }, [covered, cancelReel]);
   /* A head that is gone (its kind left the post) is let go. */
   useEffect(() => { if (reeling && !specs.some((s) => s.id === reeling.id)) cancelReel(); }, [reeling, specs, cancelReel]);
 
   const deckNow = useRef(deck);
   deckNow.current = deck;
-  const speedOf = (id: string): number => orbit.project().find((p: ProjectedHead) => p.id === id)?.speed ?? 0;
+  const speedOf = (id: string): number => projection().find((p: ProjectedHead) => p.id === id)?.speed ?? 0;
   /* The speed a still head would have had moving, in its own widths a second: the orbit's own pace for it (px a second in the space) over its size, so a reel-in costs what a catch does. */
   const movingSpeedOf = (id: string): number => {
     const b = orbit.bodies().find((x) => x.id === id);

@@ -137,12 +137,12 @@
   font-size: 0.7em;
   font-weight: bold;
 }
-/* The reel-in: a thin bar under the head, filling over the time the catch takes (its duration is set inline). */
+/* The reel-in: a thin bar inside the head's foot (never under it, where the box's bottom border would clip it), filling over the time the catch takes (its duration is set inline). */
 .dw-hwr-reel {
   position: absolute;
-  left: 8%;
-  right: 8%;
-  top: calc(100% + 3px);
+  left: 16%;
+  right: 16%;
+  bottom: 12%;
   height: 3px;
   background: rgba(255, 255, 255, 0.35);
   border-radius: 2px;

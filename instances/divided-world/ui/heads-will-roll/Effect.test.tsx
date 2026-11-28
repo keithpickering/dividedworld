@@ -3,6 +3,10 @@
  * (orbit.ts) moves each frame, every head a real button in mass order, with the React head last. The deck is faked, so a test sees each press and each picker call; the frames
  * and the observers are faked and flushed by hand, and jsdom has no layout, so the host's box is the one `getBoundingClientRect` is told.
  */
+import { useMemo, useState } from 'react';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Act } from '../../../../engine/ui/data/api.ts';
@@ -14,7 +18,7 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { reelSeconds } from './orbit.ts';
 
 /* The orbit is the real one; its steps are counted. */
-const steps = vi.hoisted(() => ({ n: 0, orbit: null as null | { bodies: () => readonly { id: string; size: number; sun: string | null; pace: number }[] } }));
+const steps = vi.hoisted(() => ({ n: 0, project: 0, setHeads: 0, setSettings: 0, orbit: null as null | { bodies: () => readonly { id: string; size: number; sun: string | null; pace: number }[] } }));
 vi.mock('./orbit.ts', async (original) => {
   const actual = await original<typeof import('./orbit.ts')>();
   return {
@@ -22,7 +26,7 @@ vi.mock('./orbit.ts', async (original) => {
     createOrbit: (...args: Parameters<typeof actual.createOrbit>) => {
       const orbit = actual.createOrbit(...args);
       steps.orbit = orbit;
-      return { ...orbit, step: (dt: number) => { steps.n++; orbit.step(dt); } };
+      return { ...orbit, step: (dt: number) => { steps.n++; orbit.step(dt); }, project: () => { steps.project++; return orbit.project(); }, setHeads: (h: Parameters<typeof orbit.setHeads>[0]) => { steps.setHeads++; orbit.setHeads(h); }, setSettings: (x: Parameters<typeof orbit.setSettings>[0]) => { steps.setSettings++; orbit.setSettings(x); } };
     },
   };
 });
@@ -76,7 +80,7 @@ const heads = () => screen.queryAllByRole('button');
 const labels = () => heads().map((b) => b.getAttribute('aria-label'));
 
 beforeEach(() => {
-  queue = new Map(); nextId = 1; observers = []; steps.n = 0;
+  queue = new Map(); nextId = 1; observers = []; steps.n = 0; steps.project = 0; steps.setHeads = 0; steps.setSettings = 0;
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { const id = nextId++; queue.set(id, cb); return id; });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => { queue.delete(id); });
   vi.stubGlobal('IntersectionObserver', FakeObserver);
@@ -279,5 +283,128 @@ describe('Heads Will Roll: what it costs', () => {
     flush(16); flush(32);
     expect(heads().map((b) => [b.style.left, b.style.top, b.style.fontSize])).toEqual(before);
     expect(heads()[0]!.style.transform).toMatch(/translate/);
+  });
+});
+
+/* A host whose chips and cover the test changes, so a reorder, a vanished kind and a cover are each a rerender of the same effect. */
+function mountLive(first: readonly Chip[]) {
+  const press = vi.fn((_kind: string) => 'held' as const);
+  let setChips: (c: readonly Chip[]) => void = () => {};
+  let setCovered: (c: boolean) => void = () => {};
+  const views: (CardView | null)[] = [];
+  function Host() {
+    const [chips, c] = useState(first);
+    const [covered, k] = useState(false);
+    setChips = c; setCovered = k;
+    const deck = useMemo(() => ({ ...deckOf({ chips }).deck, press }), [chips]);
+    return <HeadsWillRollEffect {...propsOf(deck, views, false, covered)} />;
+  }
+  const world = renderInWorld(<Host />);
+  return { ...world, press, chips: (c: readonly Chip[]) => act(() => setChips(c)), cover: (c: boolean) => act(() => setCovered(c)) };
+}
+const reelFirst = () => act(() => { fireEvent.keyDown(heads()[0]!, { key: 'Enter' }); });
+
+describe('Heads Will Roll: what lets a reel go, and where focus stays', () => {
+  test('unmounting clears the reel timer', () => {
+    const m = mountLive(CHIPS);
+    reelFirst();
+    m.unmount();
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(m.press).not.toHaveBeenCalled();
+  });
+
+  test("a reel on a kind that left the post is let go", () => {
+    const m = mountLive(CHIPS);
+    reelFirst();
+    m.chips(CHIPS.filter((c) => c.key !== 'fire'));
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(m.press).not.toHaveBeenCalled();
+    expect(document.querySelector('.dw-hwr-reel')).toBeNull();
+  });
+
+  test('a cover over the post lets a reel go, and going off screen does not', () => {
+    const m = mountLive(CHIPS);
+    see(true);
+    reelFirst();
+    see(false);
+    expect(document.querySelector('.dw-hwr-reel')).not.toBeNull();
+    m.cover(true);
+    expect(document.querySelector('.dw-hwr-reel')).toBeNull();
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(m.press).not.toHaveBeenCalled();
+  });
+
+  test('a head that has focus keeps it when a change of counts reorders the heads', () => {
+    /* A browser drops focus from a node that is moved; jsdom keeps it, so the move is made to drop it here. */
+    const insert = Node.prototype.insertBefore;
+    let blurred = 0;
+    vi.spyOn(Node.prototype, 'insertBefore').mockImplementation(function <T extends Node>(this: Node, node: T, ref: Node | null): T {
+      if (node instanceof HTMLElement && node === document.activeElement) { blurred++; node.blur(); }
+      return insert.call(this, node, ref) as T;
+    });
+    const m = mountLive(CHIPS);
+    const fire = heads().find((b) => b.getAttribute('data-head') === 'k:fire')!;
+    act(() => { fire.focus(); });
+    expect(document.activeElement).toBe(fire);
+    /* tea overtakes fire: the heads' order changes, and fire's node is the one that moves. */
+    m.chips([chip('tea', 'T', 9), chip('wow', 'W', 2, { local: true }), chip('fire', 'F', 6)]);
+    const order = heads().map((b) => b.getAttribute('data-head'));
+    expect(order[0]).toBe('k:tea');
+    expect(blurred, 'the reorder moved the focused head').toBeGreaterThan(0);
+    expect(document.activeElement).toBe(heads().find((b) => b.getAttribute('data-head') === 'k:fire'));
+  });
+
+  test("the orbit is given the heads and settings by an effect, not by every render", () => {
+    const m = mountLive(CHIPS);
+    const before = [steps.setHeads, steps.setSettings];
+    m.cover(true);
+    m.cover(false);
+    expect([steps.setHeads, steps.setSettings]).toEqual(before);
+  });
+
+  test('a press during a step reads the step\'s projection, and sorts nothing again', () => {
+    mount(deckOf().deck);
+    see(true);
+    flush(16); flush(32);
+    const n = steps.project;
+    act(() => { fireEvent.keyDown(heads()[0]!, { key: 'Enter' }); });
+    expect(steps.project).toBe(n);
+  });
+
+  test("the reel bar is inside the head's foot, never under it where the box's border would clip it", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const css = fs.readFileSync(path.join(here, 'heads-will-roll.css'), 'utf8');
+    const rule = css.match(/\.dw-hwr-reel \{[^}]*\}/)![0];
+    expect(rule).toMatch(/bottom:\s*\d+%/);
+    expect(rule).not.toMatch(/top:\s*calc\(100%/);
+  });
+});
+
+describe('Heads Will Roll: where it fills', () => {
+  const rectOf = (w: number, h: number, left = 0, top = 0) => ({ x: left, y: top, left, top, right: left + w, bottom: top + h, width: w, height: h, toJSON: () => ({}) });
+  const OUTER = { w: 900, h: 700 }, AREA = { w: 600, h: 300 };
+  const places = (cls: string) => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.classList.contains('kb-act-main')) return rectOf(OUTER.w, OUTER.h);
+      if (this.classList.contains('kb-origin-area')) return rectOf(AREA.w, AREA.h, 10, 40);
+      return rectOf(300, 120, 20, 60);
+    });
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? OUTER.w : this.classList.contains('kb-origin-area') ? AREA.w : 0; });
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? OUTER.h : this.classList.contains('kb-origin-area') ? AREA.h : 0; });
+    return cls;
+  };
+  const boxes = () => ['.dw-hwr-ground', '.dw-hwr-heads'].map((q) => { const el = document.querySelector<HTMLElement>(q)!; return [el.style.left, el.style.top, el.style.width, el.style.height]; });
+
+  test("in a thread the ground and the heads' layer are the post body's box, border to border", () => {
+    places('kb-act-main');
+    renderInWorld(<div className="kb-act-main" data-kb-content-area><HeadsWillRollEffect {...propsOf(deckOf().deck, [])} /></div>);
+    expect(boxes()).toEqual([['-20px', '-60px', '900px', '700px'], ['-20px', '-60px', '900px', '700px']]);
+    expect(document.querySelector('[data-kb-hwr]')!.hasAttribute('data-kb-bleed')).toBe(true);
+  });
+
+  test("in the ORIGIN box they are the box's area, not the opening post's body around it", () => {
+    places('kb-origin-area');
+    renderInWorld(<div className="kb-act-main" data-kb-content-area><div className="kb-origin-area" data-kb-content-area><HeadsWillRollEffect {...propsOf(deckOf().deck, [])} place="origin" /></div></div>);
+    expect(boxes()).toEqual([['-10px', '-20px', '600px', '300px'], ['-10px', '-20px', '600px', '300px']]);
   });
 });
