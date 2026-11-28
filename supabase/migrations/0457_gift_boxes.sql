@@ -12,6 +12,7 @@
 --   7. open_gift                new: security definer, the service role's (as play_card is) for the account the Edge Function names.
 --   8. reverse_card             copied whole from 0423_rulings_alerts.sql: an unopened present an admin ends gives its gift back to the giver (a `returned` ledger row naming the end); an opened one is refused in plain words.
 --   9. self_kinds, act_self_characters   copied whole from 0455_live_lists_and_self.sql: `open_gift` pokes the opener and the giver's character's owner, the box's own character, whose hand changes on a return.
+--  10. the "still up" readers  play_moment (0375), spin_moment (0368), search_post_cards (0117), kind_plays (0410), thread_page (0456) and pool_thread (0420), each copied whole: an open is the box's end for them. lockout_ends is unchanged (a lockout is a spring; a box is no spring).
 --
 -- Owner decisions built here (and in the fake, engine/ui/data/fake.ts, which mirrors them):
 --   (a) #1264: the gift lands at the open on the post's own checks alone (the post's slots, its stack, its wards, a rewind and the gift's own landing rules), whatever has happened to the giver since: no ban of the caster, no lockout (place_cast skips not_locked_out
@@ -1821,3 +1822,1018 @@ AS $function$
     union all select b.character from chain c join acts a on a.id = c.id and a.kind = 'open_gift' join acts b on b.id = a.target_act_id where c.hop = 0
   ) w where w.character is not null
 $function$;
+
+-- ---- 10. The readers that decide whether a play is still up ----
+
+-- Each copied whole from its latest definition (named below), with only the end Acts changed: a box its author opened is over for them as one an admin ended is (`kind in ('card_end', 'open_gift')`), as post_plays and card_ended read it.
+-- The admin-ended feeds (admin_queue, log_page, my_cards_ended) keep `card_end` alone, and so does lockout_ends, which reads a lockout's spring: a present is a cast on a post that springs none, so an open frees no lockout.
+-- Grants and settings as each definition states them; replaced in place (pool_thread is owned by kayfabb_digest, which the alter below restates).
+
+-- play_moment: from 0375_spun_thread_reads.sql.
+CREATE OR REPLACE FUNCTION public.play_moment(play uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_generic_plan'
+ SET jit TO 'off'
+AS $function$
+declare
+  k acts%rowtype;
+  on_post acts%rowtype;
+  v acts%rowtype;
+  recorded boolean;
+  on_board uuid;
+  grace interval := coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0');
+  -- A play beyond a post that began before this one ends at most its reach's reachLasts after it began (play_card), so before this
+  -- play's time plus that bound: each probe of play_reach reads the plays live then and none begun since, however old the play is.
+  -- (An instance that lowers reachLasts later bounds an older moment by the lower span; a play that outlived it is left off that
+  -- moment's list of plays above, which is words on the frame.)
+  bound record;
+begin
+  select * into k from acts a where a.id = play_moment.play;
+  -- A play on a post, or on a character (cast from the post that is its target_act_id). A thread's and a board's play are no play on a post.
+  if k.id is not null and k.kind in ('card', 'set', 'spring') and k.target_act_id is not null and coalesce(k.payload ->> 'reach', 'post') in ('post', 'character') then
+    select * into on_post from acts a where a.id = k.target_act_id;
+  end if;
+  if not coalesce(post_kind(on_post.kind), false) then raise exception 'that is no play on a post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The post's author as the projection shows it: the plays above are those at the character shown, so a post whose author is hidden has none at its author's reach.
+  on_post.character := shown_author(on_post.id, on_post.character);
+  select * into v from acts a where a.id = (select m.post_version from play_moments m where m.play = k.id);
+  recorded := v.id is not null;
+  if not recorded then
+    select * into v from acts e where e.kind = 'edit' and e.target_act_id = on_post.id and e.created_at <= k.created_at
+    order by e.created_at desc, e.id desc limit 1;
+    if v.id is null then v := on_post; end if;
+  end if;
+  select t.board into on_board from threads t where t.id = on_post.thread;
+  -- An instance seeded without reachLasts (settings_reach_hold makes it whole once written) bounds nothing, rather than reading none.
+  select coalesce(span_interval(setting('reachLasts') -> 'character'), interval '1000 months') as character,
+         coalesce(span_interval(setting('reachLasts') -> 'thread'), interval '1000 months') as thread,
+         coalesce(span_interval(setting('reachLasts') -> 'board'), interval '1000 months') as board into bound;
+  return jsonb_build_object(
+    'version', act_projection(on_post.id) || jsonb_build_object(
+      'current_payload', public_payload(v.payload, version_hidden(v.id), v.id),
+      'edited_at', case when v.kind = 'edit' then v.created_at end,
+      'shown_edited_at', case when v.kind = 'edit' and v.created_at > on_post.created_at + grace then v.created_at end),
+    -- The rows' order is for a stable answer only: a caught play and its spring share a transaction's time, so readers order the layers
+    -- themselves (inPlayOrder) and find a caught play's spring by its set, never by this order.
+    'layers', jsonb_build_array(jsonb_build_object('act', act_projection(k.id), 'state', null, 'savedAt', null))
+      || coalesce((select jsonb_agg(jsonb_build_object('act', to_jsonb(a), 'state', l.state, 'savedAt', l.saved_at) order by a.created_at, a.id)
+                   from play_moment_layers l join acts_public a on a.id = l.layer where l.play = k.id), '[]'::jsonb)
+      || coalesce((select jsonb_agg(jsonb_build_object('act', to_jsonb(e), 'state', null, 'savedAt', null) order by e.created_at, e.id)
+                   from acts_public e
+                   where e.kind in ('card_end', 'open_gift') and e.created_at <= k.created_at
+                     and e.target_act_id in (select k.id union all select l.layer from play_moment_layers l where l.play = k.id)), '[]'::jsonb),
+    'above', coalesce((
+      select jsonb_agg(jsonb_build_object('play', r.play, 'reach', r.reach, 'target', coalesce(r.character, r.thread, r.board), 'ends_at', r.ends_at, 'act', to_jsonb(a))
+                       order by a.created_at, a.id)
+      from (
+        select x.* from play_reach x where x.character = on_post.character and x.ends_at > k.created_at and x.ends_at <= k.created_at + bound.character
+        union all
+        select x.* from play_reach x where x.thread = on_post.thread and x.ends_at > k.created_at and x.ends_at <= k.created_at + bound.thread
+        union all
+        select x.* from play_reach x where x.board = on_board and x.ends_at > k.created_at and x.ends_at <= k.created_at + bound.board
+      ) r join acts_public a on a.id = r.play
+      where a.created_at < k.created_at
+        and not exists (select 1 from acts e where e.kind in ('card_end', 'open_gift') and e.target_act_id = r.play and e.created_at <= k.created_at)), '[]'::jsonb),
+    'recorded', recorded,
+    'at', k.created_at);
+end $function$;
+
+-- spin_moment: from 0368_client_reads_plan_once.sql.
+CREATE OR REPLACE FUNCTION public.spin_moment(spin uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_generic_plan'
+ SET jit TO 'off'
+AS $function$
+declare
+  s acts%rowtype;
+  k acts%rowtype;
+  on_post acts%rowtype;
+  v acts%rowtype;
+  on_board uuid;
+  grace interval := coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0');
+  -- As play_moment bounds the plays above: a play beyond a post that began before the spin ends at most its reach's reachLasts after it began.
+  bound record;
+begin
+  select * into s from acts a where a.id = spin_moment.spin and a.kind = 'spin' and a.payload ? 'at';
+  if s.id is null or not exists (select 1 from spin_moments m where m.spin = s.id) then
+    raise exception 'that spin names no post' using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
+  select * into k from acts a where a.id = s.target_act_id;
+  select * into on_post from acts a where a.id = (s.payload ->> 'at')::uuid;
+  -- The post's author as the projection shows it, as play_moment reads it: a post whose author is hidden has nothing listed at its author's reach.
+  on_post.character := shown_author(on_post.id, on_post.character);
+  select * into v from acts a where a.id = (select m.post_version from spin_moments m where m.spin = s.id);
+  select t.board into on_board from threads t where t.id = on_post.thread;
+  select coalesce(span_interval(setting('reachLasts') -> 'character'), interval '1000 months') as character,
+         coalesce(span_interval(setting('reachLasts') -> 'thread'), interval '1000 months') as thread,
+         coalesce(span_interval(setting('reachLasts') -> 'board'), interval '1000 months') as board into bound;
+  return jsonb_build_object(
+    'version', act_projection(on_post.id) || jsonb_build_object(
+      'current_payload', public_payload(v.payload, version_hidden(v.id), v.id),
+      'edited_at', case when v.kind = 'edit' then v.created_at end,
+      'shown_edited_at', case when v.kind = 'edit' and v.created_at > on_post.created_at + grace then v.created_at end),
+    'layers', jsonb_build_array(jsonb_build_object('act', act_projection(k.id), 'state', null, 'savedAt', null))
+      || coalesce((select jsonb_agg(jsonb_build_object('act', to_jsonb(a), 'state', l.state, 'savedAt', l.saved_at) order by a.created_at, a.id)
+                   from spin_moment_layers l join acts_public a on a.id = l.layer where l.spin = s.id), '[]'::jsonb)
+      || coalesce((select jsonb_agg(jsonb_build_object('act', to_jsonb(e), 'state', null, 'savedAt', null) order by e.created_at, e.id)
+                   from acts_public e
+                   where e.kind in ('card_end', 'open_gift') and e.created_at <= s.created_at
+                     and e.target_act_id in (select k.id union all select l.layer from spin_moment_layers l where l.spin = s.id)), '[]'::jsonb),
+    'above', coalesce((
+      select jsonb_agg(jsonb_build_object('play', r.play, 'reach', r.reach, 'target', coalesce(r.character, r.thread, r.board), 'ends_at', r.ends_at, 'act', to_jsonb(a))
+                       order by a.created_at, a.id)
+      from (
+        select x.* from play_reach x where x.character = on_post.character and x.ends_at > s.created_at and x.ends_at <= s.created_at + bound.character
+        union all
+        select x.* from play_reach x where x.thread = on_post.thread and x.ends_at > s.created_at and x.ends_at <= s.created_at + bound.thread
+        union all
+        select x.* from play_reach x where x.board = on_board and x.ends_at > s.created_at and x.ends_at <= s.created_at + bound.board
+      ) r join acts_public a on a.id = r.play
+      where a.created_at < s.created_at and r.play <> k.id
+        and not exists (select 1 from acts e where e.kind in ('card_end', 'open_gift') and e.target_act_id = r.play and e.created_at <= s.created_at)), '[]'::jsonb),
+    'recorded', true,
+    'at', s.created_at);
+end $function$;
+
+-- search_post_cards: from 0117_search.sql.
+CREATE OR REPLACE FUNCTION public.search_post_cards(act uuid)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select coalesce((
+    select jsonb_agg(l.card order by l.created_at, l.id)
+    from (select o.payload ->> 'card' as card, o.created_at, o.id from acts_public o
+          where o.kind in ('card', 'spring') and o.target_act_id = $1 and coalesce(o.payload ->> 'reach', 'post') = 'post'
+            and not exists (select 1 from acts_public e where e.kind in ('card_end', 'open_gift') and e.target_act_id = o.id)
+          order by o.created_at, o.id limit 8) l), '[]'::jsonb)
+$function$;
+
+-- kind_plays: from 0410_post_plays.sql.
+CREATE OR REPLACE FUNCTION public.kind_plays(post uuid, card text, before_at timestamp with time zone, before_id uuid, size integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_generic_plan'
+ SET jit TO 'off'
+AS $function$
+declare
+  lim integer := greatest(1, least(coalesce(kind_plays.size, 20), 50));
+begin
+  return (
+    with page as materialized (
+      select x.play, x.at from kind_play_ids(kind_plays.post, kind_plays.card, kind_plays.before_at, kind_plays.before_id, lim + 1) x order by x.at desc, x.play desc
+    ), shown as materialized (
+      select x.play, x.at from page x order by x.at desc, x.play desc limit lim
+    ), plays as materialized (
+      select a.* from acts_public a where a.kind in ('card', 'set') and a.id = any (array(select s.play from shown s))
+    ), riders as materialized (
+      select a.* from acts_public a where a.kind in ('spring', 'take_back') and a.id = any (array(select r from play_rider_ids(array(select s.play from shown s)) r))
+    ), ends as materialized (
+      select a.* from acts_public a where a.kind in ('card_end', 'open_gift') and a.target_act_id in (select p.id from plays p union all select r.id from riders r)
+    ), ids as materialized (
+      select p.id from plays p union select r.id from riders r union select e.id from ends e
+    ), casters as materialized (
+      select distinct x.c from (select p."character" as c from plays p union select r."character" from riders r) x where x.c is not null
+    ), heads as materialized (
+      select c.id,
+             jsonb_build_object('character', jsonb_build_object('id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office, 'warn_points', c.warn_points, 'banned_until', c.banned_until,
+                                                                'locked_until', locked_out_until(c.id, (select t.thread from acts_public t where t.id = kind_plays.post)), 'group', c."group"),
+                                'profile', (select (jsonb_build_object('character', p."character", 'title', p.title, 'signature', p.signature, 'avatar_square', p.avatar_square, 'avatar_portrait', p.avatar_portrait,
+                                                                       'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns) || profile_cosmetics(p."character"))
+                                            from character_profiles p where p."character" = c.id)) as head
+      from casters k cross join lateral (select x.* from characters_public x where x.id = k.c offset 0) c
+    ), spun as materialized (
+      select l.* from thread_list l where l.origin_act_id in (select s.play from shown s)
+    )
+    select jsonb_build_object(
+      'plays', coalesce((select jsonb_agg(x.j order by x.grp, x.ord, x.created_at, x.id)
+                         from (select to_jsonb(p.*) as j, 0 as grp, row_number() over (order by s.at desc, s.play desc) as ord, p.created_at, p.id from plays p join shown s on s.play = p.id
+                               union all select to_jsonb(r.*), 1, 0, r.created_at, r.id from riders r
+                               union all select to_jsonb(e.*), 2, 0, e.created_at, e.id from ends e) x), '[]'::jsonb),
+      'tallies', coalesce((select jsonb_agg(jsonb_build_object('act', t.act, 'kind', t.kind, 'count', t.count)) from reaction_tallies t where t.act in (select i.id from ids i)), '[]'::jsonb),
+      'mine', coalesce((select jsonb_agg(jsonb_build_object('act', m.act, 'kind', m.kind, 'character', m."character")) from my_reactions m where m.act in (select i.id from ids i)), '[]'::jsonb),
+      'spun', coalesce((select jsonb_agg(to_jsonb(l.*) order by l.created_at, l.id) from spun l), '[]'::jsonb),
+      'cast', coalesce((select jsonb_agg(h.head order by h.id) from heads h), '[]'::jsonb),
+      'next', case when (select count(*) from page) > lim then (select jsonb_build_object('at', s.at, 'id', s.play) from shown s order by s.at, s.play limit 1) end)
+  );
+end $function$;
+
+-- thread_page: from 0456_surface_coats.sql.
+CREATE OR REPLACE FUNCTION public.thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_generic_plan'
+ SET jit TO 'off'
+AS $function$
+#variable_conflict use_column
+begin
+  perform
+         CASE
+             WHEN ((COALESCE(per_page, ( SELECT ((x.settings ->> 'postsPerPage'::text))::integer AS int4
+                FROM screen_settings x
+              LIMIT 1)) IS NULL) OR ((COALESCE(per_page, ( SELECT ((x.settings ->> 'postsPerPage'::text))::integer AS int4
+                FROM screen_settings x
+              LIMIT 1)) < 1) OR (COALESCE(per_page, ( SELECT ((x.settings ->> 'postsPerPage'::text))::integer AS int4
+                FROM screen_settings x
+              LIMIT 1)) > 100))) THEN screen_refusal('a page holds 1 to 100 posts'::text)
+             ELSE NULL::integer
+         END AS "case";
+  return (
+  WITH pp AS MATERIALIZED (
+          SELECT COALESCE(per_page, ( SELECT ((x.settings ->> 'postsPerPage'::text))::integer AS int4
+                    FROM screen_settings x
+                  LIMIT 1)) AS n
+         ), s AS MATERIALIZED (
+          SELECT o.id,
+             o.board,
+             o.title,
+             o.origin_act_id,
+             o.created_at,
+             o.last_at,
+             o.last_seq,
+             o.replies,
+             o.first_act,
+             o.first_character,
+             o.last_act,
+             o.last_character,
+             o.replies_this_week,
+             o.origin_thread,
+             o.origin_place,
+             (GREATEST((1)::numeric, ceil(((o.last_seq)::numeric / (( SELECT pp.n
+                    FROM pp))::numeric))))::integer AS last_page
+            FROM thread_open o
+           WHERE (o.id = thread_page.in_thread)
+         ), pg AS MATERIALIZED (
+          SELECT s.id,
+             s.board,
+             s.title,
+             s.origin_act_id,
+             s.created_at,
+             s.last_at,
+             s.last_seq,
+             s.replies,
+             s.first_act,
+             s.first_character,
+             s.last_act,
+             s.last_character,
+             s.replies_this_week,
+             s.origin_thread,
+             s.origin_place,
+             s.last_page,
+             LEAST(s.last_page, GREATEST(1, COALESCE(
+                 CASE
+                     WHEN (thread_page.in_seq IS NOT NULL) THEN (GREATEST((1)::numeric, ceil(((thread_page.in_seq)::numeric / (( SELECT pp.n
+                        FROM pp))::numeric))))::integer
+                     ELSE NULL::integer
+                 END, thread_page.in_page, 1))) AS page
+            FROM s
+         ), rng AS MATERIALIZED (
+          SELECT pg.id,
+             pg.board,
+             pg.title,
+             pg.origin_act_id,
+             pg.created_at,
+             pg.last_at,
+             pg.last_seq,
+             pg.replies,
+             pg.first_act,
+             pg.first_character,
+             pg.last_act,
+             pg.last_character,
+             pg.replies_this_week,
+             pg.origin_thread,
+             pg.origin_place,
+             pg.last_page,
+             pg.page,
+             (((pg.page - 1) * ( SELECT pp.n
+                    FROM pp)) + 1) AS first_seq,
+             (pg.page * ( SELECT pp.n
+                    FROM pp)) AS end_seq
+            FROM pg
+         ), range_acts AS MATERIALIZED (
+          SELECT a.id,
+             a."character",
+             a.kind,
+             a.thread,
+             a.target_act_id,
+             a.seq,
+             a.created_at,
+             a.payload,
+             a.current_payload,
+             a.edited_at,
+             a.shown_edited_at,
+             a.untaken,
+             a.ends_at,
+             a.hidden,
+             a.any_hidden,
+             a.concealing,
+             a.payload_hidden,
+             a.payload_concealing
+            FROM acts_public a,
+             rng
+           WHERE ((a.thread = rng.id) AND ((a.seq >= rng.first_seq) AND (a.seq <= rng.end_seq)) AND (a.kind <> ALL (ARRAY['edit'::text, 'card'::text])))
+         ), drawn AS MATERIALIZED (
+          SELECT r.id,
+             r.seq,
+             r.kind,
+             u.play,
+             u.parent
+            FROM (range_acts r
+              CROSS JOIN LATERAL ( SELECT x.play,
+                     x.parent
+                    FROM post_under x
+                   WHERE (x.reply = r.id)) u)
+           WHERE (NOT card_ended(u.play))
+         ), page_acts AS MATERIALIZED (
+          SELECT r.id,
+             r."character",
+             r.kind,
+             r.thread,
+             r.target_act_id,
+             r.seq,
+             r.created_at,
+             r.payload,
+             r.current_payload,
+             r.edited_at,
+             r.shown_edited_at,
+             r.untaken,
+             r.ends_at,
+             r.hidden,
+             r.any_hidden,
+             r.concealing,
+             r.payload_hidden,
+             r.payload_concealing
+            FROM range_acts r
+           WHERE (NOT (EXISTS ( SELECT 1
+                    FROM drawn d
+                   WHERE (d.id = r.id))))
+         ), page_posts AS MATERIALIZED (
+          SELECT a.id,
+             a."character",
+             a.created_at
+            FROM page_acts a
+           WHERE post_kind(a.kind)
+         ), nested AS MATERIALIZED (
+          SELECT u.play,
+             p.id AS parent,
+             a.id,
+             a."character",
+             a.created_at,
+             to_jsonb(a.*) AS act
+            FROM ((page_posts p
+              CROSS JOIN LATERAL ( SELECT x.play,
+                     x.reply
+                    FROM post_under x
+                   WHERE ((x.parent = p.id) AND (NOT card_ended(x.play)))) u)
+              JOIN acts_public a ON ((a.id = u.reply)))
+         ), posts AS MATERIALIZED (
+          SELECT p.id,
+             p."character",
+             p.created_at
+            FROM page_posts p
+         UNION ALL
+          SELECT n.id,
+             n."character",
+             n.created_at
+            FROM nested n
+         ), on_ids AS MATERIALIZED (
+          SELECT x.post,
+             x.play
+            FROM post_play_ids(ARRAY( SELECT p.id
+                    FROM posts p)) x
+         ), on_all AS MATERIALIZED (
+          SELECT i.play AS id
+            FROM on_ids i
+         UNION ALL
+          SELECT r.r AS id
+            FROM play_rider_ids(ARRAY( SELECT i.play
+                    FROM on_ids i)) r(r)
+         UNION ALL
+          -- The board cards written in this thread, which sit on no post (target_act_id is null): from this page's first Act up to the next page's first (page 1 from the start, the last page to the end), at most 100.
+          -- Read as the page reads every play, through acts_public, by id, in on_posts below; the page's `plays` leave them out and `boardCards` is made of them.
+          SELECT b.b AS id
+            FROM rng,
+             board_card_ids(rng.id, rng.page, rng.first_seq, rng.end_seq) b(b)
+         ), on_posts AS MATERIALIZED (
+          SELECT a.id,
+             a."character",
+             a.kind,
+             a.thread,
+             a.target_act_id,
+             a.seq,
+             a.created_at,
+             a.payload,
+             a.current_payload,
+             a.edited_at,
+             a.shown_edited_at,
+             a.untaken,
+             a.ends_at,
+             a.hidden,
+             a.any_hidden,
+             a.concealing,
+             a.payload_hidden,
+             a.payload_concealing
+            FROM acts_public a
+           WHERE (a.kind = ANY (ARRAY['card'::text, 'set'::text, 'spring'::text, 'take_back'::text])) AND (a.id = ANY (ARRAY( SELECT o.id
+                    FROM on_all o)))
+         ), ends_on_posts AS MATERIALIZED (
+          SELECT a.id,
+             a."character",
+             a.kind,
+             a.thread,
+             a.target_act_id,
+             a.seq,
+             a.created_at,
+             a.payload,
+             a.current_payload,
+             a.edited_at,
+             a.shown_edited_at,
+             a.untaken,
+             a.ends_at,
+             a.hidden,
+             a.any_hidden,
+             a.concealing,
+             a.payload_hidden,
+             a.payload_concealing
+            FROM acts_public a
+           WHERE ((a.kind = ANY (ARRAY['card_end'::text, 'open_gift'::text])) AND (a.target_act_id IN ( SELECT o.id
+                    FROM on_posts o
+                   WHERE (o.target_act_id IS NOT NULL))))
+         ), above AS MATERIALIZED (
+          SELECT x.play,
+             x.reach,
+             x.target,
+             x.ends_at,
+             x.act
+            FROM effects_above(ARRAY( SELECT DISTINCT p."character"
+                    FROM posts p
+                   WHERE (p."character" IS NOT NULL)), ( SELECT rng.id
+                    FROM rng), ( SELECT rng.board
+                    FROM rng)) x(play, reach, target, ends_at, act)
+         ), kept_span AS MATERIALIZED (
+          SELECT min(p.created_at) AS lo,
+             max(p.created_at) AS hi
+            FROM posts p
+         ), kept_reach AS MATERIALIZED (
+          SELECT x.play,
+             x.reach,
+             COALESCE(x."character", x.thread, x.board) AS target,
+             x.ends_at
+            FROM play_reach x,
+             kept_span s
+           WHERE ((s.lo IS NOT NULL) AND (x.thread = ( SELECT rng.id
+                    FROM rng)) AND (tstzrange(x.started_at, x.ends_at) && tstzrange(s.lo, s.hi, '[]'::text)) AND (x.ends_at <= now()))
+         UNION ALL
+          SELECT x.play,
+             x.reach,
+             x."character" AS target,
+             x.ends_at
+            FROM ((( SELECT DISTINCT p."character"
+                    FROM posts p
+                   WHERE (p."character" IS NOT NULL)) au
+              CROSS JOIN kept_span s)
+              CROSS JOIN LATERAL ( SELECT r.play,
+                     r.reach,
+                     r."character",
+                     r.ends_at
+                    FROM play_reach r
+                   WHERE ((r."character" = au."character") AND (tstzrange(r.started_at, r.ends_at) && tstzrange(s.lo, s.hi, '[]'::text)) AND (r.ends_at <= now()))) x)
+         ), kept_window AS MATERIALIZED (
+          SELECT r.play,
+             r.reach,
+             r.target,
+             r.ends_at,
+             a.created_at AS started,
+             to_jsonb(a.*) AS act,
+             (a.payload ->> 'card'::text) AS card
+            FROM (kept_reach r
+              JOIN acts_public a ON ((a.id = r.play))),
+             kept_span s
+           WHERE ((a.created_at <= s.hi) AND (EXISTS ( SELECT 1
+                    FROM posts p
+                   WHERE ((a.created_at <= p.created_at) AND (p.created_at < r.ends_at) AND ((r.reach <> 'character'::text) OR (p."character" = r.target))))))
+         ), kept AS MATERIALIZED (
+          SELECT w.play,
+             w.reach,
+             w.target,
+             w.ends_at,
+             w.act
+            FROM (kept_window w
+              JOIN card_kinds ck ON (((ck.key = w.card) AND ck.keeps)))
+           WHERE (NOT card_ended(w.play))
+           ORDER BY w.started, w.play
+          LIMIT 100
+         ), played AS MATERIALIZED (
+          SELECT o.id,
+             o.kind,
+             o."character",
+             (o.payload ->> 'card'::text) AS card
+            FROM on_posts o
+         UNION
+          SELECT ((x.act ->> 'id'::text))::uuid AS uuid,
+             (x.act ->> 'kind'::text),
+             ((x.act ->> 'character'::text))::uuid AS uuid,
+             ((x.act -> 'payload'::text) ->> 'card'::text)
+            FROM above x
+         UNION
+          SELECT ((x.act ->> 'id'::text))::uuid AS uuid,
+             (x.act ->> 'kind'::text),
+             ((x.act ->> 'character'::text))::uuid AS uuid,
+             ((x.act -> 'payload'::text) ->> 'card'::text)
+            FROM kept x
+         ), answers_on AS MATERIALIZED (
+          SELECT o.visit_act,
+             o.post_act,
+             o.at
+            FROM outcome_page_rows(ARRAY(( SELECT p.id
+                    FROM posts p))) o
+         ), vis AS MATERIALIZED (
+          SELECT DISTINCT ON (u.id) u.id,
+             u.post,
+             u."character",
+             u.created_at,
+             u.payload
+            FROM (( SELECT DISTINCT ON (v.target_act_id) v.id,
+                     v.target_act_id AS post,
+                     v."character",
+                     v.created_at,
+                     v.payload
+                    FROM acts_public v
+                   WHERE ((v.kind = 'visit'::text) AND (v.target_act_id IN ( SELECT a.id
+                            FROM page_acts a
+                           WHERE (a.kind = ANY (ARRAY['post'::text, 'spin'::text]))
+                         UNION ALL
+                          SELECT n.id
+                            FROM nested n)))
+                   ORDER BY v.target_act_id, v.created_at DESC, v.id DESC)
+                 UNION ALL
+                  SELECT v.id,
+                     v.target_act_id,
+                     v."character",
+                     v.created_at,
+                     v.payload
+                    FROM acts_public v
+                   WHERE ((v.kind = 'visit'::text) AND (v.id IN ( SELECT x.visit_act
+                            FROM answers_on x)))) u
+           ORDER BY u.id
+         ), o_on AS MATERIALIZED (
+          SELECT r.origin_act_id AS id
+            FROM rng r
+           WHERE ((r.origin_act_id IS NOT NULL) AND (EXISTS ( SELECT 1
+                    FROM page_acts a
+                   WHERE (a.id = r.first_act))))
+         ), o_act AS MATERIALIZED (
+          SELECT a.*
+            FROM (o_on o
+              JOIN acts_public a ON ((a.id = o.id)))
+         ), o_ids AS MATERIALIZED (
+          SELECT x.post,
+             x.play
+            FROM (o_on o
+              CROSS JOIN LATERAL post_play_ids(ARRAY[o.id]) x)
+         ), o_all AS MATERIALIZED (
+          SELECT i.play AS id
+            FROM o_ids i
+         UNION ALL
+          SELECT r.r AS id
+            FROM play_rider_ids(ARRAY( SELECT i.play
+                    FROM o_ids i)) r(r)
+         ), o_plays AS MATERIALIZED (
+          SELECT a.*
+            FROM acts_public a
+           WHERE (EXISTS ( SELECT 1
+                    FROM o_ids x)) AND (a.kind = ANY (ARRAY['card'::text, 'set'::text, 'spring'::text, 'take_back'::text])) AND (a.id = ANY (ARRAY( SELECT o.id
+                    FROM o_all o)))
+         ), o_shown AS MATERIALIZED (
+          SELECT s.*
+            FROM o_plays s
+         ), o_ends AS MATERIALIZED (
+          SELECT e.*
+            FROM acts_public e
+           WHERE ((e.kind = ANY (ARRAY['card_end'::text, 'open_gift'::text])) AND (e.target_act_id IN ( SELECT s.id
+                    FROM o_shown s)))
+         ), o_cast AS MATERIALIZED (
+          SELECT w.c
+            FROM ( SELECT a."character" AS c
+                    FROM o_act a
+                 UNION
+                  SELECT s."character"
+                    FROM o_shown s
+                 UNION
+                  SELECT
+                         CASE
+                             WHEN ((a.kind = ANY (ARRAY['card'::text, 'set'::text, 'spring'::text])) AND ((a.payload ->> 'reach'::text) = 'character'::text)) THEN ((a.payload ->> 'character'::text))::uuid
+                             ELSE NULL::uuid
+                         END AS "character"
+                    FROM o_act a) w
+           WHERE (w.c IS NOT NULL)
+         ), o_post AS MATERIALIZED (
+          SELECT x.id
+            FROM ( SELECT
+                         CASE
+                             WHEN post_kind(a.kind) THEN a.id
+                             WHEN (a.kind = 'poll'::text) THEN a.target_act_id
+                             WHEN (a.kind = 'ballot'::text) THEN ( SELECT q.target_act_id
+                                FROM acts_public q
+                               WHERE (q.id = a.target_act_id))
+                             ELSE NULL::uuid
+                         END AS id
+                    FROM o_act a) x
+           WHERE (x.id IS NOT NULL)
+         ), pl_post AS MATERIALIZED (
+          SELECT p.id
+            FROM posts p
+         UNION
+          SELECT o.id
+            FROM o_post o
+         ), pl_cur AS MATERIALIZED (
+          SELECT x.id AS post,
+             l.id AS poll,
+             l.created_at,
+             ((l.payload ->> 'secret'::text))::boolean AS secret,
+             to_jsonb(l.*) AS act
+            FROM (pl_post x
+              CROSS JOIN LATERAL ( SELECT a.*
+                    FROM acts_public a
+                   WHERE ((a.kind = 'poll'::text) AND (a.target_act_id = x.id))
+                   ORDER BY a.created_at DESC, a.id DESC
+                  LIMIT 1) l)
+           WHERE (NOT (l.payload ? 'removed'::text))
+         ), pl_polls AS MATERIALIZED (
+          SELECT c.post,
+             c.poll,
+             c.created_at,
+             c.secret,
+             c.act,
+             k.counts,
+             k.voters,
+             k.ends_at,
+             k.closed,
+             cl.j AS close,
+             EXISTS (SELECT 1 FROM acts b WHERE b.kind = 'ballot'::text AND b.target_act_id = c.poll) AS balloted
+            FROM ((pl_cur c
+              CROSS JOIN LATERAL ( SELECT n.counts,
+                     n.voters,
+                     n.ends_at,
+                     n.closed
+                    FROM poll_counts n
+                   WHERE (n.poll = c.poll)) k)
+              LEFT JOIN LATERAL ( SELECT to_jsonb(e.*) AS j
+                    FROM acts_public e
+                   WHERE ((e.kind = 'poll_close'::text) AND (e.target_act_id = c.poll))
+                  LIMIT 1) cl ON (true))
+         ), pl_voters AS MATERIALIZED (
+          SELECT p.post,
+             p.poll,
+             b.id AS act,
+             b."character",
+             (b.payload -> 'picks'::text) AS picks,
+             b.created_at
+            FROM ((pl_polls p
+              CROSS JOIN LATERAL poll_voter_acts(p.poll, p.ends_at, 50) v(act))
+              CROSS JOIN LATERAL ( SELECT x.id,
+                     x."character",
+                     x.payload,
+                     x.created_at
+                    FROM acts_public x
+                   WHERE (x.id = v.act)) b)
+           WHERE (NOT p.secret)
+         ), pl_cast AS MATERIALIZED (
+          SELECT DISTINCT v."character" AS c
+            FROM pl_voters v
+           WHERE (v."character" IS NOT NULL)
+         ), pl_mine AS MATERIALIZED (
+          SELECT m.act,
+             m.poll,
+             p.post,
+             m."character",
+             m.picks,
+             m.created_at
+            FROM (my_latest_ballots m
+              JOIN pl_polls p ON ((p.poll = m.poll)))
+           WHERE (m.created_at < p.ends_at)
+         UNION ALL
+          SELECT b.act,
+             l.poll,
+             p.post,
+             l."character",
+             b.picks,
+             b.created_at
+            FROM ((my_latest_ballots l
+              JOIN pl_polls p ON ((p.poll = l.poll)))
+              CROSS JOIN LATERAL ( SELECT m.act,
+                     m.picks,
+                     m.created_at
+                    FROM my_ballots m
+                   WHERE ((m.poll = l.poll) AND (m."character" = l."character") AND (m.created_at < p.ends_at))
+                   ORDER BY m.created_at DESC, m.act DESC
+                  LIMIT 1) b)
+           WHERE (l.created_at >= p.ends_at)
+         ), ids AS MATERIALIZED (
+          SELECT a.id
+            FROM page_acts a
+         UNION
+          SELECT n.id
+            FROM nested n
+         UNION
+          SELECT p.id
+            FROM played p
+         UNION
+          SELECT a.id
+            FROM o_act a
+         UNION
+          SELECT s.id
+            FROM o_shown s
+         UNION
+          SELECT p.poll
+            FROM pl_polls p
+         ), who AS MATERIALIZED (
+          SELECT w.c
+            FROM ( SELECT a."character" AS c
+                    FROM page_acts a
+                 UNION
+                  SELECT n."character"
+                    FROM nested n
+                 UNION
+                  SELECT p."character"
+                    FROM played p
+                 UNION
+                  SELECT v."character"
+                    FROM vis v) w
+           WHERE (w.c IS NOT NULL)
+         ), wanted_plays AS MATERIALIZED (
+          SELECT p.id
+            FROM played p
+           WHERE (p.card = ANY (COALESCE(thread_page.effect_cards, '{}'::text[])))
+         UNION
+          SELECT s.id
+            FROM o_shown s
+           WHERE ((s.payload ->> 'card'::text) = ANY (COALESCE(thread_page.effect_cards, '{}'::text[])))
+         ), heads AS MATERIALIZED (
+          SELECT c.id,
+             jsonb_build_object('character', jsonb_build_object('id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office, 'warn_points', c.warn_points, 'banned_until', c.banned_until, 'locked_until', locked_out_until(c.id, thread_page.in_thread), 'group', c."group"), 'profile', ( SELECT (jsonb_build_object('character', p."character", 'title', p.title, 'signature', p.signature, 'avatar_square', p.avatar_square, 'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns) || profile_cosmetics(p."character"))
+                    FROM character_profiles p
+                   WHERE (p."character" = c.id))) AS head
+            FROM (( SELECT w.c
+                    FROM who w
+                 UNION
+                  SELECT o.c
+                    FROM o_cast o
+                 UNION
+                  SELECT v.c
+                    FROM pl_cast v) k(id)
+              CROSS JOIN LATERAL ( SELECT x.*
+                    FROM characters_public x
+                   WHERE (x.id = k.id)
+                  OFFSET 0) c)
+         ), spun AS MATERIALIZED (
+          SELECT l.id,
+             l.board,
+             l.title,
+             l.origin_act_id,
+             l.created_at,
+             l.last_at,
+             l.last_seq,
+             l.replies,
+             l.first_act,
+             l.first_character,
+             l.last_act,
+             l.last_character,
+             l.replies_this_week,
+             l.origin_thread,
+             l.origin_place,
+             l.n
+            FROM ( SELECT t.id,
+                     t.board,
+                     t.title,
+                     t.origin_act_id,
+                     t.created_at,
+                     t.last_at,
+                     t.last_seq,
+                     t.replies,
+                     t.first_act,
+                     t.first_character,
+                     t.last_act,
+                     t.last_character,
+                     t.replies_this_week,
+                     t.origin_thread,
+                     t.origin_place,
+                     row_number() OVER (PARTITION BY t.origin_act_id ORDER BY t.created_at, t.id) AS n
+                    FROM thread_list t
+                   WHERE (t.origin_act_id IN ( SELECT i.id
+                            FROM ids i))) l
+           WHERE (l.n <= 200)
+         ), rw AS MATERIALIZED (
+          -- The live rewind plays of the page's posts (and the replies drawn under them) and of the ORIGIN post, from one set-based read (post_rewind_plays), as `on_ids` reads post_play_ids.
+          SELECT r.post,
+             r.play,
+             r.played_at,
+             rewind_view(r.play) AS view
+            FROM post_rewind_plays(ARRAY( SELECT x.id
+                    FROM ( SELECT p.id
+                            FROM posts p
+                         UNION
+                          SELECT o.id
+                            FROM o_on o) x)) r
+         )
+  SELECT
+         CASE
+             WHEN (NOT (EXISTS ( SELECT 1
+                FROM rng))) THEN NULL::jsonb
+             ELSE jsonb_build_object('summary', ( SELECT (to_jsonb(s.*) - 'last_page'::text)
+                FROM s), 'page', ( SELECT rng.page
+                FROM rng), 'boardCards', ( SELECT COALESCE(jsonb_agg(to_jsonb(o.*) ORDER BY o.created_at, o.id), '[]'::jsonb) AS "coalesce"
+                FROM on_posts o
+               WHERE (o.target_act_id IS NULL)), 'acts', ( SELECT COALESCE(jsonb_agg((CASE WHEN post_kind(a.kind) THEN to_jsonb(a.*) || jsonb_build_object('version', post_current_version(a.id)) ELSE to_jsonb(a.*) END) ORDER BY a.seq), '[]'::jsonb) AS "coalesce"
+                FROM page_acts a), 'people', ( SELECT COALESCE(jsonb_agg((c.head || jsonb_build_object('posts', COALESCE(( SELECT n.posts
+                        FROM character_post_counts n
+                       WHERE (n."character" = c.id)), 0), 'standing', COALESCE(( SELECT st.standing
+                        FROM current_standings st
+                       WHERE (st."character" = c.id)), 0), 'reveals', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('act', r.act, 'character', r."character", 'class', r.class, 'at', r.at, 'via', r.via, 'thread', r.thread) ORDER BY r.at, r.act), '[]'::jsonb) AS "coalesce"
+                        FROM class_reveals r
+                       WHERE (r."character" = c.id)), 'turns', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('act', u.act, 'character', u."character", 'at', u.at, 'was', u.was) ORDER BY u.at, u.act), '[]'::jsonb) AS "coalesce"
+                        FROM turns_announced u
+                       WHERE (u."character" = c.id)))) ORDER BY c.id), '[]'::jsonb) AS "coalesce"
+                FROM heads c
+               WHERE (c.id IN ( SELECT w.c
+                        FROM who w))), 'plays', ( SELECT COALESCE(jsonb_agg(x.j ORDER BY x.created_at, x.id), '[]'::jsonb) AS "coalesce"
+                FROM ( SELECT to_jsonb(o.*) AS j,
+                         o.created_at,
+                         o.id
+                        FROM on_posts o
+                       WHERE (o.target_act_id IS NOT NULL)
+                     UNION ALL
+                      SELECT to_jsonb(e.*) AS to_jsonb,
+                         e.created_at,
+                         e.id
+                        FROM ends_on_posts e) x), 'counts', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('post', k.post, 'card', k.card, 'all', k.plays, 'took', k.took) ORDER BY k.post, k.card NULLS FIRST), '[]'::jsonb) AS "coalesce"
+                FROM post_kind_counts(ARRAY( SELECT p.id
+                        FROM posts p)) k), 'above', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('play', x.play, 'reach', x.reach, 'target', x.target, 'ends_at', x.ends_at, 'act', x.act) ORDER BY ((x.act ->> 'created_at'::text))::timestamp with time zone, x.play), '[]'::jsonb) AS "coalesce"
+                FROM above x), 'kept', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('play', x.play, 'reach', x.reach, 'target', x.target, 'ends_at', x.ends_at, 'act', x.act) ORDER BY ((x.act ->> 'created_at'::text))::timestamp with time zone, x.play), '[]'::jsonb) AS "coalesce"
+                FROM kept x), 'under', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('parent', n.parent, 'play', n.play, 'act', n.act) ORDER BY ((n.act ->> 'seq'::text))::integer, n.id), '[]'::jsonb) AS "coalesce"
+                FROM nested n), 'cut', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('seq', d.seq, 'parent_seq', ( SELECT pa.seq
+                        FROM acts_public pa
+                       WHERE (pa.id = d.parent))) ORDER BY d.seq), '[]'::jsonb) AS "coalesce"
+                FROM drawn d
+               WHERE (d.kind = 'post'::text)), 'visits', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('visit', v.id, 'post', v.post, 'mod', v."character", 'at', v.created_at, 'ends_at', (v.payload -> 'ends_at'::text), 'line', (v.payload -> 'line'::text), 'charges', ((v.payload -> 'charges'::text) || COALESCE(( SELECT jsonb_agg((j.payload -> 'charge'::text) ORDER BY j.created_at, j.id) AS jsonb_agg
+                        FROM acts_public j
+                       WHERE ((j.kind = 'visit_join'::text) AND (j.target_act_id = v.id))), '[]'::jsonb)), 'challenge', (jsonb_strip_nulls(jsonb_build_object('kind', (v.payload #>> '{challenge,kind}'::text[]), 'question_index', (v.payload #> '{challenge,question_index}'::text[]), 'price', (v.payload #> '{challenge,price}'::text[]))) || COALESCE(visit_quiz(v.id), '{}'::jsonb)), 'end', ( SELECT jsonb_build_object('act', e.id, 'at', e.created_at, 'outcome', (e.payload ->> 'outcome'::text), 'by_act', (e.payload -> 'by_act'::text), 'line', (e.payload -> 'line'::text)) AS jsonb_build_object
+                        FROM acts_public e
+                       WHERE ((e.kind = 'visit_end'::text) AND (e.target_act_id = v.id))
+                      LIMIT 1), 'ruling', ( SELECT (r.payload ->> 'verdict'::text)
+                        FROM ((acts_public i
+                          JOIN acts_public ap ON (((ap.kind = 'appeal'::text) AND (ap.target_act_id = i.id))))
+                          JOIN acts_public r ON (((r.kind = 'appeal_ruling'::text) AND (r.target_act_id = ap.id))))
+                       WHERE ((i.kind = 'infraction'::text) AND ((i.payload ->> 'visit_act'::text) = (v.id)::text))
+                      LIMIT 1), 'answers', COALESCE(( SELECT jsonb_agg(x.post_act ORDER BY x.at, x.post_act) AS jsonb_agg
+                        FROM answers_on x
+                       WHERE (x.visit_act = v.id)), '[]'::jsonb)) ORDER BY v.created_at, v.id), '[]'::jsonb) AS "coalesce"
+                FROM vis v), 'faces', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('play', f.play, 'card', f.card)), '[]'::jsonb) AS "coalesce"
+                FROM my_face_down f
+               WHERE (f.play IN ( SELECT p.id
+                        FROM played p
+                       WHERE (p.kind = 'set'::text)))), 'veiled', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('post', v.post, 'character', v."character", 'play', v.play, 'ends_at', v.ends_at) ORDER BY v.post), '[]'::jsonb) AS "coalesce"
+                FROM my_veiled_posts v
+               WHERE (v.post IN ( SELECT p.id
+                        FROM posts p))), 'states', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('play', e.play, 'state', e.state, 'saved_at', e.saved_at)), '[]'::jsonb) AS "coalesce"
+                FROM effect_state e
+               WHERE (e.play IN ( SELECT w.id
+                        FROM wanted_plays w))), 'releases', ( SELECT COALESCE(jsonb_agg(r.play), '[]'::jsonb) AS "coalesce"
+                FROM effect_releases r
+               WHERE (r.play IN ( SELECT w.id
+                        FROM wanted_plays w))), 'spent', ( SELECT COALESCE(jsonb_agg(o.id ORDER BY o.created_at, o.id), '[]'::jsonb) AS "coalesce"
+                FROM (on_posts o
+                  JOIN card_kinds ck ON (((ck.key = (o.payload ->> 'card'::text)) AND ((ck.discipline ->> 'kind'::text) = 'fall'::text))))
+               WHERE ((o.kind = 'card'::text) AND fall_spent(o.id))), 'surfaces', ( SELECT COALESCE(jsonb_object_agg((sf.play)::text, jsonb_build_object('covered', sf.covered, 'live', to_jsonb(sf.live))), '{}'::jsonb) AS "coalesce"
+                FROM surfaces sf
+               WHERE (sf.play IN ( SELECT o.id
+                        FROM on_posts o
+                       WHERE (o.kind = 'card'::text)))), 'tallies', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('act', t.act, 'kind', t.kind, 'count', t.count)), '[]'::jsonb) AS "coalesce"
+                FROM reaction_tallies t
+               WHERE (t.act IN ( SELECT i.id
+                        FROM ids i))), 'mine', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('act', m.act, 'kind', m.kind, 'character', m."character")), '[]'::jsonb) AS "coalesce"
+                FROM my_reactions m
+               WHERE (m.act IN ( SELECT i.id
+                        FROM ids i))), 'polls', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('post', p.post, 'act', p.act, 'counts', to_jsonb(p.counts), 'voters', p.voters, 'ends_at', p.ends_at, 'closed', p.closed, 'close', p.close, 'balloted', p.balloted) ORDER BY p.created_at, p.poll), '[]'::jsonb) AS "coalesce"
+                FROM pl_polls p), 'voters', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('poll', v.poll, 'act', v.act, 'character', v."character", 'picks', v.picks, 'at', v.created_at) ORDER BY v.poll, v.created_at DESC, v.act DESC), '[]'::jsonb) AS "coalesce"
+                FROM pl_voters v), 'votersMore', ( SELECT COALESCE(jsonb_agg(p.poll ORDER BY p.created_at, p.poll), '[]'::jsonb) AS "coalesce"
+                FROM pl_polls p
+               WHERE ((NOT p.secret) AND (p.voters > 50))), 'voterCast', ( SELECT COALESCE(jsonb_agg(h.head ORDER BY h.id), '[]'::jsonb) AS "coalesce"
+                FROM heads h
+               WHERE (h.id IN ( SELECT v.c
+                        FROM pl_cast v))), 'myBallots', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('act', m.act, 'poll', m.poll, 'character', m."character", 'picks', m.picks, 'at', m.created_at) ORDER BY m.created_at, m.act), '[]'::jsonb) AS "coalesce"
+                FROM pl_mine m), 'spun', ( SELECT COALESCE(jsonb_agg((to_jsonb(l.*) - 'n'::text) ORDER BY l.created_at, l.id), '[]'::jsonb) AS "coalesce"
+                FROM spun l), 'reading', ( SELECT r.furthest_seq
+                FROM reading r
+               WHERE (r.thread = thread_page.in_thread)
+              LIMIT 1), 'board', ( SELECT jsonb_build_object('id', b.id, 'slug', b.slug, 'name', b.name, 'description', b.description, 'is_system', b.is_system, 'move_act', b.move_act) AS jsonb_build_object
+                FROM boards_now b
+               WHERE (b.id = ( SELECT rng.board
+                        FROM rng))), 'following', following_thread(in_thread), 'presence', presence_box('thread'::text, in_thread), 'unread', my_alerts_unread(), 'rewinds', ( SELECT COALESCE(jsonb_agg(w.view ORDER BY w.played_at DESC, w.play DESC), '[]'::jsonb) AS "coalesce"
+                FROM rw w
+               WHERE (w.view IS NOT NULL))) ||
+             CASE
+                 WHEN (EXISTS ( SELECT 1
+                    FROM o_on)) THEN jsonb_build_object('origin', jsonb_build_object('act', ( SELECT to_jsonb(a.*) AS to_jsonb
+                        FROM o_act a), 'plays', ( SELECT COALESCE(jsonb_agg(x.j ORDER BY x.grp, x.created_at, x.id), '[]'::jsonb) AS "coalesce"
+                        FROM ( SELECT to_jsonb(s.*) AS j,
+                                 0 AS grp,
+                                 s.created_at,
+                                 s.id
+                                FROM o_shown s
+                             UNION ALL
+                              SELECT to_jsonb(e.*) AS to_jsonb,
+                                 1,
+                                 e.created_at,
+                                 e.id
+                                FROM o_ends e) x), 'counts', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('post', k.post, 'card', k.card, 'all', k.plays, 'took', k.took) ORDER BY k.post, k.card NULLS FIRST), '[]'::jsonb) AS "coalesce"
+                        FROM post_kind_counts(ARRAY( SELECT o.id
+                                FROM o_on o)) k), 'moment', origin_moment(in_thread), 'at', ( SELECT jsonb_build_object('thread', (z.q ->> 'thread'::text), 'seq', ((z.q ->> 'seq'::text))::integer) AS jsonb_build_object
+                        FROM ( SELECT
+                                 CASE
+                                     WHEN ((r.origin_place ->> 'kind'::text) = 'play'::text) THEN COALESCE(NULLIF((r.origin_place -> 'at'::text), 'null'::jsonb),
+                                     CASE
+                                         WHEN ((r.origin_place #>> '{on,kind}'::text[]) = 'post'::text) THEN (r.origin_place -> 'on'::text)
+                                         ELSE NULLIF((r.origin_place -> 'from'::text), 'null'::jsonb)
+                                     END)
+                                     WHEN ((r.origin_place ->> 'kind'::text) = ANY (ARRAY['poll'::text, 'ballot'::text])) THEN (r.origin_place -> 'on'::text)
+                                     ELSE NULL::jsonb
+                                 END AS q
+                                FROM rng r) z
+                       WHERE (jsonb_typeof(z.q) = 'object'::text)), 'cast', ( SELECT COALESCE(jsonb_agg(h.head ORDER BY h.id), '[]'::jsonb) AS "coalesce"
+                        FROM heads h
+                       WHERE (h.id IN ( SELECT o.c
+                                FROM o_cast o
+                             UNION
+                              SELECT v."character"
+                                FROM pl_voters v
+                               WHERE ((v.post IN ( SELECT op.id
+                                        FROM o_post op)) AND (EXISTS ( SELECT 1
+                                        FROM o_act a
+                                       WHERE (a.kind = ANY (ARRAY['poll'::text, 'ballot'::text]))))))))) ||
+                     CASE
+                         WHEN (EXISTS ( SELECT 1
+                            FROM o_act a
+                           WHERE (a.kind = ANY (ARRAY['poll'::text, 'ballot'::text])))) THEN jsonb_build_object('polls', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('post', p.post, 'act', p.act, 'counts', to_jsonb(p.counts), 'voters', p.voters, 'ends_at', p.ends_at, 'closed', p.closed, 'close', p.close, 'balloted', p.balloted) ORDER BY p.created_at, p.poll), '[]'::jsonb) AS "coalesce"
+                            FROM pl_polls p
+                           WHERE (p.post IN ( SELECT op.id
+                                    FROM o_post op))), 'voters', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('poll', v.poll, 'act', v.act, 'character', v."character", 'picks', v.picks, 'at', v.created_at) ORDER BY v.poll, v.created_at DESC, v.act DESC), '[]'::jsonb) AS "coalesce"
+                            FROM pl_voters v
+                           WHERE (v.post IN ( SELECT op.id
+                                    FROM o_post op))), 'votersMore', ( SELECT COALESCE(jsonb_agg(p.poll ORDER BY p.created_at, p.poll), '[]'::jsonb) AS "coalesce"
+                            FROM pl_polls p
+                           WHERE ((NOT p.secret) AND (p.voters > 50) AND (p.post IN ( SELECT op.id
+                                    FROM o_post op)))), 'myBallots', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('act', m.act, 'poll', m.poll, 'character', m."character", 'picks', m.picks, 'at', m.created_at) ORDER BY m.created_at, m.act), '[]'::jsonb) AS "coalesce"
+                            FROM pl_mine m
+                           WHERE (m.post IN ( SELECT op.id
+                                    FROM o_post op))))
+                         ELSE '{}'::jsonb
+                     END)
+                 ELSE '{}'::jsonb
+             END
+         END AS jsonb_build_object
+  );
+end
+$function$;
+
+-- pool_thread: from 0420_hot_posts.sql.
+CREATE OR REPLACE FUNCTION public.pool_thread(in_thread uuid, most integer, chars integer, also uuid, more uuid[])
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  with page as (
+    select a.id, a.seq, a.created_at, c.name, (select cp.pronouns from character_profiles cp where cp.character = c.id) as pronouns,
+           left(coalesce(a.current_payload ->> 'body', ''), greatest(chars, 1)) as body,
+           length(coalesce(a.current_payload ->> 'body', '')) > greatest(chars, 1) as cut
+    from acts_public a join characters_public c on c.id = a.character
+    where a.thread = in_thread
+      and ((a.kind = 'post'
+            and (a.id = also or a.id = any (coalesce(more[1:50], '{}'::uuid[]))
+                 or a.id in (select n.id from acts_public n where n.thread = in_thread and n.kind = 'post'
+                             order by n.created_at desc, n.id desc limit greatest(most, 0))))
+           -- The thread's spin Act is its first post, always shown (the opener a reply is to), whatever `most` is; a thread nobody spun has none.
+           or (a.seq = 1 and a.kind = 'spin'))
+  )
+  select jsonb_build_object(
+    'title', coalesce((select t.title from thread_list t where t.id = in_thread), ''),
+    'posts', coalesce((select jsonb_agg(jsonb_build_object('act', p.id, 'name', p.name, 'pronouns', p.pronouns, 'body', p.body, 'cut', p.cut) order by p.created_at, p.id) from page p), '[]'::jsonb),
+    'walls', coalesce((select jsonb_agg(jsonb_build_object('play', k.id, 'card', k.payload ->> 'card',
+                                                           'about', 'a post by ' || p.name || coalesce(' (#' || p.seq || ')', '')) order by p.created_at, p.id, k.id)
+                       from page p join surfaces s on s.post = p.id join acts_public k on k.id = s.play
+                       where not exists (select 1 from acts_public e where e.kind in ('card_end', 'open_gift') and e.target_act_id = k.id)
+                         and not exists (select 1 from card_write_refunds r where r.play = k.id)), '[]'::jsonb))
+$function$;
+alter function pool_thread(uuid, integer, integer, uuid, uuid[]) owner to kayfabb_digest;

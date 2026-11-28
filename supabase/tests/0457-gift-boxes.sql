@@ -348,3 +348,22 @@ begin
   res := pg_temp.opened(bob, r.id);
   perform pg_temp.expect(res ->> 'did' = 'landed', format('a locked-out giver with no hand and no wallet did not land at the open: %s', res));
 end $$;
+
+-- ---- The readers of "is this play still up" read an open as the box's end; no admin-ended feed does ----
+-- The box on `p` was opened above, and its gift landed. search_post_cards (the post's cards a search lists) and kind_plays (a kind's plays and their ends) read it; play_moment, spin_moment, pool_thread and thread_page decide from the same
+-- end Acts, which their definitions now name. lockout_ends is left as it was: it reads a lockout's spring, which a present is not (a wrapper is a cast on a post that springs no lockout), so an open frees none.
+select tests.unbecome();
+do $$
+declare
+  p uuid := pg_temp.fix('p'); bx uuid := pg_temp.fix('box'); fn text; found jsonb;
+begin
+  perform pg_temp.expect(not (search_post_cards(p) @> '["gbbox"]'::jsonb) and search_post_cards(p) @> '["gblong"]'::jsonb, format('a search lists the opened box, or not its gift: %s', search_post_cards(p)));
+  found := kind_plays(p, 'gbbox', null, null, 10);
+  perform pg_temp.expect(found::text like '%open_gift%', format('kind_plays does not read the open as the box''s end: %s', found));
+  foreach fn in array array['play_moment', 'spin_moment', 'pool_thread', 'thread_page', 'kind_plays', 'search_post_cards'] loop
+    perform pg_temp.expect((select bool_and(p.prosrc not like '%card_end%' or p.prosrc like '%open_gift%') from pg_proc p where p.proname = fn and p.pronamespace = 'public'::regnamespace), format('%s does not read an open_gift as an end', fn));
+  end loop;
+  foreach fn in array array['admin_queue', 'log_page', 'lockout_ends'] loop
+    perform pg_temp.expect((select bool_and(p.prosrc not like '%open_gift%') from pg_proc p where p.proname = fn and p.pronamespace = 'public'::regnamespace), format('%s reads an open_gift as an admin''s end', fn));
+  end loop;
+end $$;
